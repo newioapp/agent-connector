@@ -28,7 +28,7 @@ jobs:
       - run: pnpm --filter @newio/sdk run build
       - run: pnpm --filter @newio/sdk run test
 
-      - name: Publish to npm
+      - name: Publish to npm with provenance
         run: pnpm --filter @newio/sdk publish --no-git-checks --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
