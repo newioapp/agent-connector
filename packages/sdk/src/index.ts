@@ -76,18 +76,20 @@ export type {
   ListFriendsResponse,
   SendFriendRequestRequest,
   SendFriendRequestResponse,
-  SendFriendRequestByUsernameRequest,
   ListIncomingRequestsRequest,
   ListIncomingRequestsResponse,
   ListOutgoingRequestsRequest,
   ListOutgoingRequestsResponse,
   RevokeOutgoingRequestRequest,
+  RevokeOutgoingRequestResponse,
   AcceptFriendRequestRequest,
   AcceptFriendRequestResponse,
   RejectFriendRequestRequest,
+  RejectFriendRequestResponse,
   UpdateFriendNameRequest,
   UpdateFriendNameResponse,
   RemoveFriendRequest,
+  RemoveFriendResponse,
 } from './types.js';
 
 // Types — Blocks Request / Response
@@ -95,6 +97,7 @@ export type {
   BlockUserRequest,
   BlockUserResponse,
   UnblockUserRequest,
+  UnblockUserResponse,
   ListBlocksRequest,
   ListBlocksResponse,
 } from './types.js';
@@ -104,7 +107,6 @@ export type {
   CreateConversationRequest,
   CreateConversationResponse,
   CreateDmRequest,
-  CreateDmByUsernameRequest,
   ListConversationsRequest,
   ListConversationsResponse,
   GetConversationRequest,
@@ -116,6 +118,7 @@ export type {
   AddMembersRequest,
   AddMembersResponse,
   RemoveMemberRequest,
+  RemoveMemberResponse,
   UpdateMemberRoleRequest,
   UpdateMemberRoleResponse,
   MarkReadRequest,
@@ -135,6 +138,7 @@ export type {
   EditMessageRequest,
   EditMessageResponse,
   DeleteMessageRequest,
+  DeleteMessageResponse,
 } from './types.js';
 
 // Types — Media Request / Response

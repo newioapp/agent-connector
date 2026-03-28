@@ -117,16 +117,6 @@ describe('NewioClient', () => {
       expect(fetchCalls[0]?.body).toEqual({ contactId: 'u2', note: 'Hello!' });
     });
 
-    it('sendFriendRequestByUsername resolves username first', async () => {
-      mockFetch([
-        { status: 200, body: { userId: 'u2', username: 'alice' } },
-        { status: 201, body: { contact: { contactId: 'u2' } } },
-      ]);
-      await createClient().sendFriendRequestByUsername({ username: 'alice', note: 'Hi' });
-      expect(fetchCalls[0]?.url).toContain('/users/by-username/alice');
-      expect(fetchCalls[1]?.body).toEqual({ contactId: 'u2', note: 'Hi' });
-    });
-
     it('listIncomingRequests', async () => {
       mockFetch([{ status: 200, body: { requests: [] } }]);
       await createClient().listIncomingRequests({});
@@ -211,16 +201,6 @@ describe('NewioClient', () => {
       mockFetch([{ status: 201, body: { conversation: { conversationId: 'c1' }, members: [] } }]);
       await createClient().createDm({ userId: 'u2' });
       expect(fetchCalls[0]?.body).toEqual({ type: 'dm', memberIds: ['u2'] });
-    });
-
-    it('createDmByUsername resolves username first', async () => {
-      mockFetch([
-        { status: 200, body: { userId: 'u2', username: 'alice' } },
-        { status: 201, body: { conversation: { conversationId: 'c1' }, members: [] } },
-      ]);
-      await createClient().createDmByUsername({ username: 'alice' });
-      expect(fetchCalls[0]?.url).toContain('/users/by-username/alice');
-      expect(fetchCalls[1]?.body).toEqual({ type: 'dm', memberIds: ['u2'] });
     });
 
     it('listConversations', async () => {

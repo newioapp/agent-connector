@@ -322,11 +322,6 @@ export interface SendFriendRequestResponse {
   readonly contact: ContactRecord;
 }
 
-export interface SendFriendRequestByUsernameRequest {
-  readonly username: string;
-  readonly note?: string;
-}
-
 export interface ListIncomingRequestsRequest {
   readonly cursor?: string;
   readonly limit?: number;
@@ -351,6 +346,8 @@ export interface RevokeOutgoingRequestRequest {
   readonly contactId: string;
 }
 
+export interface RevokeOutgoingRequestResponse {}
+
 export interface AcceptFriendRequestRequest {
   readonly requestId: string;
 }
@@ -362,6 +359,8 @@ export interface AcceptFriendRequestResponse {
 export interface RejectFriendRequestRequest {
   readonly requestId: string;
 }
+
+export interface RejectFriendRequestResponse {}
 
 export interface UpdateFriendNameRequest {
   readonly contactId: string;
@@ -375,6 +374,8 @@ export interface UpdateFriendNameResponse {
 export interface RemoveFriendRequest {
   readonly userId: string;
 }
+
+export interface RemoveFriendResponse {}
 
 // ---------------------------------------------------------------------------
 // Blocks — Request / Response
@@ -393,6 +394,8 @@ export interface BlockUserResponse {
 export interface UnblockUserRequest {
   readonly userId: string;
 }
+
+export interface UnblockUserResponse {}
 
 export interface ListBlocksRequest {}
 
@@ -419,10 +422,6 @@ export interface CreateConversationResponse {
 
 export interface CreateDmRequest {
   readonly userId: string;
-}
-
-export interface CreateDmByUsernameRequest {
-  readonly username: string;
 }
 
 export interface ListConversationsRequest {
@@ -479,6 +478,8 @@ export interface RemoveMemberRequest {
   readonly conversationId: string;
   readonly userId: string;
 }
+
+export interface RemoveMemberResponse {}
 
 export interface UpdateMemberRoleRequest {
   readonly conversationId: string;
@@ -557,6 +558,8 @@ export interface DeleteMessageRequest {
   readonly conversationId: string;
   readonly messageId: string;
 }
+
+export interface DeleteMessageResponse {}
 
 // ---------------------------------------------------------------------------
 // Media — Request / Response

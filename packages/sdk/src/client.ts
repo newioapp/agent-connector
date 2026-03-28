@@ -23,23 +23,26 @@ import type {
   ListFriendsResponse,
   SendFriendRequestRequest,
   SendFriendRequestResponse,
-  SendFriendRequestByUsernameRequest,
   ListIncomingRequestsRequest,
   ListIncomingRequestsResponse,
   ListOutgoingRequestsRequest,
   ListOutgoingRequestsResponse,
   RevokeOutgoingRequestRequest,
+  RevokeOutgoingRequestResponse,
   AcceptFriendRequestRequest,
   AcceptFriendRequestResponse,
   RejectFriendRequestRequest,
+  RejectFriendRequestResponse,
   UpdateFriendNameRequest,
   UpdateFriendNameResponse,
   RemoveFriendRequest,
+  RemoveFriendResponse,
 
   // Blocks
   BlockUserRequest,
   BlockUserResponse,
   UnblockUserRequest,
+  UnblockUserResponse,
   ListBlocksRequest,
   ListBlocksResponse,
 
@@ -47,7 +50,6 @@ import type {
   CreateConversationRequest,
   CreateConversationResponse,
   CreateDmRequest,
-  CreateDmByUsernameRequest,
   ListConversationsRequest,
   ListConversationsResponse,
   GetConversationRequest,
@@ -59,6 +61,7 @@ import type {
   AddMembersRequest,
   AddMembersResponse,
   RemoveMemberRequest,
+  RemoveMemberResponse,
   UpdateMemberRoleRequest,
   UpdateMemberRoleResponse,
   MarkReadRequest,
@@ -76,6 +79,7 @@ import type {
   EditMessageRequest,
   EditMessageResponse,
   DeleteMessageRequest,
+  DeleteMessageResponse,
 
   // Media
   GetUploadUrlRequest,
@@ -193,12 +197,6 @@ export class NewioClient {
     });
   }
 
-  /** Send a friend request by username (resolves username to ID first). */
-  async sendFriendRequestByUsername(input: SendFriendRequestByUsernameRequest): Promise<SendFriendRequestResponse> {
-    const user = await this.getUserByUsername({ username: input.username });
-    return this.sendFriendRequest({ contactId: user.userId, note: input.note });
-  }
-
   /** List incoming friend requests. */
   async listIncomingRequests(input: ListIncomingRequestsRequest): Promise<ListIncomingRequestsResponse> {
     return this.http.request(`/contacts/requests${this.http.qs({ cursor: input.cursor, limit: input.limit })}`);
@@ -212,10 +210,11 @@ export class NewioClient {
   }
 
   /** Revoke an outgoing friend request. */
-  async revokeOutgoingRequest(input: RevokeOutgoingRequestRequest): Promise<void> {
-    return this.http.requestNoContent(`/contacts/requests/outgoing/${encodeURIComponent(input.contactId)}`, {
+  async revokeOutgoingRequest(input: RevokeOutgoingRequestRequest): Promise<RevokeOutgoingRequestResponse> {
+    await this.http.requestNoContent(`/contacts/requests/outgoing/${encodeURIComponent(input.contactId)}`, {
       method: 'DELETE',
     });
+    return {};
   }
 
   /** Accept a friend request. */
@@ -224,10 +223,11 @@ export class NewioClient {
   }
 
   /** Reject a friend request. */
-  async rejectFriendRequest(input: RejectFriendRequestRequest): Promise<void> {
-    return this.http.requestNoContent(`/contacts/requests/${encodeURIComponent(input.requestId)}/reject`, {
+  async rejectFriendRequest(input: RejectFriendRequestRequest): Promise<RejectFriendRequestResponse> {
+    await this.http.requestNoContent(`/contacts/requests/${encodeURIComponent(input.requestId)}/reject`, {
       method: 'POST',
     });
+    return {};
   }
 
   /** Update a friend's custom display name. */
@@ -239,8 +239,9 @@ export class NewioClient {
   }
 
   /** Remove a friend. */
-  async removeFriend(input: RemoveFriendRequest): Promise<void> {
-    return this.http.requestNoContent(`/contacts/${encodeURIComponent(input.userId)}`, { method: 'DELETE' });
+  async removeFriend(input: RemoveFriendRequest): Promise<RemoveFriendResponse> {
+    await this.http.requestNoContent(`/contacts/${encodeURIComponent(input.userId)}`, { method: 'DELETE' });
+    return {};
   }
 
   // ---------------------------------------------------------------------------
@@ -253,8 +254,9 @@ export class NewioClient {
   }
 
   /** Unblock a user. */
-  async unblockUser(input: UnblockUserRequest): Promise<void> {
-    return this.http.requestNoContent(`/blocks/${encodeURIComponent(input.userId)}`, { method: 'DELETE' });
+  async unblockUser(input: UnblockUserRequest): Promise<UnblockUserResponse> {
+    await this.http.requestNoContent(`/blocks/${encodeURIComponent(input.userId)}`, { method: 'DELETE' });
+    return {};
   }
 
   /** List blocked users. */
@@ -274,12 +276,6 @@ export class NewioClient {
   /** Create a DM with a user by ID (idempotent). */
   async createDm(input: CreateDmRequest): Promise<CreateConversationResponse> {
     return this.createConversation({ type: 'dm', memberIds: [input.userId] });
-  }
-
-  /** Create a DM by username (resolves username to ID first). */
-  async createDmByUsername(input: CreateDmByUsernameRequest): Promise<CreateConversationResponse> {
-    const user = await this.getUserByUsername({ username: input.username });
-    return this.createDm({ userId: user.userId });
   }
 
   /** List conversations (paginated, sorted by last message). */
@@ -320,11 +316,12 @@ export class NewioClient {
   }
 
   /** Remove a member from a conversation. */
-  async removeMember(input: RemoveMemberRequest): Promise<void> {
-    return this.http.requestNoContent(
+  async removeMember(input: RemoveMemberRequest): Promise<RemoveMemberResponse> {
+    await this.http.requestNoContent(
       `/conversations/${encodeURIComponent(input.conversationId)}/members/${encodeURIComponent(input.userId)}`,
       { method: 'DELETE' },
     );
+    return {};
   }
 
   /** Update a member's role (admin/member). */
@@ -393,11 +390,12 @@ export class NewioClient {
   }
 
   /** Delete (revoke) a message. */
-  async deleteMessage(input: DeleteMessageRequest): Promise<void> {
-    return this.http.requestNoContent(
+  async deleteMessage(input: DeleteMessageRequest): Promise<DeleteMessageResponse> {
+    await this.http.requestNoContent(
       `/conversations/${encodeURIComponent(input.conversationId)}/messages/${encodeURIComponent(input.messageId)}`,
       { method: 'DELETE' },
     );
+    return {};
   }
 
   // ---------------------------------------------------------------------------
