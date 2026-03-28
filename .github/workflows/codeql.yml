@@ -1,8 +1,11 @@
 name: CodeQL
 
+# CodeQL requires GitHub Advanced Security (free for public repos only).
+# Enable this workflow when the repo is made public.
+
 on:
-  pull_request:
-    branches: [main]
+  # pull_request:
+  #   branches: [main]
   schedule:
     - cron: '0 9 * * 3' # Weekly on Wednesday at 9am UTC
 
@@ -14,6 +17,8 @@ jobs:
   analyze:
     name: CodeQL Analysis
     runs-on: ubuntu-latest
+    # Only run on public repos (CodeQL is free for public, paid for private)
+    if: ${{ github.repository_visibility == 'public' }}
     steps:
       - uses: actions/checkout@v4
 
