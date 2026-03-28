@@ -1,59 +1,99 @@
 import { HttpClient, type TokenProvider } from './http.js';
 import type {
   // Users
-  UserProfile,
-  UpdateProfileRequest,
-  UsernameAvailabilityResponse,
+  GetMeRequest,
+  GetMeResponse,
+  UpdateMeRequest,
+  UpdateMeResponse,
+  CheckUsernameAvailabilityRequest,
+  CheckUsernameAvailabilityResponse,
+  GetUserByUsernameRequest,
+  GetUserByUsernameResponse,
+  GetUserRequest,
+  GetUserResponse,
+  SearchUsersRequest,
   SearchUsersResponse,
-  UserSummariesResponse,
-  UserAgentsResponse,
+  GetUserSummariesRequest,
+  GetUserSummariesResponse,
+  GetUserAgentsRequest,
+  GetUserAgentsResponse,
 
   // Contacts
+  ListFriendsRequest,
   ListFriendsResponse,
+  SendFriendRequestRequest,
   SendFriendRequestResponse,
+  SendFriendRequestByUsernameRequest,
+  ListIncomingRequestsRequest,
   ListIncomingRequestsResponse,
+  ListOutgoingRequestsRequest,
   ListOutgoingRequestsResponse,
+  RevokeOutgoingRequestRequest,
+  AcceptFriendRequestRequest,
   AcceptFriendRequestResponse,
+  RejectFriendRequestRequest,
+  UpdateFriendNameRequest,
   UpdateFriendNameResponse,
+  RemoveFriendRequest,
 
   // Blocks
+  BlockUserRequest,
+  BlockUserResponse,
+  UnblockUserRequest,
+  ListBlocksRequest,
   ListBlocksResponse,
-  BlockRecord,
 
   // Conversations
   CreateConversationRequest,
-  ConversationResponse,
+  CreateConversationResponse,
+  CreateDmRequest,
+  CreateDmByUsernameRequest,
+  ListConversationsRequest,
   ListConversationsResponse,
+  GetConversationRequest,
+  GetConversationResponse,
   UpdateConversationRequest,
-  MarkReadResponse,
-  UpdateNotifyLevelResponse,
-  AddMembersResponse,
-  UpdateMemberRoleResponse,
+  UpdateConversationResponse,
+  UpdateConversationSettingsRequest,
   UpdateConversationSettingsResponse,
-  ConversationSettings,
-  NotifyLevel,
-  MemberRole,
+  AddMembersRequest,
+  AddMembersResponse,
+  RemoveMemberRequest,
+  UpdateMemberRoleRequest,
+  UpdateMemberRoleResponse,
+  MarkReadRequest,
+  MarkReadResponse,
+  UpdateNotifyLevelRequest,
+  UpdateNotifyLevelResponse,
 
   // Messages
-  MessageContent,
+  SendMessageRequest,
   SendMessageResponse,
   ListMessagesRequest,
   ListMessagesResponse,
-  MessageRecord,
+  GetMessageRequest,
+  GetMessageResponse,
+  EditMessageRequest,
   EditMessageResponse,
+  DeleteMessageRequest,
 
   // Media
-  UploadUrlResponse,
-  DownloadUrlResponse,
-  ArtifactType,
+  GetUploadUrlRequest,
+  GetUploadUrlResponse,
+  UploadFileRequest,
+  UploadFileResponse,
+  UploadAvatarRequest,
+  UploadAvatarResponse,
+  GetDownloadUrlRequest,
+  GetDownloadUrlResponse,
 
   // Agent Settings
-  AgentSettings,
-  AgentSettingsResponse,
-  UpdateAgentProfileResponse,
-
-  // Pagination
-  PaginationParams,
+  GetMySettingsRequest,
+  GetMySettingsResponse,
+  UpdateMySettingsRequest,
+  UpdateMySettingsResponse,
+  UpdateMyProfileRequest,
+  UpdateMyProfileResponse,
 } from './types.js';
 
 /**
@@ -72,7 +112,7 @@ import type {
  *   tokenProvider: auth.tokenProvider,
  * });
  *
- * const me = await client.getMe();
+ * const me = await client.getMe({});
  * ```
  */
 export class NewioClient {
@@ -88,18 +128,18 @@ export class NewioClient {
   // ---------------------------------------------------------------------------
 
   /** Get the authenticated agent's profile. */
-  async getMe(): Promise<UserProfile> {
+  async getMe(_input: GetMeRequest): Promise<GetMeResponse> {
     return this.http.request('/users/me');
   }
 
   /** Update the authenticated agent's profile. */
-  async updateMe(input: UpdateProfileRequest): Promise<UserProfile> {
+  async updateMe(input: UpdateMeRequest): Promise<UpdateMeResponse> {
     return this.http.request('/users/me', { method: 'PUT', body: JSON.stringify(input) });
   }
 
   /** Check if a username is available. */
-  async checkUsernameAvailability(username: string): Promise<UsernameAvailabilityResponse> {
-    return this.http.request(`/users/username-available/${encodeURIComponent(username)}`);
+  async checkUsernameAvailability(input: CheckUsernameAvailabilityRequest): Promise<CheckUsernameAvailabilityResponse> {
+    return this.http.request(`/users/username-available/${encodeURIComponent(input.username)}`);
   }
 
   // ---------------------------------------------------------------------------
@@ -107,29 +147,32 @@ export class NewioClient {
   // ---------------------------------------------------------------------------
 
   /** Look up a user by their username. */
-  async getUserByUsername(username: string): Promise<UserProfile> {
-    return this.http.request(`/users/by-username/${encodeURIComponent(username)}`);
+  async getUserByUsername(input: GetUserByUsernameRequest): Promise<GetUserByUsernameResponse> {
+    return this.http.request(`/users/by-username/${encodeURIComponent(input.username)}`);
   }
 
   /** Get a user's public profile by ID. */
-  async getUser(userId: string): Promise<UserProfile> {
-    return this.http.request(`/users/${encodeURIComponent(userId)}`);
+  async getUser(input: GetUserRequest): Promise<GetUserResponse> {
+    return this.http.request(`/users/${encodeURIComponent(input.userId)}`);
   }
 
   /** Search users by name or username. */
-  async searchUsers(query: string): Promise<SearchUsersResponse> {
-    return this.http.request(`/users${this.http.qs({ search: query })}`);
+  async searchUsers(input: SearchUsersRequest): Promise<SearchUsersResponse> {
+    return this.http.request(`/users${this.http.qs({ search: input.query })}`);
   }
 
   /** Batch get user summaries by IDs (max 25). */
-  async getUserSummaries(userIds: readonly string[]): Promise<UserSummariesResponse> {
-    return this.http.request('/users/batch', { method: 'POST', body: JSON.stringify({ userIds }) });
+  async getUserSummaries(input: GetUserSummariesRequest): Promise<GetUserSummariesResponse> {
+    return this.http.request('/users/batch', {
+      method: 'POST',
+      body: JSON.stringify({ userIds: input.userIds }),
+    });
   }
 
   /** List a user's public agents. */
-  async getUserAgents(userId: string, params?: PaginationParams): Promise<UserAgentsResponse> {
+  async getUserAgents(input: GetUserAgentsRequest): Promise<GetUserAgentsResponse> {
     return this.http.request(
-      `/users/${encodeURIComponent(userId)}/agents${this.http.qs({ limit: params?.limit, cursor: params?.cursor })}`,
+      `/users/${encodeURIComponent(input.userId)}/agents${this.http.qs({ limit: input.limit, cursor: input.cursor })}`,
     );
   }
 
@@ -138,64 +181,66 @@ export class NewioClient {
   // ---------------------------------------------------------------------------
 
   /** List friends. */
-  async listFriends(params?: PaginationParams): Promise<ListFriendsResponse> {
-    return this.http.request(`/contacts${this.http.qs({ cursor: params?.cursor, limit: params?.limit })}`);
+  async listFriends(input: ListFriendsRequest): Promise<ListFriendsResponse> {
+    return this.http.request(`/contacts${this.http.qs({ cursor: input.cursor, limit: input.limit })}`);
   }
 
   /** Send a friend request by user ID. */
-  async sendFriendRequest(contactId: string, note?: string): Promise<SendFriendRequestResponse> {
+  async sendFriendRequest(input: SendFriendRequestRequest): Promise<SendFriendRequestResponse> {
     return this.http.request('/contacts/requests', {
       method: 'POST',
-      body: JSON.stringify({ contactId, note }),
+      body: JSON.stringify({ contactId: input.contactId, note: input.note }),
     });
   }
 
   /** Send a friend request by username (resolves username to ID first). */
-  async sendFriendRequestByUsername(username: string, note?: string): Promise<SendFriendRequestResponse> {
-    const user = await this.getUserByUsername(username);
-    return this.sendFriendRequest(user.userId, note);
+  async sendFriendRequestByUsername(input: SendFriendRequestByUsernameRequest): Promise<SendFriendRequestResponse> {
+    const user = await this.getUserByUsername({ username: input.username });
+    return this.sendFriendRequest({ contactId: user.userId, note: input.note });
   }
 
   /** List incoming friend requests. */
-  async listIncomingRequests(params?: PaginationParams): Promise<ListIncomingRequestsResponse> {
-    return this.http.request(`/contacts/requests${this.http.qs({ cursor: params?.cursor, limit: params?.limit })}`);
+  async listIncomingRequests(input: ListIncomingRequestsRequest): Promise<ListIncomingRequestsResponse> {
+    return this.http.request(`/contacts/requests${this.http.qs({ cursor: input.cursor, limit: input.limit })}`);
   }
 
   /** List outgoing friend requests. */
-  async listOutgoingRequests(params?: PaginationParams): Promise<ListOutgoingRequestsResponse> {
+  async listOutgoingRequests(input: ListOutgoingRequestsRequest): Promise<ListOutgoingRequestsResponse> {
     return this.http.request(
-      `/contacts/requests/outgoing${this.http.qs({ cursor: params?.cursor, limit: params?.limit })}`,
+      `/contacts/requests/outgoing${this.http.qs({ cursor: input.cursor, limit: input.limit })}`,
     );
   }
 
   /** Revoke an outgoing friend request. */
-  async revokeOutgoingRequest(contactId: string): Promise<void> {
-    return this.http.requestNoContent(`/contacts/requests/outgoing/${encodeURIComponent(contactId)}`, {
+  async revokeOutgoingRequest(input: RevokeOutgoingRequestRequest): Promise<void> {
+    return this.http.requestNoContent(`/contacts/requests/outgoing/${encodeURIComponent(input.contactId)}`, {
       method: 'DELETE',
     });
   }
 
   /** Accept a friend request. */
-  async acceptFriendRequest(requestId: string): Promise<AcceptFriendRequestResponse> {
-    return this.http.request(`/contacts/requests/${encodeURIComponent(requestId)}/accept`, { method: 'POST' });
+  async acceptFriendRequest(input: AcceptFriendRequestRequest): Promise<AcceptFriendRequestResponse> {
+    return this.http.request(`/contacts/requests/${encodeURIComponent(input.requestId)}/accept`, { method: 'POST' });
   }
 
   /** Reject a friend request. */
-  async rejectFriendRequest(requestId: string): Promise<void> {
-    return this.http.requestNoContent(`/contacts/requests/${encodeURIComponent(requestId)}/reject`, { method: 'POST' });
+  async rejectFriendRequest(input: RejectFriendRequestRequest): Promise<void> {
+    return this.http.requestNoContent(`/contacts/requests/${encodeURIComponent(input.requestId)}/reject`, {
+      method: 'POST',
+    });
   }
 
   /** Update a friend's custom display name. */
-  async updateFriendName(contactId: string, friendName: string): Promise<UpdateFriendNameResponse> {
-    return this.http.request(`/contacts/${encodeURIComponent(contactId)}`, {
+  async updateFriendName(input: UpdateFriendNameRequest): Promise<UpdateFriendNameResponse> {
+    return this.http.request(`/contacts/${encodeURIComponent(input.contactId)}`, {
       method: 'PUT',
-      body: JSON.stringify({ friendName }),
+      body: JSON.stringify({ friendName: input.friendName }),
     });
   }
 
   /** Remove a friend. */
-  async removeFriend(userId: string): Promise<void> {
-    return this.http.requestNoContent(`/contacts/${encodeURIComponent(userId)}`, { method: 'DELETE' });
+  async removeFriend(input: RemoveFriendRequest): Promise<void> {
+    return this.http.requestNoContent(`/contacts/${encodeURIComponent(input.userId)}`, { method: 'DELETE' });
   }
 
   // ---------------------------------------------------------------------------
@@ -203,17 +248,17 @@ export class NewioClient {
   // ---------------------------------------------------------------------------
 
   /** Block a user. */
-  async blockUser(userId: string): Promise<BlockRecord> {
-    return this.http.request(`/blocks/${encodeURIComponent(userId)}`, { method: 'POST' });
+  async blockUser(input: BlockUserRequest): Promise<BlockUserResponse> {
+    return this.http.request(`/blocks/${encodeURIComponent(input.userId)}`, { method: 'POST' });
   }
 
   /** Unblock a user. */
-  async unblockUser(userId: string): Promise<void> {
-    return this.http.requestNoContent(`/blocks/${encodeURIComponent(userId)}`, { method: 'DELETE' });
+  async unblockUser(input: UnblockUserRequest): Promise<void> {
+    return this.http.requestNoContent(`/blocks/${encodeURIComponent(input.userId)}`, { method: 'DELETE' });
   }
 
   /** List blocked users. */
-  async listBlocks(): Promise<ListBlocksResponse> {
+  async listBlocks(_input: ListBlocksRequest): Promise<ListBlocksResponse> {
     return this.http.request('/blocks');
   }
 
@@ -222,87 +267,87 @@ export class NewioClient {
   // ---------------------------------------------------------------------------
 
   /** Create a conversation. */
-  async createConversation(input: CreateConversationRequest): Promise<ConversationResponse> {
+  async createConversation(input: CreateConversationRequest): Promise<CreateConversationResponse> {
     return this.http.request('/conversations', { method: 'POST', body: JSON.stringify(input) });
   }
 
-  /** Create a DM with a user by ID (idempotent — returns existing if one exists). */
-  async createDm(userId: string): Promise<ConversationResponse> {
-    return this.createConversation({ type: 'dm', memberIds: [userId] });
+  /** Create a DM with a user by ID (idempotent). */
+  async createDm(input: CreateDmRequest): Promise<CreateConversationResponse> {
+    return this.createConversation({ type: 'dm', memberIds: [input.userId] });
   }
 
   /** Create a DM by username (resolves username to ID first). */
-  async createDmByUsername(username: string): Promise<ConversationResponse> {
-    const user = await this.getUserByUsername(username);
-    return this.createDm(user.userId);
+  async createDmByUsername(input: CreateDmByUsernameRequest): Promise<CreateConversationResponse> {
+    const user = await this.getUserByUsername({ username: input.username });
+    return this.createDm({ userId: user.userId });
   }
 
   /** List conversations (paginated, sorted by last message). */
-  async listConversations(params?: PaginationParams): Promise<ListConversationsResponse> {
-    return this.http.request(`/conversations${this.http.qs({ cursor: params?.cursor, limit: params?.limit })}`);
+  async listConversations(input: ListConversationsRequest): Promise<ListConversationsResponse> {
+    return this.http.request(`/conversations${this.http.qs({ cursor: input.cursor, limit: input.limit })}`);
   }
 
   /** Get conversation details and members. */
-  async getConversation(conversationId: string): Promise<ConversationResponse> {
-    return this.http.request(`/conversations/${encodeURIComponent(conversationId)}`);
+  async getConversation(input: GetConversationRequest): Promise<GetConversationResponse> {
+    return this.http.request(`/conversations/${encodeURIComponent(input.conversationId)}`);
   }
 
   /** Update a conversation (name, description, avatar, type conversion). */
-  async updateConversation(conversationId: string, input: UpdateConversationRequest): Promise<ConversationResponse> {
+  async updateConversation(input: UpdateConversationRequest): Promise<UpdateConversationResponse> {
+    const { conversationId, ...body } = input;
     return this.http.request(`/conversations/${encodeURIComponent(conversationId)}`, {
       method: 'PUT',
-      body: JSON.stringify(input),
+      body: JSON.stringify(body),
     });
   }
 
   /** Update group conversation settings. */
   async updateConversationSettings(
-    conversationId: string,
-    settings: ConversationSettings,
+    input: UpdateConversationSettingsRequest,
   ): Promise<UpdateConversationSettingsResponse> {
-    return this.http.request(`/conversations/${encodeURIComponent(conversationId)}/settings`, {
+    return this.http.request(`/conversations/${encodeURIComponent(input.conversationId)}/settings`, {
       method: 'PUT',
-      body: JSON.stringify(settings),
+      body: JSON.stringify(input.settings),
     });
   }
 
   /** Add members to a conversation. */
-  async addMembers(conversationId: string, memberIds: readonly string[]): Promise<AddMembersResponse> {
-    return this.http.request(`/conversations/${encodeURIComponent(conversationId)}/members`, {
+  async addMembers(input: AddMembersRequest): Promise<AddMembersResponse> {
+    return this.http.request(`/conversations/${encodeURIComponent(input.conversationId)}/members`, {
       method: 'POST',
-      body: JSON.stringify({ memberIds }),
+      body: JSON.stringify({ memberIds: input.memberIds }),
     });
   }
 
   /** Remove a member from a conversation. */
-  async removeMember(conversationId: string, userId: string): Promise<void> {
+  async removeMember(input: RemoveMemberRequest): Promise<void> {
     return this.http.requestNoContent(
-      `/conversations/${encodeURIComponent(conversationId)}/members/${encodeURIComponent(userId)}`,
+      `/conversations/${encodeURIComponent(input.conversationId)}/members/${encodeURIComponent(input.userId)}`,
       { method: 'DELETE' },
     );
   }
 
   /** Update a member's role (admin/member). */
-  async updateMemberRole(conversationId: string, userId: string, role: MemberRole): Promise<UpdateMemberRoleResponse> {
+  async updateMemberRole(input: UpdateMemberRoleRequest): Promise<UpdateMemberRoleResponse> {
     return this.http.request(
-      `/conversations/${encodeURIComponent(conversationId)}/members/${encodeURIComponent(userId)}`,
-      { method: 'PUT', body: JSON.stringify({ role }) },
+      `/conversations/${encodeURIComponent(input.conversationId)}/members/${encodeURIComponent(input.userId)}`,
+      { method: 'PUT', body: JSON.stringify({ role: input.role }) },
     );
   }
 
   /** Mark a conversation as read up to a timestamp. */
-  async markRead(conversationId: string, readUntil: string): Promise<MarkReadResponse> {
-    return this.http.request(`/conversations/${encodeURIComponent(conversationId)}/read`, {
+  async markRead(input: MarkReadRequest): Promise<MarkReadResponse> {
+    return this.http.request(`/conversations/${encodeURIComponent(input.conversationId)}/read`, {
       method: 'PUT',
-      body: JSON.stringify({ readUntil }),
+      body: JSON.stringify({ readUntil: input.readUntil }),
     });
   }
 
   /** Update per-conversation notification level. */
-  async updateNotifyLevel(conversationId: string, notifyLevel: NotifyLevel): Promise<UpdateNotifyLevelResponse> {
-    return this.http.request(`/conversations/${encodeURIComponent(conversationId)}/notify-level`, {
+  async updateNotifyLevel(input: UpdateNotifyLevelRequest): Promise<UpdateNotifyLevelResponse> {
+    return this.http.request(`/conversations/${encodeURIComponent(input.conversationId)}/notify-level`, {
       method: 'PUT',
-      body: JSON.stringify({ notifyLevel }),
+      body: JSON.stringify({ notifyLevel: input.notifyLevel }),
     });
   }
 
@@ -310,49 +355,47 @@ export class NewioClient {
   // Messages
   // ---------------------------------------------------------------------------
 
-  /**
-   * Send a message. The SDK auto-manages `sequenceNumber` per conversation.
-   */
-  async sendMessage(conversationId: string, content: MessageContent): Promise<SendMessageResponse> {
-    const seq = (this.sequenceNumbers.get(conversationId) ?? 0) + 1;
-    this.sequenceNumbers.set(conversationId, seq);
-    return this.http.request(`/conversations/${encodeURIComponent(conversationId)}/messages`, {
+  /** Send a message. The SDK auto-manages `sequenceNumber` per conversation. */
+  async sendMessage(input: SendMessageRequest): Promise<SendMessageResponse> {
+    const seq = (this.sequenceNumbers.get(input.conversationId) ?? 0) + 1;
+    this.sequenceNumbers.set(input.conversationId, seq);
+    return this.http.request(`/conversations/${encodeURIComponent(input.conversationId)}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ content, sequenceNumber: seq }),
+      body: JSON.stringify({ content: input.content, sequenceNumber: seq }),
     });
   }
 
   /** List messages in a conversation (paginated). */
-  async listMessages(conversationId: string, params?: ListMessagesRequest): Promise<ListMessagesResponse> {
+  async listMessages(input: ListMessagesRequest): Promise<ListMessagesResponse> {
     return this.http.request(
-      `/conversations/${encodeURIComponent(conversationId)}/messages${this.http.qs({
-        cursor: params?.cursor,
-        limit: params?.limit,
-        afterMessageId: params?.afterMessageId,
-        beforeMessageId: params?.beforeMessageId,
+      `/conversations/${encodeURIComponent(input.conversationId)}/messages${this.http.qs({
+        cursor: input.cursor,
+        limit: input.limit,
+        afterMessageId: input.afterMessageId,
+        beforeMessageId: input.beforeMessageId,
       })}`,
     );
   }
 
   /** Get a single message. */
-  async getMessage(conversationId: string, messageId: string): Promise<MessageRecord> {
+  async getMessage(input: GetMessageRequest): Promise<GetMessageResponse> {
     return this.http.request(
-      `/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}`,
+      `/conversations/${encodeURIComponent(input.conversationId)}/messages/${encodeURIComponent(input.messageId)}`,
     );
   }
 
   /** Edit a message. */
-  async editMessage(conversationId: string, messageId: string, content: MessageContent): Promise<EditMessageResponse> {
+  async editMessage(input: EditMessageRequest): Promise<EditMessageResponse> {
     return this.http.request(
-      `/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}`,
-      { method: 'PUT', body: JSON.stringify({ content }) },
+      `/conversations/${encodeURIComponent(input.conversationId)}/messages/${encodeURIComponent(input.messageId)}`,
+      { method: 'PUT', body: JSON.stringify({ content: input.content }) },
     );
   }
 
   /** Delete (revoke) a message. */
-  async deleteMessage(conversationId: string, messageId: string): Promise<void> {
+  async deleteMessage(input: DeleteMessageRequest): Promise<void> {
     return this.http.requestNoContent(
-      `/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}`,
+      `/conversations/${encodeURIComponent(input.conversationId)}/messages/${encodeURIComponent(input.messageId)}`,
       { method: 'DELETE' },
     );
   }
@@ -362,53 +405,37 @@ export class NewioClient {
   // ---------------------------------------------------------------------------
 
   /** Get a presigned upload URL. */
-  async getUploadUrl(fileName: string, contentType: string, artifactType: ArtifactType): Promise<UploadUrlResponse> {
-    return this.http.request('/media/upload-url', {
-      method: 'POST',
-      body: JSON.stringify({ fileName, contentType, artifactType }),
-    });
+  async getUploadUrl(input: GetUploadUrlRequest): Promise<GetUploadUrlResponse> {
+    return this.http.request('/media/upload-url', { method: 'POST', body: JSON.stringify(input) });
   }
 
-  /**
-   * Upload a file to a conversation. Handles presigned URL generation and S3 upload.
-   * Returns the s3Key for use in message attachments.
-   */
-  async uploadFile(fileName: string, contentType: string, body: Blob | ArrayBuffer): Promise<{ s3Key: string }> {
-    const { uploadUrl, fields, s3Key } = await this.getUploadUrl(fileName, contentType, 'media');
-    const form = new FormData();
-    for (const [key, value] of Object.entries(fields)) {
-      form.append(key, value);
-    }
-    form.append('file', new Blob([body], { type: contentType }), fileName);
-    const res = await fetch(uploadUrl, { method: 'POST', body: form });
-    if (!res.ok) {
-      throw new Error(`S3 upload failed: ${res.status}`);
-    }
+  /** Upload a file. Handles presigned URL generation and S3 upload. */
+  async uploadFile(input: UploadFileRequest): Promise<UploadFileResponse> {
+    const { uploadUrl, fields, s3Key } = await this.getUploadUrl({
+      fileName: input.fileName,
+      contentType: input.contentType,
+      artifactType: 'media',
+    });
+    await this.doS3Upload(uploadUrl, fields, input.body, input.contentType, input.fileName);
     return { s3Key };
   }
 
-  /**
-   * Upload an avatar image. Returns the s3Key.
-   */
-  async uploadAvatar(fileName: string, contentType: string, body: Blob | ArrayBuffer): Promise<{ s3Key: string }> {
-    const { uploadUrl, fields, s3Key } = await this.getUploadUrl(fileName, contentType, 'avatars');
-    const form = new FormData();
-    for (const [key, value] of Object.entries(fields)) {
-      form.append(key, value);
-    }
-    form.append('file', new Blob([body], { type: contentType }), fileName);
-    const res = await fetch(uploadUrl, { method: 'POST', body: form });
-    if (!res.ok) {
-      throw new Error(`S3 upload failed: ${res.status}`);
-    }
+  /** Upload an avatar image. */
+  async uploadAvatar(input: UploadAvatarRequest): Promise<UploadAvatarResponse> {
+    const { uploadUrl, fields, s3Key } = await this.getUploadUrl({
+      fileName: input.fileName,
+      contentType: input.contentType,
+      artifactType: 'avatars',
+    });
+    await this.doS3Upload(uploadUrl, fields, input.body, input.contentType, input.fileName);
     return { s3Key };
   }
 
   /** Get a signed download URL for a media file. */
-  async getDownloadUrl(conversationId: string, s3Key: string): Promise<DownloadUrlResponse> {
+  async getDownloadUrl(input: GetDownloadUrlRequest): Promise<GetDownloadUrlResponse> {
     return this.http.request('/media/download-url', {
       method: 'POST',
-      body: JSON.stringify({ conversationId, s3Key }),
+      body: JSON.stringify({ conversationId: input.conversationId, s3Key: input.s3Key }),
     });
   }
 
@@ -416,27 +443,47 @@ export class NewioClient {
   // Agent Settings
   // ---------------------------------------------------------------------------
 
-  /** Get the authenticated agent's settings. Requires the agent's own ID. */
-  async getMySettings(agentId: string): Promise<AgentSettingsResponse> {
-    return this.http.request(`/agents/${encodeURIComponent(agentId)}/settings`);
+  /** Get the authenticated agent's settings. */
+  async getMySettings(input: GetMySettingsRequest): Promise<GetMySettingsResponse> {
+    return this.http.request(`/agents/${encodeURIComponent(input.agentId)}/settings`);
   }
 
   /** Update the authenticated agent's settings. */
-  async updateMySettings(agentId: string, settings: Partial<AgentSettings>): Promise<AgentSettingsResponse> {
-    return this.http.request(`/agents/${encodeURIComponent(agentId)}/settings`, {
+  async updateMySettings(input: UpdateMySettingsRequest): Promise<UpdateMySettingsResponse> {
+    return this.http.request(`/agents/${encodeURIComponent(input.agentId)}/settings`, {
       method: 'PUT',
-      body: JSON.stringify(settings),
+      body: JSON.stringify(input.settings),
     });
   }
 
-  /** Update the authenticated agent's profile (displayName, avatarUrl, bio). */
-  async updateMyProfile(
-    agentId: string,
-    input: { displayName?: string; avatarUrl?: string; bio?: string },
-  ): Promise<UpdateAgentProfileResponse> {
+  /** Update the authenticated agent's profile. */
+  async updateMyProfile(input: UpdateMyProfileRequest): Promise<UpdateMyProfileResponse> {
+    const { agentId, ...body } = input;
     return this.http.request(`/agents/${encodeURIComponent(agentId)}/profile`, {
       method: 'PUT',
-      body: JSON.stringify(input),
+      body: JSON.stringify(body),
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Internal
+  // ---------------------------------------------------------------------------
+
+  private async doS3Upload(
+    uploadUrl: string,
+    fields: Record<string, string>,
+    body: Blob | ArrayBuffer,
+    contentType: string,
+    fileName: string,
+  ): Promise<void> {
+    const form = new FormData();
+    for (const [key, value] of Object.entries(fields)) {
+      form.append(key, value);
+    }
+    form.append('file', new Blob([body], { type: contentType }), fileName);
+    const res = await fetch(uploadUrl, { method: 'POST', body: form });
+    if (!res.ok) {
+      throw new Error(`S3 upload failed: ${res.status}`);
+    }
   }
 }

@@ -27,7 +27,7 @@ export type ContactStatus = 'pending' | 'accepted';
 export type NotifyLevel = 'all' | 'mentions' | 'nothing';
 
 // ---------------------------------------------------------------------------
-// Domain Records
+// Domain Records (shared nested types — no Request/Response suffix)
 // ---------------------------------------------------------------------------
 
 /** A contact (friend) record. */
@@ -150,8 +150,20 @@ export interface AgentSummary {
   readonly createdAt: string;
 }
 
+/** Conversation detail (returned by get/create/update). */
+export interface ConversationDetail {
+  readonly conversationId: string;
+  readonly type: ConversationType;
+  readonly name?: string;
+  readonly description?: string;
+  readonly avatarUrl?: string;
+  readonly settings?: ConversationSettings;
+  readonly createdAt: string;
+  readonly lastMessageAt?: string;
+}
+
 // ---------------------------------------------------------------------------
-// Auth
+// Auth — Request / Response
 // ---------------------------------------------------------------------------
 
 export interface RegisterRequest {
@@ -188,44 +200,136 @@ export interface RefreshResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Users
+// Users — Request / Response
 // ---------------------------------------------------------------------------
 
-export interface UpdateProfileRequest {
+export interface GetMeRequest {}
+
+export interface GetMeResponse {
+  readonly userId: string;
+  readonly displayName?: string;
+  readonly username?: string;
+  readonly avatarUrl?: string;
+  readonly bio?: string;
+  readonly accountType: AccountType;
+  readonly ownerId?: string;
+  readonly createdAt: string;
+}
+
+export interface UpdateMeRequest {
   readonly displayName?: string;
   readonly avatarUrl?: string;
   readonly username?: string;
   readonly bio?: string;
 }
 
-export interface UsernameAvailabilityResponse {
+export interface UpdateMeResponse {
+  readonly userId: string;
+  readonly displayName?: string;
+  readonly username?: string;
+  readonly avatarUrl?: string;
+  readonly bio?: string;
+  readonly accountType: AccountType;
+  readonly ownerId?: string;
+  readonly createdAt: string;
+}
+
+export interface CheckUsernameAvailabilityRequest {
+  readonly username: string;
+}
+
+export interface CheckUsernameAvailabilityResponse {
   readonly available: boolean;
+}
+
+export interface GetUserByUsernameRequest {
+  readonly username: string;
+}
+
+export interface GetUserByUsernameResponse {
+  readonly userId: string;
+  readonly displayName?: string;
+  readonly username?: string;
+  readonly avatarUrl?: string;
+  readonly bio?: string;
+  readonly accountType: AccountType;
+  readonly ownerId?: string;
+  readonly createdAt: string;
+}
+
+export interface GetUserRequest {
+  readonly userId: string;
+}
+
+export interface GetUserResponse {
+  readonly userId: string;
+  readonly displayName?: string;
+  readonly username?: string;
+  readonly avatarUrl?: string;
+  readonly bio?: string;
+  readonly accountType: AccountType;
+  readonly ownerId?: string;
+  readonly createdAt: string;
+}
+
+export interface SearchUsersRequest {
+  readonly query: string;
 }
 
 export interface SearchUsersResponse {
   readonly users: readonly UserProfile[];
 }
 
-export interface UserSummariesResponse {
+export interface GetUserSummariesRequest {
+  readonly userIds: readonly string[];
+}
+
+export interface GetUserSummariesResponse {
   readonly users: readonly UserProfile[];
 }
 
-export interface UserAgentsResponse {
+export interface GetUserAgentsRequest {
+  readonly userId: string;
+  readonly cursor?: string;
+  readonly limit?: number;
+}
+
+export interface GetUserAgentsResponse {
   readonly agents: readonly AgentSummary[];
   readonly cursor?: string;
 }
 
 // ---------------------------------------------------------------------------
-// Contacts
+// Contacts — Request / Response
 // ---------------------------------------------------------------------------
+
+export interface ListFriendsRequest {
+  readonly cursor?: string;
+  readonly limit?: number;
+}
 
 export interface ListFriendsResponse {
   readonly contacts: readonly ContactRecord[];
   readonly cursor?: string;
 }
 
+export interface SendFriendRequestRequest {
+  readonly contactId: string;
+  readonly note?: string;
+}
+
 export interface SendFriendRequestResponse {
   readonly contact: ContactRecord;
+}
+
+export interface SendFriendRequestByUsernameRequest {
+  readonly username: string;
+  readonly note?: string;
+}
+
+export interface ListIncomingRequestsRequest {
+  readonly cursor?: string;
+  readonly limit?: number;
 }
 
 export interface ListIncomingRequestsResponse {
@@ -233,29 +337,71 @@ export interface ListIncomingRequestsResponse {
   readonly cursor?: string;
 }
 
+export interface ListOutgoingRequestsRequest {
+  readonly cursor?: string;
+  readonly limit?: number;
+}
+
 export interface ListOutgoingRequestsResponse {
   readonly requests: readonly ContactRecord[];
   readonly cursor?: string;
+}
+
+export interface RevokeOutgoingRequestRequest {
+  readonly contactId: string;
+}
+
+export interface AcceptFriendRequestRequest {
+  readonly requestId: string;
 }
 
 export interface AcceptFriendRequestResponse {
   readonly contact: ContactRecord;
 }
 
+export interface RejectFriendRequestRequest {
+  readonly requestId: string;
+}
+
+export interface UpdateFriendNameRequest {
+  readonly contactId: string;
+  readonly friendName: string;
+}
+
 export interface UpdateFriendNameResponse {
   readonly contact: ContactRecord;
 }
 
+export interface RemoveFriendRequest {
+  readonly userId: string;
+}
+
 // ---------------------------------------------------------------------------
-// Blocks
+// Blocks — Request / Response
 // ---------------------------------------------------------------------------
+
+export interface BlockUserRequest {
+  readonly userId: string;
+}
+
+export interface BlockUserResponse {
+  readonly userId: string;
+  readonly blockedUserId: string;
+  readonly createdAt: string;
+}
+
+export interface UnblockUserRequest {
+  readonly userId: string;
+}
+
+export interface ListBlocksRequest {}
 
 export interface ListBlocksResponse {
   readonly blocks: readonly BlockRecord[];
 }
 
 // ---------------------------------------------------------------------------
-// Conversations
+// Conversations — Request / Response
 // ---------------------------------------------------------------------------
 
 export interface CreateConversationRequest {
@@ -266,18 +412,22 @@ export interface CreateConversationRequest {
   readonly memberIds: readonly string[];
 }
 
-export interface ConversationResponse {
-  readonly conversation: {
-    readonly conversationId: string;
-    readonly type: ConversationType;
-    readonly name?: string;
-    readonly description?: string;
-    readonly avatarUrl?: string;
-    readonly settings?: ConversationSettings;
-    readonly createdAt: string;
-    readonly lastMessageAt?: string;
-  };
+export interface CreateConversationResponse {
+  readonly conversation: ConversationDetail;
   readonly members: readonly MemberRecord[];
+}
+
+export interface CreateDmRequest {
+  readonly userId: string;
+}
+
+export interface CreateDmByUsernameRequest {
+  readonly username: string;
+}
+
+export interface ListConversationsRequest {
+  readonly cursor?: string;
+  readonly limit?: number;
 }
 
 export interface ListConversationsResponse {
@@ -285,42 +435,94 @@ export interface ListConversationsResponse {
   readonly cursor?: string;
 }
 
+export interface GetConversationRequest {
+  readonly conversationId: string;
+}
+
+export interface GetConversationResponse {
+  readonly conversation: ConversationDetail;
+  readonly members: readonly MemberRecord[];
+}
+
 export interface UpdateConversationRequest {
+  readonly conversationId: string;
   readonly name?: string;
   readonly description?: string;
   readonly avatarUrl?: string;
   readonly type?: ConversationType;
 }
 
-export interface MarkReadResponse {
-  readonly readUntil: string;
-}
-
-export interface UpdateNotifyLevelResponse {
-  readonly notifyLevel: NotifyLevel;
-}
-
-export interface AddMembersResponse {
+export interface UpdateConversationResponse {
+  readonly conversation: ConversationDetail;
   readonly members: readonly MemberRecord[];
 }
 
-export interface UpdateMemberRoleResponse {
-  readonly member: MemberRecord;
+export interface UpdateConversationSettingsRequest {
+  readonly conversationId: string;
+  readonly settings: ConversationSettings;
 }
 
 export interface UpdateConversationSettingsResponse {
   readonly settings: ConversationSettings;
 }
 
+export interface AddMembersRequest {
+  readonly conversationId: string;
+  readonly memberIds: readonly string[];
+}
+
+export interface AddMembersResponse {
+  readonly members: readonly MemberRecord[];
+}
+
+export interface RemoveMemberRequest {
+  readonly conversationId: string;
+  readonly userId: string;
+}
+
+export interface UpdateMemberRoleRequest {
+  readonly conversationId: string;
+  readonly userId: string;
+  readonly role: MemberRole;
+}
+
+export interface UpdateMemberRoleResponse {
+  readonly member: MemberRecord;
+}
+
+export interface MarkReadRequest {
+  readonly conversationId: string;
+  readonly readUntil: string;
+}
+
+export interface MarkReadResponse {
+  readonly readUntil: string;
+}
+
+export interface UpdateNotifyLevelRequest {
+  readonly conversationId: string;
+  readonly notifyLevel: NotifyLevel;
+}
+
+export interface UpdateNotifyLevelResponse {
+  readonly notifyLevel: NotifyLevel;
+}
+
 // ---------------------------------------------------------------------------
-// Messages
+// Messages — Request / Response
 // ---------------------------------------------------------------------------
+
+export interface SendMessageRequest {
+  readonly conversationId: string;
+  readonly content: MessageContent;
+}
 
 export interface SendMessageResponse {
   readonly message: MessageRecord;
 }
 
 export interface ListMessagesRequest {
+  readonly conversationId: string;
   readonly cursor?: string;
   readonly limit?: number;
   readonly afterMessageId?: string;
@@ -332,45 +534,108 @@ export interface ListMessagesResponse {
   readonly cursor?: string;
 }
 
+export interface GetMessageRequest {
+  readonly conversationId: string;
+  readonly messageId: string;
+}
+
+export interface GetMessageResponse {
+  readonly message: MessageRecord;
+}
+
+export interface EditMessageRequest {
+  readonly conversationId: string;
+  readonly messageId: string;
+  readonly content: MessageContent;
+}
+
 export interface EditMessageResponse {
   readonly message: MessageRecord;
 }
 
+export interface DeleteMessageRequest {
+  readonly conversationId: string;
+  readonly messageId: string;
+}
+
 // ---------------------------------------------------------------------------
-// Media
+// Media — Request / Response
 // ---------------------------------------------------------------------------
 
-export interface UploadUrlResponse {
+export interface GetUploadUrlRequest {
+  readonly fileName: string;
+  readonly contentType: string;
+  readonly artifactType: ArtifactType;
+}
+
+export interface GetUploadUrlResponse {
   readonly uploadUrl: string;
   readonly fields: Record<string, string>;
   readonly s3Key: string;
 }
 
-export interface DownloadUrlResponse {
+export interface UploadFileRequest {
+  readonly fileName: string;
+  readonly contentType: string;
+  readonly body: Blob | ArrayBuffer;
+}
+
+export interface UploadFileResponse {
+  readonly s3Key: string;
+}
+
+export interface UploadAvatarRequest {
+  readonly fileName: string;
+  readonly contentType: string;
+  readonly body: Blob | ArrayBuffer;
+}
+
+export interface UploadAvatarResponse {
+  readonly s3Key: string;
+}
+
+export interface GetDownloadUrlRequest {
+  readonly conversationId: string;
+  readonly s3Key: string;
+}
+
+export interface GetDownloadUrlResponse {
   readonly url: string;
 }
 
 // ---------------------------------------------------------------------------
-// Agent Settings
+// Agent Settings — Request / Response
 // ---------------------------------------------------------------------------
 
-export interface AgentSettingsResponse {
+export interface GetMySettingsRequest {
+  readonly agentId: string;
+}
+
+export interface GetMySettingsResponse {
   readonly agentId: string;
   readonly settings: AgentSettings;
 }
 
-export interface UpdateAgentProfileResponse {
+export interface UpdateMySettingsRequest {
+  readonly agentId: string;
+  readonly settings: Partial<AgentSettings>;
+}
+
+export interface UpdateMySettingsResponse {
+  readonly agentId: string;
+  readonly settings: AgentSettings;
+}
+
+export interface UpdateMyProfileRequest {
   readonly agentId: string;
   readonly displayName?: string;
   readonly avatarUrl?: string;
   readonly bio?: string;
 }
 
-// ---------------------------------------------------------------------------
-// Pagination
-// ---------------------------------------------------------------------------
-
-export interface PaginationParams {
-  readonly cursor?: string;
-  readonly limit?: number;
+export interface UpdateMyProfileResponse {
+  readonly agentId: string;
+  readonly displayName?: string;
+  readonly avatarUrl?: string;
+  readonly bio?: string;
 }

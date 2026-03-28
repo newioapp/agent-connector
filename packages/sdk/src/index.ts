@@ -11,9 +11,8 @@ export type { TokenProvider } from './http.js';
 // Errors
 export { NewioError, ApiError, ApprovalTimeoutError, TokenRefreshError } from './errors.js';
 
-// Types
+// Types — Enums & Literals
 export type {
-  // Enums & Literals
   AccountType,
   ConversationType,
   ArtifactType,
@@ -22,10 +21,13 @@ export type {
   MemberRole,
   ContactStatus,
   NotifyLevel,
+} from './types.js';
 
-  // Domain Records
+// Types — Domain Records (shared nested types)
+export type {
   ContactRecord,
   ConversationListItem,
+  ConversationDetail,
   MemberRecord,
   MessageRecord,
   MessageContent,
@@ -36,60 +38,125 @@ export type {
   ConversationSettings,
   UserProfile,
   AgentSummary,
+} from './types.js';
 
-  // Auth
+// Types — Auth Request / Response
+export type {
   RegisterRequest,
   RegisterResponse,
   LoginRequest,
   LoginResponse,
   PollApprovalStatusResponse,
   RefreshResponse,
+} from './types.js';
 
-  // Users
-  UpdateProfileRequest,
-  UsernameAvailabilityResponse,
+// Types — Users Request / Response
+export type {
+  GetMeRequest,
+  GetMeResponse,
+  UpdateMeRequest,
+  UpdateMeResponse,
+  CheckUsernameAvailabilityRequest,
+  CheckUsernameAvailabilityResponse,
+  GetUserByUsernameRequest,
+  GetUserByUsernameResponse,
+  GetUserRequest,
+  GetUserResponse,
+  SearchUsersRequest,
   SearchUsersResponse,
-  UserSummariesResponse,
-  UserAgentsResponse,
+  GetUserSummariesRequest,
+  GetUserSummariesResponse,
+  GetUserAgentsRequest,
+  GetUserAgentsResponse,
+} from './types.js';
 
-  // Contacts
+// Types — Contacts Request / Response
+export type {
+  ListFriendsRequest,
   ListFriendsResponse,
+  SendFriendRequestRequest,
   SendFriendRequestResponse,
+  SendFriendRequestByUsernameRequest,
+  ListIncomingRequestsRequest,
   ListIncomingRequestsResponse,
+  ListOutgoingRequestsRequest,
   ListOutgoingRequestsResponse,
+  RevokeOutgoingRequestRequest,
+  AcceptFriendRequestRequest,
   AcceptFriendRequestResponse,
+  RejectFriendRequestRequest,
+  UpdateFriendNameRequest,
   UpdateFriendNameResponse,
+  RemoveFriendRequest,
+} from './types.js';
 
-  // Blocks
+// Types — Blocks Request / Response
+export type {
+  BlockUserRequest,
+  BlockUserResponse,
+  UnblockUserRequest,
+  ListBlocksRequest,
   ListBlocksResponse,
+} from './types.js';
 
-  // Conversations
+// Types — Conversations Request / Response
+export type {
   CreateConversationRequest,
-  ConversationResponse,
+  CreateConversationResponse,
+  CreateDmRequest,
+  CreateDmByUsernameRequest,
+  ListConversationsRequest,
   ListConversationsResponse,
+  GetConversationRequest,
+  GetConversationResponse,
   UpdateConversationRequest,
-  MarkReadResponse,
-  UpdateNotifyLevelResponse,
-  AddMembersResponse,
-  UpdateMemberRoleResponse,
+  UpdateConversationResponse,
+  UpdateConversationSettingsRequest,
   UpdateConversationSettingsResponse,
+  AddMembersRequest,
+  AddMembersResponse,
+  RemoveMemberRequest,
+  UpdateMemberRoleRequest,
+  UpdateMemberRoleResponse,
+  MarkReadRequest,
+  MarkReadResponse,
+  UpdateNotifyLevelRequest,
+  UpdateNotifyLevelResponse,
+} from './types.js';
 
-  // Messages
+// Types — Messages Request / Response
+export type {
+  SendMessageRequest,
   SendMessageResponse,
   ListMessagesRequest,
   ListMessagesResponse,
+  GetMessageRequest,
+  GetMessageResponse,
+  EditMessageRequest,
   EditMessageResponse,
+  DeleteMessageRequest,
+} from './types.js';
 
-  // Media
-  UploadUrlResponse,
-  DownloadUrlResponse,
+// Types — Media Request / Response
+export type {
+  GetUploadUrlRequest,
+  GetUploadUrlResponse,
+  UploadFileRequest,
+  UploadFileResponse,
+  UploadAvatarRequest,
+  UploadAvatarResponse,
+  GetDownloadUrlRequest,
+  GetDownloadUrlResponse,
+} from './types.js';
 
-  // Agent Settings
-  AgentSettingsResponse,
-  UpdateAgentProfileResponse,
-
-  // Pagination
-  PaginationParams,
+// Types — Agent Settings Request / Response
+export type {
+  GetMySettingsRequest,
+  GetMySettingsResponse,
+  UpdateMySettingsRequest,
+  UpdateMySettingsResponse,
+  UpdateMyProfileRequest,
+  UpdateMyProfileResponse,
 } from './types.js';
 
 // Events
