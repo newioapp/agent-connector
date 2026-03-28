@@ -1,10 +1,2 @@
 packages:
   - 'packages/*'
-allowBuilds:
-  b: true
-  d: true
-  e: true
-  i: true
-  l: true
-  s: true
-  u: true
