@@ -1,3 +1,6 @@
+// Client
+export { NewioClient } from './client.js';
+
 // Auth
 export { AuthManager, InMemoryTokenStore } from './auth.js';
 export type { TokenStore, ApprovalHandle, WaitForApprovalOptions } from './auth.js';
