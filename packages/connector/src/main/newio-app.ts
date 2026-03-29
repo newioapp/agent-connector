@@ -205,6 +205,15 @@ export class NewioApp {
     });
   }
 
+  /** Send a DM to the agent's owner. No-op if ownerId is not set. */
+  async dmOwner(text: string): Promise<void> {
+    if (!this.identity.ownerId) {
+      return;
+    }
+    const conversationId = await this.findOrCreateDm(this.identity.ownerId);
+    await this.sendMessage(conversationId, text);
+  }
+
   /** Send a DM by username. Creates the DM conversation if it doesn't exist. */
   async sendDm(username: string, text: string): Promise<void> {
     const userId = await this.resolveUsername(username);

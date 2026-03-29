@@ -65,8 +65,7 @@ export class ClaudeInstance extends BaseAgentInstance {
       throw new Error('LLM connection test failed: model returned an empty response');
     }
 
-    const conversationId = await this.app.findOrCreateDm(this.app.identity.ownerId);
-    await this.app.sendMessage(conversationId, response.trim());
+    await this.app.dmOwner(response.trim());
   }
 
   protected onStopped(): void {
