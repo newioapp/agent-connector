@@ -12,6 +12,8 @@ import type { ContactRecord, ConversationListItem, MemberRecord, MessageRecord, 
 import WebSocket from 'ws';
 import { Logger } from '../shared/logger';
 
+const log = new Logger('newio-app');
+
 const API_BASE_URL = 'https://api.conduit.qinnan.dev';
 const WS_URL = 'wss://ws.conduit.qinnan.dev';
 
@@ -61,7 +63,6 @@ export class NewioApp {
   readonly client: NewioClient;
   readonly auth: AuthManager;
   private readonly ws: NewioWebSocket;
-  private readonly log = new Logger('NewioApp');
 
   /** contactId → ContactRecord */
   private readonly contacts = new Map<string, ContactRecord>();
@@ -637,7 +638,7 @@ Response rules:
         cursor = resp.cursor;
       } while (cursor);
     } catch (err) {
-      this.log.error(
+      log.error(
         `Backfill failed for conversation ${conversationId}, rolling back sequence to ${String(rollbackSeq)}`,
         err,
       );

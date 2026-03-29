@@ -12,13 +12,13 @@ import type { IncomingMessage } from '../newio-app';
 import { Logger } from '../../shared/logger';
 
 const SKIP_TOKEN = '_skip';
+const log = new Logger('claude-instance');
 
 // ---------------------------------------------------------------------------
 // ClaudeInstance
 // ---------------------------------------------------------------------------
 
 export class ClaudeInstance extends BaseAgentInstance {
-  private readonly log = new Logger('Claude');
   private sessionId?: string;
   private processing = false;
 
@@ -111,7 +111,7 @@ export class ClaudeInstance extends BaseAgentInstance {
       await this.app.sendMessage(conversationId, response.trim());
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';
-      this.log.error(`Failed to send message to ${conversationId}: ${errMsg}`);
+      log.error(`Failed to send message to ${conversationId}: ${errMsg}`);
     }
   }
 
@@ -163,7 +163,7 @@ export class ClaudeInstance extends BaseAgentInstance {
         if (event.subtype === 'success' && 'result' in event) {
           resultText = event.result;
         } else {
-          this.log.error(`Query ended with ${event.subtype}`, 'errors' in event ? event.errors : '');
+          log.error(`Query ended with ${event.subtype}`, 'errors' in event ? event.errors : '');
         }
       }
     }
