@@ -25,7 +25,6 @@ const log = new Logger('claude-instance');
 
 export class ClaudeInstance extends BaseAgentInstance {
   private readonly messageQueue = new MessageQueue();
-  private processingAbort: AbortController | null = null;
 
   // ---------------------------------------------------------------------------
   // Lifecycle
@@ -40,7 +39,7 @@ export class ClaudeInstance extends BaseAgentInstance {
         this.messageQueue.enqueue(msg);
       }
     });
-    this.startProcessing();
+    void this.processLoop();
     await this.sendGreeting();
   }
 
@@ -112,25 +111,15 @@ export class ClaudeInstance extends BaseAgentInstance {
   }
 
   protected onStopped(): void {
-    this.processingAbort?.abort();
-    this.processingAbort = null;
-    this.messageQueue.clear();
+    this.messageQueue.close();
   }
 
   // ---------------------------------------------------------------------------
   // Processing loop
   // ---------------------------------------------------------------------------
 
-  private startProcessing(): void {
-    this.processingAbort = new AbortController();
-    void this.processLoop();
-  }
-
   private async processLoop(): Promise<void> {
     for await (const [conversationId, messages] of this.messageQueue.batches()) {
-      if (this.processingAbort?.signal.aborted) {
-        break;
-      }
       await this.processBatch(conversationId, messages);
     }
   }
