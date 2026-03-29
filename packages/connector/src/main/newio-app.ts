@@ -67,6 +67,9 @@ export class NewioApp {
   /** conversationId → next sequenceNumber */
   private readonly sequenceNumbers = new Map<string, number>();
 
+  /** conversationId → last known messageId (for backfill boundaries) */
+  private readonly lastMessageIds = new Map<string, string>();
+
   private messageHandler: MessageHandler | null = null;
 
   private constructor(identity: NewioIdentity, auth: AuthManager, client: NewioClient, ws: NewioWebSocket) {
@@ -445,7 +448,7 @@ Response rules:
 
   private wireEvents(): void {
     this.ws.on('message.new', (event) => {
-      this.handleIncomingMessage(event.payload);
+      void this.handleIncomingMessage(event.payload);
     });
 
     this.ws.on('conversation.new', (event) => {
@@ -500,7 +503,8 @@ Response rules:
   // Internal — message handling
   // ---------------------------------------------------------------------------
 
-  private handleIncomingMessage(payload: MessageRecord & { readonly conversationType: string }): void {
+  private async handleIncomingMessage(payload: MessageRecord & { readonly conversationType: string }): Promise<void> {
+    // Skip own messages (includes echoed messages from our own sendMessage calls)
     if (payload.senderId === this.identity.userId) {
       return;
     }
@@ -510,12 +514,14 @@ Response rules:
 
     // Gap detection: if sequenceNumber jumped, backfill missed messages
     const currentSeq = this.sequenceNumbers.get(payload.conversationId) ?? 0;
-    if (payload.sequenceNumber > currentSeq + 1 && currentSeq > 0) {
-      void this.backfillGap(payload.conversationId, currentSeq, payload.sequenceNumber);
+    const lastMsgId = this.lastMessageIds.get(payload.conversationId);
+    if (payload.sequenceNumber > currentSeq + 1 && currentSeq > 0 && lastMsgId) {
+      await this.backfillGap(payload.conversationId, lastMsgId, payload.messageId);
     }
     if (payload.sequenceNumber > currentSeq) {
       this.sequenceNumbers.set(payload.conversationId, payload.sequenceNumber);
     }
+    this.lastMessageIds.set(payload.conversationId, payload.messageId);
 
     const contact = this.contacts.get(payload.senderId);
     const conv = this.conversations.get(payload.conversationId);
@@ -538,37 +544,42 @@ Response rules:
 
   /**
    * Backfill missed messages when a sequence gap is detected.
-   * Fetches messages between the last known sequence and the new one,
-   * and delivers them to the message handler.
+   * Uses afterMessageId/beforeMessageId for precise boundary fetching.
    */
-  private async backfillGap(conversationId: string, afterSeq: number, beforeSeq: number): Promise<void> {
+  private async backfillGap(conversationId: string, afterMessageId: string, beforeMessageId: string): Promise<void> {
     try {
-      // We don't have messageIds for the gap boundaries, so fetch recent messages
-      // and filter to the ones we missed. The gap is typically small (reconnect scenario).
-      const resp = await this.client.listMessages({ conversationId, limit: 50 });
-      for (const msg of resp.messages) {
-        if (
-          msg.sequenceNumber > afterSeq &&
-          msg.sequenceNumber < beforeSeq &&
-          msg.senderId !== this.identity.userId &&
-          msg.content.text
-        ) {
-          const contact = this.contacts.get(msg.senderId);
-          const conv = this.conversations.get(conversationId);
-          this.messageHandler?.({
-            conversationId,
-            conversationType: conv?.type ?? 'dm',
-            groupName: conv?.name,
-            senderUserId: msg.senderId,
-            senderUsername: contact?.friendUsername,
-            senderDisplayName: contact?.friendDisplayName,
-            senderAccountType: contact?.friendAccountType,
-            inContact: this.contacts.has(msg.senderId),
-            text: msg.content.text,
-            timestamp: msg.createdAt,
-          });
+      let cursor: string | undefined;
+      do {
+        const resp = await this.client.listMessages({
+          conversationId,
+          afterMessageId,
+          beforeMessageId,
+          limit: 50,
+          cursor,
+        });
+        if (resp.messages.length === 0) {
+          break;
         }
-      }
+        for (const msg of resp.messages) {
+          if (msg.senderId !== this.identity.userId && msg.content.text) {
+            const contact = this.contacts.get(msg.senderId);
+            const conv = this.conversations.get(conversationId);
+            this.messageHandler?.({
+              conversationId,
+              conversationType: conv?.type ?? 'dm',
+              groupName: conv?.name,
+              senderUserId: msg.senderId,
+              senderUsername: contact?.friendUsername,
+              senderDisplayName: contact?.friendDisplayName,
+              senderAccountType: contact?.friendAccountType,
+              inContact: this.contacts.has(msg.senderId),
+              text: msg.content.text,
+              timestamp: msg.createdAt,
+            });
+          }
+        }
+        cursor = resp.cursor;
+      } while (cursor);
     } catch {
       // Best-effort — if backfill fails, we still process the current message
     }
