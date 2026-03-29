@@ -6,10 +6,10 @@
     "build": "pnpm -r run build",
     "test": "pnpm -r run test",
     "test:coverage": "pnpm -r run test:coverage",
-    "lint": "eslint 'packages/*/src/**/*.ts'",
-    "lint:fix": "eslint --fix 'packages/*/src/**/*.ts'",
-    "format:check": "prettier --check 'packages/*/src/**/*.ts'",
-    "format:fix": "prettier --write 'packages/*/src/**/*.ts'",
+    "lint": "eslint 'packages/*/src/**/*.{ts,tsx}'",
+    "lint:fix": "eslint --fix 'packages/*/src/**/*.{ts,tsx}'",
+    "format:check": "prettier --check 'packages/*/src/**/*.{ts,tsx}'",
+    "format:fix": "prettier --write 'packages/*/src/**/*.{ts,tsx}'",
     "typecheck": "pnpm -r run typecheck",
     "clean": "pnpm -r run clean",
     "prepare": "husky"
@@ -26,7 +26,7 @@
     "typescript-eslint": "^8.34.0"
   },
   "lint-staged": {
-    "*.ts": [
+    "*.{ts,tsx}": [
       "eslint --fix",
       "prettier --write"
     ]
@@ -36,6 +36,6 @@
   },
   "packageManager": "pnpm@10.31.0",
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": ["esbuild", "electron"]
   }
 }
