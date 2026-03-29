@@ -1,28 +1,16 @@
 /**
  * Agent runtime manager — manages the lifecycle of running agent instances.
  *
- * Each agent instance owns: an AuthManager, a NewioClient, and a NewioWebSocket.
- * The runtime manager handles start (register/login → poll → connect WS) and stop.
+ * Creates the appropriate AgentInstance subclass based on agent type,
+ * delegates start/stop to the instance, and relays status events to the UI.
  */
-import { AuthManager, NewioClient, NewioWebSocket } from '@newio/sdk';
-import type { ApprovalHandle } from '@newio/sdk';
 import type Store from 'electron-store';
 import type { StoreSchema } from './store';
 import type { AgentConfigManager } from './agent-config-manager';
 import type { AgentRuntimeStatus } from '../shared/types';
-import WebSocket from 'ws';
-
-const API_BASE_URL = 'https://api.conduit.qinnan.dev';
-const WS_URL = 'wss://ws.conduit.qinnan.dev';
-
-interface AgentInstance {
-  status: AgentRuntimeStatus;
-  error?: string;
-  auth: AuthManager;
-  client?: NewioClient;
-  ws?: NewioWebSocket;
-  abortController?: AbortController;
-}
+import type { AgentInstance } from './instances/agent-instance';
+import { ClaudeInstance } from './instances/claude-instance';
+import { KiroCliInstance } from './instances/kiro-cli-instance';
 
 export interface StatusListener {
   onStatusChanged(agentId: string, status: AgentRuntimeStatus, error?: string): void;
@@ -58,16 +46,30 @@ export class AgentRuntimeManager {
       throw new Error(`Agent ${agentId} not found.`);
     }
 
-    const auth = new AuthManager(API_BASE_URL);
-    const abortController = new AbortController();
-    const instance: AgentInstance = { status: 'starting', auth, abortController };
-    this.instances.set(agentId, instance);
-    this.setStatus(agentId, 'starting');
+    const instanceListener = {
+      onStatusChanged: (status: AgentRuntimeStatus, error?: string) => {
+        this.listener.onStatusChanged(agentId, status, error);
+      },
+      onApprovalUrl: (approvalUrl: string) => {
+        this.listener.onApprovalUrl(agentId, approvalUrl);
+      },
+      onConfigUpdated: () => {
+        this.listener.onConfigUpdated(agentId);
+      },
+    };
 
-    void this.runStartFlow(agentId, instance).catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      this.setStatus(agentId, 'error', message);
-    });
+    let instance: AgentInstance;
+    switch (config.type) {
+      case 'claude':
+        instance = new ClaudeInstance(config, this.store, this.configManager, instanceListener);
+        break;
+      case 'kiro-cli':
+        instance = new KiroCliInstance(config, this.store, this.configManager, instanceListener);
+        break;
+    }
+
+    this.instances.set(agentId, instance);
+    void instance.start();
   }
 
   async stop(agentId: string): Promise<void> {
@@ -75,101 +77,12 @@ export class AgentRuntimeManager {
     if (!instance) {
       return;
     }
-
-    instance.abortController?.abort();
-    instance.ws?.disconnect();
-
-    try {
-      await instance.auth.revoke();
-    } catch {
-      // Best-effort
-    }
-    instance.auth.dispose();
-
-    const tokens = this.store.get('agentTokens');
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure to omit key
-    const { [agentId]: _removed, ...rest } = tokens;
-    this.store.set('agentTokens', rest);
-
+    await instance.stop();
     this.instances.delete(agentId);
-    this.setStatus(agentId, 'stopped');
   }
 
   async stopAll(): Promise<void> {
     const ids = [...this.instances.keys()];
     await Promise.all(ids.map((id) => this.stop(id)));
-  }
-
-  // ---------------------------------------------------------------------------
-  // Internal
-  // ---------------------------------------------------------------------------
-
-  private async runStartFlow(agentId: string, instance: AgentInstance): Promise<void> {
-    const config = this.configManager.get(agentId);
-    if (!config) {
-      throw new Error(`Agent ${agentId} not found.`);
-    }
-
-    const allTokens = this.store.get('agentTokens');
-    if (agentId in allTokens) {
-      const storedTokens = allTokens[agentId];
-      instance.auth.setTokens(storedTokens.accessToken, storedTokens.refreshToken);
-    } else {
-      await this.authenticate(agentId, instance);
-    }
-
-    instance.client = new NewioClient({ baseUrl: API_BASE_URL, tokenProvider: instance.auth.tokenProvider });
-    instance.ws = new NewioWebSocket({
-      url: WS_URL,
-      tokenProvider: instance.auth.tokenProvider,
-      wsFactory: (url) => new WebSocket(url) as never,
-    });
-
-    await instance.ws.connect();
-    this.setStatus(agentId, 'running');
-
-    instance.ws.onStateChange((state) => {
-      if (state === 'disconnected' && !instance.abortController?.signal.aborted) {
-        this.setStatus(agentId, 'error', 'WebSocket disconnected');
-      }
-    });
-  }
-
-  private async authenticate(agentId: string, instance: AgentInstance): Promise<void> {
-    const config = this.configManager.get(agentId);
-    if (!config) {
-      throw new Error(`Agent ${agentId} not found.`);
-    }
-
-    let handle: ApprovalHandle;
-    if (config.newioAgentId) {
-      handle = await instance.auth.login({ agentId: config.newioAgentId });
-    } else {
-      handle = await instance.auth.register({ name: config.name });
-    }
-
-    this.listener.onApprovalUrl(agentId, handle.approvalUrl);
-    this.setStatus(agentId, 'awaiting_approval');
-
-    const tokens = await handle.waitForApproval({ signal: instance.abortController?.signal });
-
-    const allTokens = this.store.get('agentTokens');
-    this.store.set('agentTokens', { ...allTokens, [agentId]: tokens });
-
-    if (!config.newioAgentId) {
-      const client = new NewioClient({ baseUrl: API_BASE_URL, tokenProvider: instance.auth.tokenProvider });
-      const me = await client.getMe({});
-      this.configManager.setNewioIdentity(agentId, me.userId, me.username ?? '');
-      this.listener.onConfigUpdated(agentId);
-    }
-  }
-
-  private setStatus(agentId: string, status: AgentRuntimeStatus, error?: string): void {
-    const instance = this.instances.get(agentId);
-    if (instance) {
-      instance.status = status;
-      instance.error = error;
-    }
-    this.listener.onStatusChanged(agentId, status, error);
   }
 }

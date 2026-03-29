@@ -14,23 +14,27 @@ const STATUS_LABELS: Record<string, string> = {
   error: 'Error',
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  stopped: 'var(--text-muted)',
-  starting: 'var(--warning)',
-  awaiting_approval: 'var(--warning)',
-  running: 'var(--success)',
-  error: 'var(--danger)',
+const STATUS_CLASSES: Record<string, string> = {
+  stopped: 'text-muted-foreground',
+  starting: 'text-warning',
+  awaiting_approval: 'text-warning',
+  running: 'text-success',
+  error: 'text-destructive',
+};
+
+const DOT_CLASSES: Record<string, string> = {
+  stopped: 'bg-muted-foreground',
+  starting: 'bg-warning',
+  awaiting_approval: 'bg-warning',
+  running: 'bg-success',
+  error: 'bg-destructive',
 };
 
 function Field({ label, value }: { readonly label: string; readonly value: string }): React.JSX.Element {
   return (
     <div className="mb-3">
-      <div className="mb-0.5 text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
-        {label}
-      </div>
-      <div className="text-sm" style={{ color: 'var(--text)' }}>
-        {value}
-      </div>
+      <div className="mb-0.5 text-xs font-medium text-muted-foreground">{label}</div>
+      <div className="text-sm text-foreground">{value}</div>
     </div>
   );
 }
@@ -58,25 +62,18 @@ export function AgentDetailPanel({ agent }: { readonly agent: AgentStatusInfo })
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center gap-3 border-b px-6 py-4" style={{ borderColor: 'var(--border)' }}>
-        <div
-          className="flex h-10 w-10 items-center justify-center rounded-lg"
-          style={{ background: 'var(--accent)', color: '#fff' }}
-        >
+      <div className="flex items-center gap-3 border-b border-border px-6 py-4">
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
           {config.type === 'kiro-cli' ? <Terminal size={20} /> : <Bot size={20} />}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-base font-semibold" style={{ color: 'var(--text)' }}>
-            {config.name}
-          </div>
+          <div className="truncate text-base font-semibold text-foreground">{config.name}</div>
           <div className="flex items-center gap-2 text-xs">
             <span
-              className="inline-flex items-center gap-1"
-              style={{ color: STATUS_COLORS[agent.runtimeStatus] ?? 'var(--text-muted)' }}
+              className={`inline-flex items-center gap-1 ${STATUS_CLASSES[agent.runtimeStatus] ?? 'text-muted-foreground'}`}
             >
               <span
-                className="inline-block h-1.5 w-1.5 rounded-full"
-                style={{ background: STATUS_COLORS[agent.runtimeStatus] ?? 'var(--text-muted)' }}
+                className={`inline-block h-1.5 w-1.5 rounded-full ${DOT_CLASSES[agent.runtimeStatus] ?? 'bg-muted-foreground'}`}
               />
               {STATUS_LABELS[agent.runtimeStatus] ?? agent.runtimeStatus}
             </span>
@@ -87,8 +84,7 @@ export function AgentDetailPanel({ agent }: { readonly agent: AgentStatusInfo })
         <div className="flex gap-2">
           {isStopped && (
             <button
-              className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors hover:opacity-80"
-              style={{ background: 'var(--success)', color: '#fff' }}
+              className="flex items-center gap-1.5 rounded-md bg-success px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-80"
               onClick={() => void startAgent(agent.id)}
             >
               <Play size={12} />
@@ -97,8 +93,7 @@ export function AgentDetailPanel({ agent }: { readonly agent: AgentStatusInfo })
           )}
           {isRunning && (
             <button
-              className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors hover:opacity-80"
-              style={{ background: 'var(--danger)', color: '#fff' }}
+              className="flex items-center gap-1.5 rounded-md bg-destructive px-3 py-1.5 text-xs font-medium text-destructive-foreground transition-colors hover:opacity-80"
               onClick={() => void stopAgent(agent.id)}
             >
               <Square size={12} />
@@ -107,8 +102,7 @@ export function AgentDetailPanel({ agent }: { readonly agent: AgentStatusInfo })
           )}
           {isBusy && (
             <button
-              className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors hover:opacity-80"
-              style={{ background: 'var(--danger)', color: '#fff' }}
+              className="flex items-center gap-1.5 rounded-md bg-destructive px-3 py-1.5 text-xs font-medium text-destructive-foreground transition-colors hover:opacity-80"
               onClick={() => void stopAgent(agent.id)}
             >
               <Loader2 size={12} className="animate-spin" />
@@ -122,19 +116,13 @@ export function AgentDetailPanel({ agent }: { readonly agent: AgentStatusInfo })
       <div className="flex-1 overflow-y-auto px-6 py-4">
         {/* Approval URL banner */}
         {agent.runtimeStatus === 'awaiting_approval' && approvalUrl && (
-          <div
-            className="mb-4 rounded-md border px-4 py-3"
-            style={{ borderColor: 'var(--warning)', background: 'color-mix(in srgb, var(--warning) 10%, transparent)' }}
-          >
-            <div className="mb-1 text-xs font-medium" style={{ color: 'var(--warning)' }}>
-              Owner approval required
-            </div>
-            <div className="mb-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+          <div className="mb-4 rounded-md border border-warning/30 bg-warning/10 px-4 py-3">
+            <div className="mb-1 text-xs font-medium text-warning">Owner approval required</div>
+            <div className="mb-2 text-xs text-muted-foreground">
               Open the link below to approve this agent. The owner must enter a username and approve.
             </div>
             <button
-              className="flex items-center gap-1.5 text-xs font-medium transition-colors hover:opacity-80"
-              style={{ color: 'var(--accent)' }}
+              className="flex items-center gap-1.5 text-xs font-medium text-primary transition-colors hover:opacity-80"
               onClick={() => void window.api.openExternal(approvalUrl)}
             >
               <ExternalLink size={12} />
@@ -148,7 +136,7 @@ export function AgentDetailPanel({ agent }: { readonly agent: AgentStatusInfo })
         {config.newioUsername && <Field label="Newio Username" value={`@${config.newioUsername}`} />}
         {config.newioAgentId && <Field label="Newio Agent ID" value={config.newioAgentId} />}
         {!config.newioAgentId && (
-          <div className="mb-3 text-xs" style={{ color: 'var(--text-muted)' }}>
+          <div className="mb-3 text-xs text-muted-foreground">
             Not registered with Newio yet. Start the agent to register.
           </div>
         )}
@@ -164,24 +152,20 @@ export function AgentDetailPanel({ agent }: { readonly agent: AgentStatusInfo })
         {config.kiroCli && <Field label="Agent Name" value={config.kiroCli.agentName} />}
 
         {agent.error && (
-          <div
-            className="mt-2 rounded-md border px-3 py-2 text-xs"
-            style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}
-          >
+          <div className="mt-2 rounded-md border border-destructive/30 px-3 py-2 text-xs text-destructive">
             {agent.error}
           </div>
         )}
       </div>
 
       {/* Footer actions */}
-      <div className="flex items-center justify-end gap-2 border-t px-6 py-3" style={{ borderColor: 'var(--border)' }}>
+      <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-3">
         <button
-          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition-colors hover:opacity-80"
-          style={{
-            background: confirmDelete ? 'var(--danger)' : 'transparent',
-            color: confirmDelete ? '#fff' : 'var(--danger)',
-            border: confirmDelete ? 'none' : '1px solid var(--danger)',
-          }}
+          className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs transition-colors hover:opacity-80 disabled:opacity-40 ${
+            confirmDelete
+              ? 'border-transparent bg-destructive text-destructive-foreground'
+              : 'border-destructive text-destructive'
+          }`}
           disabled={!isStopped}
           onClick={handleDelete}
           onBlur={() => setConfirmDelete(false)}
