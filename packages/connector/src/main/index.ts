@@ -1,55 +1,34 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
-import { join } from 'path';
-import { electronApp, optimizer, is } from '@electron-toolkit/utils';
+import { app, BrowserWindow, nativeTheme } from 'electron';
+import { electronApp, optimizer } from '@electron-toolkit/utils';
+import { createStore } from './store';
+import { MainWindowManager } from './main-window';
+import { AgentConfigManager } from './agent-config-manager';
+import { IpcHandler } from './ipc-handler';
+import { registerIpcHandlers } from './ipc-registry';
 
-function createWindow(): BrowserWindow {
-  const win = new BrowserWindow({
-    width: 960,
-    height: 640,
-    minWidth: 720,
-    minHeight: 480,
-    show: false,
-    titleBarStyle: 'hiddenInset',
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      sandbox: false,
-    },
-  });
-
-  win.on('ready-to-show', () => {
-    win.show();
-  });
-
-  // Open external links in the system browser
-  win.webContents.setWindowOpenHandler((details) => {
-    void shell.openExternal(details.url);
-    return { action: 'deny' };
-  });
-
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    void win.loadURL(process.env['ELECTRON_RENDERER_URL']);
-  } else {
-    void win.loadFile(join(__dirname, '../renderer/index.html'));
-  }
-
-  return win;
-}
-
-void app.whenReady().then(() => {
+void app.whenReady().then(async () => {
   electronApp.setAppUserModelId('dev.newio.connector');
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window);
   });
 
-  // IPC handlers
-  ipcMain.handle('get-version', () => app.getVersion());
+  const store = createStore();
+  const mainWindowManager = new MainWindowManager(store);
+  const agentConfigManager = new AgentConfigManager(store);
 
-  createWindow();
+  // Apply persisted theme
+  nativeTheme.themeSource = store.get('themeSource');
+
+  // Register IPC handlers
+  const ipcHandler = new IpcHandler({ store, agentConfigManager });
+  registerIpcHandlers(ipcHandler);
+
+  await mainWindowManager.create();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      void mainWindowManager.create();
     }
   });
 });

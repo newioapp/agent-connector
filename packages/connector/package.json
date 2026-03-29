@@ -19,8 +19,9 @@
     "clean": "rm -rf out dist"
   },
   "dependencies": {
-    "@newio/sdk": "workspace:*",
     "@electron-toolkit/utils": "^4.0.0",
+    "@newio/sdk": "workspace:*",
+    "electron-store": "^8.2.0",
     "lucide-react": "^0.577.0",
     "zustand": "^5.0.11"
   },

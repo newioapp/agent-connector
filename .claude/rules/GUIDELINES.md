@@ -29,7 +29,24 @@ agent-connector/
 │   │   └── vitest.config.ts
 │   │
 │   ├── mcp-server/       # @newio/mcp-server — published to npm (not yet built)
-│   └── connector/        # Agent Connector Electron app (not yet built)
+│   └── connector/        # Agent Connector Electron app
+│       ├── src/
+│       │   ├── main/           # Electron main process (the "backend")
+│       │   │   ├── index.ts    # App entry — wires store, window manager, IPC
+│       │   │   ├── ipc-handler.ts    # IpcHandler implements IpcApi
+│       │   │   ├── ipc-registry.ts   # Generic ipcMain.handle wiring
+│       │   │   ├── main-window.ts    # MainWindowManager — window lifecycle
+│       │   │   ├── store.ts          # electron-store schema + factory
+│       │   │   └── agent-config-manager.ts  # Agent config CRUD
+│       │   ├── preload/        # contextBridge — typed IPC API for renderer
+│       │   ├── renderer/src/   # React UI (the "frontend")
+│       │   │   ├── stores/     # Zustand stores (thin caches of main process state)
+│       │   │   └── components/ # React components
+│       │   └── shared/         # Types shared across main/preload/renderer
+│       │       ├── types.ts    # AgentConfig, AgentType, ThemeSource, etc.
+│       │       ├── ipc-api.ts  # IpcApi interface + IPC_CHANNELS map
+│       │       └── ipc-events.ts  # MainToRendererEvents (push events)
+│       └── electron.vite.config.ts
 │
 ├── .github/workflows/    # CI/CD (pr.yml, release-sdk.yml, audit.yml, codeql.yml)
 ├── package.json          # Workspace root
@@ -51,6 +68,66 @@ agent-connector/
 | Prettier | Formatting — single quotes, trailing commas, 120 width |
 | Husky | Git hooks — pre-commit (lint-staged), commit-msg (commitlint), pre-push (block main) |
 | Commitlint | Conventional commits (`feat:`, `fix:`, `docs:`, etc.) |
+
+## Connector Architecture
+
+The Agent Connector is modeled after Docker Desktop. The core analogy:
+
+| Docker Desktop | Agent Connector |
+|---|---|
+| Image | Agent type (`claude`, `kiro-cli`) |
+| Container | Agent instance |
+| Running container | Running agent (connected to Newio) |
+
+### Main Process = Backend, Renderer = UI
+
+All core logic lives in the **main process** — agent config management, SDK instances, WebSocket connections, lifecycle management. The renderer is a pure React UI that communicates with the main process via IPC, like a React SPA calling a REST API.
+
+This separation is critical because:
+- The window can be minimized or closed (on macOS) while agents keep running in the main process
+- The main process is the single source of truth for all agent state
+- Renderer Zustand stores are thin caches — they reflect main process state, not own it
+
+### IPC Architecture
+
+Two communication patterns between main and renderer:
+
+1. **Request/response** (`IpcApi` in `shared/ipc-api.ts`) — renderer calls main via `ipcRenderer.invoke` / `ipcMain.handle`. Used for CRUD operations and queries.
+2. **Push events** (`MainToRendererEvents` in `shared/ipc-events.ts`) — main pushes to renderer via `webContents.send` / `ipcRenderer.on`. Used for real-time state changes (agent status updates, etc.).
+
+To add a new IPC method:
+1. Add the method signature to `IpcApi` in `shared/ipc-api.ts`
+2. Add the channel name to `IPC_CHANNELS`
+3. Implement it in `IpcHandler` (`main/ipc-handler.ts`)
+4. Wire it in the preload (`preload/index.ts`)
+5. The registry (`main/ipc-registry.ts`) handles `ipcMain.handle` wiring automatically
+
+### Agent Config vs Agent Instance
+
+- **AgentConfig** — static definition persisted in `electron-store`. What type of agent, how to connect to it, which Newio account it uses. Survives app restarts.
+- **Agent instance** — runtime state in memory. Status (stopped/starting/running/error), SDK handles, WebSocket connections. Lost on app quit.
+- They are 1:1 — each config has at most one instance.
+
+### Newio Identity Lifecycle
+
+1. User creates agent config (no Newio identity yet)
+2. User starts agent → main process calls `register({ name })` → gets approval URL
+3. Owner opens URL in browser → enters username → approves
+4. Agent polls → gets tokens → main process calls `getMe()` → persists `newioAgentId` + `newioUsername` to config
+5. Subsequent starts use `login({ agentId })` — owner just approves, no username step
+
+The backend requires a username during agent registration approval, so by the time the agent polls and gets tokens, the account already has a username.
+
+### Agent Types
+
+- `claude` — Anthropic Claude via Agent SDK. Config: API key, model, optional system prompt.
+- `kiro-cli` — Kiro CLI agent. Config: agent name (runs `kiro-cli chat --agent <name>`).
+
+Agent types are extensible. Different ACP-compatible agents may need different treatment, so each gets its own type rather than a generic `acp` type. Shared ACP config can be extracted later if patterns emerge.
+
+### Token Persistence
+
+Agent tokens are persisted in `electron-store` alongside agent configs so agents can auto-reconnect on app restart without re-approval. The SDK's `AuthManager` handles token refresh.
 
 ## Newio Backend API
 
@@ -197,12 +274,18 @@ pnpm --filter @newio/sdk run test
 - [x] Q1: Open source foundation (LICENSE, CONTRIBUTING, CI/CD, templates, hooks)
 - [x] S1: Monorepo scaffolding (pnpm, TypeScript, tsup, vitest)
 - [x] S2: SDK auth module (register, login, poll, token refresh, revoke)
+- [x] S3: SDK REST client — profile, users, contacts, blocks
+- [x] S4: SDK REST client — conversations, messages, media, agent settings
+- [x] S5: SDK WebSocket client
 - [x] S6: SDK types (all API types, 19 event types, error classes)
+- [x] S7: SDK tests and documentation
+- [x] C1: Connector Electron app scaffolding (electron-vite, React, Tailwind)
+- [x] C2: Agent registry and configuration UI (agent CRUD, add dialog, detail panel)
 
 ### Next
-- [ ] S3: SDK REST client — profile, users, contacts, blocks
-- [ ] S4: SDK REST client — conversations, messages, media, agent settings
-- [ ] S5: SDK WebSocket client
-- [ ] S7: SDK tests and documentation, npm publish
+- [ ] C3: Agent lifecycle management (start/stop, auth flow, WebSocket connect)
+- [ ] C4: Claude Agent SDK adapter
+- [ ] C5: ACP adapter (Kiro CLI)
+- [ ] C6: MCP server integration
 
-See `PLAN.md` in this directory for the full task breakdown including the Agent Connector and MCP server phases.
+See `PLAN.md` in this directory for the full task breakdown including the MCP server phases.
