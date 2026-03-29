@@ -2,6 +2,7 @@ import { app, BrowserWindow, nativeTheme } from 'electron';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
 import { createStore } from './store';
 import { MainWindowManager } from './main-window';
+import { AgentConfigManager } from './agent-config-manager';
 import { IpcHandler } from './ipc-handler';
 import { registerIpcHandlers } from './ipc-registry';
 
@@ -14,12 +15,13 @@ void app.whenReady().then(async () => {
 
   const store = createStore();
   const mainWindowManager = new MainWindowManager(store);
+  const agentConfigManager = new AgentConfigManager(store);
 
   // Apply persisted theme
   nativeTheme.themeSource = store.get('themeSource');
 
   // Register IPC handlers
-  const ipcHandler = new IpcHandler({ store });
+  const ipcHandler = new IpcHandler({ store, agentConfigManager });
   registerIpcHandlers(ipcHandler);
 
   await mainWindowManager.create();

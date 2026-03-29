@@ -3,9 +3,9 @@
  *
  * Defines typed interfaces for all request/response IPC channels
  * (ipcMain.handle / ipcRenderer.invoke). Push events from main → renderer
- * will be defined separately when needed.
+ * are defined in ipc-events.ts.
  */
-import type { ThemeSource } from './types';
+import type { ThemeSource, AgentConfig, AddAgentInput, UpdateAgentInput, AgentStatusInfo } from './types';
 
 export interface IpcApi {
   /** Get the app version. */
@@ -18,6 +18,12 @@ export interface IpcApi {
 
   // External URLs
   openExternal(url: string): Promise<void>;
+
+  // Agent CRUD
+  listAgents(): Promise<AgentStatusInfo[]>;
+  addAgent(input: AddAgentInput): Promise<AgentConfig>;
+  updateAgent(agentId: string, updates: UpdateAgentInput): Promise<AgentConfig>;
+  removeAgent(agentId: string): Promise<void>;
 }
 
 /** Channel name for each IpcApi method. */
@@ -27,4 +33,8 @@ export const IPC_CHANNELS: { readonly [K in keyof IpcApi]: string } = {
   setTheme: 'set-theme',
   getNativeThemeDark: 'get-native-theme-dark',
   openExternal: 'open-external',
+  listAgents: 'list-agents',
+  addAgent: 'add-agent',
+  updateAgent: 'update-agent',
+  removeAgent: 'remove-agent',
 };

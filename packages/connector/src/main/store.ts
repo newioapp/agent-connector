@@ -2,7 +2,7 @@
  * Electron-store schema and factory for persistent app settings.
  */
 import Store from 'electron-store';
-import type { ThemeSource } from '../shared/types';
+import type { ThemeSource, AgentConfig } from '../shared/types';
 
 export interface StoreSchema {
   readonly themeSource: ThemeSource;
@@ -12,6 +12,7 @@ export interface StoreSchema {
     readonly width: number;
     readonly height: number;
   };
+  readonly agents: AgentConfig[];
 }
 
 export function createStore(): Store<StoreSchema> {
@@ -19,6 +20,7 @@ export function createStore(): Store<StoreSchema> {
     defaults: {
       themeSource: 'system',
       windowBounds: { width: 960, height: 640 },
+      agents: [],
     },
   });
 }

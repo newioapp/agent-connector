@@ -1,6 +1,34 @@
+/**
+ * Root app component — two-panel layout: sidebar (agent list) + detail panel.
+ */
+import { useEffect, useState } from 'react';
 import { Bot, Plus, Settings } from 'lucide-react';
+import { useAgentStore } from './stores/agent-store';
+import { AgentListItem } from './components/AgentListItem';
+import { AgentDetailPanel } from './components/AgentDetailPanel';
+import { AddAgentDialog } from './components/AddAgentDialog';
 
 export function App(): React.JSX.Element {
+  const agents = useAgentStore((s) => s.agents);
+  const selectedAgentId = useAgentStore((s) => s.selectedAgentId);
+  const load = useAgentStore((s) => s.load);
+  const selectAgent = useAgentStore((s) => s.selectAgent);
+  const setAgentStatus = useAgentStore((s) => s.setAgentStatus);
+  const [showAddDialog, setShowAddDialog] = useState(false);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // Listen for agent status push events from main process
+  useEffect(() => {
+    return window.api.onAgentStatusChanged(({ agentId, status, error }) => {
+      setAgentStatus(agentId, status, error);
+    });
+  }, [setAgentStatus]);
+
+  const selectedAgent = agents.find((a) => a.id === selectedAgentId) ?? null;
+
   return (
     <div className="flex h-screen w-screen">
       {/* Sidebar */}
@@ -20,15 +48,32 @@ export function App(): React.JSX.Element {
             className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:opacity-80"
             style={{ background: 'var(--accent)', color: '#fff' }}
             title="Add agent"
+            onClick={() => setShowAddDialog(true)}
           >
             <Plus size={14} />
           </button>
         </div>
 
-        {/* Agent list (empty state) */}
-        <div className="flex flex-1 flex-col items-center justify-center px-4" style={{ color: 'var(--text-muted)' }}>
-          <Bot size={32} className="mb-2 opacity-40" />
-          <p className="text-center text-xs">No agents yet. Click + to connect your first agent.</p>
+        {/* Agent list */}
+        <div className="flex-1 overflow-y-auto px-2">
+          {agents.length === 0 ? (
+            <div
+              className="flex flex-col items-center justify-center px-4 pt-12"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              <Bot size={32} className="mb-2 opacity-40" />
+              <p className="text-center text-xs">No agents yet. Click + to connect your first agent.</p>
+            </div>
+          ) : (
+            agents.map((agent) => (
+              <AgentListItem
+                key={agent.id}
+                agent={agent}
+                selected={agent.id === selectedAgentId}
+                onClick={() => selectAgent(agent.id)}
+              />
+            ))
+          )}
         </div>
 
         {/* Footer */}
@@ -48,12 +93,17 @@ export function App(): React.JSX.Element {
         {/* Drag region */}
         <div className="h-10 shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
 
-        {/* Empty state */}
-        <div className="flex flex-1 flex-col items-center justify-center" style={{ color: 'var(--text-muted)' }}>
-          <Bot size={48} className="mb-3 opacity-30" />
-          <p className="text-sm">Select an agent or add a new one to get started.</p>
-        </div>
+        {selectedAgent ? (
+          <AgentDetailPanel agent={selectedAgent} />
+        ) : (
+          <div className="flex flex-1 flex-col items-center justify-center" style={{ color: 'var(--text-muted)' }}>
+            <Bot size={48} className="mb-3 opacity-30" />
+            <p className="text-sm">Select an agent or add a new one to get started.</p>
+          </div>
+        )}
       </div>
+
+      {showAddDialog && <AddAgentDialog onClose={() => setShowAddDialog(false)} />}
     </div>
   );
 }

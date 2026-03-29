@@ -21,4 +21,11 @@ export default tseslint.config(
       '@typescript-eslint/no-empty-object-type': ['error', { allowInterfaces: 'always' }],
     },
   },
+  // Zustand selectors like `useStore((s) => s.method)` trigger unbound-method false positives
+  {
+    files: ['packages/*/src/**/*.tsx'],
+    rules: {
+      '@typescript-eslint/unbound-method': 'off',
+    },
+  },
 );
