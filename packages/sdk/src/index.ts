@@ -1,6 +1,17 @@
 // Client
 export { NewioClient } from './client.js';
 
+// WebSocket
+export { NewioWebSocket } from './websocket.js';
+export type {
+  ConnectionState,
+  ConnectionStateListener,
+  SubscribeAck,
+  UnsubscribeAck,
+  WebSocketLike,
+  WebSocketFactory,
+} from './websocket.js';
+
 // Auth
 export { AuthManager, InMemoryTokenStore } from './auth.js';
 export type { TokenStore, ApprovalHandle, WaitForApprovalOptions } from './auth.js';
