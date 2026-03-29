@@ -14,11 +14,15 @@ import WebSocket from 'ws';
 const API_BASE_URL = 'https://api.conduit.qinnan.dev';
 const WS_URL = 'wss://ws.conduit.qinnan.dev';
 
+/** How long received messages are kept in the cache (ms). */
+const MESSAGE_CACHE_TTL_MS = 10 * 60 * 1000;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 export interface IncomingMessage {
+  readonly messageId: string;
   readonly conversationId: string;
   readonly conversationType: string;
   readonly groupName?: string;
@@ -67,8 +71,8 @@ export class NewioApp {
   /** conversationId → next sequenceNumber */
   private readonly sequenceNumbers = new Map<string, number>();
 
-  /** conversationId → last known messageId (for backfill boundaries) */
-  private readonly lastMessageIds = new Map<string, string>();
+  /** conversationId → ULID-sorted message list (recent cache, evicted by TTL) */
+  private readonly messageCache = new Map<string, IncomingMessage[]>();
 
   private messageHandler: MessageHandler | null = null;
 
@@ -241,6 +245,16 @@ export class NewioApp {
   /** Get all contacts. */
   getAllContacts(): ContactRecord[] {
     return [...this.contacts.values()];
+  }
+
+  /** Get recent cached messages for a conversation, sorted oldest-first. */
+  getRecentMessages(conversationId: string): readonly IncomingMessage[] {
+    const messages = this.messageCache.get(conversationId);
+    if (!messages) {
+      return [];
+    }
+    this.evictExpired(conversationId, messages);
+    return messages;
   }
 
   /** Get members of a conversation (fetches from API if not cached). */
@@ -504,42 +518,87 @@ Response rules:
   // ---------------------------------------------------------------------------
 
   private async handleIncomingMessage(payload: MessageRecord & { readonly conversationType: string }): Promise<void> {
-    // Skip own messages (includes echoed messages from our own sendMessage calls)
-    if (payload.senderId === this.identity.userId) {
-      return;
-    }
     if (!payload.content.text) {
       return;
     }
 
-    // Gap detection: if sequenceNumber jumped, backfill missed messages
-    const currentSeq = this.sequenceNumbers.get(payload.conversationId) ?? 0;
-    const lastMsgId = this.lastMessageIds.get(payload.conversationId);
-    if (payload.sequenceNumber > currentSeq + 1 && currentSeq > 0 && lastMsgId) {
-      await this.backfillGap(payload.conversationId, lastMsgId, payload.messageId);
-    }
-    if (payload.sequenceNumber > currentSeq) {
-      this.sequenceNumbers.set(payload.conversationId, payload.sequenceNumber);
-    }
-    this.lastMessageIds.set(payload.conversationId, payload.messageId);
-
     const contact = this.contacts.get(payload.senderId);
     const conv = this.conversations.get(payload.conversationId);
+    const isOwnMessage = payload.senderId === this.identity.userId;
 
     const message: IncomingMessage = {
+      messageId: payload.messageId,
       conversationId: payload.conversationId,
       conversationType: payload.conversationType,
       groupName: conv?.name,
       senderUserId: payload.senderId,
-      senderUsername: contact?.friendUsername,
-      senderDisplayName: contact?.friendDisplayName,
-      senderAccountType: contact?.friendAccountType,
-      inContact: this.contacts.has(payload.senderId),
+      senderUsername: isOwnMessage ? this.identity.username : contact?.friendUsername,
+      senderDisplayName: isOwnMessage ? this.identity.displayName : contact?.friendDisplayName,
+      senderAccountType: isOwnMessage ? ('agent' as AccountType) : contact?.friendAccountType,
+      inContact: isOwnMessage || this.contacts.has(payload.senderId),
       text: payload.content.text,
       timestamp: payload.createdAt,
     };
 
-    this.messageHandler?.(message);
+    const inserted = this.insertMessage(payload.conversationId, message);
+
+    // Update sequence tracking
+    const currentSeq = this.sequenceNumbers.get(payload.conversationId) ?? 0;
+    if (payload.sequenceNumber > currentSeq + 1 && currentSeq > 0) {
+      const cached = this.messageCache.get(payload.conversationId);
+      if (cached && cached.length > 1) {
+        const afterId = cached[cached.length - 2].messageId;
+        await this.backfillGap(payload.conversationId, afterId, payload.messageId);
+      }
+    }
+    if (payload.sequenceNumber > currentSeq) {
+      this.sequenceNumbers.set(payload.conversationId, payload.sequenceNumber);
+    }
+
+    // Only notify handler for other people's messages that are not duplicates
+    if (inserted && !isOwnMessage) {
+      this.messageHandler?.(message);
+    }
+  }
+
+  /**
+   * Insert a message into the per-conversation sorted list.
+   * Scans from the end — O(1) for the common case (newest message).
+   * Returns true if inserted, false if duplicate.
+   */
+  private insertMessage(conversationId: string, message: IncomingMessage): boolean {
+    let messages = this.messageCache.get(conversationId);
+    if (!messages) {
+      messages = [];
+      this.messageCache.set(conversationId, messages);
+    }
+
+    let i = messages.length;
+    while (i > 0 && messages[i - 1].messageId > message.messageId) {
+      i--;
+    }
+    if (i > 0 && messages[i - 1].messageId === message.messageId) {
+      return false;
+    }
+    messages.splice(i, 0, message);
+
+    this.evictExpired(conversationId, messages);
+    return true;
+  }
+
+  /** Remove messages older than the TTL from the front of a sorted list. */
+  private evictExpired(conversationId: string, messages: IncomingMessage[]): void {
+    const cutoff = Date.now() - MESSAGE_CACHE_TTL_MS;
+    let evictCount = 0;
+    while (evictCount < messages.length && new Date(messages[evictCount].timestamp).getTime() < cutoff) {
+      evictCount++;
+    }
+    if (evictCount > 0) {
+      messages.splice(0, evictCount);
+    }
+    if (messages.length === 0) {
+      this.messageCache.delete(conversationId);
+    }
   }
 
   /**
@@ -561,21 +620,28 @@ Response rules:
           break;
         }
         for (const msg of resp.messages) {
-          if (msg.senderId !== this.identity.userId && msg.content.text) {
-            const contact = this.contacts.get(msg.senderId);
-            const conv = this.conversations.get(conversationId);
-            this.messageHandler?.({
-              conversationId,
-              conversationType: conv?.type ?? 'dm',
-              groupName: conv?.name,
-              senderUserId: msg.senderId,
-              senderUsername: contact?.friendUsername,
-              senderDisplayName: contact?.friendDisplayName,
-              senderAccountType: contact?.friendAccountType,
-              inContact: this.contacts.has(msg.senderId),
-              text: msg.content.text,
-              timestamp: msg.createdAt,
-            });
+          if (!msg.content.text) {
+            continue;
+          }
+          const contact = this.contacts.get(msg.senderId);
+          const conv = this.conversations.get(conversationId);
+          const isOwn = msg.senderId === this.identity.userId;
+          const message: IncomingMessage = {
+            messageId: msg.messageId,
+            conversationId,
+            conversationType: conv?.type ?? 'dm',
+            groupName: conv?.name,
+            senderUserId: msg.senderId,
+            senderUsername: isOwn ? this.identity.username : contact?.friendUsername,
+            senderDisplayName: isOwn ? this.identity.displayName : contact?.friendDisplayName,
+            senderAccountType: isOwn ? ('agent' as AccountType) : contact?.friendAccountType,
+            inContact: isOwn || this.contacts.has(msg.senderId),
+            text: msg.content.text,
+            timestamp: msg.createdAt,
+          };
+          const inserted = this.insertMessage(conversationId, message);
+          if (inserted && !isOwn) {
+            this.messageHandler?.(message);
           }
         }
         cursor = resp.cursor;
