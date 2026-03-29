@@ -125,6 +125,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
     let handle: ApprovalHandle;
     if (this.config.newioAgentId) {
       handle = await this.auth.login({ agentId: this.config.newioAgentId });
+    } else if (this.config.newioUsername) {
+      handle = await this.auth.login({ username: this.config.newioUsername });
     } else {
       handle = await this.auth.register({ name: this.config.name });
     }
