@@ -19,6 +19,7 @@
     "clean": "rm -rf out dist"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.87",
     "@electron-toolkit/utils": "^4.0.0",
     "@newio/sdk": "workspace:*",
     "electron-store": "^8.2.0",

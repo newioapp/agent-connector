@@ -115,7 +115,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   protected abstract onConnected(): Promise<void>;
 
   /** Called during stop. Subclasses clean up agent-specific resources. */
-  protected abstract onStopped(): Promise<void>;
+  protected abstract onStopped(): Promise<void> | void;
 
   // ---------------------------------------------------------------------------
   // Internal
