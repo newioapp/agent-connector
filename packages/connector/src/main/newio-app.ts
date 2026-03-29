@@ -522,12 +522,6 @@ Response rules:
       return;
     }
 
-    // Dedup: compare against last cached messageId (ULIDs are lexicographically ordered)
-    const cached = this.messageCache.get(payload.conversationId);
-    if (cached && cached.length > 0 && cached[cached.length - 1].messageId >= payload.messageId) {
-      return;
-    }
-
     const contact = this.contacts.get(payload.senderId);
     const conv = this.conversations.get(payload.conversationId);
     const isOwnMessage = payload.senderId === this.identity.userId;
@@ -546,20 +540,23 @@ Response rules:
       timestamp: payload.createdAt,
     };
 
-    this.insertMessage(payload.conversationId, message);
+    const inserted = this.insertMessage(payload.conversationId, message);
 
     // Update sequence tracking
     const currentSeq = this.sequenceNumbers.get(payload.conversationId) ?? 0;
-    if (payload.sequenceNumber > currentSeq + 1 && currentSeq > 0 && cached && cached.length > 1) {
-      const afterId = cached[cached.length - 2].messageId; // message before the one we just inserted
-      await this.backfillGap(payload.conversationId, afterId, payload.messageId);
+    if (payload.sequenceNumber > currentSeq + 1 && currentSeq > 0) {
+      const cached = this.messageCache.get(payload.conversationId);
+      if (cached && cached.length > 1) {
+        const afterId = cached[cached.length - 2].messageId;
+        await this.backfillGap(payload.conversationId, afterId, payload.messageId);
+      }
     }
     if (payload.sequenceNumber > currentSeq) {
       this.sequenceNumbers.set(payload.conversationId, payload.sequenceNumber);
     }
 
-    // Only notify handler for other people's messages
-    if (!isOwnMessage) {
+    // Only notify handler for other people's messages that are not duplicates
+    if (inserted && !isOwnMessage) {
       this.messageHandler?.(message);
     }
   }
@@ -567,8 +564,9 @@ Response rules:
   /**
    * Insert a message into the per-conversation sorted list.
    * Scans from the end — O(1) for the common case (newest message).
+   * Returns true if inserted, false if duplicate.
    */
-  private insertMessage(conversationId: string, message: IncomingMessage): void {
+  private insertMessage(conversationId: string, message: IncomingMessage): boolean {
     let messages = this.messageCache.get(conversationId);
     if (!messages) {
       messages = [];
@@ -579,13 +577,13 @@ Response rules:
     while (i > 0 && messages[i - 1].messageId > message.messageId) {
       i--;
     }
-    // Dedup (exact match at insertion point)
     if (i > 0 && messages[i - 1].messageId === message.messageId) {
-      return;
+      return false;
     }
     messages.splice(i, 0, message);
 
     this.evictExpired(conversationId, messages);
+    return true;
   }
 
   /** Remove messages older than the TTL from the front of a sorted list. */
@@ -622,26 +620,29 @@ Response rules:
           break;
         }
         for (const msg of resp.messages) {
-          if (msg.senderId === this.identity.userId || !msg.content.text) {
+          if (!msg.content.text) {
             continue;
           }
           const contact = this.contacts.get(msg.senderId);
           const conv = this.conversations.get(conversationId);
+          const isOwn = msg.senderId === this.identity.userId;
           const message: IncomingMessage = {
             messageId: msg.messageId,
             conversationId,
             conversationType: conv?.type ?? 'dm',
             groupName: conv?.name,
             senderUserId: msg.senderId,
-            senderUsername: contact?.friendUsername,
-            senderDisplayName: contact?.friendDisplayName,
-            senderAccountType: contact?.friendAccountType,
-            inContact: this.contacts.has(msg.senderId),
+            senderUsername: isOwn ? this.identity.username : contact?.friendUsername,
+            senderDisplayName: isOwn ? this.identity.displayName : contact?.friendDisplayName,
+            senderAccountType: isOwn ? ('agent' as AccountType) : contact?.friendAccountType,
+            inContact: isOwn || this.contacts.has(msg.senderId),
             text: msg.content.text,
             timestamp: msg.createdAt,
           };
-          this.insertMessage(conversationId, message);
-          this.messageHandler?.(message);
+          const inserted = this.insertMessage(conversationId, message);
+          if (inserted && !isOwn) {
+            this.messageHandler?.(message);
+          }
         }
         cursor = resp.cursor;
       } while (cursor);
