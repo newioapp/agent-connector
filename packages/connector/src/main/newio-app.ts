@@ -162,6 +162,7 @@ export class NewioApp {
       wsFactory: (url) => new WebSocket(url) as never,
     });
     await ws.connect();
+    console.log('connected');
 
     const app = new NewioApp(identity, auth, client, ws);
     await app.loadData();

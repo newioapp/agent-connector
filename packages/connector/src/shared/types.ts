@@ -8,7 +8,7 @@ export type ThemeSource = 'system' | 'light' | 'dark';
 // Agent types
 // ---------------------------------------------------------------------------
 
-export type AgentType = 'claude' | 'kiro-cli';
+export type AgentType = 'claude-code' | 'kiro-cli';
 
 export type AgentRuntimeStatus = 'stopped' | 'starting' | 'awaiting_approval' | 'connected' | 'running' | 'error';
 
