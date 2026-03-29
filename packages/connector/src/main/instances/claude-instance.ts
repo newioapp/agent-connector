@@ -12,6 +12,7 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { Query, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { BaseAgentInstance } from './base-agent-instance';
+import { MessageQueue } from './message-queue';
 import type { IncomingMessage } from '../newio-app';
 import { Logger } from '../../shared/logger';
 
@@ -23,12 +24,8 @@ const log = new Logger('claude-instance');
 // ---------------------------------------------------------------------------
 
 export class ClaudeInstance extends BaseAgentInstance {
-  private processing = false;
-
-  /** conversationId → queued incoming messages */
-  private readonly messageQueue = new Map<string, IncomingMessage[]>();
-  /** FIFO order of conversations with pending messages */
-  private readonly pendingConversations: string[] = [];
+  private readonly messageQueue = new MessageQueue();
+  private processingAbort: AbortController | null = null;
 
   // ---------------------------------------------------------------------------
   // Lifecycle
@@ -39,8 +36,11 @@ export class ClaudeInstance extends BaseAgentInstance {
       throw new Error('NewioApp not initialized');
     }
     this.app.onMessage((msg) => {
-      this.enqueue(msg);
+      if (!msg.isOwnMessage) {
+        this.messageQueue.enqueue(msg);
+      }
     });
+    this.startProcessing();
     await this.sendGreeting();
   }
 
@@ -112,52 +112,26 @@ export class ClaudeInstance extends BaseAgentInstance {
   }
 
   protected onStopped(): void {
+    this.processingAbort?.abort();
+    this.processingAbort = null;
     this.messageQueue.clear();
-    this.pendingConversations.length = 0;
-    this.processing = false;
   }
 
   // ---------------------------------------------------------------------------
-  // Queue management
+  // Processing loop
   // ---------------------------------------------------------------------------
 
-  private enqueue(msg: IncomingMessage): void {
-    if (msg.isOwnMessage) {
-      return;
-    }
-    const existing = this.messageQueue.get(msg.conversationId);
-    if (existing) {
-      existing.push(msg);
-    } else {
-      this.messageQueue.set(msg.conversationId, [msg]);
-      this.pendingConversations.push(msg.conversationId);
-    }
-    void this.processNext();
+  private startProcessing(): void {
+    this.processingAbort = new AbortController();
+    void this.processLoop();
   }
 
-  private async processNext(): Promise<void> {
-    if (this.processing || this.pendingConversations.length === 0) {
-      return;
-    }
-
-    this.processing = true;
-    try {
-      while (this.pendingConversations.length > 0) {
-        const conversationId = this.pendingConversations.shift();
-        if (!conversationId) {
-          continue;
-        }
-        const messages = this.messageQueue.get(conversationId);
-        this.messageQueue.delete(conversationId);
-
-        if (!messages || messages.length === 0) {
-          continue;
-        }
-
-        await this.processBatch(conversationId, messages);
+  private async processLoop(): Promise<void> {
+    for await (const [conversationId, messages] of this.messageQueue.batches()) {
+      if (this.processingAbort?.signal.aborted) {
+        break;
       }
-    } finally {
-      this.processing = false;
+      await this.processBatch(conversationId, messages);
     }
   }
 
@@ -216,24 +190,8 @@ export class ClaudeInstance extends BaseAgentInstance {
       parent_tool_use_id: null,
     };
 
-    // Wrap single message as async iterable for streaming input
-    const asyncMessages: AsyncIterable<SDKUserMessage> = {
-      [Symbol.asyncIterator]() {
-        let done = false;
-        return {
-          next() {
-            if (done) {
-              return Promise.resolve({ value: undefined, done: true } as IteratorResult<SDKUserMessage>);
-            }
-            done = true;
-            return Promise.resolve({ value: userMessage, done: false });
-          },
-        };
-      },
-    };
-
     const q: Query = query({
-      prompt: asyncMessages,
+      prompt: singleAsyncIterable(userMessage),
       options: {
         systemPrompt: {
           type: 'preset',
@@ -275,6 +233,28 @@ export class ClaudeInstance extends BaseAgentInstance {
 
     return resultText;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Wrap a single value as an AsyncIterable that yields it once. */
+function singleAsyncIterable<T>(value: T): AsyncIterable<T> {
+  return {
+    [Symbol.asyncIterator]() {
+      let done = false;
+      return {
+        next() {
+          if (done) {
+            return Promise.resolve({ value: undefined, done: true } as IteratorResult<T>);
+          }
+          done = true;
+          return Promise.resolve({ value, done: false });
+        },
+      };
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
