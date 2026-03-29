@@ -71,11 +71,8 @@ export class NewioApp {
   /** conversationId → next sequenceNumber */
   private readonly sequenceNumbers = new Map<string, number>();
 
-  /** conversationId → last known messageId (for backfill boundaries) */
-  private readonly lastMessageIds = new Map<string, string>();
-
-  /** messageId → cached message + receive time (for dedup and recent context) */
-  private readonly messageCache = new Map<string, { readonly message: IncomingMessage; readonly receivedAt: number }>();
+  /** conversationId → ULID-sorted message list (recent cache, evicted by TTL) */
+  private readonly messageCache = new Map<string, IncomingMessage[]>();
 
   private messageHandler: MessageHandler | null = null;
 
@@ -250,19 +247,14 @@ export class NewioApp {
     return [...this.contacts.values()];
   }
 
-  /** Get recent messages, optionally filtered by conversationId. Sorted oldest-first. */
-  getRecentMessages(conversationId?: string): IncomingMessage[] {
-    const now = Date.now();
-    const result: IncomingMessage[] = [];
-    for (const entry of this.messageCache.values()) {
-      if (now - entry.receivedAt > MESSAGE_CACHE_TTL_MS) {
-        continue;
-      }
-      if (!conversationId || entry.message.conversationId === conversationId) {
-        result.push(entry.message);
-      }
+  /** Get recent cached messages for a conversation, sorted oldest-first. */
+  getRecentMessages(conversationId: string): readonly IncomingMessage[] {
+    const messages = this.messageCache.get(conversationId);
+    if (!messages) {
+      return [];
     }
-    return result.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    this.evictExpired(conversationId, messages);
+    return messages;
   }
 
   /** Get members of a conversation (fetches from API if not cached). */
@@ -526,32 +518,19 @@ Response rules:
   // ---------------------------------------------------------------------------
 
   private async handleIncomingMessage(payload: MessageRecord & { readonly conversationType: string }): Promise<void> {
-    // Skip own messages (includes echoed messages from our own sendMessage calls)
-    if (payload.senderId === this.identity.userId) {
-      return;
-    }
     if (!payload.content.text) {
       return;
     }
 
-    // Dedup: skip if already in cache
-    if (this.messageCache.has(payload.messageId)) {
+    // Dedup: compare against last cached messageId (ULIDs are lexicographically ordered)
+    const cached = this.messageCache.get(payload.conversationId);
+    if (cached && cached.length > 0 && cached[cached.length - 1].messageId >= payload.messageId) {
       return;
     }
 
-    // Gap detection: if sequenceNumber jumped, backfill missed messages
-    const currentSeq = this.sequenceNumbers.get(payload.conversationId) ?? 0;
-    const lastMsgId = this.lastMessageIds.get(payload.conversationId);
-    if (payload.sequenceNumber > currentSeq + 1 && currentSeq > 0 && lastMsgId) {
-      await this.backfillGap(payload.conversationId, lastMsgId, payload.messageId);
-    }
-    if (payload.sequenceNumber > currentSeq) {
-      this.sequenceNumbers.set(payload.conversationId, payload.sequenceNumber);
-    }
-    this.lastMessageIds.set(payload.conversationId, payload.messageId);
-
     const contact = this.contacts.get(payload.senderId);
     const conv = this.conversations.get(payload.conversationId);
+    const isOwnMessage = payload.senderId === this.identity.userId;
 
     const message: IncomingMessage = {
       messageId: payload.messageId,
@@ -559,32 +538,68 @@ Response rules:
       conversationType: payload.conversationType,
       groupName: conv?.name,
       senderUserId: payload.senderId,
-      senderUsername: contact?.friendUsername,
-      senderDisplayName: contact?.friendDisplayName,
-      senderAccountType: contact?.friendAccountType,
-      inContact: this.contacts.has(payload.senderId),
+      senderUsername: isOwnMessage ? this.identity.username : contact?.friendUsername,
+      senderDisplayName: isOwnMessage ? this.identity.displayName : contact?.friendDisplayName,
+      senderAccountType: isOwnMessage ? ('agent' as AccountType) : contact?.friendAccountType,
+      inContact: isOwnMessage || this.contacts.has(payload.senderId),
       text: payload.content.text,
       timestamp: payload.createdAt,
     };
 
-    this.cacheMessage(message);
-    this.messageHandler?.(message);
+    this.insertMessage(payload.conversationId, message);
+
+    // Update sequence tracking
+    const currentSeq = this.sequenceNumbers.get(payload.conversationId) ?? 0;
+    if (payload.sequenceNumber > currentSeq + 1 && currentSeq > 0 && cached && cached.length > 1) {
+      const afterId = cached[cached.length - 2].messageId; // message before the one we just inserted
+      await this.backfillGap(payload.conversationId, afterId, payload.messageId);
+    }
+    if (payload.sequenceNumber > currentSeq) {
+      this.sequenceNumbers.set(payload.conversationId, payload.sequenceNumber);
+    }
+
+    // Only notify handler for other people's messages
+    if (!isOwnMessage) {
+      this.messageHandler?.(message);
+    }
   }
 
   /**
-   * Add a message to the cache and evict expired entries.
-   * Eviction is lazy — runs on each insert, which is fine since message
-   * volume is bounded and Map iteration is fast for thousands of entries.
+   * Insert a message into the per-conversation sorted list.
+   * Scans from the end — O(1) for the common case (newest message).
    */
-  private cacheMessage(message: IncomingMessage): void {
-    const now = Date.now();
-    this.messageCache.set(message.messageId, { message, receivedAt: now });
+  private insertMessage(conversationId: string, message: IncomingMessage): void {
+    let messages = this.messageCache.get(conversationId);
+    if (!messages) {
+      messages = [];
+      this.messageCache.set(conversationId, messages);
+    }
 
-    // Lazy eviction
-    for (const [id, entry] of this.messageCache) {
-      if (now - entry.receivedAt > MESSAGE_CACHE_TTL_MS) {
-        this.messageCache.delete(id);
-      }
+    let i = messages.length;
+    while (i > 0 && messages[i - 1].messageId > message.messageId) {
+      i--;
+    }
+    // Dedup (exact match at insertion point)
+    if (i > 0 && messages[i - 1].messageId === message.messageId) {
+      return;
+    }
+    messages.splice(i, 0, message);
+
+    this.evictExpired(conversationId, messages);
+  }
+
+  /** Remove messages older than the TTL from the front of a sorted list. */
+  private evictExpired(conversationId: string, messages: IncomingMessage[]): void {
+    const cutoff = Date.now() - MESSAGE_CACHE_TTL_MS;
+    let evictCount = 0;
+    while (evictCount < messages.length && new Date(messages[evictCount].timestamp).getTime() < cutoff) {
+      evictCount++;
+    }
+    if (evictCount > 0) {
+      messages.splice(0, evictCount);
+    }
+    if (messages.length === 0) {
+      this.messageCache.delete(conversationId);
     }
   }
 
@@ -610,9 +625,6 @@ Response rules:
           if (msg.senderId === this.identity.userId || !msg.content.text) {
             continue;
           }
-          if (this.messageCache.has(msg.messageId)) {
-            continue;
-          }
           const contact = this.contacts.get(msg.senderId);
           const conv = this.conversations.get(conversationId);
           const message: IncomingMessage = {
@@ -628,7 +640,7 @@ Response rules:
             text: msg.content.text,
             timestamp: msg.createdAt,
           };
-          this.cacheMessage(message);
+          this.insertMessage(conversationId, message);
           this.messageHandler?.(message);
         }
         cursor = resp.cursor;
