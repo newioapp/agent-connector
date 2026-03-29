@@ -31,13 +31,42 @@ export class ClaudeInstance extends BaseAgentInstance {
   // Lifecycle
   // ---------------------------------------------------------------------------
 
-  protected onConnected(): void {
+  protected async onConnected(): Promise<void> {
     if (!this.app) {
       throw new Error('NewioApp not initialized');
     }
     this.app.onMessage((msg) => {
       this.enqueue(msg);
     });
+    await this.sendGreeting();
+  }
+
+  /**
+   * Send a greeting DM to the owner to verify the LLM connection works.
+   * Throws on failure so BaseAgentInstance.start() surfaces the error to the UI.
+   */
+  private async sendGreeting(): Promise<void> {
+    if (!this.app?.identity.ownerId) {
+      return;
+    }
+
+    const prompt =
+      'You just connected to the Newio messaging platform. Send a brief, friendly greeting to your owner to let them know you are online and ready. Keep it to 1-2 sentences.';
+
+    let response: string | undefined;
+    try {
+      response = await this.queryAgent(prompt);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      throw new Error(`LLM connection test failed: ${message}`);
+    }
+
+    if (!response || response.trim().toLowerCase() === SKIP_TOKEN) {
+      throw new Error('LLM connection test failed: model returned an empty response');
+    }
+
+    const conversationId = await this.app.findOrCreateDm(this.app.identity.ownerId);
+    await this.app.sendMessage(conversationId, response.trim());
   }
 
   protected onStopped(): void {
