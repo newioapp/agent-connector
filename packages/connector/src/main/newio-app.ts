@@ -1,12 +1,18 @@
 /**
  * NewioApp — high-level abstraction over the Newio SDK.
  *
+ * Owns the full Newio lifecycle: auth, HTTP client, WebSocket connection.
  * Caches contacts and conversations, provides username-based lookups,
- * tracks sequenceNumbers, and exposes a clean event interface.
+ * tracks sequenceNumbers, builds system prompts, and exposes a clean event interface.
  * Used by both the Claude adapter and the future MCP server.
  */
-import type { NewioClient, NewioWebSocket } from '@newio/sdk';
+import { AuthManager, NewioClient, NewioWebSocket } from '@newio/sdk';
+import type { ApprovalHandle, AccountType } from '@newio/sdk';
 import type { ContactRecord, ConversationListItem, MemberRecord, MessageRecord, ConversationType } from '@newio/sdk';
+import WebSocket from 'ws';
+
+const API_BASE_URL = 'https://api.conduit.qinnan.dev';
+const WS_URL = 'wss://ws.conduit.qinnan.dev';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -19,6 +25,7 @@ export interface IncomingMessage {
   readonly senderUserId: string;
   readonly senderUsername?: string;
   readonly senderDisplayName?: string;
+  readonly senderAccountType?: AccountType;
   readonly inContact: boolean;
   readonly text: string;
   readonly timestamp: string;
@@ -33,13 +40,20 @@ export interface NewioIdentity {
   readonly ownerId?: string;
 }
 
+/** Tokens returned after auth. */
+export interface NewioTokens {
+  readonly accessToken: string;
+  readonly refreshToken: string;
+}
+
 // ---------------------------------------------------------------------------
 // NewioApp
 // ---------------------------------------------------------------------------
 
 export class NewioApp {
   readonly identity: NewioIdentity;
-  private readonly client: NewioClient;
+  readonly client: NewioClient;
+  readonly auth: AuthManager;
   private readonly ws: NewioWebSocket;
 
   /** contactId → ContactRecord */
@@ -55,20 +69,90 @@ export class NewioApp {
 
   private messageHandler: MessageHandler | null = null;
 
-  constructor(identity: NewioIdentity, client: NewioClient, ws: NewioWebSocket) {
+  private constructor(identity: NewioIdentity, auth: AuthManager, client: NewioClient, ws: NewioWebSocket) {
     this.identity = identity;
+    this.auth = auth;
     this.client = client;
     this.ws = ws;
   }
 
-  // ---------------------------------------------------------------------------
-  // Initialization
-  // ---------------------------------------------------------------------------
+  /**
+   * Create and initialize a NewioApp.
+   *
+   * Handles auth (register or login), profile sync, WebSocket connect,
+   * and initial data loading. Returns a fully ready app instance.
+   */
+  static async create(opts: {
+    agentId?: string;
+    username?: string;
+    name: string;
+    tokens?: NewioTokens;
+    onApprovalUrl?: (url: string) => void;
+    onTokens?: (tokens: NewioTokens) => void;
+    signal?: AbortSignal;
+  }): Promise<NewioApp> {
+    const auth = new AuthManager(API_BASE_URL);
 
-  /** Load contacts and conversations, wire up WebSocket events. */
-  async init(): Promise<void> {
-    await Promise.all([this.loadContacts(), this.loadConversations()]);
-    this.wireEvents();
+    // Authenticate
+    if (opts.tokens) {
+      auth.setTokens(opts.tokens.accessToken, opts.tokens.refreshToken);
+      try {
+        await auth.forceRefresh();
+      } catch {
+        await doApprovalFlow(auth, opts);
+      }
+    } else {
+      await doApprovalFlow(auth, opts);
+    }
+
+    // Notify caller of new tokens
+    const accessToken = auth.getAccessToken();
+    const refreshToken = auth.getRefreshToken();
+    if (accessToken && refreshToken) {
+      opts.onTokens?.({ accessToken, refreshToken });
+    }
+
+    // Create client, fetch profile
+    const client = new NewioClient({ baseUrl: API_BASE_URL, tokenProvider: auth.tokenProvider });
+    const me = await client.getMe({});
+    if (!me.username) {
+      throw new Error('Agent account has no username. Registration may have failed.');
+    }
+
+    const identity: NewioIdentity = {
+      userId: me.userId,
+      username: me.username,
+      displayName: me.displayName,
+      ownerId: me.ownerId,
+    };
+
+    // Connect WebSocket
+    const ws = new NewioWebSocket({
+      url: WS_URL,
+      tokenProvider: auth.tokenProvider,
+      wsFactory: (url) => new WebSocket(url) as never,
+    });
+    await ws.connect();
+
+    const app = new NewioApp(identity, auth, client, ws);
+    await app.loadData();
+    app.wireEvents();
+    return app;
+  }
+
+  /** Disconnect WebSocket and dispose auth. */
+  dispose(): void {
+    this.ws.disconnect();
+    this.auth.dispose();
+  }
+
+  /** Register a listener for WebSocket disconnection. */
+  onDisconnect(handler: () => void): void {
+    this.ws.onStateChange((state) => {
+      if (state === 'disconnected') {
+        handler();
+      }
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -157,7 +241,6 @@ export class NewioApp {
 
   /** Find an existing DM with a user, or create one. */
   async findOrCreateDm(userId: string): Promise<string> {
-    // Check cached conversations for an existing DM
     for (const conv of this.conversations.values()) {
       if (conv.type === 'dm') {
         const members = await this.getMembers(conv.conversationId);
@@ -166,7 +249,6 @@ export class NewioApp {
         }
       }
     }
-    // Create new DM (backend returns existing if one already exists)
     const resp = await this.client.createConversation({
       type: 'dm' as ConversationType,
       memberIds: [userId],
@@ -200,8 +282,94 @@ export class NewioApp {
   }
 
   // ---------------------------------------------------------------------------
+  // System prompt
+  // ---------------------------------------------------------------------------
+
+  /** Build a system prompt describing the agent's identity and messaging context. */
+  buildSystemPrompt(opts?: { customInstructions?: string }): string {
+    const { username, displayName } = this.identity;
+    const ownerContact = this.findOwnerContact();
+
+    const parts: string[] = [];
+
+    parts.push(
+      `You are an AI agent on a messaging platform. Your username is "${username}"${displayName ? ` and your display name is "${displayName}"` : ''}. You receive messages from multiple conversations — both direct messages and group chats. Each message batch you receive is from a single conversation.`,
+    );
+
+    if (ownerContact) {
+      const ownerName = ownerContact.friendDisplayName ?? ownerContact.friendUsername ?? 'Unknown';
+      const ownerUsername = ownerContact.friendUsername ?? 'unknown';
+      parts.push(
+        `Your owner is "${ownerName}" (username: "${ownerUsername}"). Treat messages from your owner with priority.`,
+      );
+    }
+
+    if (opts?.customInstructions) {
+      parts.push(opts.customInstructions);
+    }
+
+    parts.push(`Messages arrive as YAML. Each sender has a username, display name, account type (human or agent), and whether they are in your contacts.
+
+DM example:
+  conversationId: abc-123
+  type: dm
+  from:
+    username: alice
+    displayName: Alice
+    accountType: human
+    inContact: true
+  messages:
+    - message: Hey, how are you?
+      timestamp: "2026-03-17T22:55:41Z"
+
+Group example:
+  conversationId: def-456
+  type: group
+  groupName: Team Chat
+  messages:
+    - from:
+        username: bob
+        displayName: Bob
+        accountType: human
+        inContact: true
+      message: Meeting at 3?
+      timestamp: "2026-03-17T23:01:02Z"
+    - from:
+        username: helper_bot
+        displayName: Helper Bot
+        accountType: agent
+        inContact: false
+      message: I can help schedule that
+      timestamp: "2026-03-17T23:01:15Z"
+
+Response rules:
+- Reply with plain text only — no JSON, no YAML, no formatting wrappers.
+- If no reply is needed, respond with exactly: _skip
+- In group chats, only respond when addressed or when you have something relevant to add.
+- Be concise and natural.`);
+
+    return parts.join('\n\n');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Internal — owner lookup
+  // ---------------------------------------------------------------------------
+
+  private findOwnerContact(): ContactRecord | undefined {
+    const ownerId = this.identity.ownerId;
+    if (!ownerId) {
+      return undefined;
+    }
+    return this.contacts.get(ownerId);
+  }
+
+  // ---------------------------------------------------------------------------
   // Internal — data loading
   // ---------------------------------------------------------------------------
+
+  private async loadData(): Promise<void> {
+    await Promise.all([this.loadContacts(), this.loadConversations()]);
+  }
 
   private async loadContacts(): Promise<void> {
     let cursor: string | undefined;
@@ -297,7 +465,6 @@ export class NewioApp {
           members.splice(idx, 1);
         }
       }
-      // If we were removed, clean up
       if (event.payload.userId === this.identity.userId) {
         this.conversations.delete(event.payload.conversationId);
         this.conversationMembers.delete(event.payload.conversationId);
@@ -318,23 +485,18 @@ export class NewioApp {
   // ---------------------------------------------------------------------------
 
   private handleIncomingMessage(payload: MessageRecord & { readonly conversationType: string }): void {
-    // Ignore own messages
     if (payload.senderId === this.identity.userId) {
       return;
     }
-
-    // Ignore messages without text
     if (!payload.content.text) {
       return;
     }
 
-    // Update sequenceNumber tracking
     const currentSeq = this.sequenceNumbers.get(payload.conversationId) ?? 0;
     if (payload.sequenceNumber > currentSeq) {
       this.sequenceNumbers.set(payload.conversationId, payload.sequenceNumber);
     }
 
-    // Resolve sender info from contacts
     const contact = this.contacts.get(payload.senderId);
     const conv = this.conversations.get(payload.conversationId);
 
@@ -345,6 +507,7 @@ export class NewioApp {
       senderUserId: payload.senderId,
       senderUsername: contact?.friendUsername,
       senderDisplayName: contact?.friendDisplayName,
+      senderAccountType: contact?.friendAccountType,
       inContact: this.contacts.has(payload.senderId),
       text: payload.content.text,
       timestamp: payload.createdAt,
@@ -352,4 +515,30 @@ export class NewioApp {
 
     this.messageHandler?.(message);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Internal — approval flow helper
+// ---------------------------------------------------------------------------
+
+async function doApprovalFlow(
+  auth: AuthManager,
+  opts: {
+    agentId?: string;
+    username?: string;
+    name: string;
+    onApprovalUrl?: (url: string) => void;
+    signal?: AbortSignal;
+  },
+): Promise<void> {
+  let handle: ApprovalHandle;
+  if (opts.agentId) {
+    handle = await auth.login({ agentId: opts.agentId });
+  } else if (opts.username) {
+    handle = await auth.login({ username: opts.username });
+  } else {
+    handle = await auth.register({ name: opts.name });
+  }
+  opts.onApprovalUrl?.(handle.approvalUrl);
+  await handle.waitForApproval({ signal: opts.signal });
 }
