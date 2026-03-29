@@ -305,10 +305,10 @@ describe('NewioApp', () => {
     });
   });
 
-  describe('buildSystemPrompt', () => {
+  describe('buildNewioInstruction', () => {
     it('includes agent identity', async () => {
       const { app } = await createApp();
-      const prompt = app.buildSystemPrompt();
+      const prompt = app.buildNewioInstruction();
 
       expect(prompt).toContain('myagent');
       expect(prompt).toContain('My Agent');
@@ -321,7 +321,7 @@ describe('NewioApp', () => {
         friendDisplayName: 'The Owner',
       });
       const { app } = await createApp([ownerContact]);
-      const prompt = app.buildSystemPrompt();
+      const prompt = app.buildNewioInstruction();
 
       expect(prompt).toContain('The Owner');
       expect(prompt).toContain('owner');
@@ -329,21 +329,21 @@ describe('NewioApp', () => {
 
     it('includes custom instructions', async () => {
       const { app } = await createApp();
-      const prompt = app.buildSystemPrompt({ customInstructions: 'Always be polite.' });
+      const prompt = app.buildNewioInstruction({ customInstructions: 'Always be polite.' });
 
       expect(prompt).toContain('Always be polite.');
     });
 
     it('includes _skip convention', async () => {
       const { app } = await createApp();
-      const prompt = app.buildSystemPrompt();
+      const prompt = app.buildNewioInstruction();
 
       expect(prompt).toContain('_skip');
     });
 
     it('mentions markdown support', async () => {
       const { app } = await createApp();
-      const prompt = app.buildSystemPrompt();
+      const prompt = app.buildNewioInstruction();
 
       expect(prompt).toContain('markdown');
     });

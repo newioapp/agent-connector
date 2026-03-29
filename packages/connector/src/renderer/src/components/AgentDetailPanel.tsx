@@ -152,7 +152,7 @@ export function AgentDetailPanel({ agent }: { readonly agent: AgentStatusInfo })
           <>
             <Field label="Model" value={config.claude.model} />
             <Field label="API Key" value={'•'.repeat(12) + config.claude.apiKey.slice(-4)} />
-            {config.claude.systemPrompt && <Field label="System Prompt" value={config.claude.systemPrompt} />}
+            {config.claude.userPrompt && <Field label="User Prompt" value={config.claude.userPrompt} />}
           </>
         )}
 

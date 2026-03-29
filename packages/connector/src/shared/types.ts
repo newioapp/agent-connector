@@ -15,7 +15,7 @@ export type AgentRuntimeStatus = 'stopped' | 'starting' | 'awaiting_approval' | 
 export interface ClaudeConfig {
   readonly apiKey: string;
   readonly model: string;
-  readonly systemPrompt?: string;
+  readonly userPrompt?: string;
 }
 
 export interface KiroCliConfig {
