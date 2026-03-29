@@ -65,7 +65,7 @@ describe('AuthManager', () => {
   });
 
   describe('login', () => {
-    it('should call login endpoint and return an approval handle', async () => {
+    it('should call login endpoint with agentId and return an approval handle', async () => {
       mockFetch([
         {
           status: 200,
@@ -83,6 +83,28 @@ describe('AuthManager', () => {
 
       expect(handle.agentId).toBe('agent-1');
       expect(handle.approvalId).toBe('approval-2');
+
+      auth.dispose();
+    });
+
+    it('should call login endpoint with username and return an approval handle', async () => {
+      mockFetch([
+        {
+          status: 200,
+          body: {
+            agentId: 'agent-1',
+            approvalId: 'approval-3',
+            status: 'pending_approval',
+            approvalUrl: 'https://newio.dev/approve?approvalId=approval-3&token=secret-token',
+          },
+        },
+      ]);
+
+      const auth = new AuthManager('https://api.newio.dev');
+      const handle = await auth.login({ username: 'my-agent' });
+
+      expect(handle.agentId).toBe('agent-1');
+      expect(handle.approvalId).toBe('approval-3');
 
       auth.dispose();
     });
