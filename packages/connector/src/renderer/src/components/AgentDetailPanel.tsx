@@ -10,6 +10,7 @@ const STATUS_LABELS: Record<string, string> = {
   stopped: 'Stopped',
   starting: 'Starting…',
   awaiting_approval: 'Awaiting approval',
+  connected: 'Connected',
   running: 'Running',
   error: 'Error',
 };
@@ -18,6 +19,7 @@ const STATUS_CLASSES: Record<string, string> = {
   stopped: 'text-muted-foreground',
   starting: 'text-warning',
   awaiting_approval: 'text-warning',
+  connected: 'text-success',
   running: 'text-success',
   error: 'text-destructive',
 };
@@ -26,6 +28,7 @@ const DOT_CLASSES: Record<string, string> = {
   stopped: 'bg-muted-foreground',
   starting: 'bg-warning',
   awaiting_approval: 'bg-warning',
+  connected: 'bg-success',
   running: 'bg-success',
   error: 'bg-destructive',
 };
@@ -49,7 +52,10 @@ export function AgentDetailPanel({ agent }: { readonly agent: AgentStatusInfo })
   const { config } = agent;
   const isStopped = agent.runtimeStatus === 'stopped' || agent.runtimeStatus === 'error';
   const isRunning = agent.runtimeStatus === 'running';
-  const isBusy = agent.runtimeStatus === 'starting' || agent.runtimeStatus === 'awaiting_approval';
+  const isBusy =
+    agent.runtimeStatus === 'starting' ||
+    agent.runtimeStatus === 'awaiting_approval' ||
+    agent.runtimeStatus === 'connected';
 
   function handleDelete(): void {
     if (!confirmDelete) {

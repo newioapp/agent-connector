@@ -10,7 +10,7 @@ export type ThemeSource = 'system' | 'light' | 'dark';
 
 export type AgentType = 'claude' | 'kiro-cli';
 
-export type AgentRuntimeStatus = 'stopped' | 'starting' | 'awaiting_approval' | 'running' | 'error';
+export type AgentRuntimeStatus = 'stopped' | 'starting' | 'awaiting_approval' | 'connected' | 'running' | 'error';
 
 export interface ClaudeConfig {
   readonly apiKey: string;

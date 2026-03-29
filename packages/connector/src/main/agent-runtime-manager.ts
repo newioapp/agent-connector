@@ -46,25 +46,6 @@ export class AgentRuntimeManager {
       throw new Error(`Agent ${agentId} not found.`);
     }
 
-    // Prevent duplicate logins for the same Newio account
-    if (config.newioAgentId) {
-      for (const [otherId, otherInstance] of this.instances) {
-        if (otherId === agentId) {
-          continue;
-        }
-        const otherConfig = this.configManager.get(otherId);
-        if (
-          otherConfig?.newioAgentId === config.newioAgentId &&
-          otherInstance.status !== 'stopped' &&
-          otherInstance.status !== 'error'
-        ) {
-          throw new Error(
-            `Another agent instance is already running with Newio account @${config.newioUsername ?? config.newioAgentId}.`,
-          );
-        }
-      }
-    }
-
     const instanceListener = {
       onStatusChanged: (status: AgentRuntimeStatus, error?: string) => {
         this.listener.onStatusChanged(agentId, status, error);

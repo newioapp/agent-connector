@@ -8,6 +8,7 @@ const STATUS_COLORS: Record<AgentRuntimeStatus, string> = {
   stopped: 'bg-muted-foreground',
   starting: 'bg-warning',
   awaiting_approval: 'bg-warning',
+  connected: 'bg-success',
   running: 'bg-success',
   error: 'bg-destructive',
 };

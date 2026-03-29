@@ -66,7 +66,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       });
 
       await this.ws.connect();
-      this.setStatus('running');
+      this.setStatus('connected');
 
       this.ws.onStateChange((state) => {
         if (state === 'disconnected' && !this.abortController?.signal.aborted) {
@@ -75,7 +75,12 @@ export abstract class BaseAgentInstance implements AgentInstance {
       });
 
       await this.onConnected();
+      this.setStatus('running');
     } catch (err: unknown) {
+      // Cleanup on failure
+      this.ws?.disconnect();
+      this.auth.dispose();
+
       if (err instanceof ApprovalTimeoutError) {
         this.setStatus('error', 'Approval timed out. Please try starting the agent again.');
       } else {
