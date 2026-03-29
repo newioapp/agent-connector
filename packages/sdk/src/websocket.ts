@@ -10,14 +10,26 @@ export type ConnectionStateListener = (state: ConnectionState) => void;
 /** Subscribe/unsubscribe ack from the server. */
 export interface SubscribeAck {
   readonly action: 'subscribe_ack';
-  readonly subscribed: readonly string[];
-  readonly errors: readonly string[];
+  readonly subscribed: readonly OnDemandTopic[];
+  readonly errors: readonly SubscriptionError[];
 }
 
 /** Unsubscribe ack from the server. */
 export interface UnsubscribeAck {
   readonly action: 'unsubscribe_ack';
-  readonly unsubscribed: readonly string[];
+  readonly unsubscribed: readonly OnDemandTopic[];
+}
+
+/** On-demand topic prefix. */
+export type OnDemandTopicPrefix = 'conv_ondemand';
+
+/** On-demand topic string (e.g. `conv_ondemand:{conversationId}`). */
+export type OnDemandTopic = `${OnDemandTopicPrefix}:${string}`;
+
+/** Error returned when a subscription fails. */
+export interface SubscriptionError {
+  readonly topic: string;
+  readonly code: 'FORBIDDEN' | 'INVALID_TOPIC' | 'LIMIT_EXCEEDED';
 }
 
 /**
@@ -157,14 +169,14 @@ export class NewioWebSocket {
   }
 
   /** Subscribe to on-demand topics. */
-  subscribe(topics: readonly string[]): void {
+  subscribe(topics: readonly OnDemandTopic[]): void {
     if (this.ws && this.state === 'connected') {
       this.ws.send(JSON.stringify({ action: 'subscribe', topics }));
     }
   }
 
   /** Unsubscribe from on-demand topics. */
-  unsubscribe(topics: readonly string[]): void {
+  unsubscribe(topics: readonly OnDemandTopic[]): void {
     if (this.ws && this.state === 'connected') {
       this.ws.send(JSON.stringify({ action: 'unsubscribe', topics }));
     }

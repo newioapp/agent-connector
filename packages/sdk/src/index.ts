@@ -8,6 +8,9 @@ export type {
   ConnectionStateListener,
   SubscribeAck,
   UnsubscribeAck,
+  SubscriptionError,
+  OnDemandTopicPrefix,
+  OnDemandTopic,
   WebSocketLike,
   WebSocketFactory,
 } from './websocket.js';

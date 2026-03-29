@@ -235,9 +235,9 @@ describe('NewioWebSocket', () => {
       await client.connect();
       ws.triggerOpen();
 
-      client.subscribe(['conv:c1']);
+      client.subscribe(['conv_ondemand:c1']);
       const sent = JSON.parse(ws.sent[ws.sent.length - 1]!) as unknown;
-      expect(sent).toEqual({ action: 'subscribe', topics: ['conv:c1'] });
+      expect(sent).toEqual({ action: 'subscribe', topics: ['conv_ondemand:c1'] });
 
       client.disconnect();
     });
@@ -248,9 +248,9 @@ describe('NewioWebSocket', () => {
       await client.connect();
       ws.triggerOpen();
 
-      client.unsubscribe(['conv:c1']);
+      client.unsubscribe(['conv_ondemand:c1']);
       const sent = JSON.parse(ws.sent[ws.sent.length - 1]!) as unknown;
-      expect(sent).toEqual({ action: 'unsubscribe', topics: ['conv:c1'] });
+      expect(sent).toEqual({ action: 'unsubscribe', topics: ['conv_ondemand:c1'] });
 
       client.disconnect();
     });
@@ -258,7 +258,7 @@ describe('NewioWebSocket', () => {
     it('should not send when disconnected', () => {
       const ws = createMockWs();
       const client = createClient(ws);
-      client.subscribe(['conv:c1']);
+      client.subscribe(['conv_ondemand:c1']);
       expect(ws.sent).toHaveLength(0);
     });
   });
