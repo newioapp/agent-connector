@@ -77,6 +77,22 @@ export class NewioApp {
   }
 
   /**
+   * Create a NewioApp from pre-initialized components (for testing).
+   * Loads contacts/conversations and wires WebSocket events.
+   */
+  static async createFromComponents(
+    identity: NewioIdentity,
+    auth: AuthManager,
+    client: NewioClient,
+    ws: NewioWebSocket,
+  ): Promise<NewioApp> {
+    const app = new NewioApp(identity, auth, client, ws);
+    await app.loadData();
+    app.wireEvents();
+    return app;
+  }
+
+  /**
    * Create and initialize a NewioApp.
    *
    * Handles auth (register or login), profile sync, WebSocket connect,
@@ -343,7 +359,7 @@ Group example:
       timestamp: "2026-03-17T23:01:15Z"
 
 Response rules:
-- Reply with plain text only — no JSON, no YAML, no formatting wrappers.
+- Reply with plain text or markdown — the messaging app renders markdown.
 - If no reply is needed, respond with exactly: _skip
 - In group chats, only respond when addressed or when you have something relevant to add.
 - Be concise and natural.`);
@@ -492,7 +508,11 @@ Response rules:
       return;
     }
 
+    // Gap detection: if sequenceNumber jumped, backfill missed messages
     const currentSeq = this.sequenceNumbers.get(payload.conversationId) ?? 0;
+    if (payload.sequenceNumber > currentSeq + 1 && currentSeq > 0) {
+      void this.backfillGap(payload.conversationId, currentSeq, payload.sequenceNumber);
+    }
     if (payload.sequenceNumber > currentSeq) {
       this.sequenceNumbers.set(payload.conversationId, payload.sequenceNumber);
     }
@@ -514,6 +534,44 @@ Response rules:
     };
 
     this.messageHandler?.(message);
+  }
+
+  /**
+   * Backfill missed messages when a sequence gap is detected.
+   * Fetches messages between the last known sequence and the new one,
+   * and delivers them to the message handler.
+   */
+  private async backfillGap(conversationId: string, afterSeq: number, beforeSeq: number): Promise<void> {
+    try {
+      // We don't have messageIds for the gap boundaries, so fetch recent messages
+      // and filter to the ones we missed. The gap is typically small (reconnect scenario).
+      const resp = await this.client.listMessages({ conversationId, limit: 50 });
+      for (const msg of resp.messages) {
+        if (
+          msg.sequenceNumber > afterSeq &&
+          msg.sequenceNumber < beforeSeq &&
+          msg.senderId !== this.identity.userId &&
+          msg.content.text
+        ) {
+          const contact = this.contacts.get(msg.senderId);
+          const conv = this.conversations.get(conversationId);
+          this.messageHandler?.({
+            conversationId,
+            conversationType: conv?.type ?? 'dm',
+            groupName: conv?.name,
+            senderUserId: msg.senderId,
+            senderUsername: contact?.friendUsername,
+            senderDisplayName: contact?.friendDisplayName,
+            senderAccountType: contact?.friendAccountType,
+            inContact: this.contacts.has(msg.senderId),
+            text: msg.content.text,
+            timestamp: msg.createdAt,
+          });
+        }
+      }
+    } catch {
+      // Best-effort — if backfill fails, we still process the current message
+    }
   }
 }
 

@@ -120,10 +120,18 @@ export class ClaudeInstance extends BaseAgentInstance {
       options: {
         systemPrompt: this.app.buildSystemPrompt({ customInstructions: this.config.claude.systemPrompt }),
         model: this.config.claude.model,
+        // No built-in tools — the agent is a pure messaging responder.
+        // MCP tools for Newio actions (send DM, create group, etc.) will be added in C6.
         tools: [],
+        // bypassPermissions: since tools=[], no permission prompts will occur.
+        // This avoids the SDK hanging on a permission request with no handler.
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
+        // Don't load any filesystem settings (~/.claude/settings.json, .claude/settings.json, etc.)
+        // This isolates the agent from the host machine's Claude Code configuration.
         settingSources: [],
+        // Persist session to disk (~/.claude/projects/) so resume works across query() calls.
+        // This is what gives the agent cross-conversation memory.
         persistSession: true,
         maxTurns: 1,
         ...(this.sessionId ? { resume: this.sessionId } : {}),
@@ -135,13 +143,23 @@ export class ClaudeInstance extends BaseAgentInstance {
 
     let resultText: string | undefined;
 
+    // The query yields SDKMessage events. Key types:
+    // - 'system' (subtype 'init'): session initialization with tools, model, session_id
+    // - 'assistant': Claude's response (BetaMessage with content blocks)
+    // - 'result': final outcome — 'success' (has .result text) or error subtypes
+    // - 'stream_event': partial streaming chunks (when includePartialMessages is true)
+    // We only need the session_id (for resume) and the final result text.
     for await (const event of q as AsyncIterable<SDKMessage>) {
       if (!this.sessionId && 'session_id' in event && typeof event.session_id === 'string') {
         this.sessionId = event.session_id;
       }
 
-      if (event.type === 'result' && event.subtype === 'success' && 'result' in event) {
-        resultText = event.result;
+      if (event.type === 'result') {
+        if (event.subtype === 'success' && 'result' in event) {
+          resultText = event.result;
+        } else {
+          console.error(`[Claude] Query ended with ${event.subtype}`, 'errors' in event ? event.errors : '');
+        }
       }
     }
 
