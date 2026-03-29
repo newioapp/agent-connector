@@ -11,19 +11,23 @@ import type { IpcApi } from '../shared/ipc-api';
 import type { ThemeSource, AgentConfig, AddAgentInput, UpdateAgentInput, AgentStatusInfo } from '../shared/types';
 import type { StoreSchema } from './store';
 import type { AgentConfigManager } from './agent-config-manager';
+import type { AgentRuntimeManager } from './agent-runtime-manager';
 
 interface IpcHandlerDeps {
   readonly store: Store<StoreSchema>;
   readonly agentConfigManager: AgentConfigManager;
+  readonly agentRuntimeManager: AgentRuntimeManager;
 }
 
 export class IpcHandler implements IpcApi {
   private readonly store: Store<StoreSchema>;
   private readonly agentConfigManager: AgentConfigManager;
+  private readonly agentRuntimeManager: AgentRuntimeManager;
 
   constructor(deps: IpcHandlerDeps) {
     this.store = deps.store;
     this.agentConfigManager = deps.agentConfigManager;
+    this.agentRuntimeManager = deps.agentRuntimeManager;
   }
 
   async getVersion(): Promise<string> {
@@ -48,12 +52,10 @@ export class IpcHandler implements IpcApi {
   }
 
   async listAgents(): Promise<AgentStatusInfo[]> {
-    // C2: all agents are stopped. C3 will add runtime status.
-    return this.agentConfigManager.list().map((config) => ({
-      id: config.id,
-      config,
-      runtimeStatus: 'stopped',
-    }));
+    return this.agentConfigManager.list().map((config) => {
+      const { status, error } = this.agentRuntimeManager.getStatus(config.id);
+      return { id: config.id, config, runtimeStatus: status, error };
+    });
   }
 
   async addAgent(input: AddAgentInput): Promise<AgentConfig> {
@@ -65,6 +67,15 @@ export class IpcHandler implements IpcApi {
   }
 
   async removeAgent(agentId: string): Promise<void> {
+    await this.agentRuntimeManager.stop(agentId);
     this.agentConfigManager.remove(agentId);
+  }
+
+  async startAgent(agentId: string): Promise<void> {
+    this.agentRuntimeManager.start(agentId);
+  }
+
+  async stopAgent(agentId: string): Promise<void> {
+    await this.agentRuntimeManager.stop(agentId);
   }
 }

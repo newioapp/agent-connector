@@ -24,6 +24,10 @@ export interface IpcApi {
   addAgent(input: AddAgentInput): Promise<AgentConfig>;
   updateAgent(agentId: string, updates: UpdateAgentInput): Promise<AgentConfig>;
   removeAgent(agentId: string): Promise<void>;
+
+  // Agent lifecycle
+  startAgent(agentId: string): Promise<void>;
+  stopAgent(agentId: string): Promise<void>;
 }
 
 /** Channel name for each IpcApi method. */
@@ -37,4 +41,6 @@ export const IPC_CHANNELS: { readonly [K in keyof IpcApi]: string } = {
   addAgent: 'add-agent',
   updateAgent: 'update-agent',
   removeAgent: 'remove-agent',
+  startAgent: 'start-agent',
+  stopAgent: 'stop-agent',
 };

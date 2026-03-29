@@ -14,18 +14,31 @@ export function App(): React.JSX.Element {
   const load = useAgentStore((s) => s.load);
   const selectAgent = useAgentStore((s) => s.selectAgent);
   const setAgentStatus = useAgentStore((s) => s.setAgentStatus);
+  const setApprovalUrl = useAgentStore((s) => s.setApprovalUrl);
+  const updateConfig = useAgentStore((s) => s.updateConfig);
   const [showAddDialog, setShowAddDialog] = useState(false);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  // Listen for agent status push events from main process
+  // Listen for push events from main process
   useEffect(() => {
-    return window.api.onAgentStatusChanged(({ agentId, status, error }) => {
+    const unsub1 = window.api.onAgentStatusChanged(({ agentId, status, error }) => {
       setAgentStatus(agentId, status, error);
     });
-  }, [setAgentStatus]);
+    const unsub2 = window.api.onAgentApprovalUrl(({ agentId, approvalUrl }) => {
+      setApprovalUrl(agentId, approvalUrl);
+    });
+    const unsub3 = window.api.onAgentConfigUpdated(({ agentId, config }) => {
+      updateConfig(agentId, config);
+    });
+    return () => {
+      unsub1();
+      unsub2();
+      unsub3();
+    };
+  }, [setAgentStatus, setApprovalUrl, updateConfig]);
 
   const selectedAgent = agents.find((a) => a.id === selectedAgentId) ?? null;
 
