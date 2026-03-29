@@ -197,12 +197,6 @@ describe('NewioClient', () => {
       expect(fetchCalls[0]?.body).toEqual({ type: 'group', name: 'Test', memberIds: ['u2'] });
     });
 
-    it('createDm', async () => {
-      mockFetch([{ status: 201, body: { conversation: { conversationId: 'c1' }, members: [] } }]);
-      await createClient().createDm({ userId: 'u2' });
-      expect(fetchCalls[0]?.body).toEqual({ type: 'dm', memberIds: ['u2'] });
-    });
-
     it('listConversations', async () => {
       mockFetch([{ status: 200, body: { conversations: [] } }]);
       await createClient().listConversations({});
@@ -267,28 +261,10 @@ describe('NewioClient', () => {
   // -------------------------------------------------------------------------
 
   describe('messages', () => {
-    it('sendMessage auto-increments sequenceNumber', async () => {
-      mockFetch([
-        { status: 201, body: { message: { messageId: 'm1' } } },
-        { status: 201, body: { message: { messageId: 'm2' } } },
-      ]);
-      const client = createClient();
-      await client.sendMessage({ conversationId: 'c1', content: { text: 'Hello' } });
-      await client.sendMessage({ conversationId: 'c1', content: { text: 'World' } });
-      expect(fetchCalls[0]?.body).toEqual({ content: { text: 'Hello' }, sequenceNumber: 1 });
-      expect(fetchCalls[1]?.body).toEqual({ content: { text: 'World' }, sequenceNumber: 2 });
-    });
-
-    it('sendMessage tracks sequenceNumber per conversation', async () => {
-      mockFetch([
-        { status: 201, body: { message: { messageId: 'm1' } } },
-        { status: 201, body: { message: { messageId: 'm2' } } },
-      ]);
-      const client = createClient();
-      await client.sendMessage({ conversationId: 'c1', content: { text: 'A' } });
-      await client.sendMessage({ conversationId: 'c2', content: { text: 'B' } });
-      expect(fetchCalls[0]?.body).toEqual({ content: { text: 'A' }, sequenceNumber: 1 });
-      expect(fetchCalls[1]?.body).toEqual({ content: { text: 'B' }, sequenceNumber: 1 });
+    it('sendMessage passes sequenceNumber from input', async () => {
+      mockFetch([{ status: 201, body: { message: { messageId: 'm1' } } }]);
+      await createClient().sendMessage({ conversationId: 'c1', content: { text: 'Hello' }, sequenceNumber: 5 });
+      expect(fetchCalls[0]?.body).toEqual({ content: { text: 'Hello' }, sequenceNumber: 5 });
     });
 
     it('listMessages with pagination', async () => {

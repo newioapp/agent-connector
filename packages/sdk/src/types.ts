@@ -420,10 +420,6 @@ export interface CreateConversationResponse {
   readonly members: readonly MemberRecord[];
 }
 
-export interface CreateDmRequest {
-  readonly userId: string;
-}
-
 export interface ListConversationsRequest {
   readonly cursor?: string;
   readonly limit?: number;
@@ -516,6 +512,7 @@ export interface UpdateNotifyLevelResponse {
 export interface SendMessageRequest {
   readonly conversationId: string;
   readonly content: MessageContent;
+  readonly sequenceNumber: number;
 }
 
 export interface SendMessageResponse {

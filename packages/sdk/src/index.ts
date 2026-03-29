@@ -106,7 +106,6 @@ export type {
 export type {
   CreateConversationRequest,
   CreateConversationResponse,
-  CreateDmRequest,
   ListConversationsRequest,
   ListConversationsResponse,
   GetConversationRequest,

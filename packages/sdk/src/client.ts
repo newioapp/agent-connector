@@ -49,7 +49,6 @@ import type {
   // Conversations
   CreateConversationRequest,
   CreateConversationResponse,
-  CreateDmRequest,
   ListConversationsRequest,
   ListConversationsResponse,
   GetConversationRequest,
@@ -121,7 +120,6 @@ import type {
  */
 export class NewioClient {
   private readonly http: HttpClient;
-  private readonly sequenceNumbers = new Map<string, number>();
 
   constructor(opts: { baseUrl: string; tokenProvider: TokenProvider }) {
     this.http = new HttpClient(opts.baseUrl, opts.tokenProvider);
@@ -273,11 +271,6 @@ export class NewioClient {
     return this.http.request('/conversations', { method: 'POST', body: JSON.stringify(input) });
   }
 
-  /** Create a DM with a user by ID (idempotent). */
-  async createDm(input: CreateDmRequest): Promise<CreateConversationResponse> {
-    return this.createConversation({ type: 'dm', memberIds: [input.userId] });
-  }
-
   /** List conversations (paginated, sorted by last message). */
   async listConversations(input: ListConversationsRequest): Promise<ListConversationsResponse> {
     return this.http.request(`/conversations${this.http.qs({ cursor: input.cursor, limit: input.limit })}`);
@@ -352,13 +345,11 @@ export class NewioClient {
   // Messages
   // ---------------------------------------------------------------------------
 
-  /** Send a message. The SDK auto-manages `sequenceNumber` per conversation. */
+  /** Send a message. */
   async sendMessage(input: SendMessageRequest): Promise<SendMessageResponse> {
-    const seq = (this.sequenceNumbers.get(input.conversationId) ?? 0) + 1;
-    this.sequenceNumbers.set(input.conversationId, seq);
     return this.http.request(`/conversations/${encodeURIComponent(input.conversationId)}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ content: input.content, sequenceNumber: seq }),
+      body: JSON.stringify({ content: input.content, sequenceNumber: input.sequenceNumber }),
     });
   }
 
