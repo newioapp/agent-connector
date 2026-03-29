@@ -64,13 +64,21 @@ export class AgentConfigManager {
   }
 
   /** Update Newio identity on an agent config (called after registration). */
-  setNewioIdentity(agentId: string, newioAgentId: string, newioUsername: string): AgentConfig {
+  setNewioIdentity(
+    agentId: string,
+    identity: {
+      newioAgentId: string;
+      newioUsername: string;
+      newioDisplayName?: string;
+      newioAvatarUrl?: string;
+    },
+  ): AgentConfig {
     const agents = [...this.store.get('agents')];
     const index = agents.findIndex((a) => a.id === agentId);
     if (index === -1) {
       throw new Error(`Agent ${agentId} not found.`);
     }
-    const updated: AgentConfig = { ...agents[index], newioAgentId, newioUsername };
+    const updated: AgentConfig = { ...agents[index], ...identity };
     agents[index] = updated;
     this.store.set('agents', agents);
     return updated;

@@ -134,6 +134,7 @@ export function AgentDetailPanel({ agent }: { readonly agent: AgentStatusInfo })
         <Field label="Type" value={config.type === 'kiro-cli' ? 'Kiro CLI' : 'Claude'} />
 
         {config.newioUsername && <Field label="Newio Username" value={`@${config.newioUsername}`} />}
+        {config.newioDisplayName && <Field label="Display Name" value={config.newioDisplayName} />}
         {config.newioAgentId && <Field label="Newio Agent ID" value={config.newioAgentId} />}
         {!config.newioAgentId && (
           <div className="mb-3 text-xs text-muted-foreground">

@@ -4,7 +4,7 @@
  * Subclasses implement onConnected() to add agent-type-specific behavior
  * (e.g. Claude message bridging, Kiro CLI process spawning).
  */
-import { AuthManager, NewioClient, NewioWebSocket } from '@newio/sdk';
+import { AuthManager, NewioClient, NewioWebSocket, ApprovalTimeoutError } from '@newio/sdk';
 import type { ApprovalHandle } from '@newio/sdk';
 import type Store from 'electron-store';
 import type { StoreSchema } from '../store';
@@ -39,14 +39,23 @@ export abstract class BaseAgentInstance implements AgentInstance {
     this.setStatus('starting');
 
     try {
-      // Check for persisted tokens
+      // Check for persisted tokens — try to use them, fall back to auth if expired
       const allTokens = this.store.get('agentTokens');
       if (this.config.id in allTokens) {
         const storedTokens = allTokens[this.config.id];
         this.auth.setTokens(storedTokens.accessToken, storedTokens.refreshToken);
+        // Validate tokens by refreshing — if refresh fails, re-authenticate
+        try {
+          await this.auth.forceRefresh();
+        } catch {
+          await this.authenticate();
+        }
       } else {
         await this.authenticate();
       }
+
+      // Always sync profile from Newio (display name, avatar may have changed)
+      await this.syncProfile();
 
       // Create client and WebSocket
       this.client = new NewioClient({ baseUrl: API_BASE_URL, tokenProvider: this.auth.tokenProvider });
@@ -65,11 +74,14 @@ export abstract class BaseAgentInstance implements AgentInstance {
         }
       });
 
-      // Let the subclass do its thing
       await this.onConnected();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      this.setStatus('error', message);
+      if (err instanceof ApprovalTimeoutError) {
+        this.setStatus('error', 'Approval timed out. Please try starting the agent again.');
+      } else {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        this.setStatus('error', message);
+      }
     }
   }
 
@@ -120,14 +132,24 @@ export abstract class BaseAgentInstance implements AgentInstance {
     // Persist tokens
     const allTokens = this.store.get('agentTokens');
     this.store.set('agentTokens', { ...allTokens, [this.config.id]: tokens });
+  }
 
-    // If new registration, fetch profile to get Newio identity
-    if (!this.config.newioAgentId) {
-      const client = new NewioClient({ baseUrl: API_BASE_URL, tokenProvider: this.auth.tokenProvider });
-      const me = await client.getMe({});
-      this.configManager.setNewioIdentity(this.config.id, me.userId, me.username ?? '');
-      this.listener.onConfigUpdated();
+  /** Fetch profile from Newio and sync identity + profile to config. */
+  private async syncProfile(): Promise<void> {
+    const client = new NewioClient({ baseUrl: API_BASE_URL, tokenProvider: this.auth.tokenProvider });
+    const me = await client.getMe({});
+
+    if (!me.username) {
+      throw new Error('Agent account has no username. Registration may have failed.');
     }
+
+    this.configManager.setNewioIdentity(this.config.id, {
+      newioAgentId: me.userId,
+      newioUsername: me.username,
+      newioDisplayName: me.displayName,
+      newioAvatarUrl: me.avatarUrl,
+    });
+    this.listener.onConfigUpdated();
   }
 
   private setStatus(status: AgentRuntimeStatus, error?: string): void {

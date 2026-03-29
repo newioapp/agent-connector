@@ -31,6 +31,10 @@ export interface AgentConfig {
   readonly newioAgentId?: string;
   /** Set after first Newio registration (assigned by owner during approval). */
   readonly newioUsername?: string;
+  /** Newio display name (synced on every start). */
+  readonly newioDisplayName?: string;
+  /** Newio avatar URL (synced on every start). */
+  readonly newioAvatarUrl?: string;
 
   readonly claude?: ClaudeConfig;
   readonly kiroCli?: KiroCliConfig;
