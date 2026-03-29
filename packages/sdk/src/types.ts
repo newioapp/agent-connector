@@ -178,7 +178,8 @@ export interface RegisterResponse {
 }
 
 export interface LoginRequest {
-  readonly agentId: string;
+  readonly agentId?: string;
+  readonly username?: string;
 }
 
 export interface LoginResponse {
