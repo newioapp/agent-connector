@@ -14,11 +14,15 @@ import WebSocket from 'ws';
 const API_BASE_URL = 'https://api.conduit.qinnan.dev';
 const WS_URL = 'wss://ws.conduit.qinnan.dev';
 
+/** How long received messages are kept in the cache (ms). */
+const MESSAGE_CACHE_TTL_MS = 10 * 60 * 1000;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 export interface IncomingMessage {
+  readonly messageId: string;
   readonly conversationId: string;
   readonly conversationType: string;
   readonly groupName?: string;
@@ -69,6 +73,9 @@ export class NewioApp {
 
   /** conversationId → last known messageId (for backfill boundaries) */
   private readonly lastMessageIds = new Map<string, string>();
+
+  /** messageId → cached message + receive time (for dedup and recent context) */
+  private readonly messageCache = new Map<string, { readonly message: IncomingMessage; readonly receivedAt: number }>();
 
   private messageHandler: MessageHandler | null = null;
 
@@ -241,6 +248,21 @@ export class NewioApp {
   /** Get all contacts. */
   getAllContacts(): ContactRecord[] {
     return [...this.contacts.values()];
+  }
+
+  /** Get recent messages, optionally filtered by conversationId. Sorted oldest-first. */
+  getRecentMessages(conversationId?: string): IncomingMessage[] {
+    const now = Date.now();
+    const result: IncomingMessage[] = [];
+    for (const entry of this.messageCache.values()) {
+      if (now - entry.receivedAt > MESSAGE_CACHE_TTL_MS) {
+        continue;
+      }
+      if (!conversationId || entry.message.conversationId === conversationId) {
+        result.push(entry.message);
+      }
+    }
+    return result.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
   }
 
   /** Get members of a conversation (fetches from API if not cached). */
@@ -512,6 +534,11 @@ Response rules:
       return;
     }
 
+    // Dedup: skip if already in cache
+    if (this.messageCache.has(payload.messageId)) {
+      return;
+    }
+
     // Gap detection: if sequenceNumber jumped, backfill missed messages
     const currentSeq = this.sequenceNumbers.get(payload.conversationId) ?? 0;
     const lastMsgId = this.lastMessageIds.get(payload.conversationId);
@@ -527,6 +554,7 @@ Response rules:
     const conv = this.conversations.get(payload.conversationId);
 
     const message: IncomingMessage = {
+      messageId: payload.messageId,
       conversationId: payload.conversationId,
       conversationType: payload.conversationType,
       groupName: conv?.name,
@@ -539,7 +567,25 @@ Response rules:
       timestamp: payload.createdAt,
     };
 
+    this.cacheMessage(message);
     this.messageHandler?.(message);
+  }
+
+  /**
+   * Add a message to the cache and evict expired entries.
+   * Eviction is lazy — runs on each insert, which is fine since message
+   * volume is bounded and Map iteration is fast for thousands of entries.
+   */
+  private cacheMessage(message: IncomingMessage): void {
+    const now = Date.now();
+    this.messageCache.set(message.messageId, { message, receivedAt: now });
+
+    // Lazy eviction
+    for (const [id, entry] of this.messageCache) {
+      if (now - entry.receivedAt > MESSAGE_CACHE_TTL_MS) {
+        this.messageCache.delete(id);
+      }
+    }
   }
 
   /**
@@ -561,22 +607,29 @@ Response rules:
           break;
         }
         for (const msg of resp.messages) {
-          if (msg.senderId !== this.identity.userId && msg.content.text) {
-            const contact = this.contacts.get(msg.senderId);
-            const conv = this.conversations.get(conversationId);
-            this.messageHandler?.({
-              conversationId,
-              conversationType: conv?.type ?? 'dm',
-              groupName: conv?.name,
-              senderUserId: msg.senderId,
-              senderUsername: contact?.friendUsername,
-              senderDisplayName: contact?.friendDisplayName,
-              senderAccountType: contact?.friendAccountType,
-              inContact: this.contacts.has(msg.senderId),
-              text: msg.content.text,
-              timestamp: msg.createdAt,
-            });
+          if (msg.senderId === this.identity.userId || !msg.content.text) {
+            continue;
           }
+          if (this.messageCache.has(msg.messageId)) {
+            continue;
+          }
+          const contact = this.contacts.get(msg.senderId);
+          const conv = this.conversations.get(conversationId);
+          const message: IncomingMessage = {
+            messageId: msg.messageId,
+            conversationId,
+            conversationType: conv?.type ?? 'dm',
+            groupName: conv?.name,
+            senderUserId: msg.senderId,
+            senderUsername: contact?.friendUsername,
+            senderDisplayName: contact?.friendDisplayName,
+            senderAccountType: contact?.friendAccountType,
+            inContact: this.contacts.has(msg.senderId),
+            text: msg.content.text,
+            timestamp: msg.createdAt,
+          };
+          this.cacheMessage(message);
+          this.messageHandler?.(message);
         }
         cursor = resp.cursor;
       } while (cursor);
