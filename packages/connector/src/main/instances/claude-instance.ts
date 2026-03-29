@@ -1,12 +1,16 @@
 /**
  * Claude agent instance — bridges Newio messages with Claude via the Anthropic Agent SDK.
  *
- * Uses a single persistent Claude session (v1 query API with resume) so the agent
- * maintains cross-conversation context. Incoming Newio messages are queued per
- * conversation and processed serially — one batch at a time.
+ * Uses streaming input mode with `continue: true` so the SDK manages conversation
+ * history across turns. Each turn passes a new user message via AsyncIterable.
+ *
+ * Uses streaming output: iterates SDKMessage events to detect when the model starts
+ * generating tokens, enabling thinking → typing status transitions.
+ *
+ * Incoming Newio messages are queued per conversation and processed serially.
  */
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import type { Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { Query, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { BaseAgentInstance } from './base-agent-instance';
 import type { IncomingMessage } from '../newio-app';
 import { Logger } from '../../shared/logger';
@@ -19,10 +23,9 @@ const log = new Logger('claude-instance');
 // ---------------------------------------------------------------------------
 
 export class ClaudeInstance extends BaseAgentInstance {
-  private sessionId?: string;
   private processing = false;
 
-  /** conversationId → queued messages */
+  /** conversationId → queued incoming messages */
   private readonly messageQueue = new Map<string, IncomingMessage[]>();
   /** FIFO order of conversations with pending messages */
   private readonly pendingConversations: string[] = [];
@@ -50,29 +53,68 @@ export class ClaudeInstance extends BaseAgentInstance {
       return;
     }
 
-    const prompt =
-      'You just connected to the Newio messaging platform. Send a brief, friendly greeting to your owner to let them know you are online and ready. Keep it to 1-2 sentences.';
-
-    let response: string | undefined;
+    let greeting: string | undefined;
     try {
-      response = await this.queryAgent(prompt);
+      greeting = await this.generateGreetingMessage();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       throw new Error(`LLM connection test failed: ${message}`);
     }
 
-    if (!response || response.trim().toLowerCase() === SKIP_TOKEN) {
+    if (!greeting || greeting.trim().toLowerCase() === SKIP_TOKEN) {
       throw new Error('LLM connection test failed: model returned an empty response');
     }
 
-    await this.app.dmOwner(response.trim());
+    await this.app.dmOwner(greeting.trim());
+  }
+
+  /**
+   * Generate a greeting message using Claude. No system prompt — just a simple
+   * instruction to produce a personalized greeting for the owner.
+   */
+  private async generateGreetingMessage(): Promise<string | undefined> {
+    if (!this.app || !this.config.claude) {
+      return undefined;
+    }
+
+    const ownerName = this.app.getOwnerDisplayName() ?? 'your owner';
+    const prompt = `You just connected to the Newio messaging platform. Send a brief, friendly greeting to ${ownerName} to let them know you are online and ready. Keep it to 1-2 sentences.`;
+
+    const q: Query = query({
+      prompt,
+      options: {
+        model: this.config.claude.model,
+        tools: [],
+        permissionMode: 'bypassPermissions',
+        allowDangerouslySkipPermissions: true,
+        settingSources: [],
+        persistSession: false,
+        maxTurns: 1,
+        env: {
+          ANTHROPIC_API_KEY: this.config.claude.apiKey,
+        },
+      },
+    });
+
+    let resultText: string | undefined;
+
+    for await (const event of q as AsyncIterable<SDKMessage>) {
+      if (event.type === 'result') {
+        if (event.subtype === 'success' && 'result' in event) {
+          resultText = event.result;
+        } else {
+          log.error(`Greeting query ended with ${event.subtype}`, 'errors' in event ? event.errors : '');
+        }
+      }
+    }
+
+    return resultText;
   }
 
   protected onStopped(): void {
     this.messageQueue.clear();
     this.pendingConversations.length = 0;
     this.processing = false;
-    this.sessionId = undefined;
   }
 
   // ---------------------------------------------------------------------------
@@ -120,7 +162,7 @@ export class ClaudeInstance extends BaseAgentInstance {
   }
 
   // ---------------------------------------------------------------------------
-  // Claude interaction
+  // Claude interaction — streaming input + streaming output
   // ---------------------------------------------------------------------------
 
   private async processBatch(conversationId: string, messages: readonly IncomingMessage[]): Promise<void> {
@@ -128,8 +170,23 @@ export class ClaudeInstance extends BaseAgentInstance {
       return;
     }
 
-    const prompt = formatPrompt(messages);
-    const response = await this.queryAgent(prompt);
+    const userText = formatPrompt(messages);
+
+    // Set thinking status
+    this.app.setStatus('thinking', conversationId);
+
+    let response: string | undefined;
+    try {
+      response = await this.queryAgentStreaming(conversationId, userText);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
+      log.error(`Query failed for ${conversationId}: ${errMsg}`);
+      this.app.setStatus(null, conversationId);
+      return;
+    }
+
+    // Clear status
+    this.app.setStatus(null, conversationId);
 
     if (!response || response.trim().toLowerCase() === SKIP_TOKEN) {
       return;
@@ -143,31 +200,54 @@ export class ClaudeInstance extends BaseAgentInstance {
     }
   }
 
-  private async queryAgent(prompt: string): Promise<string | undefined> {
+  /**
+   * Query Claude with streaming output. Uses `continue: true` so the SDK
+   * manages conversation history across turns. Transitions status from
+   * 'thinking' to 'typing' on first text token.
+   */
+  private async queryAgentStreaming(conversationId: string, userText: string): Promise<string | undefined> {
     if (!this.app || !this.config.claude) {
       return undefined;
     }
 
+    const userMessage: SDKUserMessage = {
+      type: 'user',
+      message: { role: 'user', content: userText },
+      parent_tool_use_id: null,
+    };
+
+    // Wrap single message as async iterable for streaming input
+    const asyncMessages: AsyncIterable<SDKUserMessage> = {
+      [Symbol.asyncIterator]() {
+        let done = false;
+        return {
+          next() {
+            if (done) {
+              return Promise.resolve({ value: undefined, done: true } as IteratorResult<SDKUserMessage>);
+            }
+            done = true;
+            return Promise.resolve({ value: userMessage, done: false });
+          },
+        };
+      },
+    };
+
     const q: Query = query({
-      prompt,
+      prompt: asyncMessages,
       options: {
-        systemPrompt: this.app.buildSystemPrompt({ customInstructions: this.config.claude.systemPrompt }),
+        systemPrompt: {
+          type: 'preset',
+          preset: 'claude_code',
+          append: this.app.buildNewioInstruction({ customInstructions: this.config.claude.userPrompt }),
+        },
         model: this.config.claude.model,
-        // No built-in tools — the agent is a pure messaging responder.
-        // MCP tools for Newio actions (send DM, create group, etc.) will be added in C6.
         tools: [],
-        // bypassPermissions: since tools=[], no permission prompts will occur.
-        // This avoids the SDK hanging on a permission request with no handler.
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
-        // Don't load any filesystem settings (~/.claude/settings.json, .claude/settings.json, etc.)
-        // This isolates the agent from the host machine's Claude Code configuration.
         settingSources: [],
-        // Persist session to disk (~/.claude/projects/) so resume works across query() calls.
-        // This is what gives the agent cross-conversation memory.
-        persistSession: true,
+        continue: true,
         maxTurns: 1,
-        ...(this.sessionId ? { resume: this.sessionId } : {}),
+        includePartialMessages: true,
         env: {
           ANTHROPIC_API_KEY: this.config.claude.apiKey,
         },
@@ -175,16 +255,13 @@ export class ClaudeInstance extends BaseAgentInstance {
     });
 
     let resultText: string | undefined;
+    let sentTyping = false;
 
-    // The query yields SDKMessage events. Key types:
-    // - 'system' (subtype 'init'): session initialization with tools, model, session_id
-    // - 'assistant': Claude's response (BetaMessage with content blocks)
-    // - 'result': final outcome — 'success' (has .result text) or error subtypes
-    // - 'stream_event': partial streaming chunks (when includePartialMessages is true)
-    // We only need the session_id (for resume) and the final result text.
     for await (const event of q as AsyncIterable<SDKMessage>) {
-      if (!this.sessionId && 'session_id' in event && typeof event.session_id === 'string') {
-        this.sessionId = event.session_id;
+      // Detect first streaming token → switch to 'typing'
+      if (!sentTyping && event.type === 'stream_event') {
+        this.app.setStatus('typing', conversationId);
+        sentTyping = true;
       }
 
       if (event.type === 'result') {

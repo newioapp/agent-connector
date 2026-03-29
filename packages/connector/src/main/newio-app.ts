@@ -39,6 +39,8 @@ export interface IncomingMessage {
   readonly timestamp: string;
 }
 
+export type AgentStatus = 'thinking' | 'typing' | null;
+
 export type MessageHandler = (message: IncomingMessage) => void;
 
 export interface NewioIdentity {
@@ -205,6 +207,20 @@ export class NewioApp {
     });
   }
 
+  /**
+   * Set the agent's status, optionally scoped to a conversation.
+   * When conversationId is provided, indicates per-conversation activity (thinking/typing).
+   * When omitted, sets the agent's global presence status.
+   * Once the backend typing/status endpoint is available, this will broadcast
+   * the status to relevant users. For now, logs the transition.
+   */
+  setStatus(status: AgentStatus, conversationId?: string): void {
+    const scope = conversationId ?? 'global';
+    log.debug(`status [${scope}]: ${status ?? 'idle'}`);
+    // TODO: Call backend typing/status endpoint when available.
+    // The conv_ondemand subscription system was designed for this use case.
+  }
+
   /** Send a DM to the agent's owner. No-op if ownerId is not set. */
   async dmOwner(text: string): Promise<void> {
     if (!this.identity.ownerId) {
@@ -331,8 +347,8 @@ export class NewioApp {
   // System prompt
   // ---------------------------------------------------------------------------
 
-  /** Build a system prompt describing the agent's identity and messaging context. */
-  buildSystemPrompt(opts?: { customInstructions?: string }): string {
+  /** Build Newio-specific instructions describing the agent's identity and messaging context. */
+  buildNewioInstruction(opts?: { customInstructions?: string }): string {
     const { username, displayName } = this.identity;
     const ownerContact = this.findOwnerContact();
 
@@ -395,6 +411,12 @@ Response rules:
 - Be concise and natural.`);
 
     return parts.join('\n\n');
+  }
+
+  /** Get the owner's display name, if the owner is in contacts. */
+  getOwnerDisplayName(): string | undefined {
+    const owner = this.findOwnerContact();
+    return owner?.friendDisplayName ?? owner?.friendUsername;
   }
 
   // ---------------------------------------------------------------------------
