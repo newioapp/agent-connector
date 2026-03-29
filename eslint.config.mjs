@@ -2,9 +2,9 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['**/dist/', '**/node_modules/', '**/coverage/'] },
+  { ignores: ['**/dist/', '**/out/', '**/node_modules/', '**/coverage/', '**/*.config.*'] },
   {
-    files: ['packages/*/src/**/*.ts'],
+    files: ['packages/*/src/**/*.ts', 'packages/*/src/**/*.tsx'],
     extends: [...tseslint.configs.strictTypeChecked],
     languageOptions: {
       globals: globals.node,

@@ -1,0 +1,43 @@
+{
+  "name": "@newio/connector",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agent Connector — connect AI agents to the Newio messaging platform",
+  "author": {
+    "name": "Newio",
+    "url": "https://newio.dev"
+  },
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
+    "typecheck": "pnpm run typecheck:node && pnpm run typecheck:web",
+    "test": "echo 'No tests yet'",
+    "clean": "rm -rf out dist"
+  },
+  "dependencies": {
+    "@newio/sdk": "workspace:*",
+    "@electron-toolkit/utils": "^4.0.0",
+    "lucide-react": "^0.577.0",
+    "zustand": "^5.0.11"
+  },
+  "devDependencies": {
+    "@electron-toolkit/tsconfig": "^2.0.0",
+    "@tailwindcss/vite": "^4.2.1",
+    "@types/node": "^22.19.1",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "electron": "39.2.6",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^5.0.0",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "tailwindcss": "^4.2.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.6"
+  }
+}
