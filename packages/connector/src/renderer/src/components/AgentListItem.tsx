@@ -31,16 +31,16 @@ export function AgentListItem({
 }): React.JSX.Element {
   return (
     <button
-      className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors ${
-        selected ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-accent'
+      className={`mb-0.5 flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors ${
+        selected ? 'bg-sidebar-active text-sidebar-active-foreground' : 'text-sidebar-foreground hover:bg-white/10'
       }`}
       onClick={onClick}
     >
       <AgentTypeIcon type={agent.config.type} size={16} />
       <div className="min-w-0 flex-1">
         <div className="truncate font-medium">{agent.config.name}</div>
-        <div className={`truncate text-xs ${selected ? 'opacity-70' : 'text-muted-foreground'}`}>
-          {agent.config.type === 'kiro-cli' ? 'Kiro CLI' : 'Claude'}
+        <div className={`truncate text-xs ${selected ? 'opacity-80' : 'opacity-60'}`}>
+          {agent.config.type === 'kiro-cli' ? 'Kiro CLI' : 'Claude Code'}
         </div>
       </div>
       <div

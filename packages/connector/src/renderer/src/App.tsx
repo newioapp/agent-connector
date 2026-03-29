@@ -6,7 +6,10 @@ import { Bot, Plus, Settings } from 'lucide-react';
 import { useAgentStore } from './stores/agent-store';
 import { AgentListItem } from './components/AgentListItem';
 import { AgentDetailPanel } from './components/AgentDetailPanel';
-import { AddAgentDialog } from './components/AddAgentDialog';
+import { AgentFormPanel } from './components/AgentFormPanel';
+import { SettingsPanel } from './components/SettingsPanel';
+
+type PanelMode = { kind: 'view' } | { kind: 'add' } | { kind: 'edit'; agentId: string } | { kind: 'settings' };
 
 export function App(): React.JSX.Element {
   const agents = useAgentStore((s) => s.agents);
@@ -16,10 +19,16 @@ export function App(): React.JSX.Element {
   const setAgentStatus = useAgentStore((s) => s.setAgentStatus);
   const setApprovalUrl = useAgentStore((s) => s.setApprovalUrl);
   const updateConfig = useAgentStore((s) => s.updateConfig);
-  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [panelMode, setPanelMode] = useState<PanelMode>({ kind: 'view' });
 
   useEffect(() => {
     void load();
+    // Apply initial theme class
+    void window.api.getTheme().then(async (t) => {
+      if (t === 'light' || (t === 'system' && !(await window.api.getNativeThemeDark()))) {
+        document.documentElement.classList.add('light');
+      }
+    });
   }, [load]);
 
   useEffect(() => {
@@ -41,20 +50,67 @@ export function App(): React.JSX.Element {
 
   const selectedAgent = agents.find((a) => a.id === selectedAgentId) ?? null;
 
+  function handleSelectAgent(agentId: string): void {
+    selectAgent(agentId);
+    setPanelMode({ kind: 'view' });
+  }
+
+  function handleAdd(): void {
+    selectAgent(null);
+    setPanelMode({ kind: 'add' });
+  }
+
+  function handleFormClose(): void {
+    setPanelMode({ kind: 'view' });
+  }
+
+  function renderDetailPanel(): React.JSX.Element {
+    if (panelMode.kind === 'settings') {
+      return <SettingsPanel />;
+    }
+
+    if (panelMode.kind === 'add') {
+      return <AgentFormPanel onDone={handleFormClose} />;
+    }
+
+    if (panelMode.kind === 'edit') {
+      const editAgent = agents.find((a) => a.id === panelMode.agentId);
+      if (editAgent) {
+        return <AgentFormPanel editAgent={editAgent.config} onDone={handleFormClose} />;
+      }
+    }
+
+    if (selectedAgent) {
+      return (
+        <AgentDetailPanel
+          agent={selectedAgent}
+          onEdit={() => setPanelMode({ kind: 'edit', agentId: selectedAgent.id })}
+        />
+      );
+    }
+
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center text-muted-foreground">
+        <Bot size={48} className="mb-3 opacity-30" />
+        <p className="text-sm">Select an agent or add a new one to get started.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen w-screen bg-background text-foreground">
       {/* Sidebar */}
-      <div className="flex w-60 flex-col border-r border-border bg-sidebar">
+      <div className="flex w-60 flex-col border-r border-border bg-sidebar text-sidebar-foreground">
         {/* Drag region */}
         <div className="h-10 shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
 
         {/* Header */}
         <div className="flex items-center justify-between px-4 pb-3">
-          <h1 className="text-sm font-semibold text-foreground">Agents</h1>
+          <h1 className="text-sm font-semibold">Agents</h1>
           <button
             className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:opacity-80"
             title="Add agent"
-            onClick={() => setShowAddDialog(true)}
+            onClick={handleAdd}
           >
             <Plus size={14} />
           </button>
@@ -63,7 +119,7 @@ export function App(): React.JSX.Element {
         {/* Agent list */}
         <div className="flex-1 overflow-y-auto px-2">
           {agents.length === 0 ? (
-            <div className="flex flex-col items-center justify-center px-4 pt-12 text-muted-foreground">
+            <div className="flex flex-col items-center justify-center px-4 pt-12 opacity-60">
               <Bot size={32} className="mb-2 opacity-40" />
               <p className="text-center text-xs">No agents yet. Click + to connect your first agent.</p>
             </div>
@@ -72,16 +128,19 @@ export function App(): React.JSX.Element {
               <AgentListItem
                 key={agent.id}
                 agent={agent}
-                selected={agent.id === selectedAgentId}
-                onClick={() => selectAgent(agent.id)}
+                selected={agent.id === selectedAgentId && panelMode.kind === 'view'}
+                onClick={() => handleSelectAgent(agent.id)}
               />
             ))
           )}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center border-t border-border px-4 py-3">
-          <button className="flex items-center gap-2 text-xs text-muted-foreground transition-colors hover:text-foreground">
+        <div className="flex items-center border-t border-white/10 px-4 py-3">
+          <button
+            className="flex items-center gap-2 text-sm font-medium text-sidebar-foreground opacity-85 transition-opacity hover:opacity-100"
+            onClick={() => setPanelMode({ kind: 'settings' })}
+          >
             <Settings size={14} />
             Settings
           </button>
@@ -92,18 +151,8 @@ export function App(): React.JSX.Element {
       <div className="flex flex-1 flex-col bg-background">
         {/* Drag region */}
         <div className="h-10 shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
-
-        {selectedAgent ? (
-          <AgentDetailPanel agent={selectedAgent} />
-        ) : (
-          <div className="flex flex-1 flex-col items-center justify-center text-muted-foreground">
-            <Bot size={48} className="mb-3 opacity-30" />
-            <p className="text-sm">Select an agent or add a new one to get started.</p>
-          </div>
-        )}
+        {renderDetailPanel()}
       </div>
-
-      {showAddDialog && <AddAgentDialog onClose={() => setShowAddDialog(false)} />}
     </div>
   );
 }

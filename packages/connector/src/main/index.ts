@@ -1,4 +1,4 @@
-import { app, BrowserWindow, nativeTheme } from 'electron';
+import { app, BrowserWindow, nativeTheme, shell } from 'electron';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
 import { createStore } from './store';
 import { MainWindowManager } from './main-window';
@@ -25,6 +25,7 @@ void app.whenReady().then(async () => {
     },
     onApprovalUrl(agentId, approvalUrl) {
       mainWindowManager.send(EVENT_CHANNELS['agent-approval-url'], { agentId, approvalUrl });
+      void shell.openExternal(approvalUrl);
     },
     onConfigUpdated(agentId) {
       const config = agentConfigManager.get(agentId);

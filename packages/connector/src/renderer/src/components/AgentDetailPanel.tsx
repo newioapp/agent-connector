@@ -1,8 +1,8 @@
 /**
  * Agent detail panel — shows config, status, and lifecycle actions.
  */
-import { useState } from 'react';
-import { Bot, Terminal, Trash2, Play, Square, ExternalLink, Loader2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Bot, Terminal, Trash2, Play, Square, ExternalLink, Loader2, Pencil } from 'lucide-react';
 import type { AgentStatusInfo } from '../../../shared/types';
 import { useAgentStore } from '../stores/agent-store';
 
@@ -33,6 +33,39 @@ const DOT_CLASSES: Record<string, string> = {
   error: 'bg-destructive',
 };
 
+const APPROVAL_TIMEOUT_S = 600; // 10 minutes — matches SDK DEFAULT_POLL_TIMEOUT_MS
+
+function useCountdown(active: boolean): number {
+  const [remaining, setRemaining] = useState(APPROVAL_TIMEOUT_S);
+  const startRef = useRef(0);
+
+  useEffect(() => {
+    if (!active) {
+      setRemaining(APPROVAL_TIMEOUT_S);
+      return;
+    }
+    startRef.current = Date.now();
+    setRemaining(APPROVAL_TIMEOUT_S);
+    const id = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startRef.current) / 1000);
+      const left = Math.max(0, APPROVAL_TIMEOUT_S - elapsed);
+      setRemaining(left);
+      if (left === 0) {
+        clearInterval(id);
+      }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [active]);
+
+  return remaining;
+}
+
+function formatCountdown(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 function Field({ label, value }: { readonly label: string; readonly value: string }): React.JSX.Element {
   return (
     <div className="mb-3">
@@ -42,12 +75,19 @@ function Field({ label, value }: { readonly label: string; readonly value: strin
   );
 }
 
-export function AgentDetailPanel({ agent }: { readonly agent: AgentStatusInfo }): React.JSX.Element {
+export function AgentDetailPanel({
+  agent,
+  onEdit,
+}: {
+  readonly agent: AgentStatusInfo;
+  readonly onEdit: () => void;
+}): React.JSX.Element {
   const removeAgent = useAgentStore((s) => s.removeAgent);
   const startAgent = useAgentStore((s) => s.startAgent);
   const stopAgent = useAgentStore((s) => s.stopAgent);
   const approvalUrl = useAgentStore((s) => s.approvalUrls[agent.id]);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const countdown = useCountdown(agent.runtimeStatus === 'awaiting_approval');
 
   const { config } = agent;
   const isStopped = agent.runtimeStatus === 'stopped' || agent.runtimeStatus === 'error';
@@ -66,7 +106,7 @@ export function AgentDetailPanel({ agent }: { readonly agent: AgentStatusInfo })
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex flex-1 flex-col min-h-0">
       {/* Header */}
       <div className="flex items-center gap-3 border-b border-border px-6 py-4">
         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
@@ -120,10 +160,22 @@ export function AgentDetailPanel({ agent }: { readonly agent: AgentStatusInfo })
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-6 py-4">
+        {/* Error banner */}
+        {agent.error && (
+          <div className="mb-4 select-text rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive cursor-text">
+            {agent.error}
+          </div>
+        )}
+
         {/* Approval URL banner */}
         {agent.runtimeStatus === 'awaiting_approval' && approvalUrl && (
           <div className="mb-4 rounded-md border border-warning/30 bg-warning/10 px-4 py-3">
-            <div className="mb-1 text-xs font-medium text-warning">Owner approval required</div>
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-xs font-medium text-warning">Owner approval required</span>
+              <span className="text-xs tabular-nums text-muted-foreground">
+                Expires in {formatCountdown(countdown)}
+              </span>
+            </div>
             <div className="mb-2 text-xs text-muted-foreground">
               Open the link below to approve this agent. The owner must enter a username and approve.
             </div>
@@ -137,16 +189,18 @@ export function AgentDetailPanel({ agent }: { readonly agent: AgentStatusInfo })
           </div>
         )}
 
-        <Field label="Type" value={config.type === 'kiro-cli' ? 'Kiro CLI' : 'Claude'} />
+        <Field label="Type" value={config.type === 'kiro-cli' ? 'Kiro CLI' : 'Claude Code'} />
 
-        {config.newioUsername && <Field label="Newio Username" value={`@${config.newioUsername}`} />}
+        <div className="mb-3">
+          <div className="mb-0.5 text-xs font-medium text-muted-foreground">Newio Username</div>
+          {config.newioUsername ? (
+            <div className="text-sm text-foreground">@{config.newioUsername}</div>
+          ) : (
+            <div className="text-sm text-muted-foreground italic">Set during first launch</div>
+          )}
+        </div>
         {config.newioDisplayName && <Field label="Display Name" value={config.newioDisplayName} />}
         {config.newioAgentId && <Field label="Newio Agent ID" value={config.newioAgentId} />}
-        {!config.newioAgentId && (
-          <div className="mb-3 text-xs text-muted-foreground">
-            Not registered with Newio yet. Start the agent to register.
-          </div>
-        )}
 
         {config.claude && (
           <>
@@ -157,16 +211,18 @@ export function AgentDetailPanel({ agent }: { readonly agent: AgentStatusInfo })
         )}
 
         {config.kiroCli && <Field label="Agent Name" value={config.kiroCli.agentName} />}
-
-        {agent.error && (
-          <div className="mt-2 rounded-md border border-destructive/30 px-3 py-2 text-xs text-destructive">
-            {agent.error}
-          </div>
-        )}
       </div>
 
       {/* Footer actions */}
       <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-3">
+        <button
+          className="flex items-center gap-1.5 rounded-md border border-input px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-accent disabled:opacity-40"
+          disabled={!isStopped}
+          onClick={onEdit}
+        >
+          <Pencil size={12} />
+          Edit
+        </button>
         <button
           className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs transition-colors hover:opacity-80 disabled:opacity-40 ${
             confirmDelete

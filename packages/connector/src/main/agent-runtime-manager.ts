@@ -60,7 +60,7 @@ export class AgentRuntimeManager {
 
     let instance: AgentInstance;
     switch (config.type) {
-      case 'claude':
+      case 'claude-code':
         instance = new ClaudeInstance(config, this.store, this.configManager, instanceListener);
         break;
       case 'kiro-cli':

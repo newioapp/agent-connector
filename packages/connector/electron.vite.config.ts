@@ -12,7 +12,13 @@ if (!process.stdout.clearLine) {
 }
 
 export default defineConfig({
-  main: {},
+  main: {
+    build: {
+      rollupOptions: {
+        external: ['@anthropic-ai/claude-agent-sdk'],
+      },
+    },
+  },
   preload: {
     build: {
       rollupOptions: {

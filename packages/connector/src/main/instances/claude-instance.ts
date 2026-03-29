@@ -11,6 +11,7 @@
  */
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { Query, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import { join } from 'path';
 import { BaseAgentInstance } from './base-agent-instance';
 import { MessageQueue } from './message-queue';
 import type { IncomingMessage } from '../newio-app';
@@ -18,6 +19,17 @@ import { Logger } from '../../shared/logger';
 
 const SKIP_TOKEN = '_skip';
 const log = new Logger('claude-instance');
+
+/**
+ * Resolve the path to the bundled Claude Code CLI shipped inside
+ * `@anthropic-ai/claude-agent-sdk`. We resolve it explicitly because
+ * electron-vite bundles the main process as CJS, which breaks the SDK's
+ * internal `import.meta.url`-based resolution.
+ */
+function resolveClaudeCodeCli(): string {
+  const sdkEntry = require.resolve('@anthropic-ai/claude-agent-sdk');
+  return join(sdkEntry, '..', 'cli.js');
+}
 
 // ---------------------------------------------------------------------------
 // ClaudeInstance
@@ -82,6 +94,7 @@ export class ClaudeInstance extends BaseAgentInstance {
     const q: Query = query({
       prompt,
       options: {
+        pathToClaudeCodeExecutable: resolveClaudeCodeCli(),
         model: this.config.claude.model,
         tools: [],
         permissionMode: 'bypassPermissions',
@@ -182,6 +195,7 @@ export class ClaudeInstance extends BaseAgentInstance {
     const q: Query = query({
       prompt: singleAsyncIterable(userMessage),
       options: {
+        pathToClaudeCodeExecutable: resolveClaudeCodeCli(),
         systemPrompt: {
           type: 'preset',
           preset: 'claude_code',

@@ -27,7 +27,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
   ) {}
 
   async start(): Promise<void> {
-    this.abortController = new AbortController();
+    const abortController = new AbortController();
+    this.abortController = abortController;
     this.setStatus('starting');
 
     try {
@@ -40,7 +41,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         username: this.config.newioUsername,
         name: this.config.name,
         tokens: storedTokens,
-        signal: this.abortController.signal,
+        signal: abortController.signal,
         onApprovalUrl: (url) => {
           this.listener.onApprovalUrl(url);
           this.setStatus('awaiting_approval');
@@ -64,7 +65,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       this.setStatus('connected');
 
       this.app.onDisconnect(() => {
-        if (!this.abortController?.signal.aborted) {
+        if (!abortController.signal.aborted) {
           this.setStatus('error', 'WebSocket disconnected');
         }
       });
@@ -74,6 +75,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
     } catch (err: unknown) {
       this.app?.dispose();
       this.app = undefined;
+
+      // User-initiated cancel — stop() will set status to 'stopped'
+      if (abortController.signal.aborted) {
+        return;
+      }
 
       if (err instanceof ApprovalTimeoutError) {
         this.setStatus('error', 'Approval timed out. Please try starting the agent again.');
