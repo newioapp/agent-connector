@@ -51,6 +51,7 @@ export interface AddAgentInput {
 
 export interface UpdateAgentInput {
   readonly name?: string;
+  readonly newioUsername?: string;
   readonly claude?: ClaudeConfig;
   readonly kiroCli?: KiroCliConfig;
 }

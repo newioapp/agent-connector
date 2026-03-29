@@ -44,9 +44,14 @@ export class AgentConfigManager {
     if (index === -1) {
       throw new Error(`Agent ${agentId} not found.`);
     }
+    const existing = agents[index];
+    const usernameChanged = updates.newioUsername !== undefined && updates.newioUsername !== existing.newioUsername;
     const updated: AgentConfig = {
-      ...agents[index],
+      ...existing,
       ...(updates.name !== undefined ? { name: updates.name } : {}),
+      ...(updates.newioUsername !== undefined ? { newioUsername: updates.newioUsername } : {}),
+      // Reset Newio profile when username changes — will be re-synced on next start
+      ...(usernameChanged ? { newioAgentId: undefined, newioDisplayName: undefined, newioAvatarUrl: undefined } : {}),
       ...(updates.claude !== undefined ? { claude: updates.claude } : {}),
       ...(updates.kiroCli !== undefined ? { kiroCli: updates.kiroCli } : {}),
     };
