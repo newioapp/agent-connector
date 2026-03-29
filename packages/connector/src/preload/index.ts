@@ -1,9 +1,14 @@
-import { contextBridge } from 'electron';
-import { electronAPI } from '@electron-toolkit/preload';
+import { contextBridge, ipcRenderer } from 'electron';
 
+/**
+ * Typed IPC API exposed to the renderer via contextBridge.
+ * Agent lifecycle IPC channels will be added in C2/C3.
+ */
 const api = {
-  // Agent lifecycle IPC will be added here
+  /** Get the app version. */
+  getVersion: (): Promise<string> => ipcRenderer.invoke('get-version'),
 };
 
-contextBridge.exposeInMainWorld('electron', electronAPI);
+export type ConnectorAPI = typeof api;
+
 contextBridge.exposeInMainWorld('api', api);
