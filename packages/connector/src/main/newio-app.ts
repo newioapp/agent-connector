@@ -39,6 +39,8 @@ export interface IncomingMessage {
   readonly timestamp: string;
 }
 
+export type AgentStatus = 'thinking' | 'typing' | null;
+
 export type MessageHandler = (message: IncomingMessage) => void;
 
 export interface NewioIdentity {
@@ -203,6 +205,17 @@ export class NewioApp {
       content: { text },
       sequenceNumber: seq,
     });
+  }
+
+  /**
+   * Set the agent's status in a conversation.
+   * Once the backend typing/status endpoint is available, this will broadcast
+   * the status to conversation members. For now, logs the transition.
+   */
+  setStatus(conversationId: string, status: AgentStatus): void {
+    log.debug(`status [${conversationId}]: ${status ?? 'idle'}`);
+    // TODO: Call backend typing/status endpoint when available.
+    // The conv_ondemand subscription system was designed for this use case.
   }
 
   /** Send a DM to the agent's owner. No-op if ownerId is not set. */
