@@ -29,6 +29,7 @@ export class AgentConfigManager {
       id: randomUUID(),
       name: input.name,
       type: input.type,
+      ...(input.newioUsername ? { newioUsername: input.newioUsername } : {}),
       ...(input.claude ? { claude: input.claude } : {}),
       ...(input.kiroCli ? { kiroCli: input.kiroCli } : {}),
     };

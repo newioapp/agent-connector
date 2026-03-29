@@ -43,6 +43,8 @@ export interface AgentConfig {
 export interface AddAgentInput {
   readonly name: string;
   readonly type: AgentType;
+  /** Optional: existing Newio username to login with instead of registering a new agent. */
+  readonly newioUsername?: string;
   readonly claude?: ClaudeConfig;
   readonly kiroCli?: KiroCliConfig;
 }

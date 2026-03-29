@@ -10,6 +10,7 @@ export function AddAgentDialog({ onClose }: { readonly onClose: () => void }): R
   const addAgent = useAgentStore((s) => s.addAgent);
   const [name, setName] = useState('');
   const [type, setType] = useState<AgentType>('claude');
+  const [newioUsername, setNewioUsername] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('claude-sonnet-4-20250514');
   const [agentName, setAgentName] = useState('');
@@ -27,6 +28,7 @@ export function AddAgentDialog({ onClose }: { readonly onClose: () => void }): R
       await addAgent({
         name: name.trim(),
         type,
+        ...(newioUsername.trim() ? { newioUsername: newioUsername.trim() } : {}),
         ...(type === 'claude' ? { claude: { apiKey: apiKey.trim(), model: model.trim() } } : {}),
         ...(type === 'kiro-cli' ? { kiroCli: { agentName: agentName.trim() } } : {}),
       });
@@ -59,6 +61,20 @@ export function AddAgentDialog({ onClose }: { readonly onClose: () => void }): R
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
+        </label>
+
+        {/* Newio username (optional — login to existing agent instead of registering) */}
+        <label className="mb-3 block">
+          <span className="mb-1 block text-xs font-medium text-muted-foreground">Newio Username (optional)</span>
+          <input
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
+            placeholder="my-agent"
+            value={newioUsername}
+            onChange={(e) => setNewioUsername(e.target.value)}
+          />
+          <span className="mt-1 block text-xs text-muted-foreground">
+            Enter an existing agent username to login. Leave blank to register a new agent.
+          </span>
         </label>
 
         {/* Type selector */}
