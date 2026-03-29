@@ -10,14 +10,9 @@ export function AddAgentDialog({ onClose }: { readonly onClose: () => void }): R
   const addAgent = useAgentStore((s) => s.addAgent);
   const [name, setName] = useState('');
   const [type, setType] = useState<AgentType>('claude');
-
-  // Claude config
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('claude-sonnet-4-20250514');
-
-  // Kiro CLI config
   const [agentName, setAgentName] = useState('');
-
   const [submitting, setSubmitting] = useState(false);
 
   const canSubmit =
@@ -42,19 +37,13 @@ export function AddAgentDialog({ onClose }: { readonly onClose: () => void }): R
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
-      <div
-        className="w-full max-w-md rounded-lg p-6 shadow-xl"
-        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-xl">
         {/* Header */}
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold" style={{ color: 'var(--text)' }}>
-            Add Agent
-          </h2>
+          <h2 className="text-base font-semibold text-card-foreground">Add Agent</h2>
           <button
-            className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:opacity-70"
-            style={{ color: 'var(--text-muted)' }}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
             onClick={onClose}
           >
             <X size={16} />
@@ -63,12 +52,9 @@ export function AddAgentDialog({ onClose }: { readonly onClose: () => void }): R
 
         {/* Name */}
         <label className="mb-3 block">
-          <span className="mb-1 block text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
-            Name
-          </span>
+          <span className="mb-1 block text-xs font-medium text-muted-foreground">Name</span>
           <input
-            className="w-full rounded-md border px-3 py-2 text-sm outline-none"
-            style={{ background: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--text)' }}
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
             placeholder="My Agent"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -77,19 +63,16 @@ export function AddAgentDialog({ onClose }: { readonly onClose: () => void }): R
 
         {/* Type selector */}
         <div className="mb-3">
-          <span className="mb-1 block text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
-            Type
-          </span>
+          <span className="mb-1 block text-xs font-medium text-muted-foreground">Type</span>
           <div className="flex gap-2">
             {(['claude', 'kiro-cli'] as const).map((t) => (
               <button
                 key={t}
-                className="flex-1 rounded-md border px-3 py-2 text-sm transition-colors"
-                style={{
-                  background: type === t ? 'var(--accent)' : 'var(--bg)',
-                  borderColor: type === t ? 'var(--accent)' : 'var(--border)',
-                  color: type === t ? '#fff' : 'var(--text)',
-                }}
+                className={`flex-1 rounded-md border px-3 py-2 text-sm transition-colors ${
+                  type === t
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-input bg-background text-foreground hover:bg-accent'
+                }`}
                 onClick={() => setType(t)}
               >
                 {t === 'claude' ? 'Claude' : 'Kiro CLI'}
@@ -102,12 +85,9 @@ export function AddAgentDialog({ onClose }: { readonly onClose: () => void }): R
         {type === 'claude' && (
           <>
             <label className="mb-3 block">
-              <span className="mb-1 block text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
-                API Key
-              </span>
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">API Key</span>
               <input
-                className="w-full rounded-md border px-3 py-2 text-sm outline-none"
-                style={{ background: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--text)' }}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
                 type="password"
                 placeholder="sk-ant-..."
                 value={apiKey}
@@ -115,12 +95,9 @@ export function AddAgentDialog({ onClose }: { readonly onClose: () => void }): R
               />
             </label>
             <label className="mb-3 block">
-              <span className="mb-1 block text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
-                Model
-              </span>
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">Model</span>
               <input
-                className="w-full rounded-md border px-3 py-2 text-sm outline-none"
-                style={{ background: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--text)' }}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
               />
@@ -130,17 +107,14 @@ export function AddAgentDialog({ onClose }: { readonly onClose: () => void }): R
 
         {type === 'kiro-cli' && (
           <label className="mb-3 block">
-            <span className="mb-1 block text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
-              Agent Name
-            </span>
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">Agent Name</span>
             <input
-              className="w-full rounded-md border px-3 py-2 text-sm outline-none"
-              style={{ background: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--text)' }}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
               placeholder="my-agent"
               value={agentName}
               onChange={(e) => setAgentName(e.target.value)}
             />
-            <span className="mt-1 block text-xs" style={{ color: 'var(--text-muted)' }}>
+            <span className="mt-1 block text-xs text-muted-foreground">
               Runs: kiro-cli chat --agent {agentName || '<name>'}
             </span>
           </label>
@@ -148,8 +122,7 @@ export function AddAgentDialog({ onClose }: { readonly onClose: () => void }): R
 
         {/* Submit */}
         <button
-          className="mt-2 w-full rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
-          style={{ background: 'var(--accent)', color: '#fff' }}
+          className="mt-2 w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:opacity-90 disabled:opacity-50"
           disabled={!canSubmit || submitting}
           onClick={() => void handleSubmit()}
         >

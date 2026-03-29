@@ -10,7 +10,7 @@ export type ThemeSource = 'system' | 'light' | 'dark';
 
 export type AgentType = 'claude' | 'kiro-cli';
 
-export type AgentRuntimeStatus = 'stopped' | 'starting' | 'awaiting_approval' | 'running' | 'error';
+export type AgentRuntimeStatus = 'stopped' | 'starting' | 'awaiting_approval' | 'connected' | 'running' | 'error';
 
 export interface ClaudeConfig {
   readonly apiKey: string;
@@ -31,6 +31,10 @@ export interface AgentConfig {
   readonly newioAgentId?: string;
   /** Set after first Newio registration (assigned by owner during approval). */
   readonly newioUsername?: string;
+  /** Newio display name (synced on every start). */
+  readonly newioDisplayName?: string;
+  /** Newio avatar URL (synced on every start). */
+  readonly newioAvatarUrl?: string;
 
   readonly claude?: ClaudeConfig;
   readonly kiroCli?: KiroCliConfig;

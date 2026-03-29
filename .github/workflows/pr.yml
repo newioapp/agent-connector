@@ -23,6 +23,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Build
+        run: pnpm build
+
       - name: Lint
         run: pnpm lint
 
@@ -34,6 +37,3 @@ jobs:
 
       - name: Test with coverage
         run: pnpm test:coverage
-
-      - name: Build
-        run: pnpm build

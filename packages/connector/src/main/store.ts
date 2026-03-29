@@ -4,6 +4,11 @@
 import Store from 'electron-store';
 import type { ThemeSource, AgentConfig } from '../shared/types';
 
+export interface AgentTokens {
+  readonly accessToken: string;
+  readonly refreshToken: string;
+}
+
 export interface StoreSchema {
   readonly themeSource: ThemeSource;
   readonly windowBounds: {
@@ -13,6 +18,8 @@ export interface StoreSchema {
     readonly height: number;
   };
   readonly agents: AgentConfig[];
+  /** Persisted tokens keyed by agent config id. */
+  readonly agentTokens: Record<string, AgentTokens>;
 }
 
 export function createStore(): Store<StoreSchema> {
@@ -21,6 +28,7 @@ export function createStore(): Store<StoreSchema> {
       themeSource: 'system',
       windowBounds: { width: 960, height: 640 },
       agents: [],
+      agentTokens: {},
     },
   });
 }

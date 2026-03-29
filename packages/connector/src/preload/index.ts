@@ -29,9 +29,13 @@ const api: ConnectorAPI = {
   addAgent: (input) => ipcRenderer.invoke(IPC_CHANNELS.addAgent, input),
   updateAgent: (agentId, updates) => ipcRenderer.invoke(IPC_CHANNELS.updateAgent, agentId, updates),
   removeAgent: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.removeAgent, agentId),
+  startAgent: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.startAgent, agentId),
+  stopAgent: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.stopAgent, agentId),
 
   // Push events
   onAgentStatusChanged: (callback) => onEvent(EVENT_CHANNELS['agent-status-changed'], callback),
+  onAgentApprovalUrl: (callback) => onEvent(EVENT_CHANNELS['agent-approval-url'], callback),
+  onAgentConfigUpdated: (callback) => onEvent(EVENT_CHANNELS['agent-config-updated'], callback),
 };
 
 contextBridge.exposeInMainWorld('api', api);
