@@ -151,12 +151,12 @@ describe('NewioApp', () => {
       expect(client.sendMessage).toHaveBeenNthCalledWith(1, {
         conversationId: 'conv-1',
         content: { text: 'hello' },
-        sequenceNumber: 1,
+        sequenceNumber: 0,
       });
       expect(client.sendMessage).toHaveBeenNthCalledWith(2, {
         conversationId: 'conv-1',
         content: { text: 'world' },
-        sequenceNumber: 2,
+        sequenceNumber: 1,
       });
     });
 
@@ -169,15 +169,15 @@ describe('NewioApp', () => {
 
       expect(client.sendMessage).toHaveBeenNthCalledWith(
         1,
-        expect.objectContaining({ conversationId: 'conv-a', sequenceNumber: 1 }),
+        expect.objectContaining({ conversationId: 'conv-a', sequenceNumber: 0 }),
       );
       expect(client.sendMessage).toHaveBeenNthCalledWith(
         2,
-        expect.objectContaining({ conversationId: 'conv-b', sequenceNumber: 1 }),
+        expect.objectContaining({ conversationId: 'conv-b', sequenceNumber: 0 }),
       );
       expect(client.sendMessage).toHaveBeenNthCalledWith(
         3,
-        expect.objectContaining({ conversationId: 'conv-a', sequenceNumber: 2 }),
+        expect.objectContaining({ conversationId: 'conv-a', sequenceNumber: 1 }),
       );
     });
   });
@@ -235,8 +235,9 @@ describe('NewioApp', () => {
       expect(received).toHaveLength(0);
     });
 
-    it('ignores messages without text', async () => {
-      const { app } = await createApp();
+    it('delivers messages without text with empty string', async () => {
+      const contact = makeContact({ contactId: 'other' });
+      const { app } = await createApp([contact]);
 
       const received: IncomingMessage[] = [];
       app.onMessage((msg) => received.push(msg));
@@ -255,7 +256,8 @@ describe('NewioApp', () => {
         },
       });
 
-      expect(received).toHaveLength(0);
+      expect(received).toHaveLength(1);
+      expect(received[0].text).toBe('');
     });
   });
 

@@ -10,6 +10,9 @@ import { AuthManager, NewioClient, NewioWebSocket } from '@newio/sdk';
 import type { ApprovalHandle, AccountType } from '@newio/sdk';
 import type { ContactRecord, ConversationListItem, MemberRecord, MessageRecord, ConversationType } from '@newio/sdk';
 import WebSocket from 'ws';
+import { Logger } from '../shared/logger';
+
+const log = new Logger('newio-app');
 
 const API_BASE_URL = 'https://api.conduit.qinnan.dev';
 const WS_URL = 'wss://ws.conduit.qinnan.dev';
@@ -31,6 +34,7 @@ export interface IncomingMessage {
   readonly senderDisplayName?: string;
   readonly senderAccountType?: AccountType;
   readonly inContact: boolean;
+  readonly isOwnMessage: boolean;
   readonly text: string;
   readonly timestamp: string;
 }
@@ -450,7 +454,7 @@ Response rules:
   // ---------------------------------------------------------------------------
 
   private nextSequenceNumber(conversationId: string): number {
-    const current = this.sequenceNumbers.get(conversationId) ?? 0;
+    const current = this.sequenceNumbers.get(conversationId) ?? -1;
     const next = current + 1;
     this.sequenceNumbers.set(conversationId, next);
     return next;
@@ -517,46 +521,46 @@ Response rules:
   // Internal — message handling
   // ---------------------------------------------------------------------------
 
-  private async handleIncomingMessage(payload: MessageRecord & { readonly conversationType: string }): Promise<void> {
-    if (!payload.content.text) {
-      return;
-    }
-
-    const contact = this.contacts.get(payload.senderId);
-    const conv = this.conversations.get(payload.conversationId);
-    const isOwnMessage = payload.senderId === this.identity.userId;
-
-    const message: IncomingMessage = {
-      messageId: payload.messageId,
-      conversationId: payload.conversationId,
-      conversationType: payload.conversationType,
+  private toIncomingMessage(msg: MessageRecord, conversationId: string, conversationType?: string): IncomingMessage {
+    const contact = this.contacts.get(msg.senderId);
+    const conv = this.conversations.get(conversationId);
+    const isOwnMessage = msg.senderId === this.identity.userId;
+    return {
+      messageId: msg.messageId,
+      conversationId,
+      conversationType: conversationType ?? conv?.type ?? 'dm',
       groupName: conv?.name,
-      senderUserId: payload.senderId,
+      senderUserId: msg.senderId,
       senderUsername: isOwnMessage ? this.identity.username : contact?.friendUsername,
       senderDisplayName: isOwnMessage ? this.identity.displayName : contact?.friendDisplayName,
       senderAccountType: isOwnMessage ? ('agent' as AccountType) : contact?.friendAccountType,
-      inContact: isOwnMessage || this.contacts.has(payload.senderId),
-      text: payload.content.text,
-      timestamp: payload.createdAt,
+      inContact: isOwnMessage || this.contacts.has(msg.senderId),
+      isOwnMessage,
+      text: msg.content.text ?? '',
+      timestamp: msg.createdAt,
     };
+  }
 
+  private async handleIncomingMessage(payload: MessageRecord & { readonly conversationType: string }): Promise<void> {
+    const message = this.toIncomingMessage(payload, payload.conversationId, payload.conversationType);
     const inserted = this.insertMessage(payload.conversationId, message);
 
     // Update sequence tracking
     const currentSeq = this.sequenceNumbers.get(payload.conversationId) ?? 0;
-    if (payload.sequenceNumber > currentSeq + 1 && currentSeq > 0) {
-      const cached = this.messageCache.get(payload.conversationId);
-      if (cached && cached.length > 1) {
-        const afterId = cached[cached.length - 2].messageId;
-        await this.backfillGap(payload.conversationId, afterId, payload.messageId);
-      }
-    }
     if (payload.sequenceNumber > currentSeq) {
       this.sequenceNumbers.set(payload.conversationId, payload.sequenceNumber);
     }
 
+    if (payload.sequenceNumber > currentSeq + 1 && currentSeq > 0) {
+      const cached = this.messageCache.get(payload.conversationId);
+      if (cached && cached.length > 1) {
+        const afterId = cached[cached.length - 2].messageId;
+        await this.backfillGap(payload.conversationId, afterId, payload.messageId, currentSeq);
+      }
+    }
+
     // Only notify handler for other people's messages that are not duplicates
-    if (inserted && !isOwnMessage) {
+    if (inserted && !message.isOwnMessage) {
       this.messageHandler?.(message);
     }
   }
@@ -605,7 +609,12 @@ Response rules:
    * Backfill missed messages when a sequence gap is detected.
    * Uses afterMessageId/beforeMessageId for precise boundary fetching.
    */
-  private async backfillGap(conversationId: string, afterMessageId: string, beforeMessageId: string): Promise<void> {
+  private async backfillGap(
+    conversationId: string,
+    afterMessageId: string,
+    beforeMessageId: string,
+    rollbackSeq: number,
+  ): Promise<void> {
     try {
       let cursor: string | undefined;
       do {
@@ -620,34 +629,20 @@ Response rules:
           break;
         }
         for (const msg of resp.messages) {
-          if (!msg.content.text) {
-            continue;
-          }
-          const contact = this.contacts.get(msg.senderId);
-          const conv = this.conversations.get(conversationId);
-          const isOwn = msg.senderId === this.identity.userId;
-          const message: IncomingMessage = {
-            messageId: msg.messageId,
-            conversationId,
-            conversationType: conv?.type ?? 'dm',
-            groupName: conv?.name,
-            senderUserId: msg.senderId,
-            senderUsername: isOwn ? this.identity.username : contact?.friendUsername,
-            senderDisplayName: isOwn ? this.identity.displayName : contact?.friendDisplayName,
-            senderAccountType: isOwn ? ('agent' as AccountType) : contact?.friendAccountType,
-            inContact: isOwn || this.contacts.has(msg.senderId),
-            text: msg.content.text,
-            timestamp: msg.createdAt,
-          };
+          const message = this.toIncomingMessage(msg, conversationId);
           const inserted = this.insertMessage(conversationId, message);
-          if (inserted && !isOwn) {
+          if (inserted && !message.isOwnMessage) {
             this.messageHandler?.(message);
           }
         }
         cursor = resp.cursor;
       } while (cursor);
-    } catch {
-      // Best-effort — if backfill fails, we still process the current message
+    } catch (err) {
+      log.error(
+        `Backfill failed for conversation ${conversationId}, rolling back sequence to ${String(rollbackSeq)}`,
+        err,
+      );
+      this.sequenceNumbers.set(conversationId, rollbackSeq);
     }
   }
 }

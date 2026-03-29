@@ -9,8 +9,10 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { BaseAgentInstance } from './base-agent-instance';
 import type { IncomingMessage } from '../newio-app';
+import { Logger } from '../../shared/logger';
 
 const SKIP_TOKEN = '_skip';
+const log = new Logger('claude-instance');
 
 // ---------------------------------------------------------------------------
 // ClaudeInstance
@@ -50,6 +52,9 @@ export class ClaudeInstance extends BaseAgentInstance {
   // ---------------------------------------------------------------------------
 
   private enqueue(msg: IncomingMessage): void {
+    if (msg.isOwnMessage) {
+      return;
+    }
     const existing = this.messageQueue.get(msg.conversationId);
     if (existing) {
       existing.push(msg);
@@ -106,7 +111,7 @@ export class ClaudeInstance extends BaseAgentInstance {
       await this.app.sendMessage(conversationId, response.trim());
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';
-      console.error(`[Claude] Failed to send message to ${conversationId}: ${errMsg}`);
+      log.error(`Failed to send message to ${conversationId}: ${errMsg}`);
     }
   }
 
@@ -158,7 +163,7 @@ export class ClaudeInstance extends BaseAgentInstance {
         if (event.subtype === 'success' && 'result' in event) {
           resultText = event.result;
         } else {
-          console.error(`[Claude] Query ended with ${event.subtype}`, 'errors' in event ? event.errors : '');
+          log.error(`Query ended with ${event.subtype}`, 'errors' in event ? event.errors : '');
         }
       }
     }
