@@ -15,10 +15,11 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "pnpm run typecheck:node && pnpm run typecheck:web",
-    "test": "echo 'No tests yet'",
+    "test": "vitest run",
     "clean": "rm -rf out dist"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.87",
     "@electron-toolkit/utils": "^4.0.0",
     "@newio/sdk": "workspace:*",
     "electron-store": "^8.2.0",
@@ -41,6 +42,7 @@
     "react-dom": "^19.2.1",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3",
-    "vite": "^7.2.6"
+    "vite": "^7.2.6",
+    "vitest": "^3.2.4"
   }
 }

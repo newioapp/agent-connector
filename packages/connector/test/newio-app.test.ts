@@ -1,0 +1,349 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { NewioApp, type IncomingMessage } from '../src/main/newio-app';
+import type { AuthManager, NewioClient, NewioWebSocket } from '@newio/sdk';
+import type { ContactRecord, ConversationListItem } from '@newio/sdk';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function makeContact(overrides: Partial<ContactRecord> = {}): ContactRecord {
+  return {
+    userId: 'me',
+    contactId: overrides.contactId ?? 'contact-1',
+    status: 'accepted',
+    requesterId: 'me',
+    friendAccountType: 'human',
+    friendUsername: 'alice',
+    friendDisplayName: 'Alice',
+    createdAt: '2026-01-01T00:00:00Z',
+    ...overrides,
+  };
+}
+
+function makeConversation(overrides: Partial<ConversationListItem> = {}): ConversationListItem {
+  return {
+    conversationId: overrides.conversationId ?? 'conv-1',
+    type: 'dm',
+    ...overrides,
+  };
+}
+
+const eventHandlers = new Map<string, (event: unknown) => void>();
+
+function mockWs(): NewioWebSocket {
+  return {
+    on: vi.fn((type: string, handler: (event: unknown) => void) => {
+      eventHandlers.set(type, handler);
+    }),
+    off: vi.fn(),
+    onStateChange: vi.fn(),
+    offStateChange: vi.fn(),
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+  } as unknown as NewioWebSocket;
+}
+
+function mockClient(contacts: ContactRecord[] = [], conversations: ConversationListItem[] = []): NewioClient {
+  return {
+    listFriends: vi.fn().mockResolvedValue({ contacts, cursor: undefined }),
+    listConversations: vi.fn().mockResolvedValue({ conversations, cursor: undefined }),
+    sendMessage: vi.fn().mockResolvedValue({ message: {} }),
+    getUserByUsername: vi.fn().mockResolvedValue({ userId: 'resolved-id' }),
+    createConversation: vi.fn().mockResolvedValue({
+      conversation: { conversationId: 'new-conv', type: 'dm', createdAt: '2026-01-01T00:00:00Z' },
+      members: [],
+    }),
+    getConversation: vi.fn().mockResolvedValue({
+      conversation: { conversationId: 'conv-1', type: 'dm', createdAt: '2026-01-01T00:00:00Z' },
+      members: [{ userId: 'me', conversationId: 'conv-1', joinedAt: '2026-01-01T00:00:00Z' }],
+    }),
+    listMessages: vi.fn().mockResolvedValue({ messages: [] }),
+  } as unknown as NewioClient;
+}
+
+function mockAuth(): AuthManager {
+  return {
+    getAccessToken: vi.fn().mockReturnValue('token'),
+    getRefreshToken: vi.fn().mockReturnValue('refresh'),
+    tokenProvider: vi.fn().mockReturnValue('token'),
+    dispose: vi.fn(),
+    revoke: vi.fn(),
+  } as unknown as AuthManager;
+}
+
+const identity = { userId: 'me', username: 'myagent', displayName: 'My Agent', ownerId: 'owner-1' };
+
+async function createApp(
+  contacts: ContactRecord[] = [],
+  conversations: ConversationListItem[] = [],
+): Promise<{ app: NewioApp; client: NewioClient; ws: NewioWebSocket }> {
+  eventHandlers.clear();
+  const client = mockClient(contacts, conversations);
+  const ws = mockWs();
+  const app = await NewioApp.createFromComponents(identity, mockAuth(), client, ws);
+  return { app, client, ws };
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe('NewioApp', () => {
+  beforeEach(() => {
+    eventHandlers.clear();
+  });
+
+  describe('init', () => {
+    it('loads contacts and conversations on creation', async () => {
+      const contact = makeContact();
+      const conv = makeConversation();
+      const { app } = await createApp([contact], [conv]);
+
+      expect(app.getAllContacts()).toHaveLength(1);
+      expect(app.getAllConversations()).toHaveLength(1);
+    });
+
+    it('indexes contacts by username (case-insensitive)', async () => {
+      const contact = makeContact({ contactId: 'user-alice', friendUsername: 'Alice' });
+      const { app } = await createApp([contact]);
+
+      expect(app.getContact('user-alice')).toBeDefined();
+      expect(app.isContact('user-alice')).toBe(true);
+      expect(app.isContact('nonexistent')).toBe(false);
+    });
+  });
+
+  describe('resolveUsername', () => {
+    it('resolves from contact cache', async () => {
+      const contact = makeContact({ contactId: 'user-bob', friendUsername: 'bob' });
+      const { app } = await createApp([contact]);
+
+      const userId = await app.resolveUsername('bob');
+      expect(userId).toBe('user-bob');
+    });
+
+    it('resolves case-insensitively', async () => {
+      const contact = makeContact({ contactId: 'user-bob', friendUsername: 'Bob' });
+      const { app } = await createApp([contact]);
+
+      const userId = await app.resolveUsername('bob');
+      expect(userId).toBe('user-bob');
+    });
+
+    it('falls back to API when not in contacts', async () => {
+      const { app, client } = await createApp();
+
+      const userId = await app.resolveUsername('stranger');
+      expect(userId).toBe('resolved-id');
+      expect(client.getUserByUsername).toHaveBeenCalledWith({ username: 'stranger' });
+    });
+  });
+
+  describe('sendMessage', () => {
+    it('sends with auto-incrementing sequenceNumber', async () => {
+      const { app, client } = await createApp();
+
+      await app.sendMessage('conv-1', 'hello');
+      await app.sendMessage('conv-1', 'world');
+
+      expect(client.sendMessage).toHaveBeenCalledTimes(2);
+      expect(client.sendMessage).toHaveBeenNthCalledWith(1, {
+        conversationId: 'conv-1',
+        content: { text: 'hello' },
+        sequenceNumber: 1,
+      });
+      expect(client.sendMessage).toHaveBeenNthCalledWith(2, {
+        conversationId: 'conv-1',
+        content: { text: 'world' },
+        sequenceNumber: 2,
+      });
+    });
+
+    it('tracks sequenceNumbers per conversation', async () => {
+      const { app, client } = await createApp();
+
+      await app.sendMessage('conv-a', 'a1');
+      await app.sendMessage('conv-b', 'b1');
+      await app.sendMessage('conv-a', 'a2');
+
+      expect(client.sendMessage).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ conversationId: 'conv-a', sequenceNumber: 1 }),
+      );
+      expect(client.sendMessage).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ conversationId: 'conv-b', sequenceNumber: 1 }),
+      );
+      expect(client.sendMessage).toHaveBeenNthCalledWith(
+        3,
+        expect.objectContaining({ conversationId: 'conv-a', sequenceNumber: 2 }),
+      );
+    });
+  });
+
+  describe('incoming messages', () => {
+    it('delivers messages to handler', async () => {
+      const contact = makeContact({ contactId: 'sender-1', friendUsername: 'alice', friendDisplayName: 'Alice' });
+      const conv = makeConversation({ conversationId: 'conv-1' });
+      const { app } = await createApp([contact], [conv]);
+
+      const received: IncomingMessage[] = [];
+      app.onMessage((msg) => received.push(msg));
+
+      const handler = eventHandlers.get('message.new');
+      handler?.({
+        type: 'message.new',
+        timestamp: '2026-01-01T00:00:00Z',
+        payload: {
+          conversationId: 'conv-1',
+          messageId: 'msg-1',
+          senderId: 'sender-1',
+          content: { text: 'hello' },
+          sequenceNumber: 1,
+          createdAt: '2026-01-01T00:00:00Z',
+          conversationType: 'dm',
+        },
+      });
+
+      expect(received).toHaveLength(1);
+      expect(received[0].text).toBe('hello');
+      expect(received[0].senderUsername).toBe('alice');
+      expect(received[0].inContact).toBe(true);
+    });
+
+    it('ignores own messages', async () => {
+      const { app } = await createApp();
+
+      const received: IncomingMessage[] = [];
+      app.onMessage((msg) => received.push(msg));
+
+      eventHandlers.get('message.new')?.({
+        type: 'message.new',
+        timestamp: '2026-01-01T00:00:00Z',
+        payload: {
+          conversationId: 'conv-1',
+          messageId: 'msg-1',
+          senderId: 'me',
+          content: { text: 'my own message' },
+          sequenceNumber: 1,
+          createdAt: '2026-01-01T00:00:00Z',
+          conversationType: 'dm',
+        },
+      });
+
+      expect(received).toHaveLength(0);
+    });
+
+    it('ignores messages without text', async () => {
+      const { app } = await createApp();
+
+      const received: IncomingMessage[] = [];
+      app.onMessage((msg) => received.push(msg));
+
+      eventHandlers.get('message.new')?.({
+        type: 'message.new',
+        timestamp: '2026-01-01T00:00:00Z',
+        payload: {
+          conversationId: 'conv-1',
+          messageId: 'msg-1',
+          senderId: 'other',
+          content: {},
+          sequenceNumber: 1,
+          createdAt: '2026-01-01T00:00:00Z',
+          conversationType: 'dm',
+        },
+      });
+
+      expect(received).toHaveLength(0);
+    });
+  });
+
+  describe('WebSocket event handling', () => {
+    it('updates contacts on friend accepted', async () => {
+      const { app } = await createApp();
+
+      expect(app.isContact('new-friend')).toBe(false);
+
+      eventHandlers.get('contact.request_accepted')?.({
+        type: 'contact.request_accepted',
+        timestamp: '2026-01-01T00:00:00Z',
+        payload: makeContact({ contactId: 'new-friend', friendUsername: 'newfriend' }),
+      });
+
+      expect(app.isContact('new-friend')).toBe(true);
+    });
+
+    it('removes contacts on friend removed', async () => {
+      const contact = makeContact({ contactId: 'user-alice', friendUsername: 'alice' });
+      const { app } = await createApp([contact]);
+
+      expect(app.isContact('user-alice')).toBe(true);
+
+      eventHandlers.get('contact.removed')?.({
+        type: 'contact.removed',
+        timestamp: '2026-01-01T00:00:00Z',
+        payload: { userId: 'me', contactId: 'user-alice' },
+      });
+
+      expect(app.isContact('user-alice')).toBe(false);
+    });
+
+    it('adds new conversations', async () => {
+      const { app } = await createApp();
+
+      eventHandlers.get('conversation.new')?.({
+        type: 'conversation.new',
+        timestamp: '2026-01-01T00:00:00Z',
+        payload: makeConversation({ conversationId: 'new-conv', type: 'group', name: 'New Group' }),
+      });
+
+      expect(app.getConversation('new-conv')).toBeDefined();
+      expect(app.getConversation('new-conv')?.name).toBe('New Group');
+    });
+  });
+
+  describe('buildSystemPrompt', () => {
+    it('includes agent identity', async () => {
+      const { app } = await createApp();
+      const prompt = app.buildSystemPrompt();
+
+      expect(prompt).toContain('myagent');
+      expect(prompt).toContain('My Agent');
+    });
+
+    it('includes owner info when owner is in contacts', async () => {
+      const ownerContact = makeContact({
+        contactId: 'owner-1',
+        friendUsername: 'owner',
+        friendDisplayName: 'The Owner',
+      });
+      const { app } = await createApp([ownerContact]);
+      const prompt = app.buildSystemPrompt();
+
+      expect(prompt).toContain('The Owner');
+      expect(prompt).toContain('owner');
+    });
+
+    it('includes custom instructions', async () => {
+      const { app } = await createApp();
+      const prompt = app.buildSystemPrompt({ customInstructions: 'Always be polite.' });
+
+      expect(prompt).toContain('Always be polite.');
+    });
+
+    it('includes _skip convention', async () => {
+      const { app } = await createApp();
+      const prompt = app.buildSystemPrompt();
+
+      expect(prompt).toContain('_skip');
+    });
+
+    it('mentions markdown support', async () => {
+      const { app } = await createApp();
+      const prompt = app.buildSystemPrompt();
+
+      expect(prompt).toContain('markdown');
+    });
+  });
+});
