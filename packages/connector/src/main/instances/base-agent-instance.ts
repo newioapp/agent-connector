@@ -84,7 +84,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       if (err instanceof ApprovalTimeoutError) {
         this.setStatus('error', 'Approval timed out. Please try starting the agent again.');
       } else {
-        const message = err instanceof Error ? err.message : 'Unknown error';
+        const message = err instanceof Error ? (err.stack ?? err.message) : 'Unknown error';
         this.setStatus('error', message);
       }
     }

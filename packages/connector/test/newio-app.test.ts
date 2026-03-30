@@ -48,15 +48,27 @@ function mockClient(contacts: ContactRecord[] = [], conversations: ConversationL
   return {
     listFriends: vi.fn().mockResolvedValue({ contacts, cursor: undefined }),
     listConversations: vi.fn().mockResolvedValue({ conversations, cursor: undefined }),
-    sendMessage: vi.fn().mockResolvedValue({ message: {} }),
+    sendMessage: vi
+      .fn()
+      .mockResolvedValue({
+        conversationId: 'conv-1',
+        messageId: 'msg-1',
+        senderId: 'me',
+        content: {},
+        createdAt: '2026-01-01T00:00:00Z',
+      }),
     getUserByUsername: vi.fn().mockResolvedValue({ userId: 'resolved-id' }),
     createConversation: vi.fn().mockResolvedValue({
-      conversation: { conversationId: 'new-conv', type: 'dm', createdAt: '2026-01-01T00:00:00Z' },
+      conversationId: 'new-conv',
+      type: 'dm',
+      createdAt: '2026-01-01T00:00:00Z',
       members: [],
     }),
     getConversation: vi.fn().mockResolvedValue({
-      conversation: { conversationId: 'conv-1', type: 'dm', createdAt: '2026-01-01T00:00:00Z' },
-      members: [{ userId: 'me', conversationId: 'conv-1', joinedAt: '2026-01-01T00:00:00Z' }],
+      conversationId: 'conv-1',
+      type: 'dm',
+      createdAt: '2026-01-01T00:00:00Z',
+      members: [{ userId: 'me', joinedAt: '2026-01-01T00:00:00Z' }],
     }),
     listMessages: vi.fn().mockResolvedValue({ messages: [] }),
   } as unknown as NewioClient;

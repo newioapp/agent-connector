@@ -400,23 +400,23 @@ export class NewioClient {
 
   /** Upload a file. Handles presigned URL generation and S3 upload. */
   async uploadFile(input: UploadFileRequest): Promise<UploadFileResponse> {
-    const { uploadUrl, fields, s3Key } = await this.getUploadUrl({
+    const { url, fields, s3Key } = await this.getUploadUrl({
       fileName: input.fileName,
       contentType: input.contentType,
       artifactType: 'media',
     });
-    await this.doS3Upload(uploadUrl, fields, input.body, input.contentType, input.fileName);
+    await this.doS3Upload(url, fields, input.body, input.contentType, input.fileName);
     return { s3Key };
   }
 
   /** Upload an avatar image. */
   async uploadAvatar(input: UploadAvatarRequest): Promise<UploadAvatarResponse> {
-    const { uploadUrl, fields, s3Key } = await this.getUploadUrl({
+    const { url, fields, s3Key } = await this.getUploadUrl({
       fileName: input.fileName,
       contentType: input.contentType,
       artifactType: 'avatars',
     });
-    await this.doS3Upload(uploadUrl, fields, input.body, input.contentType, input.fileName);
+    await this.doS3Upload(url, fields, input.body, input.contentType, input.fileName);
     return { s3Key };
   }
 

@@ -162,7 +162,7 @@ export function AgentDetailPanel({
       <div className="flex-1 overflow-y-auto px-6 py-4">
         {/* Error banner */}
         {agent.error && (
-          <div className="mb-4 select-text rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive cursor-text">
+          <div className="mb-4 select-text rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive cursor-text whitespace-pre-wrap break-all max-h-48 overflow-y-auto font-mono">
             {agent.error}
           </div>
         )}
@@ -213,7 +213,14 @@ export function AgentDetailPanel({
           </>
         )}
 
-        {config.kiroCli && <Field label="Agent Name" value={config.kiroCli.agentName} />}
+        {config.kiroCli && (
+          <>
+            {config.kiroCli.agentName && <Field label="Kiro Agent Name" value={config.kiroCli.agentName} />}
+            {config.kiroCli.model && <Field label="Model" value={config.kiroCli.model} />}
+            {config.kiroCli.kiroCliPath && <Field label="Kiro CLI Path" value={config.kiroCli.kiroCliPath} />}
+            {config.kiroCli.cwd && <Field label="Working Directory" value={config.kiroCli.cwd} />}
+          </>
+        )}
       </div>
 
       {/* Footer actions */}

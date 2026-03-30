@@ -316,14 +316,14 @@ export class NewioApp {
       type: 'dm' as ConversationType,
       memberIds: [userId],
     });
-    this.conversations.set(resp.conversation.conversationId, {
-      conversationId: resp.conversation.conversationId,
-      type: resp.conversation.type,
-      name: resp.conversation.name,
-      lastMessageAt: resp.conversation.lastMessageAt,
+    this.conversations.set(resp.conversationId, {
+      conversationId: resp.conversationId,
+      type: resp.type,
+      name: resp.name,
+      lastMessageAt: resp.lastMessageAt,
     });
-    this.conversationMembers.set(resp.conversation.conversationId, [...resp.members]);
-    return resp.conversation.conversationId;
+    this.conversationMembers.set(resp.conversationId, [...resp.members]);
+    return resp.conversationId;
   }
 
   /** Create a group conversation. */
@@ -334,14 +334,14 @@ export class NewioApp {
       name,
       memberIds,
     });
-    this.conversations.set(resp.conversation.conversationId, {
-      conversationId: resp.conversation.conversationId,
-      type: resp.conversation.type,
-      name: resp.conversation.name,
-      lastMessageAt: resp.conversation.lastMessageAt,
+    this.conversations.set(resp.conversationId, {
+      conversationId: resp.conversationId,
+      type: resp.type,
+      name: resp.name,
+      lastMessageAt: resp.lastMessageAt,
     });
-    this.conversationMembers.set(resp.conversation.conversationId, [...resp.members]);
-    return resp.conversation.conversationId;
+    this.conversationMembers.set(resp.conversationId, [...resp.members]);
+    return resp.conversationId;
   }
 
   // ---------------------------------------------------------------------------
@@ -579,11 +579,12 @@ Response rules:
 
     // Update sequence tracking
     const currentSeq = this.sequenceNumbers.get(payload.conversationId) ?? 0;
-    if (payload.sequenceNumber > currentSeq) {
-      this.sequenceNumbers.set(payload.conversationId, payload.sequenceNumber);
+    const incomingSeq = payload.sequenceNumber ?? 0;
+    if (incomingSeq > currentSeq) {
+      this.sequenceNumbers.set(payload.conversationId, incomingSeq);
     }
 
-    if (payload.sequenceNumber > currentSeq + 1 && currentSeq > 0) {
+    if (incomingSeq > currentSeq + 1 && currentSeq > 0) {
       const cached = this.messageCache.get(payload.conversationId);
       if (cached && cached.length > 1) {
         const afterId = cached[cached.length - 2].messageId;

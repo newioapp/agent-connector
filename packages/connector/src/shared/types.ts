@@ -22,7 +22,10 @@ export interface ClaudeConfig {
 }
 
 export interface KiroCliConfig {
-  readonly agentName: string;
+  readonly agentName?: string;
+  readonly model?: string;
+  readonly kiroCliPath?: string;
+  readonly cwd?: string;
 }
 
 export interface AgentConfig {
