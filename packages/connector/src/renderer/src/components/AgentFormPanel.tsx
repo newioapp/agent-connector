@@ -30,8 +30,11 @@ export function AgentFormPanel({
   const [type, setType] = useState<AgentType>('claude-code');
   const [newioUsername, setNewioUsername] = useState('');
   const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('claude-sonnet-4-20250514');
+  const [model, setModel] = useState('claude-sonnet-4-6');
   const [userPrompt, setUserPrompt] = useState('');
+  const [nodePath, setNodePath] = useState('');
+  const [claudeCodeCliPath, setClaudeCodeCliPath] = useState('');
+  const [cwd, setCwd] = useState('');
   const [agentName, setAgentName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [typeOpen, setTypeOpen] = useState(false);
@@ -60,6 +63,9 @@ export function AgentFormPanel({
       setApiKey(editAgent.claude.apiKey);
       setModel(editAgent.claude.model);
       setUserPrompt(editAgent.claude.userPrompt ?? '');
+      setNodePath(editAgent.claude.nodePath ?? '');
+      setClaudeCodeCliPath(editAgent.claude.claudeCodeCliPath ?? '');
+      setCwd(editAgent.claude.cwd ?? '');
     }
     if (editAgent.kiroCli) {
       setAgentName(editAgent.kiroCli.agentName);
@@ -81,6 +87,9 @@ export function AgentFormPanel({
               apiKey: apiKey.trim(),
               model: model.trim(),
               ...(userPrompt.trim() ? { userPrompt: userPrompt.trim() } : {}),
+              ...(nodePath.trim() ? { nodePath: nodePath.trim() } : {}),
+              ...(claudeCodeCliPath.trim() ? { claudeCodeCliPath: claudeCodeCliPath.trim() } : {}),
+              ...(cwd.trim() ? { cwd: cwd.trim() } : {}),
             }
           : undefined;
       const kiroCliConfig = type === 'kiro-cli' ? { agentName: agentName.trim() } : undefined;
@@ -234,6 +243,44 @@ export function AgentFormPanel({
                 value={userPrompt}
                 onChange={(e) => setUserPrompt(e.target.value)}
               />
+            </label>
+            <label className="mb-4 block">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">Node.js Path (optional)</span>
+              <input
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
+                placeholder="e.g. /usr/local/bin/node"
+                value={nodePath}
+                onChange={(e) => setNodePath(e.target.value)}
+              />
+              <span className="mt-1 block text-xs text-muted-foreground">
+                Defaults to the Electron runtime. Override if Claude Code needs a specific Node.js.
+              </span>
+            </label>
+            <label className="mb-4 block">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">
+                Claude Code CLI Path (optional)
+              </span>
+              <input
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
+                placeholder="e.g. /path/to/cli.js"
+                value={claudeCodeCliPath}
+                onChange={(e) => setClaudeCodeCliPath(e.target.value)}
+              />
+              <span className="mt-1 block text-xs text-muted-foreground">
+                Defaults to the CLI bundled with @anthropic-ai/claude-agent-sdk.
+              </span>
+            </label>
+            <label className="mb-4 block">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">Working Directory (optional)</span>
+              <input
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
+                placeholder="e.g. /Users/me/projects"
+                value={cwd}
+                onChange={(e) => setCwd(e.target.value)}
+              />
+              <span className="mt-1 block text-xs text-muted-foreground">
+                Working directory for Claude Code sessions. Defaults to the app's process directory.
+              </span>
             </label>
           </>
         )}

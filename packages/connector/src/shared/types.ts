@@ -16,6 +16,9 @@ export interface ClaudeConfig {
   readonly apiKey: string;
   readonly model: string;
   readonly userPrompt?: string;
+  readonly nodePath?: string;
+  readonly claudeCodeCliPath?: string;
+  readonly cwd?: string;
 }
 
 export interface KiroCliConfig {
