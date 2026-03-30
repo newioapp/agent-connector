@@ -11,7 +11,9 @@
  */
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { Query, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
-import { join } from 'path';
+import { dirname, join } from 'path';
+import { createRequire } from 'module';
+import { execFileSync } from 'child_process';
 import { BaseAgentInstance } from './base-agent-instance';
 import { MessageQueue } from './message-queue';
 import type { IncomingMessage } from '../newio-app';
@@ -22,14 +24,56 @@ const log = new Logger('claude-instance');
 
 /**
  * Resolve the path to the bundled Claude Code CLI shipped inside
- * `@anthropic-ai/claude-agent-sdk`. We resolve it explicitly because
- * electron-vite bundles the main process as CJS, which breaks the SDK's
- * internal `import.meta.url`-based resolution.
+ * `@anthropic-ai/claude-agent-sdk`. We use createRequire so resolution
+ * works in both electron-vite dev mode and production CJS builds.
  */
 function resolveClaudeCodeCli(): string {
-  const sdkEntry = require.resolve('@anthropic-ai/claude-agent-sdk');
-  return join(sdkEntry, '..', 'cli.js');
+  const ownRequire = createRequire(typeof __filename !== 'undefined' ? __filename : import.meta.url);
+  const sdkEntry = ownRequire.resolve('@anthropic-ai/claude-agent-sdk');
+  return join(dirname(sdkEntry), 'cli.js');
 }
+
+/**
+ * Resolve the absolute path to `node`. Electron's PATH when launched from
+ * the Dock is minimal (/usr/bin:/bin) and won't include nvm/homebrew node.
+ * We resolve once at module load time using a multi-step fallback.
+ */
+const resolvedNodePath: string = (() => {
+  // 1. Try node on current PATH (works when launched from terminal)
+  try {
+    execFileSync('node', ['--version'], { encoding: 'utf8', timeout: 3000 });
+    return 'node';
+  } catch {
+    // not on PATH
+  }
+
+  // 2. Ask the user's login shell for the full PATH
+  const shell = process.env.SHELL ?? '/bin/zsh';
+  try {
+    const nodePath = execFileSync(shell, ['-ilc', 'which node'], {
+      encoding: 'utf8',
+      timeout: 5000,
+      env: { ...process.env, TERM: 'dumb' },
+    }).trim();
+    if (nodePath) {
+      return nodePath;
+    }
+  } catch {
+    // shell resolution failed
+  }
+
+  // 3. Check common macOS / Linux locations
+  for (const candidate of ['/opt/homebrew/bin/node', '/usr/local/bin/node']) {
+    try {
+      execFileSync(candidate, ['--version'], { encoding: 'utf8', timeout: 3000 });
+      return candidate;
+    } catch {
+      // not here
+    }
+  }
+
+  return 'node';
+})();
 
 // ---------------------------------------------------------------------------
 // ClaudeInstance
@@ -69,11 +113,11 @@ export class ClaudeInstance extends BaseAgentInstance {
       greeting = await this.generateGreetingMessage();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
-      throw new Error(`LLM connection test failed: ${message}`);
+      throw new Error(`Claude Code connection test failed: ${message}`);
     }
 
-    if (!greeting || greeting.trim().toLowerCase() === SKIP_TOKEN) {
-      throw new Error('LLM connection test failed: model returned an empty response');
+    if (!greeting || greeting.trim().length === 0) {
+      throw new Error('Claude Code test failed: model returned an empty response');
     }
 
     await this.app.dmOwner(greeting.trim());
@@ -94,8 +138,7 @@ export class ClaudeInstance extends BaseAgentInstance {
     const q: Query = query({
       prompt,
       options: {
-        pathToClaudeCodeExecutable: resolveClaudeCodeCli(),
-        model: this.config.claude.model,
+        ...this.buildExecOptions(),
         tools: [],
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
@@ -121,6 +164,16 @@ export class ClaudeInstance extends BaseAgentInstance {
     }
 
     return resultText;
+  }
+
+  /** Build executable-related query options, using config overrides or defaults. */
+  private buildExecOptions(): { executable: 'node'; pathToClaudeCodeExecutable: string; model: string; cwd?: string } {
+    return {
+      executable: (this.config.claude?.nodePath ?? resolvedNodePath) as 'node',
+      pathToClaudeCodeExecutable: this.config.claude?.claudeCodeCliPath ?? resolveClaudeCodeCli(),
+      model: this.config.claude?.model ?? 'claude-sonnet-4-6',
+      ...(this.config.claude?.cwd ? { cwd: this.config.claude.cwd } : {}),
+    };
   }
 
   protected onStopped(): void {
@@ -192,16 +245,17 @@ export class ClaudeInstance extends BaseAgentInstance {
       parent_tool_use_id: null,
     };
 
+    console.log('------ user message -----');
+    console.log(userText);
     const q: Query = query({
       prompt: singleAsyncIterable(userMessage),
       options: {
-        pathToClaudeCodeExecutable: resolveClaudeCodeCli(),
+        ...this.buildExecOptions(),
         systemPrompt: {
           type: 'preset',
           preset: 'claude_code',
           append: this.app.buildNewioInstruction({ customInstructions: this.config.claude.userPrompt }),
         },
-        model: this.config.claude.model,
         tools: [],
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
@@ -234,6 +288,8 @@ export class ClaudeInstance extends BaseAgentInstance {
       }
     }
 
+    console.log('------ agent response -----');
+    console.log(resultText);
     return resultText;
   }
 }

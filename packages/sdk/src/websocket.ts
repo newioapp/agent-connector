@@ -195,27 +195,31 @@ export class NewioWebSocket {
     const ws = this.wsFactory(url);
     this.ws = ws;
 
-    ws.onopen = () => {
-      this.setState('connected');
-      this.backoff = INITIAL_BACKOFF_MS;
-      this.startKeepalive();
-      this.scheduleProactiveReconnect();
-    };
+    await new Promise<void>((resolve, reject) => {
+      ws.onopen = () => {
+        this.setState('connected');
+        this.backoff = INITIAL_BACKOFF_MS;
+        this.startKeepalive();
+        this.scheduleProactiveReconnect();
+        resolve();
+      };
+
+      ws.onclose = () => {
+        this.cleanup();
+        if (!this.intentionalClose) {
+          this.setState('disconnected');
+          this.scheduleReconnect();
+        }
+        reject(new Error('WebSocket closed before open'));
+      };
+
+      ws.onerror = () => {
+        // onclose fires after onerror — rejection handled there
+      };
+    });
 
     ws.onmessage = (ev) => {
       this.handleMessage(ev.data);
-    };
-
-    ws.onclose = () => {
-      this.cleanup();
-      if (!this.intentionalClose) {
-        this.setState('disconnected');
-        this.scheduleReconnect();
-      }
-    };
-
-    ws.onerror = () => {
-      // onclose fires after onerror — reconnect handled there
     };
   }
 
@@ -267,14 +271,14 @@ export class NewioWebSocket {
   private scheduleProactiveReconnect(): void {
     this.proactiveReconnectTimer = setTimeout(() => {
       if (!this.intentionalClose) {
-        void this.doConnect();
+        void this.doConnect().catch(() => {});
       }
     }, PROACTIVE_RECONNECT_MS);
   }
 
   private scheduleReconnect(): void {
     this.reconnectTimer = setTimeout(() => {
-      void this.doConnect();
+      void this.doConnect().catch(() => {});
     }, this.backoff);
     this.backoff = Math.min(this.backoff * 2, MAX_BACKOFF_MS);
   }

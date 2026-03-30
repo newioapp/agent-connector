@@ -36,12 +36,15 @@ function createMockWs() {
   return ws;
 }
 
-function createClient(mockWs: ReturnType<typeof createMockWs>) {
+function createClient(mockWs: ReturnType<typeof createMockWs>, autoOpen = true) {
   return new NewioWebSocket({
     url: 'wss://ws.test',
     tokenProvider: () => 'test-token',
     wsFactory: (url) => {
       mockWs.sent.push(`CONNECT:${url}`);
+      if (autoOpen) {
+        queueMicrotask(() => mockWs.triggerOpen());
+      }
       return mockWs;
     },
   });
@@ -63,9 +66,6 @@ describe('NewioWebSocket', () => {
       const client = createClient(ws);
       await client.connect();
       expect(ws.sent[0]).toBe('CONNECT:wss://ws.test?token=test-token');
-      expect(client.getState()).toBe('connecting');
-
-      ws.triggerOpen();
       expect(client.getState()).toBe('connected');
 
       client.disconnect();
@@ -80,7 +80,6 @@ describe('NewioWebSocket', () => {
       client.onStateChange((s) => states.push(s));
 
       await client.connect();
-      ws.triggerOpen();
       client.disconnect();
 
       expect(states).toEqual(['connecting', 'connected', 'disconnected']);
@@ -105,7 +104,6 @@ describe('NewioWebSocket', () => {
       const ws = createMockWs();
       const client = createClient(ws);
       await client.connect();
-      ws.triggerOpen();
 
       const messages: unknown[] = [];
       client.on('message.new', (event) => {
@@ -130,7 +128,6 @@ describe('NewioWebSocket', () => {
       const ws = createMockWs();
       const client = createClient(ws);
       await client.connect();
-      ws.triggerOpen();
 
       let count = 0;
       client.on('message.new', () => count++);
@@ -146,7 +143,6 @@ describe('NewioWebSocket', () => {
       const ws = createMockWs();
       const client = createClient(ws);
       await client.connect();
-      ws.triggerOpen();
 
       let count = 0;
       const handler = () => count++;
@@ -163,7 +159,6 @@ describe('NewioWebSocket', () => {
       const ws = createMockWs();
       const client = createClient(ws);
       await client.connect();
-      ws.triggerOpen();
 
       const events: string[] = [];
       client.on('contact.request_received', () => events.push('request'));
@@ -181,7 +176,6 @@ describe('NewioWebSocket', () => {
       const ws = createMockWs();
       const client = createClient(ws);
       await client.connect();
-      ws.triggerOpen();
 
       // Should not throw
       ws.triggerMessage('not json{{{');
@@ -197,7 +191,6 @@ describe('NewioWebSocket', () => {
       const ws = createMockWs();
       const client = createClient(ws);
       await client.connect();
-      ws.triggerOpen();
 
       let ack: unknown;
       client.setOnSubscribeAck((a) => {
@@ -214,7 +207,6 @@ describe('NewioWebSocket', () => {
       const ws = createMockWs();
       const client = createClient(ws);
       await client.connect();
-      ws.triggerOpen();
 
       let ack: unknown;
       client.setOnUnsubscribeAck((a) => {
@@ -233,7 +225,6 @@ describe('NewioWebSocket', () => {
       const ws = createMockWs();
       const client = createClient(ws);
       await client.connect();
-      ws.triggerOpen();
 
       client.subscribe(['conv_ondemand:c1']);
       const sent = JSON.parse(ws.sent[ws.sent.length - 1]!) as unknown;
@@ -246,7 +237,6 @@ describe('NewioWebSocket', () => {
       const ws = createMockWs();
       const client = createClient(ws);
       await client.connect();
-      ws.triggerOpen();
 
       client.unsubscribe(['conv_ondemand:c1']);
       const sent = JSON.parse(ws.sent[ws.sent.length - 1]!) as unknown;
@@ -268,7 +258,6 @@ describe('NewioWebSocket', () => {
       const ws = createMockWs();
       const client = createClient(ws);
       await client.connect();
-      ws.triggerOpen();
 
       const initialSent = ws.sent.length;
       await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
@@ -291,12 +280,12 @@ describe('NewioWebSocket', () => {
         tokenProvider: () => 'test-token',
         wsFactory: () => {
           connectCount++;
+          queueMicrotask(() => mockWs1.triggerOpen());
           return mockWs1;
         },
       });
 
       await client.connect();
-      mockWs1.triggerOpen();
       expect(connectCount).toBe(1);
 
       // Simulate unexpected close
@@ -319,12 +308,12 @@ describe('NewioWebSocket', () => {
         tokenProvider: () => 'test-token',
         wsFactory: () => {
           connectCount++;
+          queueMicrotask(() => mockWs1.triggerOpen());
           return mockWs1;
         },
       });
 
       await client.connect();
-      mockWs1.triggerOpen();
       client.disconnect();
 
       await vi.advanceTimersByTimeAsync(5000);
@@ -340,12 +329,16 @@ describe('NewioWebSocket', () => {
         tokenProvider: () => 'test-token',
         wsFactory: () => {
           connectCount++;
+          // Only auto-open the initial connect; reconnects stay pending
+          // so backoff isn't reset by a successful open.
+          if (connectCount === 1) {
+            queueMicrotask(() => mockWs1.triggerOpen());
+          }
           return mockWs1;
         },
       });
 
       await client.connect();
-      mockWs1.triggerOpen();
 
       // First disconnect → 1s backoff
       mockWs1.triggerClose();

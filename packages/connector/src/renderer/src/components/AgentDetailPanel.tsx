@@ -207,6 +207,9 @@ export function AgentDetailPanel({
             <Field label="Model" value={config.claude.model} />
             <Field label="API Key" value={'•'.repeat(12) + config.claude.apiKey.slice(-4)} />
             {config.claude.userPrompt && <Field label="User Prompt" value={config.claude.userPrompt} />}
+            {config.claude.nodePath && <Field label="Node.js Path" value={config.claude.nodePath} />}
+            {config.claude.claudeCodeCliPath && <Field label="CLI Path" value={config.claude.claudeCodeCliPath} />}
+            {config.claude.cwd && <Field label="Working Directory" value={config.claude.cwd} />}
           </>
         )}
 
