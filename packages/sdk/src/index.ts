@@ -41,7 +41,6 @@ export type {
 export type {
   ContactRecord,
   ConversationListItem,
-  ConversationDetail,
   MemberRecord,
   MessageRecord,
   MessageContent,
@@ -51,7 +50,9 @@ export type {
   AgentSettings,
   ConversationSettings,
   UserProfile,
+  UserSummary,
   AgentSummary,
+  UserAgent,
 } from './types.js';
 
 // Types — Auth Request / Response

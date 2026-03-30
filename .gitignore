@@ -4,3 +4,5 @@ out/
 coverage/
 *.tgz
 .DS_Store
+pineapple.json
+temp.md.kiro/

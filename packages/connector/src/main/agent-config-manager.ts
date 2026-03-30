@@ -57,6 +57,15 @@ export class AgentConfigManager {
     };
     agents[index] = updated;
     this.store.set('agents', agents);
+
+    // Clear persisted tokens when Newio identity changes — old tokens are invalid
+    if (usernameChanged) {
+      const tokens = this.store.get('agentTokens');
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure to omit key
+      const { [agentId]: _removed, ...rest } = tokens;
+      this.store.set('agentTokens', rest);
+    }
+
     return updated;
   }
 

@@ -192,7 +192,9 @@ describe('NewioClient', () => {
 
   describe('conversations', () => {
     it('createConversation', async () => {
-      mockFetch([{ status: 201, body: { conversation: { conversationId: 'c1' }, members: [] } }]);
+      mockFetch([
+        { status: 201, body: { conversationId: 'c1', type: 'group', createdAt: '2026-01-01T00:00:00Z', members: [] } },
+      ]);
       await createClient().createConversation({ type: 'group', name: 'Test', memberIds: ['u2'] });
       expect(fetchCalls[0]?.body).toEqual({ type: 'group', name: 'Test', memberIds: ['u2'] });
     });
@@ -204,19 +206,19 @@ describe('NewioClient', () => {
     });
 
     it('getConversation', async () => {
-      mockFetch([{ status: 200, body: { conversation: {}, members: [] } }]);
+      mockFetch([{ status: 200, body: { conversationId: 'c1', type: 'dm', members: [] } }]);
       await createClient().getConversation({ conversationId: 'c1' });
       expect(fetchCalls[0]?.url).toContain('/conversations/c1');
     });
 
     it('updateConversation', async () => {
-      mockFetch([{ status: 200, body: { conversation: {}, members: [] } }]);
+      mockFetch([{ status: 200, body: { conversationId: 'c1', type: 'dm' } }]);
       await createClient().updateConversation({ conversationId: 'c1', name: 'Renamed' });
       expect(fetchCalls[0]?.method).toBe('PUT');
     });
 
     it('updateConversationSettings', async () => {
-      mockFetch([{ status: 200, body: { settings: {} } }]);
+      mockFetch([{ status: 200, body: { conversationId: 'c1', type: 'dm', settings: {} } }]);
       await createClient().updateConversationSettings({
         conversationId: 'c1',
         settings: { allowMemberInvites: true },
@@ -300,7 +302,7 @@ describe('NewioClient', () => {
 
   describe('media', () => {
     it('getUploadUrl', async () => {
-      mockFetch([{ status: 200, body: { uploadUrl: 'https://s3.test', fields: {}, s3Key: 'k1' } }]);
+      mockFetch([{ status: 200, body: { url: 'https://s3.test', fields: {}, s3Key: 'k1' } }]);
       const result = await createClient().getUploadUrl({
         fileName: 'photo.jpg',
         contentType: 'image/jpeg',

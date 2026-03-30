@@ -36,6 +36,9 @@ export function AgentFormPanel({
   const [claudeCodeCliPath, setClaudeCodeCliPath] = useState('');
   const [cwd, setCwd] = useState('');
   const [agentName, setAgentName] = useState('');
+  const [kiroModel, setKiroModel] = useState('');
+  const [kiroCliPath, setKiroCliPath] = useState('');
+  const [kiroCwd, setKiroCwd] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [typeOpen, setTypeOpen] = useState(false);
   const typeRef = useRef<HTMLDivElement>(null);
@@ -68,12 +71,14 @@ export function AgentFormPanel({
       setCwd(editAgent.claude.cwd ?? '');
     }
     if (editAgent.kiroCli) {
-      setAgentName(editAgent.kiroCli.agentName);
+      setAgentName(editAgent.kiroCli.agentName ?? '');
+      setKiroModel(editAgent.kiroCli.model ?? '');
+      setKiroCliPath(editAgent.kiroCli.kiroCliPath ?? '');
+      setKiroCwd(editAgent.kiroCli.cwd ?? '');
     }
   }, [editAgent]);
 
-  const canSubmit =
-    name.trim().length > 0 && (type === 'claude-code' ? apiKey.trim().length > 0 : agentName.trim().length > 0);
+  const canSubmit = name.trim().length > 0 && (type === 'claude-code' ? apiKey.trim().length > 0 : true);
 
   async function handleSubmit(): Promise<void> {
     if (!canSubmit || submitting) {
@@ -92,12 +97,20 @@ export function AgentFormPanel({
               ...(cwd.trim() ? { cwd: cwd.trim() } : {}),
             }
           : undefined;
-      const kiroCliConfig = type === 'kiro-cli' ? { agentName: agentName.trim() } : undefined;
+      const kiroCliConfig =
+        type === 'kiro-cli'
+          ? {
+              ...(agentName.trim() ? { agentName: agentName.trim() } : {}),
+              ...(kiroModel.trim() ? { model: kiroModel.trim() } : {}),
+              ...(kiroCliPath.trim() ? { kiroCliPath: kiroCliPath.trim() } : {}),
+              ...(kiroCwd.trim() ? { cwd: kiroCwd.trim() } : {}),
+            }
+          : undefined;
 
       if (isEdit) {
         await updateAgent(editAgent.id, {
           name: name.trim(),
-          ...(newioUsername.trim() ? { newioUsername: newioUsername.trim() } : {}),
+          newioUsername: newioUsername.trim(),
           ...(claudeConfig ? { claude: claudeConfig } : {}),
           ...(kiroCliConfig ? { kiroCli: kiroCliConfig } : {}),
         });
@@ -178,8 +191,15 @@ export function AgentFormPanel({
         )}
         {type === 'kiro-cli' && (
           <div className="mb-4 rounded-md bg-muted px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
-            Runs a Kiro CLI agent as a child process. Requires{' '}
-            <span className="font-medium text-foreground">kiro-cli</span> installed and configured on your system.
+            Runs a Kiro CLI agent as a child process via{' '}
+            <button
+              className="text-primary hover:underline"
+              onClick={() => void window.api.openExternal('https://agentclientprotocol.com/get-started/introduction')}
+            >
+              ACP (Agent Client Protocol)
+            </button>
+            . Requires <span className="font-medium text-foreground">kiro-cli</span> installed and configured on your
+            system.
           </div>
         )}
 
@@ -201,14 +221,13 @@ export function AgentFormPanel({
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
             placeholder="myagent"
             value={newioUsername}
-            disabled={isEdit && !!editAgent.newioAgentId}
             onChange={(e) => setNewioUsername(e.target.value)}
           />
-          {!isEdit && (
-            <span className="mt-1 block text-xs text-muted-foreground">
-              Enter an existing agent username to login. Leave blank to register a new agent.
-            </span>
-          )}
+          <span className="mt-1 block text-xs text-muted-foreground">
+            {isEdit
+              ? 'Changing this will clear the stored Newio identity and tokens.'
+              : 'Enter an existing agent username to login. Leave blank to register a new agent.'}
+          </span>
         </label>
 
         {/* Claude config */}
@@ -287,23 +306,66 @@ export function AgentFormPanel({
 
         {/* Kiro CLI config */}
         {type === 'kiro-cli' && (
-          <label className="mb-4 block">
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">Agent Name</span>
-            <input
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
-              placeholder="my-agent"
-              value={agentName}
-              onChange={(e) => setAgentName(e.target.value)}
-            />
-            <span className="mt-1 block text-xs text-muted-foreground">
-              Runs: kiro-cli chat --agent {agentName || '<name>'}
-            </span>
-          </label>
+          <>
+            <label className="mb-4 block">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">Kiro Agent Name</span>
+              <input
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
+                placeholder="my-agent"
+                value={agentName}
+                onChange={(e) => setAgentName(e.target.value)}
+              />
+              <span className="mt-1 block text-xs text-muted-foreground">
+                Runs: kiro-cli acp --agent {agentName || '<name>'}
+              </span>
+            </label>
+            <label className="mb-4 block">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">Model (optional)</span>
+              <input
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
+                placeholder="auto"
+                value={kiroModel}
+                onChange={(e) => setKiroModel(e.target.value)}
+              />
+            </label>
+            <label className="mb-4 block">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">Kiro CLI Path (optional)</span>
+              <input
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
+                placeholder="e.g. /Users/me/.local/bin/kiro-cli"
+                value={kiroCliPath}
+                onChange={(e) => setKiroCliPath(e.target.value)}
+              />
+              <span className="mt-1 block text-xs text-muted-foreground">
+                Override if kiro-cli is not on your PATH.
+              </span>
+            </label>
+            <label className="mb-4 block">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">Working Directory (optional)</span>
+              <input
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
+                placeholder="e.g. /Users/me/projects"
+                value={kiroCwd}
+                onChange={(e) => setKiroCwd(e.target.value)}
+              />
+              <span className="mt-1 block text-xs text-muted-foreground">
+                Working directory for the Kiro CLI agent. Defaults to the app's process directory.
+              </span>
+            </label>
+          </>
         )}
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-end border-t border-border px-6 py-3">
+      <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-3">
+        {isEdit && (
+          <button
+            className="rounded-md border border-input px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+            onClick={onDone}
+          >
+            Cancel
+          </button>
+        )}
         <button
           className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:opacity-90 disabled:opacity-50"
           disabled={!canSubmit || submitting}
