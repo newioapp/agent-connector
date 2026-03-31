@@ -67,10 +67,48 @@ export class KiroCliSession implements AgentSession, acp.Client {
   }
 
   /**
-   * Spawn a kiro-cli process, establish ACP connection, create ACP session.
-   * Returns a ready-to-use KiroCliSession.
+   * Spawn a kiro-cli process, establish ACP connection, create a new ACP session.
    */
   static async create(config: KiroCliConfig): Promise<KiroCliSession> {
+    const session = await KiroCliSession.spawnAndInit(config);
+    const conn = session.getConnection();
+
+    const sessionResult = await conn.newSession({
+      cwd: config.cwd ?? process.cwd(),
+      mcpServers: [],
+    });
+
+    (session as { correlationId: string }).correlationId = sessionResult.sessionId;
+    log.info(`ACP session created: ${sessionResult.sessionId}`);
+    return session;
+  }
+
+  /**
+   * Spawn a kiro-cli process, establish ACP connection, and resume an existing session.
+   * Uses ACP `session/load` to restore the previous context window.
+   */
+  static async resume(config: KiroCliConfig, correlationId: string): Promise<KiroCliSession> {
+    const session = await KiroCliSession.spawnAndInit(config);
+    (session as { correlationId: string }).correlationId = correlationId;
+
+    await session.getConnection().loadSession({
+      sessionId: correlationId,
+      cwd: config.cwd ?? process.cwd(),
+      mcpServers: [],
+    });
+    log.info(`ACP session resumed: ${correlationId}`);
+    return session;
+  }
+
+  private getConnection(): ClientSideConnection {
+    if (!this.connection) {
+      throw new Error('ACP connection not initialized');
+    }
+    return this.connection;
+  }
+
+  /** Spawn kiro-cli process and initialize ACP connection (shared by create/resume). */
+  private static async spawnAndInit(config: KiroCliConfig): Promise<KiroCliSession> {
     const { agentName, model, kiroCliPath, cwd } = config;
     const executable = kiroCliPath ?? resolvedKiroCliPath;
     const args = ['acp', '--trust-all-tools'];
@@ -120,15 +158,6 @@ export class KiroCliSession implements AgentSession, acp.Client {
     });
     log.info(`ACP initialized (protocol v${String(initResult.protocolVersion)})`);
 
-    const sessionResult = await conn.newSession({
-      cwd: cwd ?? process.cwd(),
-      mcpServers: [],
-    });
-
-    // Patch in the real correlationId
-    (session as { correlationId: string }).correlationId = sessionResult.sessionId;
-    log.info(`ACP session created: ${sessionResult.sessionId}`);
-
     return session;
   }
 
@@ -137,13 +166,14 @@ export class KiroCliSession implements AgentSession, acp.Client {
   // ---------------------------------------------------------------------------
 
   async prompt(text: string): Promise<string | undefined> {
-    if (!this.connection) {
+    const conn = this.connection;
+    if (!conn) {
       return undefined;
     }
 
     const responsePromise = this.startCollecting();
 
-    const promptResult = await this.connection.prompt({
+    const promptResult = await conn.prompt({
       sessionId: this.correlationId,
       prompt: [{ type: 'text', text }],
     });

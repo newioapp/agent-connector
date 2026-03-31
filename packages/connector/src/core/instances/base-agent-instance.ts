@@ -165,15 +165,20 @@ export abstract class BaseAgentInstance implements AgentInstance {
    * Currently returns the conversationId directly (1:1 mapping).
    * Will call the backend API once session support is added.
    */
-  protected getNewioSessionId(conversationId: string): string {
+  private getNewioSessionId(conversationId: string): string {
     return conversationId;
   }
 
   /**
-   * Get or create a session for a given Newio session ID.
-   * Checks live sessions first, then the persistent store, then creates new.
+   * Get, resume, or create a session for a conversation.
+   * 1. Resolves conversationId → newioSessionId
+   * 2. Checks if a live session exists → return it
+   * 3. Checks if a persisted mapping exists → resume the session
+   * 4. Otherwise → create a new session
    */
-  protected async getOrCreateSession(newioSessionId: string): Promise<AgentSession> {
+  protected async getOrCreateSession(conversationId: string): Promise<AgentSession> {
+    const newioSessionId = this.getNewioSessionId(conversationId);
+
     // Check if already running
     const existingCorrelationId = this.sessionStore.get(newioSessionId);
     if (existingCorrelationId) {
@@ -182,9 +187,15 @@ export abstract class BaseAgentInstance implements AgentInstance {
         live.lastActivityAt = Date.now();
         return live.session;
       }
+
+      // Mapping exists but session was idle-killed — resume it
+      log.info(`Resuming session: correlation=${existingCorrelationId}`);
+      const session = await this.resumeSession(existingCorrelationId);
+      this.liveSessions.set(existingCorrelationId, { session, lastActivityAt: Date.now() });
+      return session;
     }
 
-    // Create new session
+    // No mapping — create new session
     const session = await this.createSession();
     this.sessionStore.set(newioSessionId, session.correlationId);
     this.liveSessions.set(session.correlationId, { session, lastActivityAt: Date.now() });
@@ -203,6 +214,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** Create a new agent-type-specific session. */
   protected abstract createSession(): Promise<AgentSession>;
+
+  /** Resume a previously idle-killed session by its correlation ID. */
+  protected abstract resumeSession(correlationId: string): Promise<AgentSession>;
 
   /** Called after NewioApp is ready. Subclasses add agent-specific behavior (e.g., greeting). */
   protected abstract onConnected(): Promise<void> | void;
@@ -225,10 +239,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
       return;
     }
 
-    const newioSessionId = this.getNewioSessionId(conversationId);
     let session: AgentSession;
     try {
-      session = await this.getOrCreateSession(newioSessionId);
+      session = await this.getOrCreateSession(conversationId);
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';
       log.error(`Failed to get/create session for ${conversationId}: ${errMsg}`);

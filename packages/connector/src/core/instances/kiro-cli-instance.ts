@@ -51,6 +51,13 @@ export class KiroCliInstance extends BaseAgentInstance {
     return session;
   }
 
+  protected async resumeSession(correlationId: string): Promise<AgentSession> {
+    if (!this.config.kiroCli) {
+      throw new Error('Kiro CLI config missing');
+    }
+    return KiroCliSession.resume(this.config.kiroCli, correlationId);
+  }
+
   // ---------------------------------------------------------------------------
   // Greeting
   // ---------------------------------------------------------------------------
@@ -62,10 +69,9 @@ export class KiroCliInstance extends BaseAgentInstance {
 
     // Find or create DM with owner
     const ownerDmConversationId = await this.app.findOrCreateDm(this.app.identity.ownerId);
-    const newioSessionId = this.getNewioSessionId(ownerDmConversationId);
 
     // Get or create the session for the owner DM
-    const session = await this.getOrCreateSession(newioSessionId);
+    const session = await this.getOrCreateSession(ownerDmConversationId);
 
     const ownerName = this.app.getOwnerDisplayName() ?? 'your owner';
     const prompt = `You just connected to the Newio messaging platform. Send a brief, friendly greeting to ${ownerName} to let them know you are online and ready. Keep it to 1-2 sentences.`;

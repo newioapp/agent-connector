@@ -193,6 +193,11 @@ export class ClaudeInstance extends BaseAgentInstance {
     return Promise.resolve(new ClaudeSession(`claude-${String(this.sessionCounter)}`, this));
   }
 
+  protected resumeSession(correlationId: string): Promise<AgentSession> {
+    // Claude sessions are stateless per query — resume is the same as create
+    return Promise.resolve(new ClaudeSession(correlationId, this));
+  }
+
   // ---------------------------------------------------------------------------
   // Claude query — used by ClaudeSession.prompt()
   // ---------------------------------------------------------------------------
