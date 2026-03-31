@@ -36,6 +36,10 @@
   },
   "packageManager": "pnpm@10.31.0",
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild", "electron"]
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "electron",
+      "better-sqlite3"
+    ]
   }
 }

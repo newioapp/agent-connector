@@ -4,10 +4,9 @@
  * Uses streaming input mode with `continue: true` so the SDK manages conversation
  * history across turns. Each turn passes a new user message via AsyncIterable.
  *
- * Uses streaming output: iterates SDKMessage events to detect when the model starts
- * generating tokens, enabling thinking → typing status transitions.
- *
- * Incoming Newio messages are queued per conversation and processed serially.
+ * TODO: Refactor to multi-session architecture (one session per conversation).
+ * Currently uses a single implicit session — all conversations share one context window.
+ * This will be addressed in a follow-up PR.
  */
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { Query, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
@@ -15,11 +14,9 @@ import { dirname, join } from 'path';
 import { createRequire } from 'module';
 import { execFileSync } from 'child_process';
 import { BaseAgentInstance } from './base-agent-instance';
-import { MessageQueue } from './message-queue';
-import type { IncomingMessage } from '../newio-app';
+import type { AgentSession } from '../agent-session';
 import { Logger } from '../logger';
 
-const SKIP_TOKEN = '_skip';
 const log = new Logger('claude-instance');
 
 /**
@@ -36,10 +33,8 @@ function resolveClaudeCodeCli(): string {
 /**
  * Resolve the absolute path to `node`. Electron's PATH when launched from
  * the Dock is minimal (/usr/bin:/bin) and won't include nvm/homebrew node.
- * We resolve once at module load time using a multi-step fallback.
  */
 const resolvedNodePath: string = (() => {
-  // 1. Try node on current PATH (works when launched from terminal)
   try {
     execFileSync('node', ['--version'], { encoding: 'utf8', timeout: 3000 });
     return 'node';
@@ -47,7 +42,6 @@ const resolvedNodePath: string = (() => {
     // not on PATH
   }
 
-  // 2. Ask the user's login shell for the full PATH
   const shell = process.env.SHELL ?? '/bin/zsh';
   try {
     const nodePath = execFileSync(shell, ['-ilc', 'which node'], {
@@ -62,7 +56,6 @@ const resolvedNodePath: string = (() => {
     // shell resolution failed
   }
 
-  // 3. Check common macOS / Linux locations
   for (const candidate of ['/opt/homebrew/bin/node', '/usr/local/bin/node']) {
     try {
       execFileSync(candidate, ['--version'], { encoding: 'utf8', timeout: 3000 });
@@ -76,11 +69,37 @@ const resolvedNodePath: string = (() => {
 })();
 
 // ---------------------------------------------------------------------------
+// Claude session — temporary single-session wrapper
+// ---------------------------------------------------------------------------
+
+/**
+ * Temporary AgentSession implementation for Claude that wraps the existing
+ * streaming query logic. Will be replaced with proper multi-session support.
+ */
+class ClaudeSession implements AgentSession {
+  readonly correlationId: string;
+  private readonly instance: ClaudeInstance;
+
+  constructor(correlationId: string, instance: ClaudeInstance) {
+    this.correlationId = correlationId;
+    this.instance = instance;
+  }
+
+  async prompt(text: string): Promise<string | undefined> {
+    return this.instance.queryAgent(text);
+  }
+
+  dispose(): void {
+    // No-op for now — Claude sessions are stateless per query
+  }
+}
+
+// ---------------------------------------------------------------------------
 // ClaudeInstance
 // ---------------------------------------------------------------------------
 
 export class ClaudeInstance extends BaseAgentInstance {
-  private readonly messageQueue = new MessageQueue();
+  private sessionCounter = 0;
 
   // ---------------------------------------------------------------------------
   // Lifecycle
@@ -90,19 +109,9 @@ export class ClaudeInstance extends BaseAgentInstance {
     if (!this.app) {
       throw new Error('NewioApp not initialized');
     }
-    this.app.onMessage((msg) => {
-      if (!msg.isOwnMessage) {
-        this.messageQueue.enqueue(msg);
-      }
-    });
-    void this.processLoop();
     await this.sendGreeting();
   }
 
-  /**
-   * Send a greeting DM to the owner to verify the LLM connection works.
-   * Throws on failure so BaseAgentInstance.start() surfaces the error to the UI.
-   */
   private async sendGreeting(): Promise<void> {
     if (!this.app?.identity.ownerId) {
       return;
@@ -123,10 +132,6 @@ export class ClaudeInstance extends BaseAgentInstance {
     await this.app.dmOwner(greeting.trim());
   }
 
-  /**
-   * Generate a greeting message using Claude. No system prompt — just a simple
-   * instruction to produce a personalized greeting for the owner.
-   */
   private async generateGreetingMessage(): Promise<string | undefined> {
     if (!this.app || !this.config.claude) {
       return undefined;
@@ -166,7 +171,6 @@ export class ClaudeInstance extends BaseAgentInstance {
     return resultText;
   }
 
-  /** Build executable-related query options, using config overrides or defaults. */
   private buildExecOptions(): { executable: 'node'; pathToClaudeCodeExecutable: string; model: string; cwd?: string } {
     return {
       executable: (this.config.claude?.nodePath ?? resolvedNodePath) as 'node',
@@ -177,64 +181,29 @@ export class ClaudeInstance extends BaseAgentInstance {
   }
 
   protected onStopped(): void {
-    this.messageQueue.close();
+    // Session cleanup handled by BaseAgentInstance
   }
 
   // ---------------------------------------------------------------------------
-  // Processing loop
+  // Session factory
   // ---------------------------------------------------------------------------
 
-  private async processLoop(): Promise<void> {
-    for await (const [conversationId, messages] of this.messageQueue.batches()) {
-      await this.processBatch(conversationId, messages);
-    }
+  protected createSession(): Promise<AgentSession> {
+    this.sessionCounter++;
+    return Promise.resolve(new ClaudeSession(`claude-${String(this.sessionCounter)}`, this));
+  }
+
+  protected resumeSession(correlationId: string): Promise<AgentSession> {
+    // Claude sessions are stateless per query — resume is the same as create
+    return Promise.resolve(new ClaudeSession(correlationId, this));
   }
 
   // ---------------------------------------------------------------------------
-  // Claude interaction — streaming input + streaming output
+  // Claude query — used by ClaudeSession.prompt()
   // ---------------------------------------------------------------------------
 
-  private async processBatch(conversationId: string, messages: readonly IncomingMessage[]): Promise<void> {
-    if (!this.app || !this.config.claude) {
-      return;
-    }
-
-    const userText = formatPrompt(messages);
-
-    // Set thinking status
-    this.app.setStatus('thinking', conversationId);
-
-    let response: string | undefined;
-    try {
-      response = await this.queryAgentStreaming(conversationId, userText);
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : 'Unknown error';
-      log.error(`Query failed for ${conversationId}: ${errMsg}`);
-      this.app.setStatus(null, conversationId);
-      return;
-    }
-
-    // Clear status
-    this.app.setStatus(null, conversationId);
-
-    if (!response || response.trim().toLowerCase() === SKIP_TOKEN) {
-      return;
-    }
-
-    try {
-      await this.app.sendMessage(conversationId, response.trim());
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : 'Unknown error';
-      log.error(`Failed to send message to ${conversationId}: ${errMsg}`);
-    }
-  }
-
-  /**
-   * Query Claude with streaming output. Uses `continue: true` so the SDK
-   * manages conversation history across turns. Transitions status from
-   * 'thinking' to 'typing' on first text token.
-   */
-  private async queryAgentStreaming(conversationId: string, userText: string): Promise<string | undefined> {
+  /** @internal — called by ClaudeSession */
+  async queryAgent(userText: string): Promise<string | undefined> {
     if (!this.app || !this.config.claude) {
       return undefined;
     }
@@ -245,8 +214,6 @@ export class ClaudeInstance extends BaseAgentInstance {
       parent_tool_use_id: null,
     };
 
-    console.log('------ user message -----');
-    console.log(userText);
     const q: Query = query({
       prompt: singleAsyncIterable(userMessage),
       options: {
@@ -270,15 +237,8 @@ export class ClaudeInstance extends BaseAgentInstance {
     });
 
     let resultText: string | undefined;
-    let sentTyping = false;
 
     for await (const event of q as AsyncIterable<SDKMessage>) {
-      // Detect first streaming token → switch to 'typing'
-      if (!sentTyping && event.type === 'stream_event') {
-        this.app.setStatus('typing', conversationId);
-        sentTyping = true;
-      }
-
       if (event.type === 'result') {
         if (event.subtype === 'success' && 'result' in event) {
           resultText = event.result;
@@ -288,8 +248,6 @@ export class ClaudeInstance extends BaseAgentInstance {
       }
     }
 
-    console.log('------ agent response -----');
-    console.log(resultText);
     return resultText;
   }
 }
@@ -298,7 +256,6 @@ export class ClaudeInstance extends BaseAgentInstance {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Wrap a single value as an AsyncIterable that yields it once. */
 function singleAsyncIterable<T>(value: T): AsyncIterable<T> {
   return {
     [Symbol.asyncIterator]() {
@@ -314,57 +271,4 @@ function singleAsyncIterable<T>(value: T): AsyncIterable<T> {
       };
     },
   };
-}
-
-// ---------------------------------------------------------------------------
-// Prompt formatting (YAML)
-// ---------------------------------------------------------------------------
-
-function formatPrompt(messages: readonly IncomingMessage[]): string {
-  const first = messages[0];
-  const isGroup = first.conversationType === 'group' || first.conversationType === 'temp_group';
-
-  if (isGroup) {
-    return formatGroupBatch(first.conversationId, first.groupName, messages);
-  }
-  return formatDmBatch(first.conversationId, messages);
-}
-
-function formatSender(m: IncomingMessage): string {
-  return [
-    `    username: ${m.senderUsername ?? 'unknown'}`,
-    `    displayName: ${m.senderDisplayName ?? 'Unknown'}`,
-    `    accountType: ${m.senderAccountType ?? 'unknown'}`,
-    `    inContact: ${String(m.inContact)}`,
-  ].join('\n');
-}
-
-function formatDmBatch(conversationId: string, messages: readonly IncomingMessage[]): string {
-  const first = messages[0];
-  const lines = [`conversationId: ${conversationId}`, `type: dm`, `from:`, formatSender(first), `messages:`];
-  for (const m of messages) {
-    lines.push(`  - message: ${m.text}`);
-    lines.push(`    timestamp: "${m.timestamp}"`);
-  }
-  return lines.join('\n');
-}
-
-function formatGroupBatch(
-  conversationId: string,
-  groupName: string | undefined,
-  messages: readonly IncomingMessage[],
-): string {
-  const lines = [
-    `conversationId: ${conversationId}`,
-    `type: group`,
-    `groupName: ${groupName ?? 'Unnamed Group'}`,
-    `messages:`,
-  ];
-  for (const m of messages) {
-    lines.push(`  - from:`);
-    lines.push(formatSender(m));
-    lines.push(`    message: ${m.text}`);
-    lines.push(`    timestamp: "${m.timestamp}"`);
-  }
-  return lines.join('\n');
 }

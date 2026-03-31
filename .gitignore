@@ -6,3 +6,5 @@ coverage/
 .DS_Store
 pineapple.json
 temp.md.kiro/
+.kiro/
+temp.md

@@ -9,7 +9,10 @@
  */
 import type { AgentConfigManager, AgentTokens } from './core/agent-config-manager';
 import { AgentRuntimeManager } from './core/agent-runtime-manager';
+import { SessionStore } from './core/session-store';
 import type { AgentRuntimeStatus, AgentConfig } from './core/types';
+import { join } from 'path';
+import { mkdirSync } from 'fs';
 
 // ---------------------------------------------------------------------------
 // Hardcoded agent configs — edit these
@@ -90,6 +93,9 @@ class InMemoryConfigManager implements AgentConfigManager {
 // ---------------------------------------------------------------------------
 
 const configManager = new InMemoryConfigManager();
+const dataDir = join(process.env.HOME ?? '/tmp', '.newio-connector');
+mkdirSync(dataDir, { recursive: true });
+const sessionStore = new SessionStore(join(dataDir, 'sessions.db'));
 
 const args = process.argv.slice(2);
 const agentIdx = args.indexOf('--agent');
@@ -117,7 +123,7 @@ if (!config) {
 
 console.log(`Starting agent: ${config.name} (${config.type})`);
 
-const runtime = new AgentRuntimeManager(configManager, {
+const runtime = new AgentRuntimeManager(configManager, sessionStore, {
   onStatusChanged(id: string, status: AgentRuntimeStatus, error?: string) {
     console.log(`[${id}] status: ${status}${error ? ` — ${error}` : ''}`);
   },
@@ -134,7 +140,10 @@ runtime.start(agentId);
 // Graceful shutdown
 function shutdown(): void {
   console.log('\nStopping agent...');
-  void runtime.stopAll().then(() => process.exit(0));
+  void runtime.stopAll().then(() => {
+    sessionStore.close();
+    process.exit(0);
+  });
 }
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);

@@ -42,9 +42,15 @@ export interface AgentConfig {
   /** Newio avatar URL (synced on every start). */
   readonly newioAvatarUrl?: string;
 
+  /** Idle timeout for sessions in ms. Sessions with no activity are stopped. Default: 1 hour. */
+  readonly sessionIdleTimeoutMs?: number;
+
   readonly claude?: ClaudeConfig;
   readonly kiroCli?: KiroCliConfig;
 }
+
+/** Default session idle timeout: 1 hour. */
+export const DEFAULT_SESSION_IDLE_TIMEOUT_MS = 60 * 60 * 1000;
 
 export interface AddAgentInput {
   readonly name: string;

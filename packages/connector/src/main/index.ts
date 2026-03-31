@@ -1,9 +1,11 @@
 import { app, BrowserWindow, nativeTheme, shell } from 'electron';
+import { join } from 'path';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
 import { createStore } from './store';
 import { MainWindowManager } from './main-window';
 import { StoreAgentConfigManager } from './agent-config-manager';
 import { AgentRuntimeManager } from '../core/agent-runtime-manager';
+import { SessionStore } from '../core/session-store';
 import { IpcHandler } from './ipc-handler';
 import { registerIpcHandlers } from './ipc-registry';
 import { EVENT_CHANNELS } from '../shared/ipc-events';
@@ -18,8 +20,9 @@ void app.whenReady().then(async () => {
   const store = createStore();
   const mainWindowManager = new MainWindowManager(store);
   const agentConfigManager = new StoreAgentConfigManager(store);
+  const sessionStore = new SessionStore(join(app.getPath('userData'), 'sessions.db'));
 
-  const agentRuntimeManager = new AgentRuntimeManager(agentConfigManager, {
+  const agentRuntimeManager = new AgentRuntimeManager(agentConfigManager, sessionStore, {
     onStatusChanged(agentId, status, error) {
       mainWindowManager.send(EVENT_CHANNELS['agent-status-changed'], { agentId, status, error });
     },
@@ -51,7 +54,9 @@ void app.whenReady().then(async () => {
   });
 
   app.on('before-quit', () => {
-    void agentRuntimeManager.stopAll();
+    void agentRuntimeManager.stopAll().then(() => {
+      sessionStore.close();
+    });
   });
 });
 
