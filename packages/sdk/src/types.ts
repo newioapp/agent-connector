@@ -90,10 +90,21 @@ export interface MessageRecord {
   readonly deletedAt?: string;
 }
 
+/** Mention metadata within a message. */
+export interface Mentions {
+  /** User IDs of specifically @-mentioned users. */
+  readonly userIds?: readonly string[];
+  /** True if @everyone was used. */
+  readonly everyone?: boolean;
+  /** True if @here was used. */
+  readonly here?: boolean;
+}
+
 /** Message content. */
 export interface MessageContent {
   readonly text?: string;
   readonly attachments?: readonly Attachment[];
+  readonly mentions?: Mentions;
 }
 
 /** A file or image attachment. */

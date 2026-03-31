@@ -10,8 +10,8 @@ import type Store from 'electron-store';
 import type { IpcApi } from '../shared/ipc-api';
 import type { ThemeSource, AgentConfig, AddAgentInput, UpdateAgentInput, AgentStatusInfo } from '../shared/types';
 import type { StoreSchema } from './store';
-import type { AgentConfigManager } from './agent-config-manager';
-import type { AgentRuntimeManager } from './agent-runtime-manager';
+import type { AgentConfigManager } from '../core/agent-config-manager';
+import type { AgentRuntimeManager } from '../core/agent-runtime-manager';
 
 interface IpcHandlerDeps {
   readonly store: Store<StoreSchema>;

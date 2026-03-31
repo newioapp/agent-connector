@@ -7,7 +7,7 @@
  */
 import * as fs from 'fs/promises';
 import type * as acp from '@agentclientprotocol/sdk';
-import { Logger } from '../../shared/logger';
+import { Logger } from '../logger';
 
 const log = new Logger('kiro-cli-acp-client');
 
@@ -55,6 +55,9 @@ export class KiroCliAcpClient implements acp.Client {
         }
         break;
       default:
+        {
+          console.log('unknown session update', params);
+        }
         break;
     }
     return Promise.resolve();
@@ -93,12 +96,12 @@ export class KiroCliAcpClient implements acp.Client {
   // ---------------------------------------------------------------------------
 
   extMethod(method: string, _params: Record<string, unknown>): Promise<Record<string, unknown>> {
-    log.debug(`ext method: ${method}`);
+    log.debug(`ext method: ${method}`, _params);
     return Promise.resolve({});
   }
 
   extNotification(method: string, _params: Record<string, unknown>): Promise<void> {
-    log.debug(`ext notification: ${method}`);
+    log.debug(`ext notification: ${method}`, _params);
     return Promise.resolve();
   }
 }

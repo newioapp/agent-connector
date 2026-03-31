@@ -17,7 +17,7 @@ import { execFileSync } from 'child_process';
 import { BaseAgentInstance } from './base-agent-instance';
 import { MessageQueue } from './message-queue';
 import type { IncomingMessage } from '../newio-app';
-import { Logger } from '../../shared/logger';
+import { Logger } from '../logger';
 
 const SKIP_TOKEN = '_skip';
 const log = new Logger('claude-instance');

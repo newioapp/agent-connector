@@ -1,4 +1,11 @@
-import type { ContactRecord, MemberRecord, MessageRecord, AgentSettings, ConversationListItem } from './types.js';
+import type {
+  ContactRecord,
+  MemberRecord,
+  MessageContent,
+  AgentSettings,
+  NotifyLevel,
+  ConversationType,
+} from './types.js';
 
 // ---------------------------------------------------------------------------
 // Base
@@ -16,12 +23,29 @@ export interface WebSocketEvent {
 
 export interface MessageNewEvent extends WebSocketEvent {
   readonly type: 'message.new';
-  readonly payload: MessageRecord & { readonly conversationType: string };
+  readonly payload: {
+    readonly conversationId: string;
+    readonly messageId: string;
+    readonly senderId: string;
+    readonly senderDisplayName: string;
+    readonly senderAvatarUrl?: string;
+    readonly conversationType: ConversationType;
+    readonly conversationName?: string;
+    readonly content: MessageContent;
+    readonly sequenceNumber?: number;
+    readonly createdAt: string;
+  };
 }
 
 export interface MessageUpdatedEvent extends WebSocketEvent {
   readonly type: 'message.updated';
-  readonly payload: MessageRecord;
+  readonly payload: {
+    readonly conversationId: string;
+    readonly messageId: string;
+    readonly senderId: string;
+    readonly content: MessageContent;
+    readonly updatedAt: string;
+  };
 }
 
 export interface MessageDeletedEvent extends WebSocketEvent {
@@ -30,6 +54,7 @@ export interface MessageDeletedEvent extends WebSocketEvent {
     readonly conversationId: string;
     readonly messageId: string;
     readonly senderId: string;
+    readonly deletedAt: string;
   };
 }
 
@@ -39,19 +64,27 @@ export interface MessageDeletedEvent extends WebSocketEvent {
 
 export interface ConversationNewEvent extends WebSocketEvent {
   readonly type: 'conversation.new';
-  readonly payload: ConversationListItem;
+  readonly payload: {
+    readonly conversationId: string;
+    readonly type: string;
+    readonly name?: string;
+    readonly createdBy: string;
+  };
 }
 
 export interface ConversationUpdatedEvent extends WebSocketEvent {
   readonly type: 'conversation.updated';
   readonly payload: {
     readonly conversationId: string;
-    readonly name?: string;
-    readonly description?: string;
-    readonly avatarUrl?: string;
-    readonly type?: string;
-    readonly settings?: Record<string, unknown>;
-    readonly lastMessageAt?: string;
+    readonly updatedBy: string;
+    readonly changes: {
+      readonly name?: string;
+      readonly description?: string;
+      readonly avatarUrl?: string;
+      readonly type?: string;
+      readonly settings?: Record<string, unknown>;
+      readonly disabledAt?: string | null;
+    };
   };
 }
 
@@ -59,7 +92,8 @@ export interface ConversationMemberAddedEvent extends WebSocketEvent {
   readonly type: 'conversation.member_added';
   readonly payload: {
     readonly conversationId: string;
-    readonly member: MemberRecord;
+    readonly addedBy: string;
+    readonly members: readonly MemberRecord[];
   };
 }
 
@@ -67,8 +101,8 @@ export interface ConversationMemberRemovedEvent extends WebSocketEvent {
   readonly type: 'conversation.member_removed';
   readonly payload: {
     readonly conversationId: string;
-    readonly userId: string;
     readonly removedBy: string;
+    readonly targetUserId: string;
   };
 }
 
@@ -77,8 +111,12 @@ export interface ConversationMemberUpdatedEvent extends WebSocketEvent {
   readonly payload: {
     readonly conversationId: string;
     readonly userId: string;
-    readonly role?: string;
-    readonly canSend?: boolean;
+    readonly updatedBy?: string;
+    readonly changes: {
+      readonly role?: string;
+      readonly canSend?: boolean;
+      readonly notifyLevel?: NotifyLevel;
+    };
   };
 }
 
@@ -88,12 +126,16 @@ export interface ConversationMemberUpdatedEvent extends WebSocketEvent {
 
 export interface ContactRequestReceivedEvent extends WebSocketEvent {
   readonly type: 'contact.request_received';
-  readonly payload: ContactRecord;
+  readonly payload: {
+    readonly contact: ContactRecord;
+  };
 }
 
 export interface ContactRequestAcceptedEvent extends WebSocketEvent {
   readonly type: 'contact.request_accepted';
-  readonly payload: ContactRecord;
+  readonly payload: {
+    readonly contact: ContactRecord;
+  };
 }
 
 export interface ContactRequestRejectedEvent extends WebSocketEvent {
@@ -122,7 +164,11 @@ export interface ContactRemovedEvent extends WebSocketEvent {
 
 export interface ContactRequestPendingApprovalEvent extends WebSocketEvent {
   readonly type: 'contact.request_pending_approval';
-  readonly payload: ContactRecord;
+  readonly payload: {
+    readonly agentId: string;
+    readonly requesterId: string;
+    readonly requesterName?: string;
+  };
 }
 
 export interface ContactFriendNameUpdatedEvent extends WebSocketEvent {
@@ -150,7 +196,7 @@ export interface BlockRemovedEvent extends WebSocketEvent {
   readonly type: 'block.removed';
   readonly payload: {
     readonly userId: string;
-    readonly blockedUserId: string;
+    readonly unblockedUserId: string;
   };
 }
 

@@ -9,7 +9,10 @@ import type Store from 'electron-store';
 import type { StoreSchema } from './store';
 import type { AgentConfig, AddAgentInput, UpdateAgentInput } from '../shared/types';
 
-export class AgentConfigManager {
+export type { AgentConfigManager, AgentTokens } from '../core/agent-config-manager';
+import type { AgentConfigManager, AgentTokens } from '../core/agent-config-manager';
+
+export class StoreAgentConfigManager implements AgentConfigManager {
   private readonly store: Store<StoreSchema>;
 
   constructor(store: Store<StoreSchema>) {
@@ -97,5 +100,22 @@ export class AgentConfigManager {
     agents[index] = updated;
     this.store.set('agents', agents);
     return updated;
+  }
+
+  getTokens(agentId: string): AgentTokens | undefined {
+    const all = this.store.get('agentTokens');
+    return agentId in all ? all[agentId] : undefined;
+  }
+
+  setTokens(agentId: string, tokens: AgentTokens): void {
+    const all = this.store.get('agentTokens');
+    this.store.set('agentTokens', { ...all, [agentId]: tokens });
+  }
+
+  clearTokens(agentId: string): void {
+    const all = this.store.get('agentTokens');
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure to omit key
+    const { [agentId]: _removed, ...rest } = all;
+    this.store.set('agentTokens', rest);
   }
 }
