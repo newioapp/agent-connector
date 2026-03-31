@@ -10,7 +10,7 @@ import { Writable, Readable } from 'stream';
 import * as fs from 'fs/promises';
 import { ClientSideConnection, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk';
 import type * as acp from '@agentclientprotocol/sdk';
-import type { AgentSession } from '../agent-session';
+import type { AgentSession, SessionStatusListener } from '../agent-session';
 import type { KiroCliConfig } from '../types';
 import { Logger } from '../logger';
 
@@ -61,6 +61,7 @@ export class KiroCliSession implements AgentSession, acp.Client {
   private connection?: ClientSideConnection;
   private chunks: string[] = [];
   private resolve: ((text: string) => void) | null = null;
+  private statusListener: SessionStatusListener = () => {};
 
   private constructor(correlationId: string) {
     this.correlationId = correlationId;
@@ -165,12 +166,17 @@ export class KiroCliSession implements AgentSession, acp.Client {
   // AgentSession
   // ---------------------------------------------------------------------------
 
+  onStatus(listener: SessionStatusListener): void {
+    this.statusListener = listener;
+  }
+
   async prompt(text: string): Promise<string | undefined> {
     const conn = this.connection;
     if (!conn) {
       return undefined;
     }
 
+    this.statusListener('thinking');
     const responsePromise = this.startCollecting();
 
     const promptResult = await conn.prompt({
@@ -179,6 +185,7 @@ export class KiroCliSession implements AgentSession, acp.Client {
     });
 
     this.finishCollecting();
+    this.statusListener('idle');
 
     if (promptResult.stopReason !== 'end_turn') {
       log.warn(`Prompt ended with stop reason: ${promptResult.stopReason}`);
@@ -225,17 +232,21 @@ export class KiroCliSession implements AgentSession, acp.Client {
         if (u.content.type === 'text') {
           this.chunks.push(u.content.text);
         }
+        this.statusListener('typing');
         break;
       case 'tool_call':
         log.debug(`Tool call: ${u.title} (${u.status})`);
+        this.statusListener('tool_calling');
         break;
       case 'tool_call_update':
         log.debug(`Tool call update: ${u.toolCallId} ${u.status}`);
+        this.statusListener('tool_calling');
         break;
       case 'agent_thought_chunk':
         if (u.content.type === 'text') {
           log.debug(`Thought: ${u.content.text}`);
         }
+        this.statusListener('thinking');
         break;
       default:
         break;
