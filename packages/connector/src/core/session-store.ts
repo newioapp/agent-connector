@@ -28,9 +28,9 @@ export class SessionStore {
 
   /** Get the correlation ID for a Newio session. */
   get(newioSessionId: string): string | undefined {
-    const row = this.db.prepare('SELECT correlationId FROM session_mapping WHERE newioSessionId = ?').get(newioSessionId) as
-      | { correlationId: string }
-      | undefined;
+    const row = this.db
+      .prepare('SELECT correlationId FROM session_mapping WHERE newioSessionId = ?')
+      .get(newioSessionId) as { correlationId: string } | undefined;
     return row?.correlationId;
   }
 
