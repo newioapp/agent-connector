@@ -77,6 +77,8 @@ export class NewioApp {
   private readonly sequenceNumbers = new Map<string, number>();
   /** conversationId → notification preference (missing = 'all') */
   private readonly notifyLevels = new Map<string, NotifyLevel>();
+  /** conversationId → backend session ID (for agent members) */
+  private readonly sessionIds = new Map<string, string>();
 
   /** conversationId → ULID-sorted message list (recent cache, evicted by TTL) */
   private readonly messageCache = new Map<string, IncomingMessage[]>();
@@ -294,6 +296,11 @@ export class NewioApp {
     return messages;
   }
 
+  /** Get the backend session ID for a conversation, if known. */
+  getSessionId(conversationId: string): string | undefined {
+    return this.sessionIds.get(conversationId);
+  }
+
   /** Get members of a conversation (fetches from API if not cached). */
   async getMembers(conversationId: string): Promise<MemberRecord[]> {
     const cached = this.conversationMembers.get(conversationId);
@@ -467,6 +474,9 @@ Response rules:
         if (conv.notifyLevel) {
           this.notifyLevels.set(conv.conversationId, conv.notifyLevel);
         }
+        if (conv.sessionId) {
+          this.sessionIds.set(conv.conversationId, conv.sessionId);
+        }
       }
       cursor = resp.cursor;
     } while (cursor);
@@ -538,6 +548,11 @@ Response rules:
       if (members) {
         members.push(...event.payload.members);
       }
+      // Track sessionId if this agent was added
+      const self = event.payload.members.find((m) => m.userId === this.identity.userId);
+      if (self?.sessionId) {
+        this.sessionIds.set(event.payload.conversationId, self.sessionId);
+      }
     });
 
     this.ws.on('conversation.member_removed', (event) => {
@@ -555,9 +570,16 @@ Response rules:
     });
 
     this.ws.on('conversation.member_updated', (event) => {
-      if (event.payload.changes.notifyLevel && event.payload.userId === this.identity.userId) {
+      if (event.payload.userId !== this.identity.userId) {
+        return;
+      }
+      if (event.payload.changes.notifyLevel) {
         log.debug(`notifyLevel updated for ${event.payload.conversationId}: ${event.payload.changes.notifyLevel}`);
         this.notifyLevels.set(event.payload.conversationId, event.payload.changes.notifyLevel);
+      }
+      if (event.payload.changes.sessionId) {
+        log.debug(`sessionId updated for ${event.payload.conversationId}: ${event.payload.changes.sessionId}`);
+        this.sessionIds.set(event.payload.conversationId, event.payload.changes.sessionId);
       }
     });
 

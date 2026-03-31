@@ -166,11 +166,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /**
    * Resolve the Newio session ID for a conversation.
-   * Currently returns the conversationId directly (1:1 mapping).
-   * Will call the backend API once session support is added.
+   * Uses the backend-assigned session ID from the membership record.
+   * Falls back to conversationId if no session ID is known yet.
    */
   private getNewioSessionId(conversationId: string): string {
-    return conversationId;
+    return this.app?.getSessionId(conversationId) ?? conversationId;
   }
 
   /**
