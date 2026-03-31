@@ -10,6 +10,7 @@ import { AuthManager, NewioClient, NewioWebSocket } from '@newio/sdk';
 import type { ApprovalHandle, AccountType, NotifyLevel, MessageNewEvent } from '@newio/sdk';
 import type { ContactRecord, ConversationListItem, MemberRecord, MessageRecord, ConversationType } from '@newio/sdk';
 import WebSocket from 'ws';
+import type { SessionStatus } from './agent-session';
 import { Logger } from './logger';
 
 const log = new Logger('newio-app');
@@ -38,8 +39,6 @@ export interface IncomingMessage {
   readonly text: string;
   readonly timestamp: string;
 }
-
-export type AgentStatus = 'thinking' | 'typing' | null;
 
 export type MessageHandler = (message: IncomingMessage) => void;
 
@@ -223,9 +222,9 @@ export class NewioApp {
    * Once the backend typing/status endpoint is available, this will broadcast
    * the status to relevant users. For now, logs the transition.
    */
-  setStatus(status: AgentStatus, conversationId?: string): void {
+  setStatus(status: SessionStatus, conversationId?: string): void {
     const scope = conversationId ?? 'global';
-    log.debug(`status [${scope}]: ${status ?? 'idle'}`);
+    log.debug(`status [${scope}]: ${status}`);
     // TODO: Call backend typing/status endpoint when available.
     // The conv_ondemand subscription system was designed for this use case.
   }

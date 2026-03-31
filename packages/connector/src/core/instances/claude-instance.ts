@@ -14,7 +14,7 @@ import { dirname, join } from 'path';
 import { createRequire } from 'module';
 import { execFileSync } from 'child_process';
 import { BaseAgentInstance } from './base-agent-instance';
-import type { AgentSession } from '../agent-session';
+import type { AgentSession, SessionStatusListener } from '../agent-session';
 import { Logger } from '../logger';
 
 const log = new Logger('claude-instance');
@@ -79,6 +79,7 @@ const resolvedNodePath: string = (() => {
 class ClaudeSession implements AgentSession {
   readonly correlationId: string;
   private readonly instance: ClaudeInstance;
+  statusListener: SessionStatusListener = () => {};
 
   constructor(correlationId: string, instance: ClaudeInstance) {
     this.correlationId = correlationId;
@@ -86,7 +87,11 @@ class ClaudeSession implements AgentSession {
   }
 
   async prompt(text: string): Promise<string | undefined> {
-    return this.instance.queryAgent(text);
+    return this.instance.queryAgent(text, this.statusListener);
+  }
+
+  onStatus(listener: SessionStatusListener): void {
+    this.statusListener = listener;
   }
 
   dispose(): void {
@@ -203,7 +208,7 @@ export class ClaudeInstance extends BaseAgentInstance {
   // ---------------------------------------------------------------------------
 
   /** @internal — called by ClaudeSession */
-  async queryAgent(userText: string): Promise<string | undefined> {
+  async queryAgent(userText: string, statusListener: SessionStatusListener): Promise<string | undefined> {
     if (!this.app || !this.config.claude) {
       return undefined;
     }
@@ -238,15 +243,27 @@ export class ClaudeInstance extends BaseAgentInstance {
 
     let resultText: string | undefined;
 
+    statusListener('thinking');
     for await (const event of q as AsyncIterable<SDKMessage>) {
-      if (event.type === 'result') {
-        if (event.subtype === 'success' && 'result' in event) {
-          resultText = event.result;
-        } else {
-          log.error(`Query ended with ${event.subtype}`, 'errors' in event ? event.errors : '');
-        }
+      switch (event.type) {
+        case 'assistant':
+          statusListener('typing');
+          break;
+        case 'tool_progress':
+          statusListener('tool_calling');
+          break;
+        case 'result':
+          if (event.subtype === 'success' && 'result' in event) {
+            resultText = event.result;
+          } else {
+            log.error(`Query ended with ${event.subtype}`, 'errors' in event ? event.errors : '');
+          }
+          break;
+        default:
+          break;
       }
     }
+    statusListener('idle');
 
     return resultText;
   }

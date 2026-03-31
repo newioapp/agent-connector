@@ -33,6 +33,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** correlationId → live session */
   private readonly liveSessions = new Map<string, LiveSession>();
+  /** correlationId → conversationId currently being processed */
+  private readonly activeConversation = new Map<string, string>();
   private abortController?: AbortController;
   private idleTimer?: ReturnType<typeof setInterval>;
 
@@ -191,16 +193,28 @@ export abstract class BaseAgentInstance implements AgentInstance {
       // Mapping exists but session was idle-killed — resume it
       log.info(`Resuming session: correlation=${existingCorrelationId}`);
       const session = await this.resumeSession(existingCorrelationId);
+      this.wireStatusListener(session);
       this.liveSessions.set(existingCorrelationId, { session, lastActivityAt: Date.now() });
       return session;
     }
 
     // No mapping — create new session
     const session = await this.createSession();
+    this.wireStatusListener(session);
     this.sessionStore.set(newioSessionId, session.correlationId);
     this.liveSessions.set(session.correlationId, { session, lastActivityAt: Date.now() });
     log.info(`New session: newio=${newioSessionId} → correlation=${session.correlationId}`);
     return session;
+  }
+
+  /** Attach a status listener that routes session status to the active conversation. */
+  private wireStatusListener(session: AgentSession): void {
+    session.onStatus((status) => {
+      const convId = this.activeConversation.get(session.correlationId);
+      if (convId) {
+        this.app?.setStatus(status, convId);
+      }
+    });
   }
 
   /** Get a live session by its correlation ID, if running. */
@@ -249,29 +263,20 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
 
     const userText = this.formatPrompt(messages);
-    this.app.setStatus('thinking', conversationId);
-
-    let response: string | undefined;
-    try {
-      response = await session.prompt(userText);
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : 'Unknown error';
-      log.error(`Prompt failed for ${conversationId}: ${errMsg}`);
-      this.app.setStatus(null, conversationId);
-      return;
-    }
-
-    this.app.setStatus(null, conversationId);
-
-    if (!response || response.trim().toLowerCase() === '_skip') {
-      return;
-    }
+    this.activeConversation.set(session.correlationId, conversationId);
 
     try {
-      await this.app.sendMessage(conversationId, response.trim());
+      const response = await session.prompt(userText);
+
+      if (response && response.trim().toLowerCase() !== '_skip') {
+        await this.app.sendMessage(conversationId, response.trim());
+      }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';
-      log.error(`Failed to send message to ${conversationId}: ${errMsg}`);
+      log.error(`Prompt/send failed for ${conversationId}: ${errMsg}`);
+    } finally {
+      this.activeConversation.delete(session.correlationId);
+      this.app.setStatus('idle', conversationId);
     }
   }
 
