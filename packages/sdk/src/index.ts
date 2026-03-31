@@ -23,7 +23,19 @@ export type { TokenStore, ApprovalHandle, WaitForApprovalOptions } from './auth.
 export type { TokenProvider } from './http.js';
 
 // Errors
-export { NewioError, ApiError, ApprovalTimeoutError, TokenRefreshError } from './errors.js';
+export type { ErrorCode } from './errors.js';
+export {
+  NewioError,
+  ApiError,
+  InvalidRequestApiError,
+  UnauthenticatedApiError,
+  ForbiddenApiError,
+  NotFoundApiError,
+  ConflictApiError,
+  WaitlistPendingApiError,
+  ApprovalTimeoutError,
+  TokenRefreshError,
+} from './errors.js';
 
 // Types — Enums & Literals
 export type {
@@ -44,6 +56,7 @@ export type {
   MemberRecord,
   MessageRecord,
   MessageContent,
+  Mentions,
   Attachment,
   ImageMetadata,
   BlockRecord,

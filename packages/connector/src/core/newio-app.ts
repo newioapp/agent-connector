@@ -7,10 +7,10 @@
  * Used by both the Claude adapter and the future MCP server.
  */
 import { AuthManager, NewioClient, NewioWebSocket } from '@newio/sdk';
-import type { ApprovalHandle, AccountType } from '@newio/sdk';
+import type { ApprovalHandle, AccountType, NotifyLevel, MessageNewEvent } from '@newio/sdk';
 import type { ContactRecord, ConversationListItem, MemberRecord, MessageRecord, ConversationType } from '@newio/sdk';
 import WebSocket from 'ws';
-import { Logger } from '../shared/logger';
+import { Logger } from './logger';
 
 const log = new Logger('newio-app');
 
@@ -76,6 +76,8 @@ export class NewioApp {
   private readonly conversationMembers = new Map<string, MemberRecord[]>();
   /** conversationId → next sequenceNumber */
   private readonly sequenceNumbers = new Map<string, number>();
+  /** conversationId → notification preference (missing = 'all') */
+  private readonly notifyLevels = new Map<string, NotifyLevel>();
 
   /** conversationId → ULID-sorted message list (recent cache, evicted by TTL) */
   private readonly messageCache = new Map<string, IncomingMessage[]>();
@@ -126,11 +128,15 @@ export class NewioApp {
     if (opts.tokens) {
       auth.setTokens(opts.tokens.accessToken, opts.tokens.refreshToken);
       try {
+        log.debug('Attempting token refresh');
         await auth.forceRefresh();
+        log.info('Token refresh succeeded');
       } catch {
+        log.info('Token refresh failed, falling back to approval flow');
         await doApprovalFlow(auth, opts);
       }
     } else {
+      log.info('No tokens, starting approval flow');
       await doApprovalFlow(auth, opts);
     }
 
@@ -162,16 +168,18 @@ export class NewioApp {
       wsFactory: (url) => new WebSocket(url) as never,
     });
     await ws.connect();
-    console.log('connected');
+    log.info('WebSocket connected');
 
     const app = new NewioApp(identity, auth, client, ws);
     await app.loadData();
+    log.info(`Loaded ${app.contacts.size} contacts, ${app.conversations.size} conversations`);
     app.wireEvents();
     return app;
   }
 
   /** Disconnect WebSocket and dispose auth. */
   dispose(): void {
+    log.info('Disposing NewioApp');
     this.ws.disconnect();
     this.auth.dispose();
   }
@@ -367,10 +375,6 @@ export class NewioApp {
       );
     }
 
-    if (opts?.customInstructions) {
-      parts.push(opts.customInstructions);
-    }
-
     parts.push(`Messages arrive as YAML. Each sender has a username, display name, account type (human or agent), and whether they are in your contacts.
 
 DM example:
@@ -410,6 +414,10 @@ Response rules:
 - If no reply is needed, respond with exactly: _skip
 - In group chats, only respond when addressed or when you have something relevant to add.
 - Be concise and natural.`);
+
+    if (opts?.customInstructions) {
+      parts.push(opts.customInstructions);
+    }
 
     return parts.join('\n\n');
   }
@@ -457,6 +465,9 @@ Response rules:
       const resp = await this.client.listConversations({ cursor, limit: 100 });
       for (const conv of resp.conversations) {
         this.conversations.set(conv.conversationId, conv);
+        if (conv.notifyLevel) {
+          this.notifyLevels.set(conv.conversationId, conv.notifyLevel);
+        }
       }
       cursor = resp.cursor;
     } while (cursor);
@@ -502,19 +513,23 @@ Response rules:
     });
 
     this.ws.on('conversation.new', (event) => {
-      this.conversations.set(event.payload.conversationId, event.payload);
+      this.conversations.set(event.payload.conversationId, {
+        conversationId: event.payload.conversationId,
+        type: event.payload.type as ConversationType,
+        name: event.payload.name,
+      });
     });
 
     this.ws.on('conversation.updated', (event) => {
       const existing = this.conversations.get(event.payload.conversationId);
       if (existing) {
+        const { changes } = event.payload;
         this.conversations.set(event.payload.conversationId, {
           ...existing,
-          ...(event.payload.name !== undefined ? { name: event.payload.name } : {}),
-          ...(event.payload.description !== undefined ? { description: event.payload.description } : {}),
-          ...(event.payload.avatarUrl !== undefined ? { avatarUrl: event.payload.avatarUrl } : {}),
-          ...(event.payload.lastMessageAt !== undefined ? { lastMessageAt: event.payload.lastMessageAt } : {}),
-          ...(event.payload.type ? { type: event.payload.type as ConversationType } : {}),
+          ...(changes.name !== undefined ? { name: changes.name } : {}),
+          ...(changes.description !== undefined ? { description: changes.description } : {}),
+          ...(changes.avatarUrl !== undefined ? { avatarUrl: changes.avatarUrl } : {}),
+          ...(changes.type ? { type: changes.type as ConversationType } : {}),
         });
       }
     });
@@ -522,26 +537,33 @@ Response rules:
     this.ws.on('conversation.member_added', (event) => {
       const members = this.conversationMembers.get(event.payload.conversationId);
       if (members) {
-        members.push(event.payload.member);
+        members.push(...event.payload.members);
       }
     });
 
     this.ws.on('conversation.member_removed', (event) => {
       const members = this.conversationMembers.get(event.payload.conversationId);
       if (members) {
-        const idx = members.findIndex((m) => m.userId === event.payload.userId);
+        const idx = members.findIndex((m) => m.userId === event.payload.targetUserId);
         if (idx !== -1) {
           members.splice(idx, 1);
         }
       }
-      if (event.payload.userId === this.identity.userId) {
+      if (event.payload.targetUserId === this.identity.userId) {
         this.conversations.delete(event.payload.conversationId);
         this.conversationMembers.delete(event.payload.conversationId);
       }
     });
 
+    this.ws.on('conversation.member_updated', (event) => {
+      if (event.payload.changes.notifyLevel && event.payload.userId === this.identity.userId) {
+        log.debug(`notifyLevel updated for ${event.payload.conversationId}: ${event.payload.changes.notifyLevel}`);
+        this.notifyLevels.set(event.payload.conversationId, event.payload.changes.notifyLevel);
+      }
+    });
+
     this.ws.on('contact.request_accepted', (event) => {
-      this.indexContact(event.payload);
+      this.indexContact(event.payload.contact);
     });
 
     this.ws.on('contact.removed', (event) => {
@@ -573,7 +595,19 @@ Response rules:
     };
   }
 
-  private async handleIncomingMessage(payload: MessageRecord & { readonly conversationType: string }): Promise<void> {
+  /** Check if the current agent is mentioned in the message content. */
+  private isMentioned(content: MessageRecord['content']): boolean {
+    if (!content.mentions) {
+      return false;
+    }
+    return !!(
+      content.mentions.everyone ||
+      content.mentions.here ||
+      content.mentions.userIds?.includes(this.identity.userId)
+    );
+  }
+
+  private async handleIncomingMessage(payload: MessageNewEvent['payload']): Promise<void> {
     const message = this.toIncomingMessage(payload, payload.conversationId, payload.conversationType);
     const inserted = this.insertMessage(payload.conversationId, message);
 
@@ -594,7 +628,13 @@ Response rules:
 
     // Only notify handler for other people's messages that are not duplicates
     if (inserted && !message.isOwnMessage) {
-      this.messageHandler?.(message);
+      const level = this.notifyLevels.get(payload.conversationId) ?? 'all';
+      const shouldNotify = level === 'all' || (level === 'mentions' && this.isMentioned(payload.content));
+      if (shouldNotify) {
+        this.messageHandler?.(message);
+      } else {
+        log.debug(`Skipped message in ${payload.conversationId} (notifyLevel=${level})`);
+      }
     }
   }
 

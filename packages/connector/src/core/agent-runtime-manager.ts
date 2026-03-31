@@ -4,10 +4,8 @@
  * Creates the appropriate AgentInstance subclass based on agent type,
  * delegates start/stop to the instance, and relays status events to the UI.
  */
-import type Store from 'electron-store';
-import type { StoreSchema } from './store';
 import type { AgentConfigManager } from './agent-config-manager';
-import type { AgentRuntimeStatus } from '../shared/types';
+import type { AgentRuntimeStatus } from './types';
 import type { AgentInstance } from './instances/agent-instance';
 import { ClaudeInstance } from './instances/claude-instance';
 import { KiroCliInstance } from './instances/kiro-cli-instance';
@@ -20,12 +18,10 @@ export interface StatusListener {
 
 export class AgentRuntimeManager {
   private readonly instances = new Map<string, AgentInstance>();
-  private readonly store: Store<StoreSchema>;
   private readonly configManager: AgentConfigManager;
   private readonly listener: StatusListener;
 
-  constructor(store: Store<StoreSchema>, configManager: AgentConfigManager, listener: StatusListener) {
-    this.store = store;
+  constructor(configManager: AgentConfigManager, listener: StatusListener) {
     this.configManager = configManager;
     this.listener = listener;
   }
@@ -61,10 +57,10 @@ export class AgentRuntimeManager {
     let instance: AgentInstance;
     switch (config.type) {
       case 'claude-code':
-        instance = new ClaudeInstance(config, this.store, this.configManager, instanceListener);
+        instance = new ClaudeInstance(config, this.configManager, instanceListener);
         break;
       case 'kiro-cli':
-        instance = new KiroCliInstance(config, this.store, this.configManager, instanceListener);
+        instance = new KiroCliInstance(config, this.configManager, instanceListener);
         break;
     }
 

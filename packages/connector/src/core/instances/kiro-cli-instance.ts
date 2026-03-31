@@ -16,7 +16,7 @@ import { BaseAgentInstance } from './base-agent-instance';
 import { MessageQueue } from './message-queue';
 import { KiroCliAcpClient } from './kiro-cli-acp-client';
 import type { IncomingMessage } from '../newio-app';
-import { Logger } from '../../shared/logger';
+import { Logger } from '../logger';
 
 const SKIP_TOKEN = '_skip';
 const log = new Logger('kiro-cli-instance');
@@ -254,6 +254,7 @@ export class KiroCliInstance extends BaseAgentInstance {
 
     const responsePromise = this.acpClient.startCollecting();
 
+    console.log(text);
     const promptResult = await this.connection.prompt({
       sessionId: this.sessionId,
       prompt: [{ type: 'text', text }],
@@ -265,7 +266,10 @@ export class KiroCliInstance extends BaseAgentInstance {
       log.warn(`Prompt ended with stop reason: ${promptResult.stopReason}`);
     }
 
-    return await responsePromise;
+    const resp = await responsePromise;
+    console.log('====== kiro =======');
+    console.log(resp);
+    return resp;
   }
 }
 

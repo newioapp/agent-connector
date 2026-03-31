@@ -2,8 +2,8 @@ import { app, BrowserWindow, nativeTheme, shell } from 'electron';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
 import { createStore } from './store';
 import { MainWindowManager } from './main-window';
-import { AgentConfigManager } from './agent-config-manager';
-import { AgentRuntimeManager } from './agent-runtime-manager';
+import { StoreAgentConfigManager } from './agent-config-manager';
+import { AgentRuntimeManager } from '../core/agent-runtime-manager';
 import { IpcHandler } from './ipc-handler';
 import { registerIpcHandlers } from './ipc-registry';
 import { EVENT_CHANNELS } from '../shared/ipc-events';
@@ -17,9 +17,9 @@ void app.whenReady().then(async () => {
 
   const store = createStore();
   const mainWindowManager = new MainWindowManager(store);
-  const agentConfigManager = new AgentConfigManager(store);
+  const agentConfigManager = new StoreAgentConfigManager(store);
 
-  const agentRuntimeManager = new AgentRuntimeManager(store, agentConfigManager, {
+  const agentRuntimeManager = new AgentRuntimeManager(agentConfigManager, {
     onStatusChanged(agentId, status, error) {
       mainWindowManager.send(EVENT_CHANNELS['agent-status-changed'], { agentId, status, error });
     },

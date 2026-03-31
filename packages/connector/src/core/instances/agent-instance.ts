@@ -4,7 +4,7 @@
  * Each agent type (Claude, Kiro CLI) provides its own implementation.
  * The instance manages its own SDK auth, WebSocket connection, and agent-specific logic.
  */
-import type { AgentRuntimeStatus } from '../../shared/types';
+import type { AgentRuntimeStatus } from '../types';
 
 export interface AgentInstanceListener {
   onStatusChanged(status: AgentRuntimeStatus, error?: string): void;
