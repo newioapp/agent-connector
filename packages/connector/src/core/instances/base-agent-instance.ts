@@ -33,6 +33,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** correlationId → live session */
   private readonly liveSessions = new Map<string, LiveSession>();
+  /** newioSessionId → in-flight creation/resume promise (dedup concurrent calls) */
+  private readonly pendingSessions = new Map<string, Promise<AgentSession>>();
   /** correlationId → conversationId currently being processed */
   private readonly activeConversation = new Map<string, string>();
   private abortController?: AbortController;
@@ -189,8 +191,29 @@ export abstract class BaseAgentInstance implements AgentInstance {
         live.lastActivityAt = Date.now();
         return live.session;
       }
+    }
 
-      // Mapping exists but session was idle-killed — resume it
+    // Deduplicate concurrent create/resume calls for the same session
+    const pending = this.pendingSessions.get(newioSessionId);
+    if (pending) {
+      return pending;
+    }
+
+    const promise = this.resolveSession(newioSessionId, existingCorrelationId);
+    this.pendingSessions.set(newioSessionId, promise);
+    try {
+      return await promise;
+    } finally {
+      this.pendingSessions.delete(newioSessionId);
+    }
+  }
+
+  /** Create or resume a session — called only once per newioSessionId (guarded by pendingSessions). */
+  private async resolveSession(
+    newioSessionId: string,
+    existingCorrelationId: string | undefined,
+  ): Promise<AgentSession> {
+    if (existingCorrelationId) {
       log.info(`Resuming session: correlation=${existingCorrelationId}`);
       const session = await this.resumeSession(existingCorrelationId);
       this.wireStatusListener(session);
@@ -198,7 +221,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
       return session;
     }
 
-    // No mapping — create new session
     const session = await this.createSession();
     this.wireStatusListener(session);
     this.sessionStore.set(newioSessionId, session.correlationId);
