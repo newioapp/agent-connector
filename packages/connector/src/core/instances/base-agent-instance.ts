@@ -1,28 +1,45 @@
 /**
- * Base agent instance — shared auth, WebSocket, and lifecycle logic.
+ * Base agent instance — shared auth, WebSocket, session routing, and lifecycle logic.
  *
- * Uses NewioApp for all Newio interactions. Subclasses implement onConnected()
- * to add agent-type-specific behavior (e.g. Claude message bridging, Kiro CLI process spawning).
+ * Uses NewioApp for all Newio interactions. Manages multiple sessions per agent,
+ * routing incoming messages by conversationId → newioSessionId → AgentSession.
+ * Subclasses implement session creation and greeting logic.
  */
 import { ApprovalTimeoutError } from '@newio/sdk';
 import type { AgentConfigManager } from '../agent-config-manager';
 import type { AgentRuntimeStatus, AgentConfig } from '../types';
+import { DEFAULT_SESSION_IDLE_TIMEOUT_MS } from '../types';
 import type { AgentInstance, AgentInstanceListener } from './agent-instance';
+import type { AgentSession } from '../agent-session';
+import type { SessionStore } from '../session-store';
 import { NewioApp } from '../newio-app';
+import type { IncomingMessage } from '../newio-app';
+import { MessageQueue } from './message-queue';
 import { Logger } from '../logger';
 
 const log = new Logger('base-agent-instance');
+
+interface LiveSession {
+  readonly session: AgentSession;
+  lastActivityAt: number;
+}
 
 export abstract class BaseAgentInstance implements AgentInstance {
   status: AgentRuntimeStatus = 'stopped';
   error?: string;
 
   protected app?: NewioApp;
+  protected readonly messageQueue = new MessageQueue();
+
+  /** correlationId → live session */
+  private readonly liveSessions = new Map<string, LiveSession>();
   private abortController?: AbortController;
+  private idleTimer?: ReturnType<typeof setInterval>;
 
   constructor(
     protected readonly config: AgentConfig,
     protected readonly configManager: AgentConfigManager,
+    protected readonly sessionStore: SessionStore,
     protected readonly listener: AgentInstanceListener,
   ) {}
 
@@ -33,7 +50,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
     log.info('Starting agent');
 
     try {
-      // Load persisted tokens if available
       const storedTokens = this.configManager.getTokens(this.config.id);
       log.debug(storedTokens ? 'Found persisted tokens' : 'No persisted tokens, will run auth flow');
 
@@ -74,14 +90,21 @@ export abstract class BaseAgentInstance implements AgentInstance {
         }
       });
 
+      this.app.onMessage((msg) => {
+        if (!msg.isOwnMessage) {
+          this.messageQueue.enqueue(msg);
+        }
+      });
+
+      this.startIdleCleanup();
       await this.onConnected();
+      void this.processLoop();
       log.info('Agent running');
       this.setStatus('running');
     } catch (err: unknown) {
       this.app?.dispose();
       this.app = undefined;
 
-      // User-initiated cancel — stop() will set status to 'stopped'
       if (abortController.signal.aborted) {
         log.info('Start aborted');
         return;
@@ -102,6 +125,18 @@ export abstract class BaseAgentInstance implements AgentInstance {
     log.info('Stopping agent');
     this.abortController?.abort();
 
+    if (this.idleTimer) {
+      clearInterval(this.idleTimer);
+      this.idleTimer = undefined;
+    }
+
+    // Dispose all live sessions
+    for (const [correlationId, live] of this.liveSessions) {
+      log.debug(`Disposing session: ${correlationId}`);
+      live.session.dispose();
+    }
+    this.liveSessions.clear();
+
     if (this.app) {
       try {
         await this.app.auth.revoke();
@@ -113,19 +148,195 @@ export abstract class BaseAgentInstance implements AgentInstance {
       this.app = undefined;
     }
 
-    // Clear persisted tokens
     this.configManager.clearTokens(this.config.id);
+    this.messageQueue.close();
 
     await this.onStopped();
     this.setStatus('stopped');
     log.info('Agent stopped');
   }
 
-  /** Called after NewioApp is ready. Subclasses add agent-specific behavior. */
+  // ---------------------------------------------------------------------------
+  // Session routing
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Resolve the Newio session ID for a conversation.
+   * Currently returns the conversationId directly (1:1 mapping).
+   * Will call the backend API once session support is added.
+   */
+  protected getNewioSessionId(conversationId: string): string {
+    return conversationId;
+  }
+
+  /**
+   * Get or create a session for a given Newio session ID.
+   * Checks live sessions first, then the persistent store, then creates new.
+   */
+  protected async getOrCreateSession(newioSessionId: string): Promise<AgentSession> {
+    // Check if already running
+    const existingCorrelationId = this.sessionStore.get(newioSessionId);
+    if (existingCorrelationId) {
+      const live = this.liveSessions.get(existingCorrelationId);
+      if (live) {
+        live.lastActivityAt = Date.now();
+        return live.session;
+      }
+    }
+
+    // Create new session
+    const session = await this.createSession();
+    this.sessionStore.set(newioSessionId, session.correlationId);
+    this.liveSessions.set(session.correlationId, { session, lastActivityAt: Date.now() });
+    log.info(`New session: newio=${newioSessionId} → correlation=${session.correlationId}`);
+    return session;
+  }
+
+  /** Get a live session by its correlation ID, if running. */
+  protected getLiveSession(correlationId: string): AgentSession | undefined {
+    return this.liveSessions.get(correlationId)?.session;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Abstract — subclass hooks
+  // ---------------------------------------------------------------------------
+
+  /** Create a new agent-type-specific session. */
+  protected abstract createSession(): Promise<AgentSession>;
+
+  /** Called after NewioApp is ready. Subclasses add agent-specific behavior (e.g., greeting). */
   protected abstract onConnected(): Promise<void> | void;
 
   /** Called during stop. Subclasses clean up agent-specific resources. */
   protected abstract onStopped(): Promise<void> | void;
+
+  // ---------------------------------------------------------------------------
+  // Processing loop
+  // ---------------------------------------------------------------------------
+
+  private async processLoop(): Promise<void> {
+    for await (const [conversationId, messages] of this.messageQueue.batches()) {
+      await this.processBatch(conversationId, messages);
+    }
+  }
+
+  private async processBatch(conversationId: string, messages: readonly IncomingMessage[]): Promise<void> {
+    if (!this.app) {
+      return;
+    }
+
+    const newioSessionId = this.getNewioSessionId(conversationId);
+    let session: AgentSession;
+    try {
+      session = await this.getOrCreateSession(newioSessionId);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
+      log.error(`Failed to get/create session for ${conversationId}: ${errMsg}`);
+      return;
+    }
+
+    const userText = this.formatPrompt(messages);
+    this.app.setStatus('thinking', conversationId);
+
+    let response: string | undefined;
+    try {
+      response = await session.prompt(userText);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
+      log.error(`Prompt failed for ${conversationId}: ${errMsg}`);
+      this.app.setStatus(null, conversationId);
+      return;
+    }
+
+    this.app.setStatus(null, conversationId);
+
+    if (!response || response.trim().toLowerCase() === '_skip') {
+      return;
+    }
+
+    try {
+      await this.app.sendMessage(conversationId, response.trim());
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
+      log.error(`Failed to send message to ${conversationId}: ${errMsg}`);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Idle cleanup
+  // ---------------------------------------------------------------------------
+
+  private startIdleCleanup(): void {
+    const checkInterval = 60_000; // check every minute
+    this.idleTimer = setInterval(() => {
+      this.cleanupIdleSessions();
+    }, checkInterval);
+  }
+
+  private cleanupIdleSessions(): void {
+    const timeout = this.config.sessionIdleTimeoutMs ?? DEFAULT_SESSION_IDLE_TIMEOUT_MS;
+    const now = Date.now();
+
+    for (const [correlationId, live] of this.liveSessions) {
+      if (now - live.lastActivityAt > timeout) {
+        log.info(`Idle session cleanup: ${correlationId} (idle ${Math.round((now - live.lastActivityAt) / 1000)}s)`);
+        live.session.dispose();
+        this.liveSessions.delete(correlationId);
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Prompt formatting
+  // ---------------------------------------------------------------------------
+
+  protected formatPrompt(messages: readonly IncomingMessage[]): string {
+    const first = messages[0];
+    const isGroup = first.conversationType === 'group' || first.conversationType === 'temp_group';
+    if (isGroup) {
+      return this.formatGroupBatch(first.conversationId, first.groupName, messages);
+    }
+    return this.formatDmBatch(first.conversationId, messages);
+  }
+
+  private formatSender(m: IncomingMessage): string {
+    return [
+      `    username: ${m.senderUsername ?? 'unknown'}`,
+      `    displayName: ${m.senderDisplayName ?? 'Unknown'}`,
+      `    accountType: ${m.senderAccountType ?? 'unknown'}`,
+      `    inContact: ${String(m.inContact)}`,
+    ].join('\n');
+  }
+
+  private formatDmBatch(conversationId: string, messages: readonly IncomingMessage[]): string {
+    const first = messages[0];
+    const lines = [`conversationId: ${conversationId}`, `type: dm`, `from:`, this.formatSender(first), `messages:`];
+    for (const m of messages) {
+      lines.push(`  - message: ${m.text}`);
+      lines.push(`    timestamp: "${m.timestamp}"`);
+    }
+    return lines.join('\n');
+  }
+
+  private formatGroupBatch(
+    conversationId: string,
+    groupName: string | undefined,
+    messages: readonly IncomingMessage[],
+  ): string {
+    const lines = [
+      `conversationId: ${conversationId}`,
+      `type: group`,
+      `groupName: ${groupName ?? 'Unnamed Group'}`,
+      `messages:`,
+    ];
+    for (const m of messages) {
+      lines.push(`  - from:`);
+      lines.push(this.formatSender(m));
+      lines.push(`    message: ${m.text}`);
+      lines.push(`    timestamp: "${m.timestamp}"`);
+    }
+    return lines.join('\n');
+  }
 
   // ---------------------------------------------------------------------------
   // Internal
