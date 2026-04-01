@@ -165,23 +165,14 @@ export abstract class BaseAgentInstance implements AgentInstance {
   // ---------------------------------------------------------------------------
 
   /**
-   * Resolve the Newio session ID for a conversation.
-   * Uses the backend-assigned session ID from the membership record.
-   * Falls back to conversationId if no session ID is known yet.
-   */
-  private getNewioSessionId(conversationId: string): string {
-    return this.app?.getSessionId(conversationId) ?? conversationId;
-  }
-
-  /**
    * Get, resume, or create a session for a conversation.
-   * 1. Resolves conversationId → newioSessionId
+   * 1. Resolves conversationId → newioSessionId via NewioApp
    * 2. Checks if a live session exists → return it
    * 3. Checks if a persisted mapping exists → resume the session
    * 4. Otherwise → create a new session
    */
   protected async getOrCreateSession(conversationId: string): Promise<AgentSession> {
-    const newioSessionId = this.getNewioSessionId(conversationId);
+    const newioSessionId = this.app?.resolveSessionId(conversationId) ?? conversationId;
 
     // Check if already running
     const existingCorrelationId = this.sessionStore.get(newioSessionId);

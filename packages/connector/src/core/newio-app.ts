@@ -301,6 +301,17 @@ export class NewioApp {
     return this.sessionIds.get(conversationId);
   }
 
+  /**
+   * Resolve the backend session ID for a conversation.
+   * Returns the cached session ID if known, otherwise falls back to conversationId.
+   *
+   * TODO: When the backend exposes a getMember API (GET /conversations/:id/members/:userId),
+   * fetch the session ID on-demand here instead of falling back to conversationId.
+   */
+  resolveSessionId(conversationId: string): string {
+    return this.sessionIds.get(conversationId) ?? conversationId;
+  }
+
   /** Get members of a conversation (fetches from API if not cached). */
   async getMembers(conversationId: string): Promise<MemberRecord[]> {
     const cached = this.conversationMembers.get(conversationId);
@@ -544,14 +555,33 @@ Response rules:
     });
 
     this.ws.on('conversation.member_added', (event) => {
-      const members = this.conversationMembers.get(event.payload.conversationId);
+      const { conversationId } = event.payload;
+      const members = this.conversationMembers.get(conversationId);
       if (members) {
         members.push(...event.payload.members);
       }
-      // Track sessionId if this agent was added
+      // If this agent was just added, load the conversation and track sessionId
       const self = event.payload.members.find((m) => m.userId === this.identity.userId);
-      if (self?.sessionId) {
-        this.sessionIds.set(event.payload.conversationId, self.sessionId);
+      if (self) {
+        if (self.sessionId) {
+          this.sessionIds.set(conversationId, self.sessionId);
+        }
+        if (!this.conversations.has(conversationId)) {
+          this.client
+            .getConversation({ conversationId })
+            .then((conv) => {
+              this.conversations.set(conversationId, {
+                conversationId: conv.conversationId,
+                type: conv.type,
+                name: conv.name,
+                description: conv.description,
+                avatarUrl: conv.avatarUrl,
+                lastMessageAt: conv.lastMessageAt,
+              });
+              this.conversationMembers.set(conversationId, [...conv.members]);
+            })
+            .catch((err: unknown) => log.warn(`Failed to load conversation ${conversationId}`, err));
+        }
       }
     });
 
