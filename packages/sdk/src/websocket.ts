@@ -1,5 +1,6 @@
 import type { TokenProvider } from './http.js';
 import type { EventMap, NewioEvent } from './events.js';
+import type { ActivityStatus } from './types.js';
 
 /** WebSocket connection state. */
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected';
@@ -179,6 +180,13 @@ export class NewioWebSocket {
   unsubscribe(topics: readonly OnDemandTopic[]): void {
     if (this.ws && this.state === 'connected') {
       this.ws.send(JSON.stringify({ action: 'unsubscribe', topics }));
+    }
+  }
+
+  /** Send an ephemeral activity status (typing, thinking, etc.) to a conversation. */
+  sendActivity(conversationId: string, status: ActivityStatus): void {
+    if (this.ws && this.state === 'connected') {
+      this.ws.send(JSON.stringify({ action: 'activity', conversationId, status }));
     }
   }
 

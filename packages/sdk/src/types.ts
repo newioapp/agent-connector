@@ -26,6 +26,9 @@ export type ContactStatus = 'pending' | 'accepted';
 /** Notification level for a conversation. */
 export type NotifyLevel = 'all' | 'mentions' | 'nothing';
 
+/** Ephemeral activity status for typing/thinking indicators. */
+export type ActivityStatus = 'typing' | 'thinking' | 'tool_calling' | 'idle';
+
 // ---------------------------------------------------------------------------
 // Domain Records (shared nested types — no Request/Response suffix)
 // ---------------------------------------------------------------------------
