@@ -493,6 +493,23 @@ Response rules:
     } while (cursor);
   }
 
+  private async loadConversation(conversationId: string): Promise<void> {
+    try {
+      const conv = await this.client.getConversation({ conversationId });
+      this.conversations.set(conversationId, {
+        conversationId: conv.conversationId,
+        type: conv.type,
+        name: conv.name,
+        description: conv.description,
+        avatarUrl: conv.avatarUrl,
+        lastMessageAt: conv.lastMessageAt,
+      });
+      this.conversationMembers.set(conversationId, [...conv.members]);
+    } catch (err: unknown) {
+      log.warn(`Failed to load conversation ${conversationId}`, err);
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Internal — contact indexing
   // ---------------------------------------------------------------------------
@@ -555,33 +572,27 @@ Response rules:
     });
 
     this.ws.on('conversation.member_added', (event) => {
-      const { conversationId } = event.payload;
-      const members = this.conversationMembers.get(conversationId);
-      if (members) {
-        members.push(...event.payload.members);
+      const { conversationId, members: added } = event.payload;
+
+      // Update existing member cache
+      const cached = this.conversationMembers.get(conversationId);
+      if (cached) {
+        cached.push(...added);
       }
-      // If this agent was just added, load the conversation and track sessionId
-      const self = event.payload.members.find((m) => m.userId === this.identity.userId);
-      if (self) {
-        if (self.sessionId) {
-          this.sessionIds.set(conversationId, self.sessionId);
-        }
-        if (!this.conversations.has(conversationId)) {
-          this.client
-            .getConversation({ conversationId })
-            .then((conv) => {
-              this.conversations.set(conversationId, {
-                conversationId: conv.conversationId,
-                type: conv.type,
-                name: conv.name,
-                description: conv.description,
-                avatarUrl: conv.avatarUrl,
-                lastMessageAt: conv.lastMessageAt,
-              });
-              this.conversationMembers.set(conversationId, [...conv.members]);
-            })
-            .catch((err: unknown) => log.warn(`Failed to load conversation ${conversationId}`, err));
-        }
+
+      // If this agent wasn't among the added members, nothing else to do
+      const self = added.find((m) => m.userId === this.identity.userId);
+      if (!self) {
+        return;
+      }
+
+      if (self.sessionId) {
+        this.sessionIds.set(conversationId, self.sessionId);
+      }
+
+      // New conversation for this agent — fetch full details
+      if (!this.conversations.has(conversationId)) {
+        void this.loadConversation(conversationId);
       }
     });
 
