@@ -11,13 +11,7 @@ const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
 /** Register contacts tools on the MCP server. */
 export function registerContactsTools(server: McpServer, app: NewioApp): void {
   server.registerTool('list_friends', { description: 'List all friends (contacts) of this agent' }, () => {
-    return json(
-      app.getAllContacts().map((c) => ({
-        username: c.friendUsername,
-        displayName: c.friendDisplayName,
-        accountType: c.friendAccountType,
-      })),
-    );
+    return json(app.getAllContacts());
   });
 
   server.registerTool(
@@ -39,15 +33,7 @@ export function registerContactsTools(server: McpServer, app: NewioApp): void {
     'list_incoming_friend_requests',
     { description: 'List pending incoming friend requests' },
     async () => {
-      const requests = await app.listIncomingFriendRequests();
-      return json(
-        requests.map((r) => ({
-          username: r.friendUsername,
-          displayName: r.friendDisplayName,
-          accountType: r.friendAccountType,
-          note: r.note,
-        })),
-      );
+      return json(await app.listIncomingFriendRequests());
     },
   );
 

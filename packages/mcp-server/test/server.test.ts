@@ -2,36 +2,13 @@ import { describe, it, expect, vi } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createMcpServer } from '../src/server.js';
-import type { NewioApp } from '@newio/sdk';
-import type { ContactRecord, ConversationListItem } from '@newio/sdk';
-
-function makeContact(overrides: Partial<ContactRecord> = {}): ContactRecord {
-  return {
-    userId: 'me',
-    contactId: overrides.contactId ?? 'contact-1',
-    status: 'accepted',
-    requesterId: 'me',
-    friendAccountType: 'human',
-    friendUsername: 'alice',
-    friendDisplayName: 'Alice',
-    createdAt: '2026-01-01T00:00:00Z',
-    ...overrides,
-  };
-}
-
-function makeConversation(overrides: Partial<ConversationListItem> = {}): ConversationListItem {
-  return {
-    conversationId: overrides.conversationId ?? 'conv-1',
-    type: 'dm',
-    name: 'Test Conv',
-    lastMessageAt: '2026-01-01T00:00:00Z',
-    ...overrides,
-  };
-}
+import type { NewioApp, ContactSummary, ConversationSummary, FriendRequestSummary } from '@newio/sdk';
 
 function mockApp(
-  contacts: ContactRecord[] = [makeContact()],
-  conversations: ConversationListItem[] = [makeConversation()],
+  contacts: ContactSummary[] = [{ username: 'alice', displayName: 'Alice', accountType: 'human' }],
+  conversations: ConversationSummary[] = [
+    { conversationId: 'conv-1', type: 'dm', name: 'Test Conv', lastMessageAt: '2026-01-01T00:00:00Z' },
+  ],
 ): NewioApp {
   return {
     identity: { userId: 'me', username: 'myagent', displayName: 'My Agent' },
@@ -40,17 +17,20 @@ function mockApp(
     resolveUsername: vi.fn().mockResolvedValue('resolved-id'),
     findOrCreateDm: vi.fn().mockResolvedValue('dm-conv-id'),
     createGroup: vi.fn().mockResolvedValue('group-conv-id'),
+    createWorkSession: vi.fn().mockResolvedValue('ws-conv-id'),
     sendMessage: vi.fn().mockResolvedValue(undefined),
     sendDm: vi.fn().mockResolvedValue(undefined),
     sendMessageWithAttachments: vi.fn().mockResolvedValue(undefined),
     sendFriendRequestByUsername: vi.fn().mockResolvedValue(undefined),
     listIncomingFriendRequests: vi
       .fn()
-      .mockResolvedValue([makeContact({ contactId: 'req-1', friendUsername: 'bob', friendDisplayName: 'Bob' })]),
+      .mockResolvedValue([
+        { username: 'bob', displayName: 'Bob', accountType: 'human', note: undefined } satisfies FriendRequestSummary,
+      ]),
     acceptFriendRequestByUsername: vi.fn().mockResolvedValue(undefined),
     rejectFriendRequestByUsername: vi.fn().mockResolvedValue(undefined),
     removeFriendByUsername: vi.fn().mockResolvedValue(undefined),
-    downloadAttachment: vi.fn().mockResolvedValue('/downloads/conv-1/photo.jpg'),
+    downloadAttachment: vi.fn().mockResolvedValue('/downloads/conv-1/1711929600000-photo.jpg'),
     client: {
       getMe: vi.fn().mockResolvedValue({ userId: 'me', username: 'myagent' }),
       getConversation: vi.fn().mockResolvedValue({ conversationId: 'conv-1', type: 'dm', members: [] }),
@@ -84,7 +64,9 @@ describe('MCP Server', () => {
     expect(names).toEqual([
       'accept_friend_request',
       'add_members',
-      'create_conversation',
+      'create_dm',
+      'create_group',
+      'create_work_session',
       'download_attachment',
       'get_conversation',
       'get_my_profile',
@@ -104,9 +86,9 @@ describe('MCP Server', () => {
   });
 
   it('list_friends returns contacts without userIds', async () => {
-    const contacts = [
-      makeContact({ contactId: 'u1', friendUsername: 'alice', friendDisplayName: 'Alice' }),
-      makeContact({ contactId: 'u2', friendUsername: 'bob', friendDisplayName: 'Bob' }),
+    const contacts: ContactSummary[] = [
+      { username: 'alice', displayName: 'Alice', accountType: 'human' },
+      { username: 'bob', displayName: 'Bob', accountType: 'human' },
     ];
     const client = await createConnectedClient(mockApp(contacts));
     const result = await client.callTool({ name: 'list_friends', arguments: {} });
@@ -130,24 +112,33 @@ describe('MCP Server', () => {
     expect(app.acceptFriendRequestByUsername).toHaveBeenCalledWith('bob');
   });
 
-  it('create_conversation creates DM for single username', async () => {
+  it('create_dm creates DM by username', async () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
-    const result = await client.callTool({
-      name: 'create_conversation',
-      arguments: { usernames: ['alice'] },
-    });
+    const result = await client.callTool({ name: 'create_dm', arguments: { username: 'alice' } });
     expect(app.resolveUsername).toHaveBeenCalledWith('alice');
     expect(app.findOrCreateDm).toHaveBeenCalledWith('resolved-id');
     const parsed = JSON.parse((result.content[0] as { text: string }).text) as { conversationId: string };
     expect(parsed.conversationId).toBe('dm-conv-id');
   });
 
-  it('create_conversation creates group for multiple usernames', async () => {
+  it('create_work_session creates temp_group', async () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
     const result = await client.callTool({
-      name: 'create_conversation',
+      name: 'create_work_session',
+      arguments: { usernames: ['alice', 'bob'] },
+    });
+    expect(app.createWorkSession).toHaveBeenCalledWith(['alice', 'bob']);
+    const parsed = JSON.parse((result.content[0] as { text: string }).text) as { conversationId: string };
+    expect(parsed.conversationId).toBe('ws-conv-id');
+  });
+
+  it('create_group creates named group', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    const result = await client.callTool({
+      name: 'create_group',
       arguments: { usernames: ['alice', 'bob'], name: 'Team' },
     });
     expect(app.createGroup).toHaveBeenCalledWith('Team', ['alice', 'bob']);
@@ -173,7 +164,7 @@ describe('MCP Server', () => {
       arguments: { conversationId: 'conv-1', s3Key: 'media/photo.jpg', fileName: 'photo.jpg' },
     });
     expect(app.downloadAttachment).toHaveBeenCalledWith('conv-1', 'media/photo.jpg', 'photo.jpg');
-    expect((result.content[0] as { text: string }).text).toBe('/downloads/conv-1/photo.jpg');
+    expect((result.content[0] as { text: string }).text).toContain('photo.jpg');
   });
 
   it('list_messages returns formatted messages', async () => {
@@ -190,5 +181,16 @@ describe('MCP Server', () => {
     const result = await client.callTool({ name: 'search_users', arguments: { query: 'alice' } });
     const parsed = JSON.parse((result.content[0] as { text: string }).text) as unknown[];
     expect(parsed).toHaveLength(1);
+  });
+
+  it('list_incoming_friend_requests returns summaries', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    const result = await client.callTool({ name: 'list_incoming_friend_requests', arguments: {} });
+    const parsed = JSON.parse((result.content[0] as { text: string }).text) as FriendRequestSummary[];
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]).toHaveProperty('username', 'bob');
+    expect(parsed[0]).not.toHaveProperty('userId');
+    expect(parsed[0]).not.toHaveProperty('contactId');
   });
 });

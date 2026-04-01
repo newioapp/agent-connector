@@ -11,37 +11,45 @@ const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
 /** Register conversations tools on the MCP server. */
 export function registerConversationsTools(server: McpServer, app: NewioApp): void {
   server.registerTool('list_conversations', { description: 'List all conversations this agent is part of' }, () => {
-    return json(
-      app.getAllConversations().map((c) => ({
-        conversationId: c.conversationId,
-        type: c.type,
-        name: c.name,
-        lastMessageAt: c.lastMessageAt,
-      })),
-    );
+    return json(app.getAllConversations());
   });
 
   server.registerTool(
-    'create_conversation',
+    'create_dm',
     {
-      description:
-        'Create a conversation. For DM: provide one username. For group: provide multiple usernames and a name.',
+      description: 'Create or find an existing direct message conversation with a user',
+      inputSchema: { username: z.string().describe('Username of the user to DM') },
+    },
+    async ({ username }) => {
+      const userId = await app.resolveUsername(username);
+      const conversationId = await app.findOrCreateDm(userId);
+      return json({ conversationId });
+    },
+  );
+
+  server.registerTool(
+    'create_work_session',
+    {
+      description: 'Create a temporary group conversation (work session) — no name, anyone can add members',
+      inputSchema: { usernames: z.array(z.string()).describe('Usernames of users to include') },
+    },
+    async ({ usernames }) => {
+      const conversationId = await app.createWorkSession(usernames);
+      return json({ conversationId });
+    },
+  );
+
+  server.registerTool(
+    'create_group',
+    {
+      description: 'Create a named group conversation with admin controls',
       inputSchema: {
+        name: z.string().describe('Group name'),
         usernames: z.array(z.string()).describe('Usernames of users to include'),
-        name: z.string().optional().describe('Group name (required for groups, omit for DMs)'),
       },
     },
-    async ({ usernames, name }) => {
-      let conversationId: string;
-      if (usernames.length === 1 && !name) {
-        const userId = await app.resolveUsername(usernames[0] ?? '');
-        conversationId = await app.findOrCreateDm(userId);
-      } else {
-        if (!name) {
-          return text('Group conversations require a name');
-        }
-        conversationId = await app.createGroup(name, usernames);
-      }
+    async ({ name, usernames }) => {
+      const conversationId = await app.createGroup(name, usernames);
       return json({ conversationId });
     },
   );
