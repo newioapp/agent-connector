@@ -217,3 +217,13 @@ export type {
   NewioEvent,
   EventMap,
 } from './events.js';
+
+// NewioApp — high-level agent client
+export { NewioApp } from './newio-app.js';
+export type {
+  IncomingMessage,
+  MessageHandler,
+  NewioIdentity,
+  NewioTokens,
+  NewioAppCreateOptions,
+} from './newio-app.js';

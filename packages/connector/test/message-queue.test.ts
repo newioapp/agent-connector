@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { MessageQueue } from '../src/main/instances/message-queue';
-import type { IncomingMessage } from '../src/main/newio-app';
+import { MessageQueue } from '../src/core/instances/message-queue';
+import type { IncomingMessage } from '@newio/sdk';
 
 function makeMsg(conversationId: string, text = 'hello'): IncomingMessage {
   return {

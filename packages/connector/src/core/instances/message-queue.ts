@@ -2,7 +2,7 @@
  * Per-conversation message queue with FIFO ordering across conversations.
  * Buffers incoming messages and yields conversation batches for serial processing.
  */
-import type { IncomingMessage } from '../newio-app';
+import type { IncomingMessage } from '@newio/sdk';
 
 /** Sentinel value used to signal the consumer to stop. */
 const CLOSED = Symbol('closed');
