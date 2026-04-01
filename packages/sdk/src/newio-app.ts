@@ -24,6 +24,12 @@ import type {
 } from './types.js';
 import type { MessageNewEvent } from './events.js';
 
+/** Default Newio REST API base URL. */
+export const NEWIO_API_BASE_URL = 'https://api.conduit.qinnan.dev';
+
+/** Default Newio WebSocket URL. */
+export const NEWIO_WS_URL = 'wss://ws.conduit.qinnan.dev';
+
 /** How long received messages are kept in the cache (ms). */
 const MESSAGE_CACHE_TTL_MS = 10 * 60 * 1000;
 

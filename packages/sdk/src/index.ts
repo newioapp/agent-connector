@@ -219,7 +219,7 @@ export type {
 } from './events.js';
 
 // NewioApp — high-level agent client
-export { NewioApp } from './newio-app.js';
+export { NewioApp, NEWIO_API_BASE_URL, NEWIO_WS_URL } from './newio-app.js';
 export type {
   IncomingMessage,
   MessageHandler,

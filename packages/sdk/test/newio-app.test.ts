@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { NewioApp, type IncomingMessage } from '@newio/sdk';
-import type { AuthManager, NewioClient, NewioWebSocket } from '@newio/sdk';
-import type { ContactRecord, ConversationListItem } from '@newio/sdk';
+import { NewioApp } from '../src/newio-app.js';
+import type { IncomingMessage } from '../src/newio-app.js';
+import type { AuthManager } from '../src/auth.js';
+import type { NewioClient } from '../src/client.js';
+import type { NewioWebSocket } from '../src/websocket.js';
+import type { ContactRecord, ConversationListItem } from '../src/types.js';
 
 // ---------------------------------------------------------------------------
 // Helpers

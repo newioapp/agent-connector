@@ -5,7 +5,7 @@
  * routing incoming messages by conversationId → newioSessionId → AgentSession.
  * Subclasses implement session creation and greeting logic.
  */
-import { ApprovalTimeoutError, NewioApp } from '@newio/sdk';
+import { ApprovalTimeoutError, NewioApp, NEWIO_API_BASE_URL, NEWIO_WS_URL } from '@newio/sdk';
 import type { IncomingMessage } from '@newio/sdk';
 import type { AgentConfigManager } from '../agent-config-manager';
 import type { AgentRuntimeStatus, AgentConfig } from '../types';
@@ -18,9 +18,6 @@ import { Logger } from '../logger';
 import WebSocket from 'ws';
 
 const log = new Logger('base-agent-instance');
-
-const API_BASE_URL = 'https://api.conduit.qinnan.dev';
-const WS_URL = 'wss://ws.conduit.qinnan.dev';
 
 interface LiveSession {
   readonly session: AgentSession;
@@ -64,8 +61,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
         agentId: this.config.newioAgentId,
         username: this.config.newioUsername,
         name: this.config.name,
-        apiBaseUrl: API_BASE_URL,
-        wsUrl: WS_URL,
+        apiBaseUrl: NEWIO_API_BASE_URL,
+        wsUrl: NEWIO_WS_URL,
         wsFactory: (url) => new WebSocket(url) as never,
         tokens: storedTokens,
         signal: abortController.signal,
