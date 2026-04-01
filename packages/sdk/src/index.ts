@@ -47,6 +47,7 @@ export type {
   MemberRole,
   ContactStatus,
   NotifyLevel,
+  ActivityStatus,
 } from './types.js';
 
 // Types — Domain Records (shared nested types)
@@ -212,6 +213,7 @@ export type {
   BlockRemovedEvent,
   UserProfileUpdatedEvent,
   AgentSettingsUpdatedEvent,
+  ActivityStatusEvent,
   NewioEvent,
   EventMap,
 } from './events.js';

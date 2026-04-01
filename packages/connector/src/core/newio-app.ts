@@ -218,17 +218,13 @@ export class NewioApp {
   }
 
   /**
-   * Set the agent's status, optionally scoped to a conversation.
-   * When conversationId is provided, indicates per-conversation activity (thinking/typing).
-   * When omitted, sets the agent's global presence status.
-   * Once the backend typing/status endpoint is available, this will broadcast
-   * the status to relevant users. For now, logs the transition.
+   * Set the agent's activity status for a conversation.
+   * Broadcasts typing/thinking indicators to other participants via WebSocket.
    */
   setStatus(status: SessionStatus, conversationId?: string): void {
-    const scope = conversationId ?? 'global';
-    log.debug(`status [${scope}]: ${status}`);
-    // TODO: Call backend typing/status endpoint when available.
-    // The conv_ondemand subscription system was designed for this use case.
+    if (conversationId) {
+      this.ws.sendActivity(conversationId, status);
+    }
   }
 
   /** Send a DM to the agent's owner. No-op if ownerId is not set. */

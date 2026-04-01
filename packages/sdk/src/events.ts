@@ -3,6 +3,7 @@ import type {
   MemberRecord,
   MessageContent,
   AgentSettings,
+  ActivityStatus,
   NotifyLevel,
   ConversationType,
 } from './types.js';
@@ -225,6 +226,20 @@ export interface AgentSettingsUpdatedEvent extends WebSocketEvent {
 }
 
 // ---------------------------------------------------------------------------
+// Activity Events (ephemeral — not persisted)
+// ---------------------------------------------------------------------------
+
+/** Ephemeral activity status event (typing, thinking, tool_calling, idle). */
+export interface ActivityStatusEvent extends WebSocketEvent {
+  readonly type: 'activity.status';
+  readonly payload: {
+    readonly conversationId: string;
+    readonly userId: string;
+    readonly status: ActivityStatus;
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Union & Map
 // ---------------------------------------------------------------------------
 
@@ -247,7 +262,8 @@ export type NewioEvent =
   | BlockCreatedEvent
   | BlockRemovedEvent
   | UserProfileUpdatedEvent
-  | AgentSettingsUpdatedEvent;
+  | AgentSettingsUpdatedEvent
+  | ActivityStatusEvent;
 
 /** Map from event type string to its typed interface. */
 export interface EventMap {
@@ -270,4 +286,5 @@ export interface EventMap {
   'block.removed': BlockRemovedEvent;
   'user.profile_updated': UserProfileUpdatedEvent;
   'agent.settings_updated': AgentSettingsUpdatedEvent;
+  'activity.status': ActivityStatusEvent;
 }
