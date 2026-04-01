@@ -72,11 +72,13 @@ export class NewioApp {
   /** conversationId → ConversationListItem */
   private readonly conversations = new Map<string, ConversationListItem>();
   /** conversationId → MemberRecord[] (lazily populated) */
-  private readonly conversationMembers = new Map<string, MemberRecord[]>();
+  private readonly conversationMembers = new Map<string, Map<string, MemberRecord>>();
   /** conversationId → next sequenceNumber */
   private readonly sequenceNumbers = new Map<string, number>();
   /** conversationId → notification preference (missing = 'all') */
   private readonly notifyLevels = new Map<string, NotifyLevel>();
+  /** conversationId → backend session ID (for agent members) */
+  private readonly sessionIds = new Map<string, string>();
 
   /** conversationId → ULID-sorted message list (recent cache, evicted by TTL) */
   private readonly messageCache = new Map<string, IncomingMessage[]>();
@@ -294,14 +296,30 @@ export class NewioApp {
     return messages;
   }
 
+  /** Get the backend session ID for a conversation, if known. */
+  getSessionId(conversationId: string): string | undefined {
+    return this.sessionIds.get(conversationId);
+  }
+
+  /**
+   * Resolve the backend session ID for a conversation.
+   * Returns the cached session ID if known, otherwise falls back to conversationId.
+   *
+   * TODO: When the backend exposes a getMember API (GET /conversations/:id/members/:userId),
+   * fetch the session ID on-demand here instead of falling back to conversationId.
+   */
+  resolveSessionId(conversationId: string): string {
+    return this.sessionIds.get(conversationId) ?? conversationId;
+  }
+
   /** Get members of a conversation (fetches from API if not cached). */
   async getMembers(conversationId: string): Promise<MemberRecord[]> {
     const cached = this.conversationMembers.get(conversationId);
     if (cached) {
-      return cached;
+      return [...cached.values()];
     }
     const resp = await this.client.getConversation({ conversationId });
-    this.conversationMembers.set(conversationId, [...resp.members]);
+    this.setMembers(conversationId, resp.members);
     return [...resp.members];
   }
 
@@ -329,7 +347,7 @@ export class NewioApp {
       name: resp.name,
       lastMessageAt: resp.lastMessageAt,
     });
-    this.conversationMembers.set(resp.conversationId, [...resp.members]);
+    this.setMembers(resp.conversationId, resp.members);
     return resp.conversationId;
   }
 
@@ -347,7 +365,7 @@ export class NewioApp {
       name: resp.name,
       lastMessageAt: resp.lastMessageAt,
     });
-    this.conversationMembers.set(resp.conversationId, [...resp.members]);
+    this.setMembers(resp.conversationId, resp.members);
     return resp.conversationId;
   }
 
@@ -467,9 +485,40 @@ Response rules:
         if (conv.notifyLevel) {
           this.notifyLevels.set(conv.conversationId, conv.notifyLevel);
         }
+        if (conv.sessionId) {
+          this.sessionIds.set(conv.conversationId, conv.sessionId);
+        }
       }
       cursor = resp.cursor;
     } while (cursor);
+  }
+
+  private async loadConversation(conversationId: string): Promise<void> {
+    try {
+      const conv = await this.client.getConversation({ conversationId });
+      this.conversations.set(conversationId, {
+        conversationId: conv.conversationId,
+        type: conv.type,
+        name: conv.name,
+        description: conv.description,
+        avatarUrl: conv.avatarUrl,
+        lastMessageAt: conv.lastMessageAt,
+      });
+      this.setMembers(conversationId, conv.members);
+
+      // Refresh agent's own membership state
+      const self = conv.members.find((m) => m.userId === this.identity.userId);
+      if (self) {
+        if (self.notifyLevel) {
+          this.notifyLevels.set(conversationId, self.notifyLevel);
+        }
+        if (self.sessionId) {
+          this.sessionIds.set(conversationId, self.sessionId);
+        }
+      }
+    } catch (err: unknown) {
+      log.warn(`Failed to load conversation ${conversationId}`, err);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -500,6 +549,14 @@ Response rules:
     const next = current + 1;
     this.sequenceNumbers.set(conversationId, next);
     return next;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Internal — member cache
+  // ---------------------------------------------------------------------------
+
+  private setMembers(conversationId: string, members: readonly MemberRecord[]): void {
+    this.conversationMembers.set(conversationId, new Map(members.map((m) => [m.userId, m])));
   }
 
   // ---------------------------------------------------------------------------
@@ -534,19 +591,36 @@ Response rules:
     });
 
     this.ws.on('conversation.member_added', (event) => {
-      const members = this.conversationMembers.get(event.payload.conversationId);
-      if (members) {
-        members.push(...event.payload.members);
+      const { conversationId, members: added } = event.payload;
+
+      // Update existing member cache
+      const cached = this.conversationMembers.get(conversationId);
+      if (cached) {
+        for (const m of added) {
+          cached.set(m.userId, m);
+        }
+      }
+
+      // If this agent wasn't among the added members, nothing else to do
+      const self = added.find((m) => m.userId === this.identity.userId);
+      if (!self) {
+        return;
+      }
+
+      if (self.sessionId) {
+        this.sessionIds.set(conversationId, self.sessionId);
+      }
+
+      // New conversation for this agent — fetch full details
+      if (!this.conversations.has(conversationId)) {
+        void this.loadConversation(conversationId);
       }
     });
 
     this.ws.on('conversation.member_removed', (event) => {
-      const members = this.conversationMembers.get(event.payload.conversationId);
-      if (members) {
-        const idx = members.findIndex((m) => m.userId === event.payload.targetUserId);
-        if (idx !== -1) {
-          members.splice(idx, 1);
-        }
+      const cached = this.conversationMembers.get(event.payload.conversationId);
+      if (cached) {
+        cached.delete(event.payload.targetUserId);
       }
       if (event.payload.targetUserId === this.identity.userId) {
         this.conversations.delete(event.payload.conversationId);
@@ -555,9 +629,16 @@ Response rules:
     });
 
     this.ws.on('conversation.member_updated', (event) => {
-      if (event.payload.changes.notifyLevel && event.payload.userId === this.identity.userId) {
+      if (event.payload.userId !== this.identity.userId) {
+        return;
+      }
+      if (event.payload.changes.notifyLevel) {
         log.debug(`notifyLevel updated for ${event.payload.conversationId}: ${event.payload.changes.notifyLevel}`);
         this.notifyLevels.set(event.payload.conversationId, event.payload.changes.notifyLevel);
+      }
+      if (event.payload.changes.sessionId) {
+        log.debug(`sessionId updated for ${event.payload.conversationId}: ${event.payload.changes.sessionId}`);
+        this.sessionIds.set(event.payload.conversationId, event.payload.changes.sessionId);
       }
     });
 

@@ -116,6 +116,7 @@ export interface ConversationMemberUpdatedEvent extends WebSocketEvent {
       readonly role?: string;
       readonly canSend?: boolean;
       readonly notifyLevel?: NotifyLevel;
+      readonly sessionId?: string;
     };
   };
 }

@@ -63,6 +63,8 @@ export interface ConversationListItem {
   readonly updatedAt?: string;
   readonly readUntil?: string;
   readonly notifyLevel?: NotifyLevel;
+  /** Session ID for agent members. Only present when the caller is an agent. */
+  readonly sessionId?: string;
 }
 
 /** A conversation member record. */
@@ -72,6 +74,7 @@ export interface MemberRecord {
   readonly accountType?: string;
   readonly canSend?: boolean;
   readonly notifyLevel?: NotifyLevel;
+  readonly sessionId?: string;
   readonly joinedAt: string;
   readonly username?: string;
   readonly displayName?: string;
