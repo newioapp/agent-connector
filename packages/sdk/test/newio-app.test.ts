@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { NewioApp, type IncomingMessage } from '../src/main/newio-app';
-import type { AuthManager, NewioClient, NewioWebSocket } from '@newio/sdk';
-import type { ContactRecord, ConversationListItem } from '@newio/sdk';
+import { NewioApp } from '../src/newio-app.js';
+import type { IncomingMessage } from '../src/newio-app.js';
+import type { AuthManager } from '../src/auth.js';
+import type { NewioClient } from '../src/client.js';
+import type { NewioWebSocket } from '../src/websocket.js';
+import type { ContactRecord, ConversationListItem } from '../src/types.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -48,15 +51,13 @@ function mockClient(contacts: ContactRecord[] = [], conversations: ConversationL
   return {
     listFriends: vi.fn().mockResolvedValue({ contacts, cursor: undefined }),
     listConversations: vi.fn().mockResolvedValue({ conversations, cursor: undefined }),
-    sendMessage: vi
-      .fn()
-      .mockResolvedValue({
-        conversationId: 'conv-1',
-        messageId: 'msg-1',
-        senderId: 'me',
-        content: {},
-        createdAt: '2026-01-01T00:00:00Z',
-      }),
+    sendMessage: vi.fn().mockResolvedValue({
+      conversationId: 'conv-1',
+      messageId: 'msg-1',
+      senderId: 'me',
+      content: {},
+      createdAt: '2026-01-01T00:00:00Z',
+    }),
     getUserByUsername: vi.fn().mockResolvedValue({ userId: 'resolved-id' }),
     createConversation: vi.fn().mockResolvedValue({
       conversationId: 'new-conv',
@@ -282,7 +283,7 @@ describe('NewioApp', () => {
       eventHandlers.get('contact.request_accepted')?.({
         type: 'contact.request_accepted',
         timestamp: '2026-01-01T00:00:00Z',
-        payload: makeContact({ contactId: 'new-friend', friendUsername: 'newfriend' }),
+        payload: { contact: makeContact({ contactId: 'new-friend', friendUsername: 'newfriend' }) },
       });
 
       expect(app.isContact('new-friend')).toBe(true);

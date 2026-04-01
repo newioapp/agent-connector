@@ -4,19 +4,31 @@
  * Owns the full Newio lifecycle: auth, HTTP client, WebSocket connection.
  * Caches contacts and conversations, provides username-based lookups,
  * tracks sequenceNumbers, builds system prompts, and exposes a clean event interface.
- * Used by both the Claude adapter and the future MCP server.
+ *
+ * Used by the Agent Connector, MCP server, and standalone agent implementations.
  */
-import { AuthManager, NewioClient, NewioWebSocket } from '@newio/sdk';
-import type { ApprovalHandle, AccountType, NotifyLevel, MessageNewEvent } from '@newio/sdk';
-import type { ContactRecord, ConversationListItem, MemberRecord, MessageRecord, ConversationType } from '@newio/sdk';
-import WebSocket from 'ws';
-import type { SessionStatus } from './agent-session';
-import { Logger } from './logger';
+import { AuthManager } from './auth.js';
+import { NewioClient } from './client.js';
+import { NewioWebSocket } from './websocket.js';
+import type { WebSocketFactory } from './websocket.js';
+import type { ApprovalHandle } from './auth.js';
+import type {
+  AccountType,
+  NotifyLevel,
+  ActivityStatus,
+  ContactRecord,
+  ConversationListItem,
+  MemberRecord,
+  MessageRecord,
+  ConversationType,
+} from './types.js';
+import type { MessageNewEvent } from './events.js';
 
-const log = new Logger('newio-app');
+/** Default Newio REST API base URL. */
+export const NEWIO_API_BASE_URL = 'https://api.conduit.qinnan.dev';
 
-const API_BASE_URL = 'https://api.conduit.qinnan.dev';
-const WS_URL = 'wss://ws.conduit.qinnan.dev';
+/** Default Newio WebSocket URL. */
+export const NEWIO_WS_URL = 'wss://ws.conduit.qinnan.dev';
 
 /** How long received messages are kept in the cache (ms). */
 const MESSAGE_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -25,6 +37,7 @@ const MESSAGE_CACHE_TTL_MS = 10 * 60 * 1000;
 // Types
 // ---------------------------------------------------------------------------
 
+/** A processed incoming message with sender metadata resolved from caches. */
 export interface IncomingMessage {
   readonly messageId: string;
   readonly conversationId: string;
@@ -40,8 +53,10 @@ export interface IncomingMessage {
   readonly timestamp: string;
 }
 
+/** Callback for incoming messages. */
 export type MessageHandler = (message: IncomingMessage) => void;
 
+/** The agent's Newio identity (populated after auth). */
 export interface NewioIdentity {
   readonly userId: string;
   readonly username: string;
@@ -55,10 +70,41 @@ export interface NewioTokens {
   readonly refreshToken: string;
 }
 
+/** Options for {@link NewioApp.create}. */
+export interface NewioAppCreateOptions {
+  /** Existing agent ID (for login flow). */
+  readonly agentId?: string;
+  /** Existing username (for login-by-username flow). */
+  readonly username?: string;
+  /** Agent display name (used during registration). */
+  readonly name: string;
+  /** REST API base URL. */
+  readonly apiBaseUrl: string;
+  /** WebSocket URL. */
+  readonly wsUrl: string;
+  /** Factory to create WebSocket instances (e.g., `(url) => new WebSocket(url)`). */
+  readonly wsFactory: WebSocketFactory;
+  /** Pre-existing tokens to attempt reuse. */
+  readonly tokens?: NewioTokens;
+  /** Called when the approval URL is available (user must open it). */
+  readonly onApprovalUrl?: (url: string) => void;
+  /** Called when new tokens are obtained. */
+  readonly onTokens?: (tokens: NewioTokens) => void;
+  /** Abort signal to cancel the auth flow. */
+  readonly signal?: AbortSignal;
+}
+
 // ---------------------------------------------------------------------------
 // NewioApp
 // ---------------------------------------------------------------------------
 
+/**
+ * High-level Newio agent client.
+ *
+ * Wraps {@link AuthManager}, {@link NewioClient}, and {@link NewioWebSocket}
+ * into a single object with caching, username resolution, sequence tracking,
+ * and system prompt generation.
+ */
 export class NewioApp {
   readonly identity: NewioIdentity;
   readonly client: NewioClient;
@@ -114,30 +160,18 @@ export class NewioApp {
    * Handles auth (register or login), profile sync, WebSocket connect,
    * and initial data loading. Returns a fully ready app instance.
    */
-  static async create(opts: {
-    agentId?: string;
-    username?: string;
-    name: string;
-    tokens?: NewioTokens;
-    onApprovalUrl?: (url: string) => void;
-    onTokens?: (tokens: NewioTokens) => void;
-    signal?: AbortSignal;
-  }): Promise<NewioApp> {
-    const auth = new AuthManager(API_BASE_URL);
+  static async create(opts: NewioAppCreateOptions): Promise<NewioApp> {
+    const auth = new AuthManager(opts.apiBaseUrl);
 
     // Authenticate
     if (opts.tokens) {
       auth.setTokens(opts.tokens.accessToken, opts.tokens.refreshToken);
       try {
-        log.debug('Attempting token refresh');
         await auth.forceRefresh();
-        log.info('Token refresh succeeded');
       } catch {
-        log.info('Token refresh failed, falling back to approval flow');
         await doApprovalFlow(auth, opts);
       }
     } else {
-      log.info('No tokens, starting approval flow');
       await doApprovalFlow(auth, opts);
     }
 
@@ -149,7 +183,7 @@ export class NewioApp {
     }
 
     // Create client, fetch profile
-    const client = new NewioClient({ baseUrl: API_BASE_URL, tokenProvider: auth.tokenProvider });
+    const client = new NewioClient({ baseUrl: opts.apiBaseUrl, tokenProvider: auth.tokenProvider });
     const me = await client.getMe({});
     if (!me.username) {
       throw new Error('Agent account has no username. Registration may have failed.');
@@ -164,23 +198,20 @@ export class NewioApp {
 
     // Connect WebSocket
     const ws = new NewioWebSocket({
-      url: WS_URL,
+      url: opts.wsUrl,
       tokenProvider: auth.tokenProvider,
-      wsFactory: (url) => new WebSocket(url) as never,
+      wsFactory: opts.wsFactory,
     });
     await ws.connect();
-    log.info('WebSocket connected');
 
     const app = new NewioApp(identity, auth, client, ws);
     await app.loadData();
-    log.info(`Loaded ${app.contacts.size} contacts, ${app.conversations.size} conversations`);
     app.wireEvents();
     return app;
   }
 
   /** Disconnect WebSocket and dispose auth. */
   dispose(): void {
-    log.info('Disposing NewioApp');
     this.ws.disconnect();
     this.auth.dispose();
   }
@@ -221,7 +252,7 @@ export class NewioApp {
    * Set the agent's activity status for a conversation.
    * Broadcasts typing/thinking indicators to other participants via WebSocket.
    */
-  setStatus(status: SessionStatus, conversationId?: string): void {
+  setStatus(status: ActivityStatus, conversationId?: string): void {
     if (conversationId) {
       this.ws.sendActivity(conversationId, status);
     }
@@ -300,9 +331,6 @@ export class NewioApp {
   /**
    * Resolve the backend session ID for a conversation.
    * Returns the cached session ID if known, otherwise falls back to conversationId.
-   *
-   * TODO: When the backend exposes a getMember API (GET /conversations/:id/members/:userId),
-   * fetch the session ID on-demand here instead of falling back to conversationId.
    */
   resolveSessionId(conversationId: string): string {
     return this.sessionIds.get(conversationId) ?? conversationId;
@@ -502,7 +530,6 @@ Response rules:
       });
       this.setMembers(conversationId, conv.members);
 
-      // Refresh agent's own membership state
       const self = conv.members.find((m) => m.userId === this.identity.userId);
       if (self) {
         if (self.notifyLevel) {
@@ -512,8 +539,8 @@ Response rules:
           this.sessionIds.set(conversationId, self.sessionId);
         }
       }
-    } catch (err: unknown) {
-      log.warn(`Failed to load conversation ${conversationId}`, err);
+    } catch {
+      // Failed to load conversation — non-fatal
     }
   }
 
@@ -589,7 +616,6 @@ Response rules:
     this.ws.on('conversation.member_added', (event) => {
       const { conversationId, members: added } = event.payload;
 
-      // Update existing member cache
       const cached = this.conversationMembers.get(conversationId);
       if (cached) {
         for (const m of added) {
@@ -597,7 +623,6 @@ Response rules:
         }
       }
 
-      // If this agent wasn't among the added members, nothing else to do
       const self = added.find((m) => m.userId === this.identity.userId);
       if (!self) {
         return;
@@ -607,7 +632,6 @@ Response rules:
         this.sessionIds.set(conversationId, self.sessionId);
       }
 
-      // New conversation for this agent — fetch full details
       if (!this.conversations.has(conversationId)) {
         void this.loadConversation(conversationId);
       }
@@ -629,11 +653,9 @@ Response rules:
         return;
       }
       if (event.payload.changes.notifyLevel) {
-        log.debug(`notifyLevel updated for ${event.payload.conversationId}: ${event.payload.changes.notifyLevel}`);
         this.notifyLevels.set(event.payload.conversationId, event.payload.changes.notifyLevel);
       }
       if (event.payload.changes.sessionId) {
-        log.debug(`sessionId updated for ${event.payload.conversationId}: ${event.payload.changes.sessionId}`);
         this.sessionIds.set(event.payload.conversationId, event.payload.changes.sessionId);
       }
     });
@@ -671,7 +693,6 @@ Response rules:
     };
   }
 
-  /** Check if the current agent is mentioned in the message content. */
   private isMentioned(content: MessageRecord['content']): boolean {
     if (!content.mentions) {
       return false;
@@ -687,7 +708,6 @@ Response rules:
     const message = this.toIncomingMessage(payload, payload.conversationId, payload.conversationType);
     const inserted = this.insertMessage(payload.conversationId, message);
 
-    // Update sequence tracking
     const currentSeq = this.sequenceNumbers.get(payload.conversationId) ?? 0;
     const incomingSeq = payload.sequenceNumber ?? 0;
     if (incomingSeq > currentSeq) {
@@ -697,19 +717,18 @@ Response rules:
     if (incomingSeq > currentSeq + 1 && currentSeq > 0) {
       const cached = this.messageCache.get(payload.conversationId);
       if (cached && cached.length > 1) {
-        const afterId = cached[cached.length - 2].messageId;
-        await this.backfillGap(payload.conversationId, afterId, payload.messageId, currentSeq);
+        const prev = cached[cached.length - 2];
+        if (prev) {
+          await this.backfillGap(payload.conversationId, prev.messageId, payload.messageId, currentSeq);
+        }
       }
     }
 
-    // Only notify handler for other people's messages that are not duplicates
     if (inserted && !message.isOwnMessage) {
       const level = this.notifyLevels.get(payload.conversationId) ?? 'all';
       const shouldNotify = level === 'all' || (level === 'mentions' && this.isMentioned(payload.content));
       if (shouldNotify) {
         this.messageHandler?.(message);
-      } else {
-        log.debug(`Skipped message in ${payload.conversationId} (notifyLevel=${level})`);
       }
     }
   }
@@ -727,10 +746,14 @@ Response rules:
     }
 
     let i = messages.length;
-    while (i > 0 && messages[i - 1].messageId > message.messageId) {
+    while (i > 0) {
+      const prev = messages[i - 1];
+      if (!prev || prev.messageId <= message.messageId) {
+        break;
+      }
       i--;
     }
-    if (i > 0 && messages[i - 1].messageId === message.messageId) {
+    if (i > 0 && messages[i - 1]?.messageId === message.messageId) {
       return false;
     }
     messages.splice(i, 0, message);
@@ -739,11 +762,14 @@ Response rules:
     return true;
   }
 
-  /** Remove messages older than the TTL from the front of a sorted list. */
   private evictExpired(conversationId: string, messages: IncomingMessage[]): void {
     const cutoff = Date.now() - MESSAGE_CACHE_TTL_MS;
     let evictCount = 0;
-    while (evictCount < messages.length && new Date(messages[evictCount].timestamp).getTime() < cutoff) {
+    while (evictCount < messages.length) {
+      const msg = messages[evictCount];
+      if (!msg || new Date(msg.timestamp).getTime() >= cutoff) {
+        break;
+      }
       evictCount++;
     }
     if (evictCount > 0) {
@@ -754,10 +780,6 @@ Response rules:
     }
   }
 
-  /**
-   * Backfill missed messages when a sequence gap is detected.
-   * Uses afterMessageId/beforeMessageId for precise boundary fetching.
-   */
   private async backfillGap(
     conversationId: string,
     afterMessageId: string,
@@ -786,11 +808,7 @@ Response rules:
         }
         cursor = resp.cursor;
       } while (cursor);
-    } catch (err) {
-      log.error(
-        `Backfill failed for conversation ${conversationId}, rolling back sequence to ${String(rollbackSeq)}`,
-        err,
-      );
+    } catch {
       this.sequenceNumbers.set(conversationId, rollbackSeq);
     }
   }

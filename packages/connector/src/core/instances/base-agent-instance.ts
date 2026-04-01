@@ -5,17 +5,17 @@
  * routing incoming messages by conversationId → newioSessionId → AgentSession.
  * Subclasses implement session creation and greeting logic.
  */
-import { ApprovalTimeoutError } from '@newio/sdk';
+import { ApprovalTimeoutError, NewioApp, NEWIO_API_BASE_URL, NEWIO_WS_URL } from '@newio/sdk';
+import type { IncomingMessage } from '@newio/sdk';
 import type { AgentConfigManager } from '../agent-config-manager';
 import type { AgentRuntimeStatus, AgentConfig } from '../types';
 import { DEFAULT_SESSION_IDLE_TIMEOUT_MS } from '../types';
 import type { AgentInstance, AgentInstanceListener } from './agent-instance';
 import type { AgentSession } from '../agent-session';
 import type { SessionStore } from '../session-store';
-import { NewioApp } from '../newio-app';
-import type { IncomingMessage } from '../newio-app';
 import { MessageQueue } from './message-queue';
 import { Logger } from '../logger';
+import WebSocket from 'ws';
 
 const log = new Logger('base-agent-instance');
 
@@ -61,6 +61,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
         agentId: this.config.newioAgentId,
         username: this.config.newioUsername,
         name: this.config.name,
+        apiBaseUrl: NEWIO_API_BASE_URL,
+        wsUrl: NEWIO_WS_URL,
+        wsFactory: (url) => new WebSocket(url) as never,
         tokens: storedTokens,
         signal: abortController.signal,
         onApprovalUrl: (url) => {

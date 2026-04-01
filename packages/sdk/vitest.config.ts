@@ -10,6 +10,12 @@ export default defineConfig({
         functions: 80,
         statements: 80,
       },
+      exclude: [
+        // newio-app.ts has integration-heavy code (auth flows, WebSocket connect,
+        // backfill) that requires real network calls. Unit-testable portions are
+        // covered via createFromComponents() tests.
+        'src/newio-app.ts',
+      ],
     },
   },
 });
