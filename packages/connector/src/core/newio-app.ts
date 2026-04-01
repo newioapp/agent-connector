@@ -72,7 +72,7 @@ export class NewioApp {
   /** conversationId → ConversationListItem */
   private readonly conversations = new Map<string, ConversationListItem>();
   /** conversationId → MemberRecord[] (lazily populated) */
-  private readonly conversationMembers = new Map<string, MemberRecord[]>();
+  private readonly conversationMembers = new Map<string, Map<string, MemberRecord>>();
   /** conversationId → next sequenceNumber */
   private readonly sequenceNumbers = new Map<string, number>();
   /** conversationId → notification preference (missing = 'all') */
@@ -316,10 +316,10 @@ export class NewioApp {
   async getMembers(conversationId: string): Promise<MemberRecord[]> {
     const cached = this.conversationMembers.get(conversationId);
     if (cached) {
-      return cached;
+      return [...cached.values()];
     }
     const resp = await this.client.getConversation({ conversationId });
-    this.conversationMembers.set(conversationId, [...resp.members]);
+    this.setMembers(conversationId, resp.members);
     return [...resp.members];
   }
 
@@ -347,7 +347,7 @@ export class NewioApp {
       name: resp.name,
       lastMessageAt: resp.lastMessageAt,
     });
-    this.conversationMembers.set(resp.conversationId, [...resp.members]);
+    this.setMembers(resp.conversationId, resp.members);
     return resp.conversationId;
   }
 
@@ -365,7 +365,7 @@ export class NewioApp {
       name: resp.name,
       lastMessageAt: resp.lastMessageAt,
     });
-    this.conversationMembers.set(resp.conversationId, [...resp.members]);
+    this.setMembers(resp.conversationId, resp.members);
     return resp.conversationId;
   }
 
@@ -504,7 +504,18 @@ Response rules:
         avatarUrl: conv.avatarUrl,
         lastMessageAt: conv.lastMessageAt,
       });
-      this.conversationMembers.set(conversationId, [...conv.members]);
+      this.setMembers(conversationId, conv.members);
+
+      // Refresh agent's own membership state
+      const self = conv.members.find((m) => m.userId === this.identity.userId);
+      if (self) {
+        if (self.notifyLevel) {
+          this.notifyLevels.set(conversationId, self.notifyLevel);
+        }
+        if (self.sessionId) {
+          this.sessionIds.set(conversationId, self.sessionId);
+        }
+      }
     } catch (err: unknown) {
       log.warn(`Failed to load conversation ${conversationId}`, err);
     }
@@ -538,6 +549,14 @@ Response rules:
     const next = current + 1;
     this.sequenceNumbers.set(conversationId, next);
     return next;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Internal — member cache
+  // ---------------------------------------------------------------------------
+
+  private setMembers(conversationId: string, members: readonly MemberRecord[]): void {
+    this.conversationMembers.set(conversationId, new Map(members.map((m) => [m.userId, m])));
   }
 
   // ---------------------------------------------------------------------------
@@ -577,7 +596,9 @@ Response rules:
       // Update existing member cache
       const cached = this.conversationMembers.get(conversationId);
       if (cached) {
-        cached.push(...added);
+        for (const m of added) {
+          cached.set(m.userId, m);
+        }
       }
 
       // If this agent wasn't among the added members, nothing else to do
@@ -597,12 +618,9 @@ Response rules:
     });
 
     this.ws.on('conversation.member_removed', (event) => {
-      const members = this.conversationMembers.get(event.payload.conversationId);
-      if (members) {
-        const idx = members.findIndex((m) => m.userId === event.payload.targetUserId);
-        if (idx !== -1) {
-          members.splice(idx, 1);
-        }
+      const cached = this.conversationMembers.get(event.payload.conversationId);
+      if (cached) {
+        cached.delete(event.payload.targetUserId);
       }
       if (event.payload.targetUserId === this.identity.userId) {
         this.conversations.delete(event.payload.conversationId);
