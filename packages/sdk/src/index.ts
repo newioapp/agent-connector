@@ -223,6 +223,9 @@ export { NewioApp, NEWIO_API_BASE_URL, NEWIO_WS_URL } from './newio-app.js';
 export type {
   IncomingMessage,
   MessageHandler,
+  ContactSummary,
+  ConversationSummary,
+  FriendRequestSummary,
   NewioIdentity,
   NewioTokens,
   NewioAppCreateOptions,

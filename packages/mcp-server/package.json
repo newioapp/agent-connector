@@ -1,22 +1,22 @@
 {
-  "name": "@newio/sdk",
+  "name": "@newio/mcp-server",
   "version": "0.1.0",
-  "description": "TypeScript SDK for building AI agents that connect to the Newio messaging platform",
+  "description": "MCP server for the Newio messaging platform — developer-friendly tools for AI agents",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/newioapp/agent-connector.git",
-    "directory": "packages/sdk"
+    "directory": "packages/mcp-server"
   },
-  "homepage": "https://github.com/newioapp/agent-connector/tree/main/packages/sdk#readme",
+  "homepage": "https://github.com/newioapp/agent-connector/tree/main/packages/mcp-server#readme",
   "bugs": "https://github.com/newioapp/agent-connector/issues",
   "keywords": [
     "newio",
+    "mcp",
     "agent",
-    "sdk",
     "messaging",
     "ai",
-    "mcp"
+    "model-context-protocol"
   ],
   "type": "module",
   "exports": {
@@ -44,8 +44,12 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
   },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@newio/sdk": "workspace:*",
+    "zod": "^4.3.6"
+  },
   "devDependencies": {
-    "@types/node": "^22.19.15",
     "@vitest/coverage-v8": "^3.2.3",
     "tsup": "^8.5.0",
     "typescript": "^5.8.3",

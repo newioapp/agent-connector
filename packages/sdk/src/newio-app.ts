@@ -16,9 +16,11 @@ import type {
   AccountType,
   NotifyLevel,
   ActivityStatus,
+  Attachment,
   ContactRecord,
   ConversationListItem,
   MemberRecord,
+  MessageContent,
   MessageRecord,
   ConversationType,
 } from './types.js';
@@ -56,6 +58,29 @@ export interface IncomingMessage {
 /** Callback for incoming messages. */
 export type MessageHandler = (message: IncomingMessage) => void;
 
+/** Agent-friendly contact summary (no UUIDs). */
+export interface ContactSummary {
+  readonly username: string | undefined;
+  readonly displayName: string | undefined;
+  readonly accountType: AccountType;
+}
+
+/** Agent-friendly conversation summary. */
+export interface ConversationSummary {
+  readonly conversationId: string;
+  readonly type: ConversationType;
+  readonly name: string | undefined;
+  readonly lastMessageAt: string | undefined;
+}
+
+/** Agent-friendly incoming friend request. */
+export interface FriendRequestSummary {
+  readonly username: string | undefined;
+  readonly displayName: string | undefined;
+  readonly accountType: AccountType;
+  readonly note: string | undefined;
+}
+
 /** The agent's Newio identity (populated after auth). */
 export interface NewioIdentity {
   readonly userId: string;
@@ -92,6 +117,8 @@ export interface NewioAppCreateOptions {
   readonly onTokens?: (tokens: NewioTokens) => void;
   /** Abort signal to cancel the auth flow. */
   readonly signal?: AbortSignal;
+  /** Directory for downloaded attachments (default: `./newio-downloads`). */
+  readonly downloadDir?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -131,11 +158,21 @@ export class NewioApp {
 
   private messageHandler: MessageHandler | null = null;
 
-  private constructor(identity: NewioIdentity, auth: AuthManager, client: NewioClient, ws: NewioWebSocket) {
+  /** Directory for downloaded attachments. */
+  private readonly downloadDir: string;
+
+  private constructor(
+    identity: NewioIdentity,
+    auth: AuthManager,
+    client: NewioClient,
+    ws: NewioWebSocket,
+    downloadDir?: string,
+  ) {
     this.identity = identity;
     this.auth = auth;
     this.client = client;
     this.ws = ws;
+    this.downloadDir = downloadDir ?? './newio-downloads';
   }
 
   /**
@@ -204,7 +241,7 @@ export class NewioApp {
     });
     await ws.connect();
 
-    const app = new NewioApp(identity, auth, client, ws);
+    const app = new NewioApp(identity, auth, client, ws, opts.downloadDir);
     await app.loadData();
     app.wireEvents();
     return app;
@@ -274,6 +311,88 @@ export class NewioApp {
     await this.sendMessage(conversationId, text);
   }
 
+  /**
+   * Send a message with optional file attachments.
+   * Accepts local file paths — handles upload to S3 automatically.
+   */
+  async sendMessageWithAttachments(conversationId: string, text: string, filePaths?: readonly string[]): Promise<void> {
+    const attachments = filePaths ? await this.uploadFiles(filePaths) : undefined;
+    const content: MessageContent = {
+      text: text || undefined,
+      attachments: attachments && attachments.length > 0 ? attachments : undefined,
+    };
+    const seq = this.nextSequenceNumber(conversationId);
+    await this.client.sendMessage({ conversationId, content, sequenceNumber: seq });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Contacts — high-level (username-based)
+  // ---------------------------------------------------------------------------
+
+  /** Send a friend request by username. */
+  async sendFriendRequestByUsername(username: string, note?: string): Promise<void> {
+    const userId = await this.resolveUsername(username);
+    await this.client.sendFriendRequest({ contactId: userId, note });
+  }
+
+  /** List incoming friend requests as agent-friendly summaries. */
+  async listIncomingFriendRequests(): Promise<readonly FriendRequestSummary[]> {
+    const all = await this.fetchIncomingRequests();
+    return all.map((r) => ({
+      username: r.friendUsername,
+      displayName: r.friendDisplayName,
+      accountType: r.friendAccountType,
+      note: r.note,
+    }));
+  }
+
+  /** Accept an incoming friend request by the sender's username. */
+  async acceptFriendRequestByUsername(username: string): Promise<void> {
+    const request = await this.findIncomingRequestByUsername(username);
+    await this.client.acceptFriendRequest({ requestId: request.contactId });
+    this.indexContact(request);
+  }
+
+  /** Reject an incoming friend request by the sender's username. */
+  async rejectFriendRequestByUsername(username: string): Promise<void> {
+    const request = await this.findIncomingRequestByUsername(username);
+    await this.client.rejectFriendRequest({ requestId: request.contactId });
+  }
+
+  /** Remove a friend by username. */
+  async removeFriendByUsername(username: string): Promise<void> {
+    const userId = await this.resolveUsername(username);
+    await this.client.removeFriend({ userId });
+    this.removeContact(userId);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Media — local file management
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Download a message attachment to a local directory.
+   * Files are organized as: `<downloadDir>/<conversationId>/<timestamp>-<fileName>`
+   * Returns the local file path.
+   */
+  async downloadAttachment(conversationId: string, s3Key: string, fileName: string): Promise<string> {
+    const fsPromises = await import('fs/promises');
+    const pathMod = await import('path');
+
+    const dir = pathMod.join(this.downloadDir, conversationId);
+    await fsPromises.mkdir(dir, { recursive: true });
+
+    const { url } = await this.client.getDownloadUrl({ conversationId, s3Key });
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      throw new Error(`Download failed: ${String(resp.status)}`);
+    }
+    const buffer = Buffer.from(await resp.arrayBuffer());
+    const filePath = pathMod.join(dir, `${Date.now()}-${fileName}`);
+    await fsPromises.writeFile(filePath, buffer);
+    return filePath;
+  }
+
   // ---------------------------------------------------------------------------
   // Lookups
   // ---------------------------------------------------------------------------
@@ -303,14 +422,23 @@ export class NewioApp {
     return this.conversations.get(conversationId);
   }
 
-  /** Get all conversations. */
-  getAllConversations(): ConversationListItem[] {
-    return [...this.conversations.values()];
+  /** Get all conversations as agent-friendly summaries. */
+  getAllConversations(): ConversationSummary[] {
+    return [...this.conversations.values()].map((c) => ({
+      conversationId: c.conversationId,
+      type: c.type,
+      name: c.name,
+      lastMessageAt: c.lastMessageAt,
+    }));
   }
 
-  /** Get all contacts. */
-  getAllContacts(): ContactRecord[] {
-    return [...this.contacts.values()];
+  /** Get all contacts as agent-friendly summaries. */
+  getAllContacts(): ContactSummary[] {
+    return [...this.contacts.values()].map((c) => ({
+      username: c.friendUsername,
+      displayName: c.friendDisplayName,
+      accountType: c.friendAccountType,
+    }));
   }
 
   /** Get recent cached messages for a conversation, sorted oldest-first. */
@@ -381,6 +509,23 @@ export class NewioApp {
     const resp = await this.client.createConversation({
       type: 'group' as ConversationType,
       name,
+      memberIds,
+    });
+    this.conversations.set(resp.conversationId, {
+      conversationId: resp.conversationId,
+      type: resp.type,
+      name: resp.name,
+      lastMessageAt: resp.lastMessageAt,
+    });
+    this.setMembers(resp.conversationId, resp.members);
+    return resp.conversationId;
+  }
+
+  /** Create a work session (temp_group) conversation. */
+  async createWorkSession(memberUsernames: readonly string[]): Promise<string> {
+    const memberIds = await Promise.all(memberUsernames.map((u) => this.resolveUsername(u)));
+    const resp = await this.client.createConversation({
+      type: 'temp_group' as ConversationType,
       memberIds,
     });
     this.conversations.set(resp.conversationId, {
@@ -580,6 +725,73 @@ Response rules:
 
   private setMembers(conversationId: string, members: readonly MemberRecord[]): void {
     this.conversationMembers.set(conversationId, new Map(members.map((m) => [m.userId, m])));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Internal — friend request lookup
+  // ---------------------------------------------------------------------------
+
+  private async findIncomingRequestByUsername(username: string): Promise<ContactRecord> {
+    const requests = await this.fetchIncomingRequests();
+    const match = requests.find((r) => r.friendUsername?.toLowerCase() === username.toLowerCase());
+    if (!match) {
+      throw new Error(`No incoming friend request from @${username}`);
+    }
+    return match;
+  }
+
+  private async fetchIncomingRequests(): Promise<ContactRecord[]> {
+    const all: ContactRecord[] = [];
+    let cursor: string | undefined;
+    do {
+      const resp = await this.client.listIncomingRequests({ cursor, limit: 100 });
+      all.push(...resp.requests);
+      cursor = resp.cursor;
+    } while (cursor);
+    return all;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Internal — file upload
+  // ---------------------------------------------------------------------------
+
+  private async uploadFiles(filePaths: readonly string[]): Promise<Attachment[]> {
+    const fsPromises = await import('fs/promises');
+    const pathMod = await import('path');
+
+    const mimeTypes: Record<string, string> = {
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.pdf': 'application/pdf',
+      '.txt': 'text/plain',
+      '.md': 'text/markdown',
+      '.json': 'application/json',
+      '.csv': 'text/csv',
+    };
+
+    const attachments: Attachment[] = [];
+    for (const filePath of filePaths) {
+      const fileName = pathMod.basename(filePath);
+      const ext = pathMod.extname(filePath).toLowerCase();
+      const contentType = mimeTypes[ext] ?? 'application/octet-stream';
+      const data = await fsPromises.readFile(filePath);
+      const { s3Key } = await this.client.uploadFile({
+        fileName,
+        contentType,
+        body: data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
+      });
+      attachments.push({
+        type: contentType.startsWith('image/') ? 'image' : 'file',
+        s3Key,
+        fileName,
+        contentType,
+        size: data.byteLength,
+      });
+    }
+    return attachments;
   }
 
   // ---------------------------------------------------------------------------
