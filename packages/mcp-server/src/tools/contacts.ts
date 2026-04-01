@@ -1,7 +1,5 @@
 /**
- * Contacts tools — send/accept/reject friend requests, list friends.
- *
- * Uses username-based lookups where possible so agents don't need UUIDs.
+ * Contacts tools — thin MCP wrappers over NewioApp contact methods.
  */
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -15,7 +13,6 @@ export function registerContactsTools(server: McpServer, app: NewioApp): void {
   server.registerTool('list_friends', { description: 'List all friends (contacts) of this agent' }, () => {
     return json(
       app.getAllContacts().map((c) => ({
-        userId: c.contactId,
         username: c.friendUsername,
         displayName: c.friendDisplayName,
         accountType: c.friendAccountType,
@@ -27,11 +24,13 @@ export function registerContactsTools(server: McpServer, app: NewioApp): void {
     'send_friend_request',
     {
       description: 'Send a friend request to a user by username',
-      inputSchema: { username: z.string().describe('Username of the user to send a friend request to') },
+      inputSchema: {
+        username: z.string().describe('Username of the user to send a friend request to'),
+        note: z.string().optional().describe('Optional note to include with the request'),
+      },
     },
-    async ({ username }) => {
-      const userId = await app.resolveUsername(username);
-      await app.client.sendFriendRequest({ contactId: userId });
+    async ({ username, note }) => {
+      await app.sendFriendRequestByUsername(username, note);
       return text(`Friend request sent to @${username}`);
     },
   );
@@ -40,32 +39,39 @@ export function registerContactsTools(server: McpServer, app: NewioApp): void {
     'list_incoming_friend_requests',
     { description: 'List pending incoming friend requests' },
     async () => {
-      const resp = await app.client.listIncomingRequests({});
-      return json(resp.requests);
+      const requests = await app.listIncomingFriendRequests();
+      return json(
+        requests.map((r) => ({
+          username: r.friendUsername,
+          displayName: r.friendDisplayName,
+          accountType: r.friendAccountType,
+          note: r.note,
+        })),
+      );
     },
   );
 
   server.registerTool(
     'accept_friend_request',
     {
-      description: 'Accept a pending incoming friend request',
-      inputSchema: { requestId: z.string().describe('The request ID to accept') },
+      description: 'Accept a pending incoming friend request by username',
+      inputSchema: { username: z.string().describe('Username of the person who sent the request') },
     },
-    async ({ requestId }) => {
-      await app.client.acceptFriendRequest({ requestId });
-      return text('Friend request accepted');
+    async ({ username }) => {
+      await app.acceptFriendRequestByUsername(username);
+      return text(`Friend request from @${username} accepted`);
     },
   );
 
   server.registerTool(
     'reject_friend_request',
     {
-      description: 'Reject a pending incoming friend request',
-      inputSchema: { requestId: z.string().describe('The request ID to reject') },
+      description: 'Reject a pending incoming friend request by username',
+      inputSchema: { username: z.string().describe('Username of the person who sent the request') },
     },
-    async ({ requestId }) => {
-      await app.client.rejectFriendRequest({ requestId });
-      return text('Friend request rejected');
+    async ({ username }) => {
+      await app.rejectFriendRequestByUsername(username);
+      return text(`Friend request from @${username} rejected`);
     },
   );
 
@@ -76,8 +82,7 @@ export function registerContactsTools(server: McpServer, app: NewioApp): void {
       inputSchema: { username: z.string().describe('Username of the friend to remove') },
     },
     async ({ username }) => {
-      const userId = await app.resolveUsername(username);
-      await app.client.removeFriend({ userId });
+      await app.removeFriendByUsername(username);
       return text(`Removed @${username} from friends`);
     },
   );

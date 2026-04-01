@@ -1,7 +1,5 @@
 /**
- * Conversations tools — create DMs/groups, list conversations, manage members.
- *
- * Uses username-based lookups so agents work with usernames, not UUIDs.
+ * Conversations tools — thin MCP wrappers over NewioApp conversation methods.
  */
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -24,29 +22,26 @@ export function registerConversationsTools(server: McpServer, app: NewioApp): vo
   });
 
   server.registerTool(
-    'create_dm',
+    'create_conversation',
     {
-      description: 'Create or get a direct message conversation with a user by username',
-      inputSchema: { username: z.string().describe('Username of the user to DM') },
-    },
-    async ({ username }) => {
-      const userId = await app.resolveUsername(username);
-      const conversationId = await app.findOrCreateDm(userId);
-      return json({ conversationId });
-    },
-  );
-
-  server.registerTool(
-    'create_group',
-    {
-      description: 'Create a group conversation with multiple users',
+      description:
+        'Create a conversation. For DM: provide one username. For group: provide multiple usernames and a name.',
       inputSchema: {
-        name: z.string().describe('Group name'),
-        usernames: z.array(z.string()).describe('Usernames of users to add to the group'),
+        usernames: z.array(z.string()).describe('Usernames of users to include'),
+        name: z.string().optional().describe('Group name (required for groups, omit for DMs)'),
       },
     },
-    async ({ name, usernames }) => {
-      const conversationId = await app.createGroup(name, usernames);
+    async ({ usernames, name }) => {
+      let conversationId: string;
+      if (usernames.length === 1 && !name) {
+        const userId = await app.resolveUsername(usernames[0] ?? '');
+        conversationId = await app.findOrCreateDm(userId);
+      } else {
+        if (!name) {
+          return text('Group conversations require a name');
+        }
+        conversationId = await app.createGroup(name, usernames);
+      }
       return json({ conversationId });
     },
   );

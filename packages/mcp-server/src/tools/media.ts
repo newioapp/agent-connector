@@ -1,26 +1,27 @@
 /**
- * Media tools — get download URLs for message attachments.
+ * Media tools — download attachments to local directory.
  */
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NewioApp } from '@newio/sdk';
 
-const json = (obj: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(obj, null, 2) }] });
+const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 
 /** Register media tools on the MCP server. */
 export function registerMediaTools(server: McpServer, app: NewioApp): void {
   server.registerTool(
-    'get_download_url',
+    'download_attachment',
     {
-      description: 'Get a signed download URL for a message attachment',
+      description: 'Download a message attachment to a local file and return the file path',
       inputSchema: {
         conversationId: z.string().describe('Conversation ID the attachment belongs to'),
         s3Key: z.string().describe('The s3Key from the message attachment'),
+        fileName: z.string().describe('The fileName from the message attachment'),
       },
     },
-    async ({ conversationId, s3Key }) => {
-      const resp = await app.client.getDownloadUrl({ conversationId, s3Key });
-      return json(resp);
+    async ({ conversationId, s3Key, fileName }) => {
+      const localPath = await app.downloadAttachment(conversationId, s3Key, fileName);
+      return text(localPath);
     },
   );
 }

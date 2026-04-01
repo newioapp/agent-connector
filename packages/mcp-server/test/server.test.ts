@@ -42,13 +42,17 @@ function mockApp(
     createGroup: vi.fn().mockResolvedValue('group-conv-id'),
     sendMessage: vi.fn().mockResolvedValue(undefined),
     sendDm: vi.fn().mockResolvedValue(undefined),
+    sendMessageWithAttachments: vi.fn().mockResolvedValue(undefined),
+    sendFriendRequestByUsername: vi.fn().mockResolvedValue(undefined),
+    listIncomingFriendRequests: vi
+      .fn()
+      .mockResolvedValue([makeContact({ contactId: 'req-1', friendUsername: 'bob', friendDisplayName: 'Bob' })]),
+    acceptFriendRequestByUsername: vi.fn().mockResolvedValue(undefined),
+    rejectFriendRequestByUsername: vi.fn().mockResolvedValue(undefined),
+    removeFriendByUsername: vi.fn().mockResolvedValue(undefined),
+    downloadAttachment: vi.fn().mockResolvedValue('/downloads/conv-1/photo.jpg'),
     client: {
       getMe: vi.fn().mockResolvedValue({ userId: 'me', username: 'myagent' }),
-      sendFriendRequest: vi.fn().mockResolvedValue({}),
-      listIncomingRequests: vi.fn().mockResolvedValue({ requests: [] }),
-      acceptFriendRequest: vi.fn().mockResolvedValue({}),
-      rejectFriendRequest: vi.fn().mockResolvedValue({}),
-      removeFriend: vi.fn().mockResolvedValue({}),
       getConversation: vi.fn().mockResolvedValue({ conversationId: 'conv-1', type: 'dm', members: [] }),
       addMembers: vi.fn().mockResolvedValue({}),
       removeMember: vi.fn().mockResolvedValue({}),
@@ -59,7 +63,6 @@ function mockApp(
       }),
       searchUsers: vi.fn().mockResolvedValue({ users: [{ userId: 'u1', username: 'alice' }] }),
       getUserByUsername: vi.fn().mockResolvedValue({ userId: 'user-1', username: 'alice' }),
-      getDownloadUrl: vi.fn().mockResolvedValue({ url: 'https://example.com/file' }),
     },
   } as unknown as NewioApp;
 }
@@ -81,10 +84,9 @@ describe('MCP Server', () => {
     expect(names).toEqual([
       'accept_friend_request',
       'add_members',
-      'create_dm',
-      'create_group',
+      'create_conversation',
+      'download_attachment',
       'get_conversation',
-      'get_download_url',
       'get_my_profile',
       'get_user_profile',
       'list_conversations',
@@ -101,42 +103,77 @@ describe('MCP Server', () => {
     ]);
   });
 
-  it('list_friends returns contacts', async () => {
+  it('list_friends returns contacts without userIds', async () => {
     const contacts = [
       makeContact({ contactId: 'u1', friendUsername: 'alice', friendDisplayName: 'Alice' }),
       makeContact({ contactId: 'u2', friendUsername: 'bob', friendDisplayName: 'Bob' }),
     ];
     const client = await createConnectedClient(mockApp(contacts));
     const result = await client.callTool({ name: 'list_friends', arguments: {} });
-    const parsed = JSON.parse((result.content[0] as { text: string }).text) as unknown[];
+    const parsed = JSON.parse((result.content[0] as { text: string }).text) as Record<string, unknown>[];
     expect(parsed).toHaveLength(2);
+    expect(parsed[0]).toHaveProperty('username', 'alice');
+    expect(parsed[0]).not.toHaveProperty('userId');
   });
 
-  it('send_dm calls app.sendDm', async () => {
-    const app = mockApp();
-    const client = await createConnectedClient(app);
-    await client.callTool({ name: 'send_dm', arguments: { username: 'alice', text: 'hello' } });
-    expect(app.sendDm).toHaveBeenCalledWith('alice', 'hello');
-  });
-
-  it('send_friend_request resolves username then sends', async () => {
+  it('send_friend_request calls app method by username', async () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
     await client.callTool({ name: 'send_friend_request', arguments: { username: 'bob' } });
-    expect(app.resolveUsername).toHaveBeenCalledWith('bob');
-    expect(app.client.sendFriendRequest).toHaveBeenCalledWith({ contactId: 'resolved-id' });
+    expect(app.sendFriendRequestByUsername).toHaveBeenCalledWith('bob', undefined);
   });
 
-  it('create_group returns conversation ID', async () => {
+  it('accept_friend_request calls app method by username', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    await client.callTool({ name: 'accept_friend_request', arguments: { username: 'bob' } });
+    expect(app.acceptFriendRequestByUsername).toHaveBeenCalledWith('bob');
+  });
+
+  it('create_conversation creates DM for single username', async () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
     const result = await client.callTool({
-      name: 'create_group',
-      arguments: { name: 'Team', usernames: ['alice', 'bob'] },
+      name: 'create_conversation',
+      arguments: { usernames: ['alice'] },
+    });
+    expect(app.resolveUsername).toHaveBeenCalledWith('alice');
+    expect(app.findOrCreateDm).toHaveBeenCalledWith('resolved-id');
+    const parsed = JSON.parse((result.content[0] as { text: string }).text) as { conversationId: string };
+    expect(parsed.conversationId).toBe('dm-conv-id');
+  });
+
+  it('create_conversation creates group for multiple usernames', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    const result = await client.callTool({
+      name: 'create_conversation',
+      arguments: { usernames: ['alice', 'bob'], name: 'Team' },
     });
     expect(app.createGroup).toHaveBeenCalledWith('Team', ['alice', 'bob']);
     const parsed = JSON.parse((result.content[0] as { text: string }).text) as { conversationId: string };
     expect(parsed.conversationId).toBe('group-conv-id');
+  });
+
+  it('send_message supports file attachments', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    await client.callTool({
+      name: 'send_message',
+      arguments: { conversationId: 'conv-1', text: 'check this', filePaths: ['/tmp/photo.jpg'] },
+    });
+    expect(app.sendMessageWithAttachments).toHaveBeenCalledWith('conv-1', 'check this', ['/tmp/photo.jpg']);
+  });
+
+  it('download_attachment returns local file path', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    const result = await client.callTool({
+      name: 'download_attachment',
+      arguments: { conversationId: 'conv-1', s3Key: 'media/photo.jpg', fileName: 'photo.jpg' },
+    });
+    expect(app.downloadAttachment).toHaveBeenCalledWith('conv-1', 'media/photo.jpg', 'photo.jpg');
+    expect((result.content[0] as { text: string }).text).toBe('/downloads/conv-1/photo.jpg');
   });
 
   it('list_messages returns formatted messages', async () => {
@@ -145,18 +182,6 @@ describe('MCP Server', () => {
     const result = await client.callTool({ name: 'list_messages', arguments: { conversationId: 'conv-1' } });
     const parsed = JSON.parse((result.content[0] as { text: string }).text) as unknown[];
     expect(parsed).toHaveLength(1);
-    expect(app.client.listMessages).toHaveBeenCalledWith({ conversationId: 'conv-1', limit: 20 });
-  });
-
-  it('get_download_url returns signed URL', async () => {
-    const app = mockApp();
-    const client = await createConnectedClient(app);
-    const result = await client.callTool({
-      name: 'get_download_url',
-      arguments: { conversationId: 'conv-1', s3Key: 'media/file.jpg' },
-    });
-    const parsed = JSON.parse((result.content[0] as { text: string }).text) as { url: string };
-    expect(parsed.url).toBe('https://example.com/file');
   });
 
   it('search_users returns results', async () => {

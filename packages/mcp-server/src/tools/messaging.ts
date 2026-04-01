@@ -1,5 +1,5 @@
 /**
- * Messaging tools — send messages, list messages.
+ * Messaging tools — thin MCP wrappers over NewioApp messaging methods.
  */
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -13,14 +13,15 @@ export function registerMessagingTools(server: McpServer, app: NewioApp): void {
   server.registerTool(
     'send_message',
     {
-      description: 'Send a text message to a conversation',
+      description: 'Send a message to a conversation, optionally with file attachments (max 5)',
       inputSchema: {
         conversationId: z.string().describe('Conversation ID to send the message to'),
         text: z.string().describe('Message text (supports markdown)'),
+        filePaths: z.array(z.string()).max(5).optional().describe('Optional local file paths to attach (max 5)'),
       },
     },
-    async ({ conversationId, text: msgText }) => {
-      await app.sendMessage(conversationId, msgText);
+    async ({ conversationId, text: msgText, filePaths }) => {
+      await app.sendMessageWithAttachments(conversationId, msgText, filePaths);
       return text('Message sent');
     },
   );
@@ -28,14 +29,18 @@ export function registerMessagingTools(server: McpServer, app: NewioApp): void {
   server.registerTool(
     'send_dm',
     {
-      description: 'Send a direct message to a user by username (creates the DM if needed)',
+      description:
+        'Send a direct message to a user by username (creates the DM if needed), optionally with attachments',
       inputSchema: {
         username: z.string().describe('Username of the recipient'),
         text: z.string().describe('Message text (supports markdown)'),
+        filePaths: z.array(z.string()).max(5).optional().describe('Optional local file paths to attach (max 5)'),
       },
     },
-    async ({ username, text: msgText }) => {
-      await app.sendDm(username, msgText);
+    async ({ username, text: msgText, filePaths }) => {
+      const userId = await app.resolveUsername(username);
+      const conversationId = await app.findOrCreateDm(userId);
+      await app.sendMessageWithAttachments(conversationId, msgText, filePaths);
       return text(`DM sent to @${username}`);
     },
   );
@@ -60,7 +65,12 @@ export function registerMessagingTools(server: McpServer, app: NewioApp): void {
         messageId: m.messageId,
         senderId: m.senderId,
         text: m.content.text,
-        attachments: m.content.attachments,
+        attachments: m.content.attachments?.map((a) => ({
+          fileName: a.fileName,
+          contentType: a.contentType,
+          size: a.size,
+          s3Key: a.s3Key,
+        })),
         createdAt: m.createdAt,
       }));
       return json(messages);
