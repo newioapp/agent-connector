@@ -68,7 +68,10 @@ export class KiroCliInstance extends BaseAgentInstance {
     }
 
     // Find or create DM with owner
-    const ownerDmConversationId = await this.app.findOrCreateDm(this.app.identity.ownerId);
+    const ownerDmConversationId = await this.app.getOwnerDmConversationId();
+    if (!ownerDmConversationId) {
+      return;
+    }
 
     // Get or create the session for the owner DM
     const session = await this.getOrCreateSession(ownerDmConversationId);

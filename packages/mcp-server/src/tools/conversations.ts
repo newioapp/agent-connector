@@ -21,8 +21,7 @@ export function registerConversationsTools(server: McpServer, app: NewioApp): vo
       inputSchema: { username: z.string().describe('Username of the user to DM') },
     },
     async ({ username }) => {
-      const userId = await app.resolveUsername(username);
-      const conversationId = await app.findOrCreateDm(userId);
+      const conversationId = await app.findOrCreateDmByUsername(username);
       return json({ conversationId });
     },
   );
@@ -30,11 +29,14 @@ export function registerConversationsTools(server: McpServer, app: NewioApp): vo
   server.registerTool(
     'create_work_session',
     {
-      description: 'Create a temporary group conversation (work session) — no name, anyone can add members',
-      inputSchema: { usernames: z.array(z.string()).describe('Usernames of users to include') },
+      description: 'Create a temporary group conversation (work session) — anyone can add members',
+      inputSchema: {
+        name: z.string().describe('Work session name'),
+        usernames: z.array(z.string()).describe('Usernames of users to include'),
+      },
     },
-    async ({ usernames }) => {
-      const conversationId = await app.createWorkSession(usernames);
+    async ({ name, usernames }) => {
+      const conversationId = await app.createWorkSession(name, usernames);
       return json({ conversationId });
     },
   );

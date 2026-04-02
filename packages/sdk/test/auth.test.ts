@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { AuthManager, InMemoryTokenStore } from '../src/auth.js';
-import { ApprovalTimeoutError, TokenRefreshError } from '../src/errors.js';
+import { AuthManager, InMemoryTokenStore } from '../src/core/auth.js';
+import { ApprovalTimeoutError, TokenRefreshError } from '../src/core/errors.js';
 
 // Helper: create a fake JWT with a given exp (seconds since epoch)
 function fakeJwt(exp: number): string {

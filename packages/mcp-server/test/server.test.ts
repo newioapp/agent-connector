@@ -15,7 +15,7 @@ function mockApp(
     getAllContacts: vi.fn().mockReturnValue(contacts),
     getAllConversations: vi.fn().mockReturnValue(conversations),
     resolveUsername: vi.fn().mockResolvedValue('resolved-id'),
-    findOrCreateDm: vi.fn().mockResolvedValue('dm-conv-id'),
+    findOrCreateDmByUsername: vi.fn().mockResolvedValue('dm-conv-id'),
     createGroup: vi.fn().mockResolvedValue('group-conv-id'),
     createWorkSession: vi.fn().mockResolvedValue('ws-conv-id'),
     sendMessage: vi.fn().mockResolvedValue(undefined),
@@ -116,20 +116,19 @@ describe('MCP Server', () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
     const result = await client.callTool({ name: 'create_dm', arguments: { username: 'alice' } });
-    expect(app.resolveUsername).toHaveBeenCalledWith('alice');
-    expect(app.findOrCreateDm).toHaveBeenCalledWith('resolved-id');
+    expect(app.findOrCreateDmByUsername).toHaveBeenCalledWith('alice');
     const parsed = JSON.parse((result.content[0] as { text: string }).text) as { conversationId: string };
     expect(parsed.conversationId).toBe('dm-conv-id');
   });
 
-  it('create_work_session creates temp_group', async () => {
+  it('create_work_session creates temp_group with name', async () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
     const result = await client.callTool({
       name: 'create_work_session',
-      arguments: { usernames: ['alice', 'bob'] },
+      arguments: { name: 'Sprint Planning', usernames: ['alice', 'bob'] },
     });
-    expect(app.createWorkSession).toHaveBeenCalledWith(['alice', 'bob']);
+    expect(app.createWorkSession).toHaveBeenCalledWith('Sprint Planning', ['alice', 'bob']);
     const parsed = JSON.parse((result.content[0] as { text: string }).text) as { conversationId: string };
     expect(parsed.conversationId).toBe('ws-conv-id');
   });
