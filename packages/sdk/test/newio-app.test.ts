@@ -121,9 +121,11 @@ describe('NewioApp', () => {
       const contact = makeContact({ contactId: 'user-alice', friendUsername: 'Alice' });
       const { app } = await createApp([contact]);
 
-      expect(app.getContact('user-alice')).toBeDefined();
-      expect(app.isContact('user-alice')).toBe(true);
+      expect(app.isContact('Alice')).toBe(true);
+      expect(app.isContact('alice')).toBe(true);
       expect(app.isContact('nonexistent')).toBe(false);
+      expect(app.getContact('alice')).toBeDefined();
+      expect(app.getContact('alice')?.username).toBe('Alice');
     });
   });
 
@@ -278,7 +280,7 @@ describe('NewioApp', () => {
     it('updates contacts on friend accepted', async () => {
       const { app } = await createApp();
 
-      expect(app.isContact('new-friend')).toBe(false);
+      expect(app.isContact('newfriend')).toBe(false);
 
       eventHandlers.get('contact.request_accepted')?.({
         type: 'contact.request_accepted',
@@ -286,14 +288,14 @@ describe('NewioApp', () => {
         payload: { contact: makeContact({ contactId: 'new-friend', friendUsername: 'newfriend' }) },
       });
 
-      expect(app.isContact('new-friend')).toBe(true);
+      expect(app.isContact('newfriend')).toBe(true);
     });
 
     it('removes contacts on friend removed', async () => {
       const contact = makeContact({ contactId: 'user-alice', friendUsername: 'alice' });
       const { app } = await createApp([contact]);
 
-      expect(app.isContact('user-alice')).toBe(true);
+      expect(app.isContact('alice')).toBe(true);
 
       eventHandlers.get('contact.removed')?.({
         type: 'contact.removed',
@@ -301,7 +303,7 @@ describe('NewioApp', () => {
         payload: { userId: 'me', contactId: 'user-alice' },
       });
 
-      expect(app.isContact('user-alice')).toBe(false);
+      expect(app.isContact('alice')).toBe(false);
     });
 
     it('adds new conversations', async () => {

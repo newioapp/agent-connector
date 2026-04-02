@@ -70,6 +70,8 @@ export class NewioAppStore {
   private readonly sessionIds = new Map<string, string>();
   /** conversationId → ULID-sorted message list (recent cache, evicted by TTL) */
   private readonly messageCache = new Map<string, IncomingMessage[]>();
+  /** contactId → pending incoming friend request */
+  private readonly incomingRequests = new Map<string, ContactRecord>();
 
   private readonly persistence: StorePersistence | undefined;
 
@@ -151,11 +153,6 @@ export class NewioAppStore {
   /** Check if a conversation exists. */
   hasConversation(conversationId: string): boolean {
     return this.conversations.has(conversationId);
-  }
-
-  /** Iterate over all conversations. */
-  allConversations(): IterableIterator<ConversationListItem> {
-    return this.conversations.values();
   }
 
   /** Get all conversations (raw records). */
@@ -240,6 +237,35 @@ export class NewioAppStore {
   /** Set the notification level for a conversation. */
   setNotifyLevel(conversationId: string, level: NotifyLevel): void {
     this.notifyLevels.set(conversationId, level);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Incoming friend requests
+  // ---------------------------------------------------------------------------
+
+  /** Cache an incoming friend request. */
+  addIncomingRequest(request: ContactRecord): void {
+    this.incomingRequests.set(request.contactId, request);
+  }
+
+  /** Remove an incoming friend request (accepted/rejected/revoked). */
+  removeIncomingRequest(contactId: string): void {
+    this.incomingRequests.delete(contactId);
+  }
+
+  /** Get all cached incoming friend requests. */
+  getIncomingRequests(): ContactRecord[] {
+    return [...this.incomingRequests.values()];
+  }
+
+  /** Find an incoming request by username. */
+  findIncomingRequestByUsername(username: string): ContactRecord | undefined {
+    for (const r of this.incomingRequests.values()) {
+      if (r.friendUsername?.toLowerCase() === username.toLowerCase()) {
+        return r;
+      }
+    }
+    return undefined;
   }
 
   // ---------------------------------------------------------------------------

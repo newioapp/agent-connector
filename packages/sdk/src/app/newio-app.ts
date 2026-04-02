@@ -30,6 +30,7 @@ import type {
   ContactSummary,
   ConversationSummary,
   FriendRequestSummary,
+  MemberSummary,
   MessageHandler,
   NewioIdentity,
   NewioTokens,
@@ -41,6 +42,7 @@ export type {
   ContactSummary,
   ConversationSummary,
   FriendRequestSummary,
+  MemberSummary,
   MessageHandler,
   NewioIdentity,
   NewioTokens,
@@ -254,6 +256,14 @@ export class NewioApp {
     await this.sendMessage(conversationId, text);
   }
 
+  /** Get or create the DM conversation with the agent's owner. Returns undefined if no owner. */
+  async getOwnerDmConversationId(): Promise<string | undefined> {
+    if (!this.identity.ownerId) {
+      return undefined;
+    }
+    return this.findOrCreateDm(this.identity.ownerId);
+  }
+
   /** Send a DM by username. Creates the DM conversation if it doesn't exist. */
   async sendDm(username: string, text: string): Promise<void> {
     const userId = await this.resolveUsername(username);
@@ -287,8 +297,9 @@ export class NewioApp {
 
   /** List incoming friend requests as agent-friendly summaries. */
   async listIncomingFriendRequests(): Promise<readonly FriendRequestSummary[]> {
-    const all = await this.fetchIncomingRequests();
-    return all.map((r) => ({
+    // Backfill from API into store cache
+    await this.fetchIncomingRequests();
+    return this.store.getIncomingRequests().map((r) => ({
       username: r.friendUsername,
       displayName: r.friendDisplayName,
       accountType: r.friendAccountType,
@@ -300,6 +311,7 @@ export class NewioApp {
   async acceptFriendRequestByUsername(username: string): Promise<void> {
     const request = await this.findIncomingRequestByUsername(username);
     await this.client.acceptFriendRequest({ requestId: request.contactId });
+    this.store.removeIncomingRequest(request.contactId);
     this.store.indexContact(request);
   }
 
@@ -307,6 +319,7 @@ export class NewioApp {
   async rejectFriendRequestByUsername(username: string): Promise<void> {
     const request = await this.findIncomingRequestByUsername(username);
     await this.client.rejectFriendRequest({ requestId: request.contactId });
+    this.store.removeIncomingRequest(request.contactId);
   }
 
   /** Remove a friend by username. */
@@ -342,14 +355,23 @@ export class NewioApp {
     return user.userId;
   }
 
-  /** Check if a userId is in the contact (friend) list. */
-  isContact(userId: string): boolean {
-    return this.store.isContact(userId);
+  /** Check if a username is in the contact (friend) list. */
+  isContact(username: string): boolean {
+    const contactId = this.store.resolveUsernameFromCache(username);
+    return contactId !== undefined && this.store.isContact(contactId);
   }
 
-  /** Get a contact by userId. */
-  getContact(userId: string): ContactRecord | undefined {
-    return this.store.getContact(userId);
+  /** Get a contact summary by username. */
+  getContact(username: string): ContactSummary | undefined {
+    const contactId = this.store.resolveUsernameFromCache(username);
+    if (!contactId) {
+      return undefined;
+    }
+    const c = this.store.getContact(contactId);
+    if (!c) {
+      return undefined;
+    }
+    return { username: c.friendUsername, displayName: c.friendDisplayName, accountType: c.friendAccountType };
   }
 
   /** Get a conversation by ID. */
@@ -394,26 +416,36 @@ export class NewioApp {
     return this.store.getSessionId(conversationId) ?? conversationId;
   }
 
-  /** Get members of a conversation (fetches from API if not cached). */
-  async getMembers(conversationId: string): Promise<MemberRecord[]> {
-    const cached = this.store.getMembers(conversationId);
-    if (cached) {
-      return [...cached.values()];
-    }
-    const resp = await this.client.getConversation({ conversationId });
-    this.store.setMembers(conversationId, resp.members);
-    return [...resp.members];
+  /** Get members of a conversation as agent-friendly summaries. */
+  async getMembers(conversationId: string): Promise<MemberSummary[]> {
+    const members = await this.getMembersRaw(conversationId);
+    return members.map((m) => {
+      const contact = this.store.getContact(m.userId);
+      const isSelf = m.userId === this.identity.userId;
+      return {
+        username: isSelf ? this.identity.username : contact?.friendUsername,
+        displayName: isSelf ? this.identity.displayName : contact?.friendDisplayName,
+        accountType: m.accountType,
+        role: m.role,
+      };
+    });
   }
 
   // ---------------------------------------------------------------------------
   // Conversation helpers
   // ---------------------------------------------------------------------------
 
+  /** Find or create a DM by username. */
+  async findOrCreateDmByUsername(username: string): Promise<string> {
+    const userId = await this.resolveUsername(username);
+    return this.findOrCreateDm(userId);
+  }
+
   /** Find an existing DM with a user, or create one. */
-  async findOrCreateDm(userId: string): Promise<string> {
-    for (const conv of this.store.allConversations()) {
+  private async findOrCreateDm(userId: string): Promise<string> {
+    for (const conv of this.store.getAllConversations()) {
       if (conv.type === 'dm') {
-        const members = await this.getMembers(conv.conversationId);
+        const members = await this.getMembersRaw(conv.conversationId);
         if (members.some((m) => m.userId === userId)) {
           return conv.conversationId;
         }
@@ -452,10 +484,11 @@ export class NewioApp {
   }
 
   /** Create a work session (temp_group) conversation. */
-  async createWorkSession(memberUsernames: readonly string[]): Promise<string> {
+  async createWorkSession(name: string, memberUsernames: readonly string[]): Promise<string> {
     const memberIds = await Promise.all(memberUsernames.map((u) => this.resolveUsername(u)));
     const resp = await this.client.createConversation({
       type: 'temp_group' as ConversationType,
+      name,
       memberIds,
     });
     this.store.setConversation({
@@ -515,27 +548,43 @@ export class NewioApp {
   }
 
   // ---------------------------------------------------------------------------
-  // Internal — friend request helpers
+  // Internal — data fetching
   // ---------------------------------------------------------------------------
 
+  private async getMembersRaw(conversationId: string): Promise<MemberRecord[]> {
+    const cached = this.store.getMembers(conversationId);
+    if (cached) {
+      return [...cached.values()];
+    }
+    const resp = await this.client.getConversation({ conversationId });
+    this.store.setMembers(conversationId, resp.members);
+    return [...resp.members];
+  }
+
   private async findIncomingRequestByUsername(username: string): Promise<ContactRecord> {
-    const requests = await this.fetchIncomingRequests();
-    const match = requests.find((r) => r.friendUsername?.toLowerCase() === username.toLowerCase());
+    // Try store cache first
+    let match = this.store.findIncomingRequestByUsername(username);
+    if (match) {
+      return match;
+    }
+    // Backfill from API
+    await this.fetchIncomingRequests();
+    match = this.store.findIncomingRequestByUsername(username);
     if (!match) {
       throw new Error(`No incoming friend request from @${username}`);
     }
     return match;
   }
 
-  private async fetchIncomingRequests(): Promise<ContactRecord[]> {
-    const all: ContactRecord[] = [];
+  private async fetchIncomingRequests(): Promise<void> {
     let cursor: string | undefined;
     do {
       const resp = await this.client.listIncomingRequests({ cursor, limit: 100 });
-      all.push(...resp.requests);
+      for (const r of resp.requests) {
+        this.store.addIncomingRequest(r);
+      }
       cursor = resp.cursor;
     } while (cursor);
-    return all;
   }
 }
 

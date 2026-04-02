@@ -38,8 +38,7 @@ export function registerMessagingTools(server: McpServer, app: NewioApp): void {
       },
     },
     async ({ username, text: msgText, filePaths }) => {
-      const userId = await app.resolveUsername(username);
-      const conversationId = await app.findOrCreateDm(userId);
+      const conversationId = await app.findOrCreateDmByUsername(username);
       await app.sendMessageWithAttachments(conversationId, msgText, filePaths);
       return text(`DM sent to @${username}`);
     },

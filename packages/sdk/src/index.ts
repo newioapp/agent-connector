@@ -228,6 +228,7 @@ export type {
   ContactSummary,
   ConversationSummary,
   FriendRequestSummary,
+  MemberSummary,
   NewioIdentity,
   NewioTokens,
 } from './app/index.js';

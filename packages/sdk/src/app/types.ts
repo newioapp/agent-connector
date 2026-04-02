@@ -45,6 +45,14 @@ export interface FriendRequestSummary {
   readonly note: string | undefined;
 }
 
+/** Agent-friendly member summary. */
+export interface MemberSummary {
+  readonly username: string | undefined;
+  readonly displayName: string | undefined;
+  readonly accountType: string | undefined;
+  readonly role: string | undefined;
+}
+
 /** The agent's Newio identity (populated after auth). */
 export interface NewioIdentity {
   readonly userId: string;

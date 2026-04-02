@@ -81,8 +81,21 @@ export function wireEvents(
     }
   });
 
+  ws.on('contact.request_received', (event) => {
+    store.addIncomingRequest(event.payload.contact);
+  });
+
   ws.on('contact.request_accepted', (event) => {
+    store.removeIncomingRequest(event.payload.contact.contactId);
     store.indexContact(event.payload.contact);
+  });
+
+  ws.on('contact.request_rejected', (event) => {
+    store.removeIncomingRequest(event.payload.contactId);
+  });
+
+  ws.on('contact.request_revoked', (event) => {
+    store.removeIncomingRequest(event.payload.contactId);
   });
 
   ws.on('contact.removed', (event) => {

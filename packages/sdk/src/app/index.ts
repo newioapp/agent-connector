@@ -6,6 +6,7 @@ export type {
   ConversationSummary,
   FriendRequestSummary,
   MessageHandler,
+  MemberSummary,
   NewioIdentity,
   NewioTokens,
   StorePersistence,
