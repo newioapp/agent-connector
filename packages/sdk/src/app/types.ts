@@ -17,10 +17,29 @@ export interface IncomingMessage {
   readonly isOwnMessage: boolean;
   readonly text: string;
   readonly timestamp: string;
+  readonly status: 'new' | 'edited' | 'deleted';
 }
 
 /** Callback for incoming messages. */
 export type MessageHandler = (message: IncomingMessage) => void;
+
+/** Notification about a contact/friend-request event. */
+export interface ContactEventInfo {
+  readonly username: string | undefined;
+  readonly displayName: string | undefined;
+  readonly accountType: AccountType;
+  readonly note?: string | undefined;
+}
+
+/** Map of app-level event names to their handler signatures. */
+export interface AppEventHandlers {
+  'message.new': (message: IncomingMessage) => void;
+  'message.updated': (message: IncomingMessage) => void;
+  'message.deleted': (message: IncomingMessage) => void;
+  'contact.request_received': (info: ContactEventInfo) => void;
+  'contact.request_accepted': (info: ContactEventInfo) => void;
+  'contact.request_rejected': (username: string | undefined) => void;
+}
 
 /** Agent-friendly contact summary (no UUIDs). */
 export interface ContactSummary {

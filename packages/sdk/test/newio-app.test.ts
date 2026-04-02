@@ -72,6 +72,7 @@ function mockClient(contacts: ContactRecord[] = [], conversations: ConversationL
       members: [{ userId: 'me', joinedAt: '2026-01-01T00:00:00Z' }],
     }),
     listMessages: vi.fn().mockResolvedValue({ messages: [] }),
+    listIncomingRequests: vi.fn().mockResolvedValue({ requests: [] }),
   } as unknown as NewioClient;
 }
 

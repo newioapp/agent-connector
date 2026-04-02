@@ -225,6 +225,8 @@ export type { StorePersistence } from './app/index.js';
 export type {
   IncomingMessage,
   MessageHandler,
+  AppEventHandlers,
+  ContactEventInfo,
   ContactSummary,
   ConversationSummary,
   FriendRequestSummary,

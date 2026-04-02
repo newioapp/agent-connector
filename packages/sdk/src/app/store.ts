@@ -258,6 +258,26 @@ export class NewioAppStore {
     return [...this.incomingRequests.values()];
   }
 
+  /** Update fields on an existing contact record. */
+  updateContact(
+    contactId: string,
+    changes: Partial<Pick<ContactRecord, 'friendName' | 'friendDisplayName' | 'friendAvatarUrl' | 'friendUsername'>>,
+  ): void {
+    const existing = this.contacts.get(contactId);
+    if (!existing) {
+      return;
+    }
+    const updated: ContactRecord = { ...existing, ...changes };
+    if (changes.friendUsername && existing.friendUsername !== changes.friendUsername) {
+      if (existing.friendUsername) {
+        this.usernameToContactId.delete(existing.friendUsername.toLowerCase());
+      }
+      this.usernameToContactId.set(changes.friendUsername.toLowerCase(), contactId);
+    }
+    this.contacts.set(contactId, updated);
+    this.persistence?.saveContact(updated);
+  }
+
   /** Find an incoming request by username. */
   findIncomingRequestByUsername(username: string): ContactRecord | undefined {
     for (const r of this.incomingRequests.values()) {
@@ -302,6 +322,36 @@ export class NewioAppStore {
     return true;
   }
 
+  /** Update a cached message's text content. Returns the updated message, or undefined if not found. */
+  updateMessage(conversationId: string, messageId: string, text: string): IncomingMessage | undefined {
+    const messages = this.messageCache.get(conversationId);
+    if (!messages) {
+      return undefined;
+    }
+    const msg = messages.find((m) => m.messageId === messageId);
+    if (!msg) {
+      return undefined;
+    }
+    const updated: IncomingMessage = { ...msg, text, status: 'edited' };
+    messages[messages.indexOf(msg)] = updated;
+    return updated;
+  }
+
+  /** Mark a cached message as deleted. Returns the updated message, or undefined if not found. */
+  removeMessage(conversationId: string, messageId: string): IncomingMessage | undefined {
+    const messages = this.messageCache.get(conversationId);
+    if (!messages) {
+      return undefined;
+    }
+    const msg = messages.find((m) => m.messageId === messageId);
+    if (!msg) {
+      return undefined;
+    }
+    const updated: IncomingMessage = { ...msg, text: '', status: 'deleted' };
+    messages[messages.indexOf(msg)] = updated;
+    return updated;
+  }
+
   /** Get recent cached messages for a conversation, sorted oldest-first. */
   getRecentMessages(conversationId: string): readonly IncomingMessage[] {
     const messages = this.messageCache.get(conversationId);
@@ -339,6 +389,7 @@ export class NewioAppStore {
       isOwnMessage,
       text: msg.content.text ?? '',
       timestamp: msg.createdAt,
+      status: 'new',
     };
   }
 

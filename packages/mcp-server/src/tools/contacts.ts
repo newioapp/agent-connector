@@ -29,13 +29,9 @@ export function registerContactsTools(server: McpServer, app: NewioApp): void {
     },
   );
 
-  server.registerTool(
-    'list_incoming_friend_requests',
-    { description: 'List pending incoming friend requests' },
-    async () => {
-      return json(await app.listIncomingFriendRequests());
-    },
-  );
+  server.registerTool('list_incoming_friend_requests', { description: 'List pending incoming friend requests' }, () => {
+    return json(app.listIncomingFriendRequests());
+  });
 
   server.registerTool(
     'accept_friend_request',

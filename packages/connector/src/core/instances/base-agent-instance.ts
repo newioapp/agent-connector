@@ -97,7 +97,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         }
       });
 
-      this.app.onMessage((msg) => {
+      this.app.on('message.new', (msg) => {
         if (!msg.isOwnMessage) {
           this.messageQueue.enqueue(msg);
         }
