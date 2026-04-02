@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { NewioApp } from '../src/newio-app.js';
-import type { IncomingMessage } from '../src/newio-app.js';
+import { NewioApp } from '../src/app/newio-app.js';
+import type { IncomingMessage } from '../src/app/types.js';
 import type { AuthManager } from '../src/auth.js';
 import type { NewioClient } from '../src/client.js';
 import type { NewioWebSocket } from '../src/websocket.js';

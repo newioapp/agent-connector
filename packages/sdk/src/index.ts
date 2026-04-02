@@ -219,7 +219,9 @@ export type {
 } from './events.js';
 
 // NewioApp — high-level agent client
-export { NewioApp, NEWIO_API_BASE_URL, NEWIO_WS_URL } from './newio-app.js';
+export { NewioApp, NEWIO_API_BASE_URL, NEWIO_WS_URL } from './app/index.js';
+export { NewioAppStore } from './app/index.js';
+export type { StorePersistence } from './app/index.js';
 export type {
   IncomingMessage,
   MessageHandler,
@@ -228,5 +230,5 @@ export type {
   FriendRequestSummary,
   NewioIdentity,
   NewioTokens,
-  NewioAppCreateOptions,
-} from './newio-app.js';
+} from './app/index.js';
+export type { NewioAppCreateOptions } from './app/index.js';
