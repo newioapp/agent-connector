@@ -1,8 +1,8 @@
 // Client
-export { NewioClient } from './client.js';
+export { NewioClient } from './core/client.js';
 
 // WebSocket
-export { NewioWebSocket } from './websocket.js';
+export { NewioWebSocket } from './core/websocket.js';
 export type {
   ConnectionState,
   ConnectionStateListener,
@@ -13,17 +13,17 @@ export type {
   OnDemandTopic,
   WebSocketLike,
   WebSocketFactory,
-} from './websocket.js';
+} from './core/websocket.js';
 
 // Auth
-export { AuthManager, InMemoryTokenStore } from './auth.js';
-export type { TokenStore, ApprovalHandle, WaitForApprovalOptions } from './auth.js';
+export { AuthManager, InMemoryTokenStore } from './core/auth.js';
+export type { TokenStore, ApprovalHandle, WaitForApprovalOptions } from './core/auth.js';
 
 // HTTP
-export type { TokenProvider } from './http.js';
+export type { TokenProvider } from './core/http.js';
 
 // Errors
-export type { ErrorCode } from './errors.js';
+export type { ErrorCode } from './core/errors.js';
 export {
   NewioError,
   ApiError,
@@ -35,7 +35,7 @@ export {
   WaitlistPendingApiError,
   ApprovalTimeoutError,
   TokenRefreshError,
-} from './errors.js';
+} from './core/errors.js';
 
 // Types — Enums & Literals
 export type {
@@ -48,7 +48,7 @@ export type {
   ContactStatus,
   NotifyLevel,
   ActivityStatus,
-} from './types.js';
+} from './core/types.js';
 
 // Types — Domain Records (shared nested types)
 export type {
@@ -67,7 +67,7 @@ export type {
   UserSummary,
   AgentSummary,
   UserAgent,
-} from './types.js';
+} from './core/types.js';
 
 // Types — Auth Request / Response
 export type {
@@ -77,7 +77,7 @@ export type {
   LoginResponse,
   PollApprovalStatusResponse,
   RefreshResponse,
-} from './types.js';
+} from './core/types.js';
 
 // Types — Users Request / Response
 export type {
@@ -97,7 +97,7 @@ export type {
   GetUserSummariesResponse,
   GetUserAgentsRequest,
   GetUserAgentsResponse,
-} from './types.js';
+} from './core/types.js';
 
 // Types — Contacts Request / Response
 export type {
@@ -119,7 +119,7 @@ export type {
   UpdateFriendNameResponse,
   RemoveFriendRequest,
   RemoveFriendResponse,
-} from './types.js';
+} from './core/types.js';
 
 // Types — Blocks Request / Response
 export type {
@@ -129,7 +129,7 @@ export type {
   UnblockUserResponse,
   ListBlocksRequest,
   ListBlocksResponse,
-} from './types.js';
+} from './core/types.js';
 
 // Types — Conversations Request / Response
 export type {
@@ -153,7 +153,7 @@ export type {
   MarkReadResponse,
   UpdateNotifyLevelRequest,
   UpdateNotifyLevelResponse,
-} from './types.js';
+} from './core/types.js';
 
 // Types — Messages Request / Response
 export type {
@@ -167,7 +167,7 @@ export type {
   EditMessageResponse,
   DeleteMessageRequest,
   DeleteMessageResponse,
-} from './types.js';
+} from './core/types.js';
 
 // Types — Media Request / Response
 export type {
@@ -179,7 +179,7 @@ export type {
   UploadAvatarResponse,
   GetDownloadUrlRequest,
   GetDownloadUrlResponse,
-} from './types.js';
+} from './core/types.js';
 
 // Types — Agent Settings Request / Response
 export type {
@@ -189,7 +189,7 @@ export type {
   UpdateMySettingsResponse,
   UpdateMyProfileRequest,
   UpdateMyProfileResponse,
-} from './types.js';
+} from './core/types.js';
 
 // Events
 export type {
@@ -216,7 +216,7 @@ export type {
   ActivityStatusEvent,
   NewioEvent,
   EventMap,
-} from './events.js';
+} from './core/events.js';
 
 // NewioApp — high-level agent client
 export { NewioApp, NEWIO_API_BASE_URL, NEWIO_WS_URL } from './app/index.js';

@@ -7,15 +7,15 @@
  *
  * Used by the Agent Connector, MCP server, and standalone agent implementations.
  */
-import { AuthManager } from '../auth.js';
-import { NewioClient } from '../client.js';
-import { NewioWebSocket } from '../websocket.js';
+import { AuthManager } from '../core/auth.js';
+import { NewioClient } from '../core/client.js';
+import { NewioWebSocket } from '../core/websocket.js';
 import { NewioAppStore } from './store.js';
 import { wireEvents } from './events.js';
 import { buildNewioInstruction } from './prompt.js';
 import { uploadFiles, downloadAttachment } from './media.js';
-import type { WebSocketFactory } from '../websocket.js';
-import type { ApprovalHandle } from '../auth.js';
+import type { WebSocketFactory } from '../core/websocket.js';
+import type { ApprovalHandle } from '../core/auth.js';
 import type { StorePersistence } from './store.js';
 import type {
   ActivityStatus,
@@ -24,7 +24,7 @@ import type {
   MemberRecord,
   MessageContent,
   ConversationType,
-} from '../types.js';
+} from '../core/types.js';
 import type {
   IncomingMessage,
   ContactSummary,
@@ -359,12 +359,21 @@ export class NewioApp {
 
   /** Get all conversations as agent-friendly summaries. */
   getAllConversations(): ConversationSummary[] {
-    return this.store.getAllConversations();
+    return this.store.getAllConversations().map((c) => ({
+      conversationId: c.conversationId,
+      type: c.type,
+      name: c.name,
+      lastMessageAt: c.lastMessageAt,
+    }));
   }
 
   /** Get all contacts as agent-friendly summaries. */
   getAllContacts(): ContactSummary[] {
-    return this.store.getAllContacts();
+    return this.store.getAllContacts().map((c) => ({
+      username: c.friendUsername,
+      displayName: c.friendDisplayName,
+      accountType: c.friendAccountType,
+    }));
   }
 
   /** Get recent cached messages for a conversation, sorted oldest-first. */

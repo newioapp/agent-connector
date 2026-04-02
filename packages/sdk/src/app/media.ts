@@ -1,8 +1,8 @@
 /**
  * Media helpers — file upload and download for NewioApp.
  */
-import type { NewioClient } from '../client.js';
-import type { Attachment } from '../types.js';
+import type { NewioClient } from '../core/client.js';
+import type { Attachment } from '../core/types.js';
 
 const MIME_TYPES: Record<string, string> = {
   '.jpg': 'image/jpeg',

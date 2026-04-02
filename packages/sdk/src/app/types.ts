@@ -1,7 +1,7 @@
 /**
  * NewioApp types — public interfaces for the high-level agent client.
  */
-import type { AccountType, ConversationType } from '../types.js';
+import type { AccountType, ConversationType } from '../core/types.js';
 
 /** A processed incoming message with sender metadata resolved from caches. */
 export interface IncomingMessage {

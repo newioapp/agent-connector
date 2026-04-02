@@ -1,7 +1,7 @@
 /**
  * System prompt builder for NewioApp.
  */
-import type { ContactRecord } from '../types.js';
+import type { ContactRecord } from '../core/types.js';
 import type { NewioIdentity } from './types.js';
 
 /** Build Newio-specific instructions describing the agent's identity and messaging context. */

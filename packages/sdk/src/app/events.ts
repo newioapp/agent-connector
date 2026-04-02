@@ -3,10 +3,10 @@
  *
  * Subscribes to all relevant WebSocket events and updates the store accordingly.
  */
-import type { NewioWebSocket } from '../websocket.js';
-import type { NewioClient } from '../client.js';
-import type { ConversationType, MessageRecord } from '../types.js';
-import type { MessageNewEvent } from '../events.js';
+import type { NewioWebSocket } from '../core/websocket.js';
+import type { NewioClient } from '../core/client.js';
+import type { ConversationType, MessageRecord } from '../core/types.js';
+import type { MessageNewEvent } from '../core/events.js';
 import type { NewioAppStore } from './store.js';
 import type { MessageHandler, NewioIdentity } from './types.js';
 

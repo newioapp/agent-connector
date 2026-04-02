@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { NewioWebSocket, type WebSocketLike } from '../src/websocket.js';
+import { NewioWebSocket, type WebSocketLike } from '../src/core/websocket.js';
 
 /** Creates a mock WebSocket that exposes trigger methods. */
 function createMockWs() {

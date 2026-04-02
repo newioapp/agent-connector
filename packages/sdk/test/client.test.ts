@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { NewioClient } from '../src/client.js';
+import { NewioClient } from '../src/core/client.js';
 
 let fetchCalls: Array<{ url: string; method: string; body?: unknown }>;
 

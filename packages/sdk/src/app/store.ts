@@ -14,8 +14,8 @@ import type {
   MemberRecord,
   MessageRecord,
   NotifyLevel,
-} from '../types.js';
-import type { IncomingMessage, ContactSummary, ConversationSummary, NewioIdentity } from './types.js';
+} from '../core/types.js';
+import type { IncomingMessage, NewioIdentity } from './types.js';
 
 /** How long received messages are kept in the cache (ms). */
 const MESSAGE_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -115,13 +115,9 @@ export class NewioAppStore {
     return this.usernameToContactId.get(username.toLowerCase());
   }
 
-  /** Get all contacts as agent-friendly summaries. */
-  getAllContacts(): ContactSummary[] {
-    return [...this.contacts.values()].map((c) => ({
-      username: c.friendUsername,
-      displayName: c.friendDisplayName,
-      accountType: c.friendAccountType,
-    }));
+  /** Get all contacts (raw records). */
+  getAllContacts(): ContactRecord[] {
+    return [...this.contacts.values()];
   }
 
   // ---------------------------------------------------------------------------
@@ -162,14 +158,9 @@ export class NewioAppStore {
     return this.conversations.values();
   }
 
-  /** Get all conversations as agent-friendly summaries. */
-  getAllConversations(): ConversationSummary[] {
-    return [...this.conversations.values()].map((c) => ({
-      conversationId: c.conversationId,
-      type: c.type,
-      name: c.name,
-      lastMessageAt: c.lastMessageAt,
-    }));
+  /** Get all conversations (raw records). */
+  getAllConversations(): ConversationListItem[] {
+    return [...this.conversations.values()];
   }
 
   // ---------------------------------------------------------------------------
