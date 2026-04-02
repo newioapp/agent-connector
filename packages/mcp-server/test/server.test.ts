@@ -24,7 +24,7 @@ function mockApp(
     sendFriendRequestByUsername: vi.fn().mockResolvedValue(undefined),
     listIncomingFriendRequests: vi
       .fn()
-      .mockResolvedValue([
+      .mockReturnValue([
         { username: 'bob', displayName: 'Bob', accountType: 'human', note: undefined } satisfies FriendRequestSummary,
       ]),
     acceptFriendRequestByUsername: vi.fn().mockResolvedValue(undefined),

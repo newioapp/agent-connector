@@ -8,7 +8,7 @@ import type { NewioClient } from '../core/client.js';
 import type { ConversationType, MessageRecord } from '../core/types.js';
 import type { MessageNewEvent } from '../core/events.js';
 import type { NewioAppStore } from './store.js';
-import type { MessageHandler, NewioIdentity } from './types.js';
+import type { AppEventHandlers, NewioIdentity } from './types.js';
 
 /** Wire all WebSocket event handlers to update the store. */
 export function wireEvents(
@@ -16,10 +16,10 @@ export function wireEvents(
   store: NewioAppStore,
   client: NewioClient,
   identity: NewioIdentity,
-  getMessageHandler: () => MessageHandler | null,
+  getHandlers: () => Partial<AppEventHandlers>,
 ): void {
   ws.on('message.new', (event) => {
-    void handleIncomingMessage(store, client, identity, getMessageHandler, event.payload);
+    void handleIncomingMessage(store, client, identity, getHandlers, event.payload);
   });
 
   ws.on('conversation.new', (event) => {
@@ -83,15 +83,30 @@ export function wireEvents(
 
   ws.on('contact.request_received', (event) => {
     store.addIncomingRequest(event.payload.contact);
+    const c = event.payload.contact;
+    getHandlers()['contact.request_received']?.({
+      username: c.friendUsername,
+      displayName: c.friendDisplayName,
+      accountType: c.friendAccountType,
+      note: c.note,
+    });
   });
 
   ws.on('contact.request_accepted', (event) => {
     store.removeIncomingRequest(event.payload.contact.contactId);
     store.indexContact(event.payload.contact);
+    const c = event.payload.contact;
+    getHandlers()['contact.request_accepted']?.({
+      username: c.friendUsername,
+      displayName: c.friendDisplayName,
+      accountType: c.friendAccountType,
+    });
   });
 
   ws.on('contact.request_rejected', (event) => {
     store.removeIncomingRequest(event.payload.contactId);
+    const contact = store.getContact(event.payload.contactId);
+    getHandlers()['contact.request_rejected']?.(contact?.friendUsername);
   });
 
   ws.on('contact.request_revoked', (event) => {
@@ -100,6 +115,49 @@ export function wireEvents(
 
   ws.on('contact.removed', (event) => {
     store.removeContact(event.payload.contactId);
+  });
+
+  ws.on('contact.friend_name_updated', (event) => {
+    store.updateContact(event.payload.contactId, { friendName: event.payload.friendName });
+  });
+
+  ws.on('message.updated', (event) => {
+    const { conversationId, messageId, content } = event.payload;
+    const updated = store.updateMessage(conversationId, messageId, content.text ?? '');
+    if (updated) {
+      getHandlers()['message.updated']?.(updated);
+    }
+  });
+
+  ws.on('message.deleted', (event) => {
+    const { conversationId, messageId } = event.payload;
+    const deleted = store.removeMessage(conversationId, messageId);
+    if (deleted) {
+      getHandlers()['message.deleted']?.(deleted);
+    }
+  });
+
+  ws.on('block.created', () => {
+    // No block cache in store — no-op for now
+  });
+
+  ws.on('block.removed', () => {
+    // No block cache in store — no-op for now
+  });
+
+  ws.on('user.profile_updated', (event) => {
+    const { userId, displayName, avatarUrl, username } = event.payload;
+    if (store.isContact(userId)) {
+      store.updateContact(userId, {
+        ...(displayName !== undefined ? { friendDisplayName: displayName } : {}),
+        ...(avatarUrl !== undefined ? { friendAvatarUrl: avatarUrl } : {}),
+        ...(username !== undefined ? { friendUsername: username } : {}),
+      });
+    }
+  });
+
+  ws.on('agent.settings_updated', () => {
+    // Agent settings not cached in store — no-op for now
   });
 }
 
@@ -111,7 +169,7 @@ async function handleIncomingMessage(
   store: NewioAppStore,
   client: NewioClient,
   identity: NewioIdentity,
-  getMessageHandler: () => MessageHandler | null,
+  getHandlers: () => Partial<AppEventHandlers>,
   payload: MessageNewEvent['payload'],
 ): Promise<void> {
   const message = store.toIncomingMessage(identity, payload, payload.conversationId, payload.conversationType);
@@ -132,7 +190,7 @@ async function handleIncomingMessage(
           store,
           client,
           identity,
-          getMessageHandler,
+          getHandlers,
           payload.conversationId,
           prev.messageId,
           payload.messageId,
@@ -146,7 +204,7 @@ async function handleIncomingMessage(
     const level = store.getNotifyLevel(payload.conversationId) ?? 'all';
     const shouldNotify = level === 'all' || (level === 'mentions' && isMentioned(payload.content, identity.userId));
     if (shouldNotify) {
-      getMessageHandler()?.(message);
+      getHandlers()['message.new']?.(message);
     }
   }
 }
@@ -162,7 +220,7 @@ async function backfillGap(
   store: NewioAppStore,
   client: NewioClient,
   identity: NewioIdentity,
-  getMessageHandler: () => MessageHandler | null,
+  getHandlers: () => Partial<AppEventHandlers>,
   conversationId: string,
   afterMessageId: string,
   beforeMessageId: string,
@@ -185,7 +243,7 @@ async function backfillGap(
         const message = store.toIncomingMessage(identity, msg, conversationId);
         const inserted = store.insertMessage(conversationId, message);
         if (inserted && !message.isOwnMessage) {
-          getMessageHandler()?.(message);
+          getHandlers()['message.new']?.(message);
         }
       }
       cursor = resp.cursor;

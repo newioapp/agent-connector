@@ -17,14 +17,7 @@ import { uploadFiles, downloadAttachment } from './media.js';
 import type { WebSocketFactory } from '../core/websocket.js';
 import type { ApprovalHandle } from '../core/auth.js';
 import type { StorePersistence } from './store.js';
-import type {
-  ActivityStatus,
-  ContactRecord,
-  ConversationListItem,
-  MemberRecord,
-  MessageContent,
-  ConversationType,
-} from '../core/types.js';
+import type { ActivityStatus, ContactRecord, MemberRecord, MessageContent, ConversationType } from '../core/types.js';
 import type {
   IncomingMessage,
   ContactSummary,
@@ -32,6 +25,7 @@ import type {
   FriendRequestSummary,
   MemberSummary,
   MessageHandler,
+  AppEventHandlers,
   NewioIdentity,
   NewioTokens,
 } from './types.js';
@@ -44,6 +38,8 @@ export type {
   FriendRequestSummary,
   MemberSummary,
   MessageHandler,
+  AppEventHandlers,
+  ContactEventInfo,
   NewioIdentity,
   NewioTokens,
 } from './types.js';
@@ -107,7 +103,7 @@ export class NewioApp {
   private readonly ws: NewioWebSocket;
   private readonly downloadDir: string;
 
-  private messageHandler: MessageHandler | null = null;
+  private readonly eventHandlers: Partial<AppEventHandlers> = {};
 
   private constructor(
     identity: NewioIdentity,
@@ -138,7 +134,7 @@ export class NewioApp {
   ): Promise<NewioApp> {
     const app = new NewioApp(identity, auth, client, ws, store ?? new NewioAppStore());
     await app.loadData();
-    wireEvents(ws, app.store, client, identity, () => app.messageHandler);
+    wireEvents(ws, app.store, client, identity, () => app.eventHandlers);
     return app;
   }
 
@@ -195,7 +191,7 @@ export class NewioApp {
     const store = new NewioAppStore(opts.persistence);
     const app = new NewioApp(identity, auth, client, ws, store, opts.downloadDir);
     await app.loadData();
-    wireEvents(ws, store, client, identity, () => app.messageHandler);
+    wireEvents(ws, store, client, identity, () => app.eventHandlers);
     return app;
   }
 
@@ -218,9 +214,17 @@ export class NewioApp {
   // Event handler
   // ---------------------------------------------------------------------------
 
-  /** Set the handler for incoming messages. */
+  /** Register a handler for an app-level event. */
+  on<K extends keyof AppEventHandlers>(event: K, handler: AppEventHandlers[K]): void {
+    this.eventHandlers[event] = handler;
+  }
+
+  /**
+   * Set the handler for incoming messages.
+   * @deprecated Use `on('message.new', handler)` instead.
+   */
   onMessage(handler: MessageHandler): void {
-    this.messageHandler = handler;
+    this.eventHandlers['message.new'] = handler;
   }
 
   // ---------------------------------------------------------------------------
@@ -296,9 +300,8 @@ export class NewioApp {
   }
 
   /** List incoming friend requests as agent-friendly summaries. */
-  async listIncomingFriendRequests(): Promise<readonly FriendRequestSummary[]> {
+  listIncomingFriendRequests(): readonly FriendRequestSummary[] {
     // Backfill from API into store cache
-    await this.fetchIncomingRequests();
     return this.store.getIncomingRequests().map((r) => ({
       username: r.friendUsername,
       displayName: r.friendDisplayName,
@@ -375,8 +378,17 @@ export class NewioApp {
   }
 
   /** Get a conversation by ID. */
-  getConversation(conversationId: string): ConversationListItem | undefined {
-    return this.store.getConversation(conversationId);
+  getConversation(conversationId: string): ConversationSummary | undefined {
+    const c = this.store.getConversation(conversationId);
+    if (c) {
+      return {
+        conversationId: c.conversationId,
+        type: c.type,
+        name: c.name,
+        lastMessageAt: c.lastMessageAt,
+      };
+    }
+    return undefined;
   }
 
   /** Get all conversations as agent-friendly summaries. */
@@ -469,7 +481,7 @@ export class NewioApp {
   async createGroup(name: string, memberUsernames: readonly string[]): Promise<string> {
     const memberIds = await Promise.all(memberUsernames.map((u) => this.resolveUsername(u)));
     const resp = await this.client.createConversation({
-      type: 'group' as ConversationType,
+      type: 'group',
       name,
       memberIds,
     });
@@ -487,7 +499,7 @@ export class NewioApp {
   async createWorkSession(name: string, memberUsernames: readonly string[]): Promise<string> {
     const memberIds = await Promise.all(memberUsernames.map((u) => this.resolveUsername(u)));
     const resp = await this.client.createConversation({
-      type: 'temp_group' as ConversationType,
+      type: 'temp_group',
       name,
       memberIds,
     });
@@ -522,7 +534,7 @@ export class NewioApp {
   // ---------------------------------------------------------------------------
 
   private async loadData(): Promise<void> {
-    await Promise.all([this.loadContacts(), this.loadConversations()]);
+    await Promise.all([this.loadContacts(), this.loadConversations(), this.loadIncomingRequests()]);
   }
 
   private async loadContacts(): Promise<void> {
@@ -542,6 +554,17 @@ export class NewioApp {
       const resp = await this.client.listConversations({ cursor, limit: 100 });
       for (const conv of resp.conversations) {
         this.store.setConversation(conv);
+      }
+      cursor = resp.cursor;
+    } while (cursor);
+  }
+
+  private async loadIncomingRequests(): Promise<void> {
+    let cursor: string | undefined;
+    do {
+      const resp = await this.client.listIncomingRequests({ cursor, limit: 100 });
+      for (const r of resp.requests) {
+        this.store.addIncomingRequest(r);
       }
       cursor = resp.cursor;
     } while (cursor);
@@ -568,23 +591,12 @@ export class NewioApp {
       return match;
     }
     // Backfill from API
-    await this.fetchIncomingRequests();
+    await this.loadIncomingRequests();
     match = this.store.findIncomingRequestByUsername(username);
     if (!match) {
       throw new Error(`No incoming friend request from @${username}`);
     }
     return match;
-  }
-
-  private async fetchIncomingRequests(): Promise<void> {
-    let cursor: string | undefined;
-    do {
-      const resp = await this.client.listIncomingRequests({ cursor, limit: 100 });
-      for (const r of resp.requests) {
-        this.store.addIncomingRequest(r);
-      }
-      cursor = resp.cursor;
-    } while (cursor);
   }
 }
 

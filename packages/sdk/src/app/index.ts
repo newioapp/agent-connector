@@ -6,6 +6,8 @@ export type {
   ConversationSummary,
   FriendRequestSummary,
   MessageHandler,
+  AppEventHandlers,
+  ContactEventInfo,
   MemberSummary,
   NewioIdentity,
   NewioTokens,
