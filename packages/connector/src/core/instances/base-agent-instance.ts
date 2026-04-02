@@ -163,6 +163,14 @@ export abstract class BaseAgentInstance implements AgentInstance {
     log.info('Agent stopped');
   }
 
+  /** Get the NewioApp instance. Throws if not connected. */
+  protected requireApp(): NewioApp {
+    if (!this.app) {
+      throw new Error('Agent is not connected — NewioApp is not initialized.');
+    }
+    return this.app;
+  }
+
   // ---------------------------------------------------------------------------
   // Session routing
   // ---------------------------------------------------------------------------
@@ -175,7 +183,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
    * 4. Otherwise → create a new session
    */
   protected async getOrCreateSession(conversationId: string): Promise<AgentSession> {
-    const newioSessionId = this.app?.resolveSessionId(conversationId) ?? conversationId;
+    const newioSessionId = await this.requireApp().resolveSessionId(conversationId);
 
     // Check if already running
     const existingCorrelationId = this.sessionStore.get(newioSessionId);
@@ -228,7 +236,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
     session.onStatus((status) => {
       const convId = this.activeConversation.get(session.correlationId);
       if (convId) {
-        this.app?.setStatus(status, convId);
+        this.requireApp().setStatus(status, convId);
       }
     });
   }
@@ -265,9 +273,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   }
 
   private async processBatch(conversationId: string, messages: readonly IncomingMessage[]): Promise<void> {
-    if (!this.app) {
-      return;
-    }
+    const app = this.requireApp();
 
     let session: AgentSession;
     try {
@@ -285,14 +291,14 @@ export abstract class BaseAgentInstance implements AgentInstance {
       const response = await session.prompt(userText);
 
       if (response && response.trim().toLowerCase() !== '_skip') {
-        await this.app.sendMessage(conversationId, response.trim());
+        await app.sendMessage(conversationId, response.trim());
       }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';
       log.error(`Prompt/send failed for ${conversationId}: ${errMsg}`);
     } finally {
       this.activeConversation.delete(session.correlationId);
-      this.app.setStatus('idle', conversationId);
+      app.setStatus('idle', conversationId);
     }
   }
 

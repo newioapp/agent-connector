@@ -1,3 +1,4 @@
+import { getLogger } from './logger.js';
 import type { TokenProvider } from './http.js';
 import type { EventMap, NewioEvent } from './events.js';
 import type { ActivityStatus } from './types.js';
@@ -58,6 +59,8 @@ const PROACTIVE_RECONNECT_MS = 110 * 60 * 1000;
 const INITIAL_BACKOFF_MS = 1000;
 const MAX_BACKOFF_MS = 30_000;
 
+const log = getLogger('websocket');
+
 /**
  * WebSocket client for Newio real-time events.
  *
@@ -113,11 +116,13 @@ export class NewioWebSocket {
   /** Open the WebSocket connection. */
   async connect(): Promise<void> {
     this.intentionalClose = false;
+    log.info('WebSocket connecting...');
     await this.doConnect();
   }
 
   /** Close the WebSocket connection. Does not auto-reconnect. */
   disconnect(): void {
+    log.info('WebSocket disconnecting (intentional).');
     this.intentionalClose = true;
     this.cleanup();
     this.setState('disconnected');
@@ -172,6 +177,7 @@ export class NewioWebSocket {
   /** Subscribe to on-demand topics. */
   subscribe(topics: readonly OnDemandTopic[]): void {
     if (this.ws && this.state === 'connected') {
+      log.debug(`Subscribing to topics: ${topics.join(', ')}`);
       this.ws.send(JSON.stringify({ action: 'subscribe', topics }));
     }
   }
@@ -179,6 +185,7 @@ export class NewioWebSocket {
   /** Unsubscribe from on-demand topics. */
   unsubscribe(topics: readonly OnDemandTopic[]): void {
     if (this.ws && this.state === 'connected') {
+      log.debug(`Unsubscribing from topics: ${topics.join(', ')}`);
       this.ws.send(JSON.stringify({ action: 'unsubscribe', topics }));
     }
   }
@@ -205,6 +212,7 @@ export class NewioWebSocket {
 
     await new Promise<void>((resolve, reject) => {
       ws.onopen = () => {
+        log.info('WebSocket connected.');
         this.setState('connected');
         this.backoff = INITIAL_BACKOFF_MS;
         this.startKeepalive();
@@ -215,6 +223,7 @@ export class NewioWebSocket {
       ws.onclose = () => {
         this.cleanup();
         if (!this.intentionalClose) {
+          log.warn('WebSocket closed unexpectedly.');
           this.setState('disconnected');
           this.scheduleReconnect();
         }
@@ -222,6 +231,7 @@ export class NewioWebSocket {
       };
 
       ws.onerror = () => {
+        log.warn('WebSocket error.');
         // onclose fires after onerror — rejection handled there
       };
     });
@@ -239,8 +249,10 @@ export class NewioWebSocket {
       // Ack messages use 'action' field
       if (typeof parsed['action'] === 'string') {
         if (parsed['action'] === 'subscribe_ack') {
+          log.debug('Received subscribe_ack.');
           this.onSubscribeAckHandler?.(parsed as unknown as SubscribeAck);
         } else if (parsed['action'] === 'unsubscribe_ack') {
+          log.debug('Received unsubscribe_ack.');
           this.onUnsubscribeAckHandler?.(parsed as unknown as UnsubscribeAck);
         }
         return;
@@ -252,6 +264,8 @@ export class NewioWebSocket {
         return;
       }
 
+      log.debug(`WS event: ${type}`);
+
       const handlers = this.eventHandlers.get(type);
       if (handlers) {
         const event = parsed as unknown as NewioEvent;
@@ -260,7 +274,7 @@ export class NewioWebSocket {
         }
       }
     } catch {
-      // Ignore malformed messages
+      log.warn('Failed to parse WebSocket message.');
     }
   }
 
@@ -270,6 +284,7 @@ export class NewioWebSocket {
         try {
           this.ws.send(JSON.stringify({ action: 'ping' }));
         } catch {
+          log.warn('Keepalive ping failed.');
           // Will trigger onclose → reconnect
         }
       }
@@ -277,14 +292,17 @@ export class NewioWebSocket {
   }
 
   private scheduleProactiveReconnect(): void {
+    log.debug(`Scheduling proactive reconnect in ${Math.round(PROACTIVE_RECONNECT_MS / 60000)}min.`);
     this.proactiveReconnectTimer = setTimeout(() => {
       if (!this.intentionalClose) {
+        log.info('Proactive reconnect triggered (approaching 2h limit).');
         void this.doConnect().catch(() => {});
       }
     }, PROACTIVE_RECONNECT_MS);
   }
 
   private scheduleReconnect(): void {
+    log.info(`Reconnecting in ${this.backoff / 1000}s...`);
     this.reconnectTimer = setTimeout(() => {
       void this.doConnect().catch(() => {});
     }, this.backoff);

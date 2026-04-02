@@ -11,6 +11,7 @@ import { AuthManager } from '../core/auth.js';
 import { NewioClient } from '../core/client.js';
 import { NewioWebSocket } from '../core/websocket.js';
 import { NewioError } from '../core/errors.js';
+import { getLogger } from '../core/logger.js';
 import { NewioAppStore } from './store.js';
 import { wireEvents } from './events.js';
 import { buildNewioInstruction } from './prompt.js';
@@ -30,6 +31,8 @@ import type {
   NewioIdentity,
   NewioTokens,
 } from './types.js';
+
+const log = getLogger('app');
 
 // Re-export types and helpers that are part of the public API
 export type {
@@ -150,10 +153,13 @@ export class NewioApp {
 
     // Authenticate
     if (opts.tokens) {
+      log.info('Attempting token reuse...');
       auth.setTokens(opts.tokens.accessToken, opts.tokens.refreshToken);
       try {
         await auth.forceRefresh();
+        log.info('Token reuse successful.');
       } catch {
+        log.info('Token reuse failed — starting approval flow.');
         await doApprovalFlow(auth, opts);
       }
     } else {
@@ -169,6 +175,7 @@ export class NewioApp {
 
     // Create client, fetch profile
     const client = new NewioClient({ baseUrl: opts.apiBaseUrl, tokenProvider: auth.tokenProvider });
+    log.info('Fetching agent profile...');
     const me = await client.getMe({});
     if (!me.username) {
       throw new Error('Agent account has no username. Registration may have failed.');
@@ -180,6 +187,7 @@ export class NewioApp {
       displayName: me.displayName,
       ownerId: me.ownerId,
     };
+    log.info(`Authenticated as @${identity.username} (${identity.userId}).`);
 
     // Connect WebSocket
     const ws = new NewioWebSocket({
@@ -191,7 +199,11 @@ export class NewioApp {
 
     const store = new NewioAppStore(opts.persistence);
     const app = new NewioApp(identity, auth, client, ws, store, opts.downloadDir);
+    log.info('Loading initial data (contacts, conversations, requests)...');
     await app.loadData();
+    log.info(
+      `Ready. ${app.store.getAllContacts().length} contacts, ${app.store.getAllConversations().length} conversations.`,
+    );
     wireEvents(ws, store, client, identity, () => app.eventHandlers);
     return app;
   }

@@ -18,9 +18,7 @@ export class KiroCliInstance extends BaseAgentInstance {
   // ---------------------------------------------------------------------------
 
   protected async onConnected(): Promise<void> {
-    if (!this.app) {
-      throw new Error('NewioApp not initialized');
-    }
+    this.requireApp();
     if (!this.config.kiroCli) {
       throw new Error('Kiro CLI config missing');
     }
@@ -43,10 +41,8 @@ export class KiroCliInstance extends BaseAgentInstance {
     const session = await KiroCliSession.create(this.config.kiroCli);
 
     // Send Newio instruction as the first prompt so the session has context
-    if (this.app) {
-      const instruction = this.app.buildNewioInstruction();
-      await session.prompt(instruction);
-    }
+    const instruction = this.requireApp().buildNewioInstruction();
+    await session.prompt(instruction);
 
     return session;
   }
@@ -63,12 +59,13 @@ export class KiroCliInstance extends BaseAgentInstance {
   // ---------------------------------------------------------------------------
 
   private async sendGreeting(): Promise<void> {
-    if (!this.app?.identity.ownerId) {
+    const app = this.requireApp();
+    if (!app.identity.ownerId) {
       return;
     }
 
     // Find or create DM with owner
-    const ownerDmConversationId = await this.app.getOwnerDmConversationId();
+    const ownerDmConversationId = await app.getOwnerDmConversationId();
     if (!ownerDmConversationId) {
       return;
     }
@@ -76,7 +73,7 @@ export class KiroCliInstance extends BaseAgentInstance {
     // Get or create the session for the owner DM
     const session = await this.getOrCreateSession(ownerDmConversationId);
 
-    const ownerName = this.app.getOwnerDisplayName() ?? 'your owner';
+    const ownerName = app.getOwnerDisplayName() ?? 'your owner';
     const prompt = `You just connected to the Newio messaging platform. Send a brief, friendly greeting to ${ownerName} to let them know you are online and ready. Keep it to 1-2 sentences.`;
 
     let greeting: string | undefined;
@@ -91,7 +88,7 @@ export class KiroCliInstance extends BaseAgentInstance {
       throw new Error('Kiro CLI test failed: agent returned an empty response');
     }
 
-    await this.app.sendMessage(ownerDmConversationId, greeting.trim());
+    await app.sendMessage(ownerDmConversationId, greeting.trim());
     log.info('Greeting sent to owner');
   }
 }
