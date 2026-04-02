@@ -28,6 +28,7 @@ export function wireEvents(
       type: event.payload.type as ConversationType,
       name: event.payload.name,
     });
+    void loadConversation(store, client, identity, event.payload.conversationId);
   });
 
   ws.on('conversation.updated', (event) => {
