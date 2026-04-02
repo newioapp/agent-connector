@@ -1,3 +1,7 @@
+// Logger
+export type { Logger, LogLevel, LogHandler } from './core/logger.js';
+export { getLogger, setLogHandler, consoleLogHandler } from './core/logger.js';
+
 // Client
 export { NewioClient } from './core/client.js';
 

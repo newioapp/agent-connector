@@ -1,5 +1,6 @@
 import { HttpClient } from './http.js';
 import { ApprovalTimeoutError, TokenRefreshError } from './errors.js';
+import { getLogger } from './logger.js';
 import type {
   RegisterRequest,
   RegisterResponse,
@@ -8,6 +9,8 @@ import type {
   PollApprovalStatusResponse,
   RefreshResponse,
 } from './types.js';
+
+const log = getLogger('auth');
 
 /** Pluggable token storage interface. */
 export interface TokenStore {
@@ -91,19 +94,24 @@ export class AuthManager {
 
   /** Register a new agent. The person who approves becomes the owner. */
   async register(input: RegisterRequest): Promise<ApprovalHandle> {
+    log.info(`Registering agent "${input.name}"...`);
     const res = await this.http.request<RegisterResponse>('/mcp/agents/register', {
       method: 'POST',
       body: JSON.stringify(input),
     });
+    log.info(`Registration submitted. Agent ID: ${res.agentId}. Approval URL: ${res.approvalUrl}`);
     return this.createApprovalHandle(res.agentId, res.approvalId, res.approvalUrl);
   }
 
   /** Login an existing agent. Only the owner can approve. */
   async login(input: LoginRequest): Promise<ApprovalHandle> {
+    const id = 'agentId' in input ? input.agentId : input.username;
+    log.info(`Logging in agent "${id}"...`);
     const res = await this.http.request<LoginResponse>('/mcp/agents/login', {
       method: 'POST',
       body: JSON.stringify(input),
     });
+    log.info(`Login submitted. Approval URL: ${res.approvalUrl}`);
     return this.createApprovalHandle(res.agentId, res.approvalId, res.approvalUrl);
   }
 
@@ -112,6 +120,7 @@ export class AuthManager {
    * Starts the auto-refresh timer.
    */
   setTokens(accessToken: string, refreshToken: string): void {
+    log.debug('Setting tokens directly (from persistent storage).');
     this.store.setTokens(accessToken, refreshToken);
     this.scheduleRefresh(accessToken);
   }
@@ -137,11 +146,13 @@ export class AuthManager {
 
   /** Force an immediate token refresh. */
   async forceRefresh(): Promise<void> {
+    log.debug('Force-refreshing tokens...');
     await this.doRefresh();
   }
 
   /** Revoke the current refresh token and clear stored tokens. */
   async revoke(): Promise<void> {
+    log.info('Revoking tokens...');
     const refreshToken = this.store.getRefreshToken();
     if (refreshToken) {
       const authedHttp = new HttpClient(this.baseUrl, this.tokenProvider);
@@ -150,8 +161,9 @@ export class AuthManager {
           method: 'POST',
           body: JSON.stringify({ refreshToken }),
         });
+        log.info('Tokens revoked.');
       } catch {
-        // Best-effort — clear tokens regardless
+        log.warn('Failed to revoke tokens on server (best-effort).');
       }
     }
     this.clearRefreshTimer();
@@ -187,8 +199,11 @@ export class AuthManager {
     const signal = options?.signal;
     const deadline = Date.now() + timeoutMs;
 
+    log.info(`Polling for approval (timeout: ${timeoutMs / 1000}s, interval: ${intervalMs / 1000}s)...`);
+
     while (Date.now() < deadline) {
       if (signal?.aborted) {
+        log.warn('Approval polling aborted by signal.');
         throw new ApprovalTimeoutError();
       }
 
@@ -196,10 +211,13 @@ export class AuthManager {
       const res = await this.http.request<PollApprovalStatusResponse>(pollUrl);
 
       if (res.status === 'active' && res.accessToken && res.refreshToken) {
+        log.info('Approval granted — tokens received.');
         this.store.setTokens(res.accessToken, res.refreshToken);
         this.scheduleRefresh(res.accessToken);
         return { accessToken: res.accessToken, refreshToken: res.refreshToken };
       }
+
+      log.debug(`Approval status: ${res.status}. Retrying in ${intervalMs / 1000}s...`);
 
       // Sleep for the interval, but cap at the remaining time until deadline
       const remaining = deadline - Date.now();
@@ -209,6 +227,7 @@ export class AuthManager {
       await this.sleep(Math.min(intervalMs, remaining), signal);
     }
 
+    log.error('Approval timed out.');
     throw new ApprovalTimeoutError();
   }
 
@@ -225,13 +244,16 @@ export class AuthManager {
       }
 
       try {
+        log.debug('Refreshing access token...');
         const res = await this.http.request<RefreshResponse>('/auth/refresh', {
           method: 'POST',
           body: JSON.stringify({ refreshToken }),
         });
         this.store.setTokens(res.accessToken, res.refreshToken);
         this.scheduleRefresh(res.accessToken);
+        log.debug('Token refreshed successfully.');
       } catch (err) {
+        log.error('Token refresh failed — clearing tokens.', err);
         this.store.clear();
         this.clearRefreshTimer();
         throw new TokenRefreshError(err instanceof Error ? err.message : 'Token refresh failed.');
@@ -252,6 +274,9 @@ export class AuthManager {
       return;
     }
     const refreshInMs = Math.max(expiresInMs - REFRESH_BUFFER_MS, 0);
+    log.debug(
+      `Token expires in ${Math.round(expiresInMs / 1000)}s. Scheduling refresh in ${Math.round(refreshInMs / 1000)}s.`,
+    );
     this.refreshTimer = setTimeout(() => {
       void this.doRefresh();
     }, refreshInMs);

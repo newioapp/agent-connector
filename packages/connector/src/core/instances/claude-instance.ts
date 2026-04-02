@@ -111,14 +111,12 @@ export class ClaudeInstance extends BaseAgentInstance {
   // ---------------------------------------------------------------------------
 
   protected async onConnected(): Promise<void> {
-    if (!this.app) {
-      throw new Error('NewioApp not initialized');
-    }
     await this.sendGreeting();
   }
 
   private async sendGreeting(): Promise<void> {
-    if (!this.app?.identity.ownerId) {
+    const app = this.requireApp();
+    if (!app.identity.ownerId) {
       return;
     }
 
@@ -134,15 +132,16 @@ export class ClaudeInstance extends BaseAgentInstance {
       throw new Error('Claude Code test failed: model returned an empty response');
     }
 
-    await this.app.dmOwner(greeting.trim());
+    await app.dmOwner(greeting.trim());
   }
 
   private async generateGreetingMessage(): Promise<string | undefined> {
-    if (!this.app || !this.config.claude) {
+    const app = this.requireApp();
+    if (!this.config.claude) {
       return undefined;
     }
 
-    const ownerName = this.app.getOwnerDisplayName() ?? 'your owner';
+    const ownerName = app.getOwnerDisplayName() ?? 'your owner';
     const prompt = `You just connected to the Newio messaging platform. Send a brief, friendly greeting to ${ownerName} to let them know you are online and ready. Keep it to 1-2 sentences.`;
 
     const q: Query = query({
@@ -209,7 +208,8 @@ export class ClaudeInstance extends BaseAgentInstance {
 
   /** @internal — called by ClaudeSession */
   async queryAgent(userText: string, statusListener: SessionStatusListener): Promise<string | undefined> {
-    if (!this.app || !this.config.claude) {
+    const app = this.requireApp();
+    if (!this.config.claude) {
       return undefined;
     }
 
@@ -226,7 +226,7 @@ export class ClaudeInstance extends BaseAgentInstance {
         systemPrompt: {
           type: 'preset',
           preset: 'claude_code',
-          append: this.app.buildNewioInstruction({ customInstructions: this.config.claude.userPrompt }),
+          append: app.buildNewioInstruction({ customInstructions: this.config.claude.userPrompt }),
         },
         tools: [],
         permissionMode: 'bypassPermissions',

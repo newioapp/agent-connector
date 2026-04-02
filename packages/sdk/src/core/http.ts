@@ -1,4 +1,7 @@
 import { ApiError } from './errors.js';
+import { getLogger } from './logger.js';
+
+const log = getLogger('http');
 
 /** Token provider callback — returns the current access token. */
 export type TokenProvider = () => string | Promise<string>;
@@ -14,6 +17,8 @@ export class HttpClient {
   ) {}
 
   async request<T>(path: string, opts: RequestInit = {}): Promise<T> {
+    const method = opts.method ?? 'GET';
+    log.debug(`${method} ${path}`);
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (this.tokenProvider) {
       headers['Authorization'] = `Bearer ${await this.tokenProvider()}`;
@@ -24,12 +29,16 @@ export class HttpClient {
     });
     const body: unknown = await res.json().catch(() => null);
     if (!res.ok) {
+      log.warn(`${method} ${path} failed: ${res.status}`);
       throw ApiError.fromResponse(res.status, body);
     }
+    log.debug(`${method} ${path} → ${res.status}`);
     return body as T;
   }
 
   async requestNoContent(path: string, opts: RequestInit = {}): Promise<void> {
+    const method = opts.method ?? 'GET';
+    log.debug(`${method} ${path}`);
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (this.tokenProvider) {
       headers['Authorization'] = `Bearer ${await this.tokenProvider()}`;
@@ -40,8 +49,10 @@ export class HttpClient {
     });
     if (!res.ok) {
       const body: unknown = await res.json().catch(() => null);
+      log.warn(`${method} ${path} failed: ${res.status}`);
       throw ApiError.fromResponse(res.status, body);
     }
+    log.debug(`${method} ${path} → ${res.status}`);
   }
 
   /** Build a query string from an object, omitting undefined values. */

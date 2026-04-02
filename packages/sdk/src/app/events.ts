@@ -3,12 +3,15 @@
  *
  * Subscribes to all relevant WebSocket events and updates the store accordingly.
  */
+import { getLogger } from '../core/logger.js';
 import type { NewioWebSocket } from '../core/websocket.js';
 import type { NewioClient } from '../core/client.js';
 import type { ConversationType, MessageRecord } from '../core/types.js';
 import type { MessageNewEvent } from '../core/events.js';
 import type { NewioAppStore } from './store.js';
 import type { AppEventHandlers, NewioIdentity } from './types.js';
+
+const log = getLogger('events');
 
 /** Wire all WebSocket event handlers to update the store. */
 export function wireEvents(
@@ -19,10 +22,12 @@ export function wireEvents(
   getHandlers: () => Partial<AppEventHandlers>,
 ): void {
   ws.on('message.new', (event) => {
+    log.debug(`Event message.new in ${event.payload.conversationId} from ${event.payload.senderId}`);
     void handleIncomingMessage(store, client, identity, getHandlers, event.payload);
   });
 
   ws.on('conversation.new', (event) => {
+    log.info(`Event conversation.new: ${event.payload.conversationId} (type=${event.payload.type})`);
     store.setConversation({
       conversationId: event.payload.conversationId,
       type: event.payload.type as ConversationType,
@@ -32,6 +37,7 @@ export function wireEvents(
   });
 
   ws.on('conversation.updated', (event) => {
+    log.debug(`Event conversation.updated: ${event.payload.conversationId}`);
     const existing = store.getConversation(event.payload.conversationId);
     if (existing) {
       const { changes } = event.payload;
@@ -47,6 +53,7 @@ export function wireEvents(
 
   ws.on('conversation.member_added', (event) => {
     const { conversationId, members: added } = event.payload;
+    log.debug(`Event conversation.member_added: ${conversationId} (+${added.length} members)`);
     store.addMembers(conversationId, added);
 
     const self = added.find((m) => m.userId === identity.userId);
@@ -59,13 +66,18 @@ export function wireEvents(
     }
 
     if (!store.hasConversation(conversationId)) {
+      log.info(`Added to unknown conversation ${conversationId} — loading details.`);
       void loadConversation(store, client, identity, conversationId);
     }
   });
 
   ws.on('conversation.member_removed', (event) => {
+    log.debug(
+      `Event conversation.member_removed: ${event.payload.conversationId} (target=${event.payload.targetUserId})`,
+    );
     store.removeMember(event.payload.conversationId, event.payload.targetUserId);
     if (event.payload.targetUserId === identity.userId) {
+      log.info(`Removed from conversation ${event.payload.conversationId}.`);
       store.removeConversation(event.payload.conversationId);
     }
   });
@@ -74,6 +86,7 @@ export function wireEvents(
     if (event.payload.userId !== identity.userId) {
       return;
     }
+    log.debug(`Event conversation.member_updated (self): ${event.payload.conversationId}`);
     if (event.payload.changes.notifyLevel) {
       store.setNotifyLevel(event.payload.conversationId, event.payload.changes.notifyLevel);
     }
@@ -83,8 +96,9 @@ export function wireEvents(
   });
 
   ws.on('contact.request_received', (event) => {
-    store.addIncomingRequest(event.payload.contact);
     const c = event.payload.contact;
+    log.info(`Event contact.request_received from @${c.friendUsername}`);
+    store.addIncomingRequest(c);
     getHandlers()['contact.request_received']?.({
       username: c.friendUsername,
       displayName: c.friendDisplayName,
@@ -94,9 +108,10 @@ export function wireEvents(
   });
 
   ws.on('contact.request_accepted', (event) => {
-    store.removeIncomingRequest(event.payload.contact.contactId);
-    store.indexContact(event.payload.contact);
     const c = event.payload.contact;
+    log.info(`Event contact.request_accepted: @${c.friendUsername}`);
+    store.removeIncomingRequest(c.contactId);
+    store.indexContact(c);
     getHandlers()['contact.request_accepted']?.({
       username: c.friendUsername,
       displayName: c.friendDisplayName,
@@ -105,25 +120,30 @@ export function wireEvents(
   });
 
   ws.on('contact.request_rejected', (event) => {
+    log.debug(`Event contact.request_rejected: ${event.payload.contactId}`);
     store.removeIncomingRequest(event.payload.contactId);
     const contact = store.getContact(event.payload.contactId);
     getHandlers()['contact.request_rejected']?.(contact?.friendUsername);
   });
 
   ws.on('contact.request_revoked', (event) => {
+    log.debug(`Event contact.request_revoked: ${event.payload.contactId}`);
     store.removeIncomingRequest(event.payload.contactId);
   });
 
   ws.on('contact.removed', (event) => {
+    log.debug(`Event contact.removed: ${event.payload.contactId}`);
     store.removeContact(event.payload.contactId);
   });
 
   ws.on('contact.friend_name_updated', (event) => {
+    log.debug(`Event contact.friend_name_updated: ${event.payload.contactId}`);
     store.updateContact(event.payload.contactId, { friendName: event.payload.friendName });
   });
 
   ws.on('message.updated', (event) => {
     const { conversationId, messageId, content } = event.payload;
+    log.debug(`Event message.updated: ${conversationId}/${messageId}`);
     const updated = store.updateMessage(conversationId, messageId, content.text ?? '');
     if (updated) {
       getHandlers()['message.updated']?.(updated);
@@ -132,6 +152,7 @@ export function wireEvents(
 
   ws.on('message.deleted', (event) => {
     const { conversationId, messageId } = event.payload;
+    log.debug(`Event message.deleted: ${conversationId}/${messageId}`);
     const deleted = store.removeMessage(conversationId, messageId);
     if (deleted) {
       getHandlers()['message.deleted']?.(deleted);
@@ -139,15 +160,16 @@ export function wireEvents(
   });
 
   ws.on('block.created', () => {
-    // No block cache in store — no-op for now
+    log.debug('Event block.created (no-op).');
   });
 
   ws.on('block.removed', () => {
-    // No block cache in store — no-op for now
+    log.debug('Event block.removed (no-op).');
   });
 
   ws.on('user.profile_updated', (event) => {
     const { userId, displayName, avatarUrl, username } = event.payload;
+    log.debug(`Event user.profile_updated: ${userId}`);
     if (store.isContact(userId)) {
       store.updateContact(userId, {
         ...(displayName !== undefined ? { friendDisplayName: displayName } : {}),
@@ -158,7 +180,7 @@ export function wireEvents(
   });
 
   ws.on('agent.settings_updated', () => {
-    // Agent settings not cached in store — no-op for now
+    log.debug('Event agent.settings_updated (no-op).');
   });
 }
 
@@ -183,6 +205,9 @@ async function handleIncomingMessage(
   }
 
   if (incomingSeq > currentSeq + 1 && currentSeq > 0) {
+    log.warn(
+      `Sequence gap in ${payload.conversationId}: expected ${currentSeq + 1}, got ${incomingSeq}. Backfilling...`,
+    );
     const cached = store.getRecentMessages(payload.conversationId);
     if (cached.length > 1) {
       const prev = cached[cached.length - 2];
@@ -228,6 +253,7 @@ async function backfillGap(
   rollbackSeq: number,
 ): Promise<void> {
   try {
+    let count = 0;
     let cursor: string | undefined;
     do {
       const resp = await client.listMessages({
@@ -246,10 +272,13 @@ async function backfillGap(
         if (inserted && !message.isOwnMessage) {
           getHandlers()['message.new']?.(message);
         }
+        count++;
       }
       cursor = resp.cursor;
     } while (cursor);
-  } catch {
+    log.info(`Backfilled ${count} messages in ${conversationId}.`);
+  } catch (err) {
+    log.error(`Failed to backfill messages in ${conversationId}. Rolling back sequence number.`, err);
     store.setSequenceNumber(conversationId, rollbackSeq);
   }
 }
@@ -265,6 +294,7 @@ async function loadConversation(
   conversationId: string,
 ): Promise<void> {
   try {
+    log.debug(`Loading conversation ${conversationId}...`);
     const conv = await client.getConversation({ conversationId });
     store.setConversation({
       conversationId: conv.conversationId,
@@ -285,7 +315,8 @@ async function loadConversation(
         store.setSessionId(conversationId, self.sessionId);
       }
     }
-  } catch {
-    // Failed to load conversation — non-fatal
+    log.debug(`Loaded conversation ${conversationId} (${conv.members.length} members).`);
+  } catch (err) {
+    log.error(`Failed to load conversation ${conversationId}.`, err);
   }
 }
