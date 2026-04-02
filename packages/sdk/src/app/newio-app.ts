@@ -10,6 +10,7 @@
 import { AuthManager } from '../core/auth.js';
 import { NewioClient } from '../core/client.js';
 import { NewioWebSocket } from '../core/websocket.js';
+import { NewioError } from '../core/errors.js';
 import { NewioAppStore } from './store.js';
 import { wireEvents } from './events.js';
 import { buildNewioInstruction } from './prompt.js';
@@ -422,10 +423,21 @@ export class NewioApp {
 
   /**
    * Resolve the backend session ID for a conversation.
-   * Returns the cached session ID if known, otherwise falls back to conversationId.
+   * Returns the cached session ID if known, otherwise fetches from the backend.
+   * Throws if no session ID exists for this conversation.
    */
-  resolveSessionId(conversationId: string): string {
-    return this.store.getSessionId(conversationId) ?? conversationId;
+  async resolveSessionId(conversationId: string): Promise<string> {
+    const cached = this.store.getSessionId(conversationId);
+    if (cached) {
+      return cached;
+    }
+    const conv = await this.client.getConversation({ conversationId });
+    const self = conv.members.find((m) => m.userId === this.identity.userId);
+    if (self?.sessionId) {
+      this.store.setSessionId(conversationId, self.sessionId);
+      return self.sessionId;
+    }
+    throw new NewioError(`No session ID found for conversation ${conversationId}`);
   }
 
   /** Get members of a conversation as agent-friendly summaries. */
