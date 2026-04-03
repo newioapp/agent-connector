@@ -12,6 +12,7 @@ import { NewioClient } from '../core/client.js';
 import { NewioWebSocket } from '../core/websocket.js';
 import { NewioError } from '../core/errors.js';
 import { getLogger } from '../core/logger.js';
+import { ActivityThrottle } from '../core/activity-throttle.js';
 import { NewioAppStore } from './store.js';
 import { wireEvents } from './events.js';
 import { buildNewioInstruction } from './prompt.js';
@@ -108,6 +109,7 @@ export class NewioApp {
   readonly store: NewioAppStore;
   private readonly ws: NewioWebSocket;
   private readonly downloadDir: string;
+  private readonly activityThrottle: ActivityThrottle;
 
   private readonly eventHandlers: Partial<AppEventHandlers> = {};
 
@@ -125,6 +127,9 @@ export class NewioApp {
     this.ws = ws;
     this.store = store;
     this.downloadDir = downloadDir ?? './newio-downloads';
+    this.activityThrottle = new ActivityThrottle((conversationId, status) => {
+      this.ws.sendActivity(conversationId, status);
+    });
   }
 
   /**
@@ -215,6 +220,7 @@ export class NewioApp {
   /** Disconnect WebSocket and dispose auth. */
   dispose(): void {
     log.info('Disposing NewioApp...');
+    this.activityThrottle.dispose();
     this.ws.disconnect();
     this.auth.dispose();
   }
@@ -261,10 +267,11 @@ export class NewioApp {
   /**
    * Set the agent's activity status for a conversation.
    * Broadcasts typing/thinking indicators to other participants via WebSocket.
+   * Throttled: duplicate statuses are suppressed, heartbeats keep the receiver alive.
    */
   setStatus(status: ActivityStatus, conversationId?: string): void {
     if (conversationId) {
-      this.ws.sendActivity(conversationId, status);
+      this.activityThrottle.update(conversationId, status);
     }
   }
 

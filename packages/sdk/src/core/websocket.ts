@@ -194,6 +194,8 @@ export class NewioWebSocket {
   sendActivity(conversationId: string, status: ActivityStatus): void {
     if (this.ws && this.state === 'connected') {
       this.ws.send(JSON.stringify({ action: 'activity', conversationId, status }));
+    } else {
+      log.warn(`sendActivity('${status}') dropped — WebSocket not connected (state=${this.state}).`);
     }
   }
 
