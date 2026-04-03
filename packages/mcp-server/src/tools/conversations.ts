@@ -15,18 +15,6 @@ export function registerConversationsTools(server: McpServer, app: NewioApp): vo
   });
 
   server.registerTool(
-    'create_dm',
-    {
-      description: 'Create or find an existing direct message conversation with a user',
-      inputSchema: { username: z.string().describe('Username of the user to DM') },
-    },
-    async ({ username }) => {
-      const conversationId = await app.findOrCreateDmByUsername(username);
-      return json({ conversationId });
-    },
-  );
-
-  server.registerTool(
     'create_work_session',
     {
       description: 'Create a temporary group conversation (work session) — anyone can add members',

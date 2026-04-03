@@ -20,7 +20,14 @@ import { uploadFiles, downloadAttachment } from './media.js';
 import type { WebSocketFactory } from '../core/websocket.js';
 import type { ApprovalHandle } from '../core/auth.js';
 import type { StorePersistence } from './store.js';
-import type { ActivityStatus, ContactRecord, MemberRecord, MessageContent, ConversationType } from '../core/types.js';
+import type {
+  ActivityStatus,
+  ContactRecord,
+  MemberRecord,
+  Mentions,
+  MessageContent,
+  ConversationType,
+} from '../core/types.js';
 import type {
   IncomingMessage,
   ContactSummary,
@@ -34,6 +41,9 @@ import type {
 } from './types.js';
 
 const log = getLogger('app');
+
+/** Extract all @username tokens from a message (preceded by whitespace or start-of-line). */
+const MENTION_EXTRACT_RE = /(?:^|[\s])@([a-zA-Z][a-zA-Z0-9]*)/g;
 
 // Re-export types and helpers that are part of the public API
 export type {
@@ -255,13 +265,17 @@ export class NewioApp {
   // Messaging
   // ---------------------------------------------------------------------------
 
-  /** Send a text message to a conversation. */
-  async sendMessage(conversationId: string, text: string): Promise<void> {
-    log.debug(`Sending message to ${conversationId} (${text.length} chars)`);
-    await this.client.sendMessage({
-      conversationId,
-      content: { text },
-    });
+  /** Send a message to a conversation, with optional file attachments. */
+  async sendMessage(conversationId: string, text: string, filePaths?: readonly string[]): Promise<void> {
+    log.debug(`Sending message to ${conversationId} (${text.length} chars, ${filePaths?.length ?? 0} attachments)`);
+    const attachments = filePaths ? await uploadFiles(this.client, filePaths) : undefined;
+    const mentions = text ? await this.buildMentions(conversationId, text) : undefined;
+    const content: MessageContent = {
+      text: text || undefined,
+      attachments: attachments && attachments.length > 0 ? attachments : undefined,
+      ...(mentions ? { mentions } : {}),
+    };
+    await this.client.sendMessage({ conversationId, content });
   }
 
   /**
@@ -270,20 +284,21 @@ export class NewioApp {
    * Throttled: duplicate statuses are suppressed, heartbeats keep the receiver alive.
    */
   setStatus(status: ActivityStatus, conversationId?: string): void {
+    log.debug('setStatus called', { status, conversationId });
     if (conversationId) {
       this.activityThrottle.update(conversationId, status);
     }
   }
 
   /** Send a DM to the agent's owner. No-op if ownerId is not set. */
-  async dmOwner(text: string): Promise<void> {
+  async dmOwner(text: string, filePaths?: readonly string[]): Promise<void> {
     if (!this.identity.ownerId) {
       log.warn('dmOwner called but no ownerId set');
       return;
     }
     log.debug(`Sending DM to owner ${this.identity.ownerId}`);
     const conversationId = await this.findOrCreateDm(this.identity.ownerId);
-    await this.sendMessage(conversationId, text);
+    await this.sendMessage(conversationId, text, filePaths);
   }
 
   /** Get or create the DM conversation with the agent's owner. Returns undefined if no owner. */
@@ -295,25 +310,11 @@ export class NewioApp {
   }
 
   /** Send a DM by username. Creates the DM conversation if it doesn't exist. */
-  async sendDm(username: string, text: string): Promise<void> {
+  async sendDm(username: string, text: string, filePaths?: readonly string[]): Promise<void> {
     log.debug(`Sending DM to @${username}`);
     const userId = await this.resolveUsername(username);
     const conversationId = await this.findOrCreateDm(userId);
-    await this.sendMessage(conversationId, text);
-  }
-
-  /**
-   * Send a message with optional file attachments.
-   * Accepts local file paths — handles upload to S3 automatically.
-   */
-  async sendMessageWithAttachments(conversationId: string, text: string, filePaths?: readonly string[]): Promise<void> {
-    log.debug(`Sending message with ${filePaths?.length ?? 0} attachments to ${conversationId}`);
-    const attachments = filePaths ? await uploadFiles(this.client, filePaths) : undefined;
-    const content: MessageContent = {
-      text: text || undefined,
-      attachments: attachments && attachments.length > 0 ? attachments : undefined,
-    };
-    await this.client.sendMessage({ conversationId, content });
+    await this.sendMessage(conversationId, text, filePaths);
   }
 
   // ---------------------------------------------------------------------------
@@ -496,7 +497,7 @@ export class NewioApp {
   // ---------------------------------------------------------------------------
 
   /** Find or create a DM by username. */
-  async findOrCreateDmByUsername(username: string): Promise<string> {
+  private async findOrCreateDmByUsername(username: string): Promise<string> {
     log.debug(`Finding or creating DM with @${username}`);
     const userId = await this.resolveUsername(username);
     return this.findOrCreateDm(userId);
@@ -654,6 +655,41 @@ export class NewioApp {
       throw new Error(`No incoming friend request from @${username}`);
     }
     return match;
+  }
+
+  /** Parse @username, @everyone, @here from text and resolve to a Mentions object. */
+  private async buildMentions(conversationId: string, text: string): Promise<Mentions | undefined> {
+    const everyone = /(?:^|[\s])@everyone\b/.test(text);
+    const here = /(?:^|[\s])@here\b/.test(text);
+
+    const members = await this.getMembersRaw(conversationId);
+    const usernameToUserId = new Map<string, string>();
+    for (const m of members) {
+      if (m.username) {
+        usernameToUserId.set(m.username.toLowerCase(), m.userId);
+      }
+    }
+
+    const userIds: string[] = [];
+    for (const match of text.matchAll(MENTION_EXTRACT_RE)) {
+      const name = match[1]?.toLowerCase();
+      if (!name || name === 'everyone' || name === 'here') {
+        continue;
+      }
+      const userId = usernameToUserId.get(name);
+      if (userId && !userIds.includes(userId)) {
+        userIds.push(userId);
+      }
+    }
+
+    if (!everyone && !here && userIds.length === 0) {
+      return undefined;
+    }
+    return {
+      ...(userIds.length > 0 ? { userIds } : {}),
+      ...(everyone ? { everyone: true } : {}),
+      ...(here ? { here: true } : {}),
+    };
   }
 }
 

@@ -15,12 +15,11 @@ function mockApp(
     getAllContacts: vi.fn().mockReturnValue(contacts),
     getAllConversations: vi.fn().mockReturnValue(conversations),
     resolveUsername: vi.fn().mockResolvedValue('resolved-id'),
-    findOrCreateDmByUsername: vi.fn().mockResolvedValue('dm-conv-id'),
     createGroup: vi.fn().mockResolvedValue('group-conv-id'),
     createWorkSession: vi.fn().mockResolvedValue('ws-conv-id'),
     sendMessage: vi.fn().mockResolvedValue(undefined),
     sendDm: vi.fn().mockResolvedValue(undefined),
-    sendMessageWithAttachments: vi.fn().mockResolvedValue(undefined),
+    dmOwner: vi.fn().mockResolvedValue(undefined),
     sendFriendRequestByUsername: vi.fn().mockResolvedValue(undefined),
     listIncomingFriendRequests: vi
       .fn()
@@ -64,9 +63,9 @@ describe('MCP Server', () => {
     expect(names).toEqual([
       'accept_friend_request',
       'add_members',
-      'create_dm',
       'create_group',
       'create_work_session',
+      'dm_owner',
       'download_attachment',
       'get_conversation',
       'get_my_profile',
@@ -112,15 +111,6 @@ describe('MCP Server', () => {
     expect(app.acceptFriendRequestByUsername).toHaveBeenCalledWith('bob');
   });
 
-  it('create_dm creates DM by username', async () => {
-    const app = mockApp();
-    const client = await createConnectedClient(app);
-    const result = await client.callTool({ name: 'create_dm', arguments: { username: 'alice' } });
-    expect(app.findOrCreateDmByUsername).toHaveBeenCalledWith('alice');
-    const parsed = JSON.parse((result.content[0] as { text: string }).text) as { conversationId: string };
-    expect(parsed.conversationId).toBe('dm-conv-id');
-  });
-
   it('create_work_session creates temp_group with name', async () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
@@ -152,7 +142,14 @@ describe('MCP Server', () => {
       name: 'send_message',
       arguments: { conversationId: 'conv-1', text: 'check this', filePaths: ['/tmp/photo.jpg'] },
     });
-    expect(app.sendMessageWithAttachments).toHaveBeenCalledWith('conv-1', 'check this', ['/tmp/photo.jpg']);
+    expect(app.sendMessage).toHaveBeenCalledWith('conv-1', 'check this', ['/tmp/photo.jpg']);
+  });
+
+  it('dm_owner sends message to owner', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    await client.callTool({ name: 'dm_owner', arguments: { text: 'hello owner', filePaths: ['/tmp/file.txt'] } });
+    expect(app.dmOwner).toHaveBeenCalledWith('hello owner', ['/tmp/file.txt']);
   });
 
   it('download_attachment returns local file path', async () => {

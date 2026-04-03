@@ -13,7 +13,8 @@ export function registerMessagingTools(server: McpServer, app: NewioApp): void {
   server.registerTool(
     'send_message',
     {
-      description: 'Send a message to a conversation, optionally with file attachments (max 5)',
+      description:
+        'Send a message to a group chat or work session, optionally with file attachments (max 5). Use @username to mention members, @everyone to notify all, or @here to notify online members',
       inputSchema: {
         conversationId: z.string().describe('Conversation ID to send the message to'),
         text: z.string().describe('Message text (supports markdown)'),
@@ -21,7 +22,7 @@ export function registerMessagingTools(server: McpServer, app: NewioApp): void {
       },
     },
     async ({ conversationId, text: msgText, filePaths }) => {
-      await app.sendMessageWithAttachments(conversationId, msgText, filePaths);
+      await app.sendMessage(conversationId, msgText, filePaths);
       return text('Message sent');
     },
   );
@@ -29,8 +30,7 @@ export function registerMessagingTools(server: McpServer, app: NewioApp): void {
   server.registerTool(
     'send_dm',
     {
-      description:
-        'Send a direct message to a user by username (creates the DM if needed), optionally with attachments',
+      description: 'Send a direct message to a user by username, optionally with attachments',
       inputSchema: {
         username: z.string().describe('Username of the recipient'),
         text: z.string().describe('Message text (supports markdown)'),
@@ -38,9 +38,23 @@ export function registerMessagingTools(server: McpServer, app: NewioApp): void {
       },
     },
     async ({ username, text: msgText, filePaths }) => {
-      const conversationId = await app.findOrCreateDmByUsername(username);
-      await app.sendMessageWithAttachments(conversationId, msgText, filePaths);
+      await app.sendDm(username, msgText, filePaths);
       return text(`DM sent to @${username}`);
+    },
+  );
+
+  server.registerTool(
+    'dm_owner',
+    {
+      description: "Send a direct message to this agent's owner, optionally with attachments",
+      inputSchema: {
+        text: z.string().describe('Message text (supports markdown)'),
+        filePaths: z.array(z.string()).max(5).optional().describe('Optional local file paths to attach (max 5)'),
+      },
+    },
+    async ({ text: msgText, filePaths }) => {
+      await app.dmOwner(msgText, filePaths);
+      return text('DM sent to owner');
     },
   );
 
