@@ -157,7 +157,7 @@ describe('NewioApp', () => {
   });
 
   describe('sendMessage', () => {
-    it('sends with auto-incrementing sequenceNumber', async () => {
+    it('sends message without client-side sequenceNumber', async () => {
       const { app, client } = await createApp();
 
       await app.sendMessage('conv-1', 'hello');
@@ -167,34 +167,11 @@ describe('NewioApp', () => {
       expect(client.sendMessage).toHaveBeenNthCalledWith(1, {
         conversationId: 'conv-1',
         content: { text: 'hello' },
-        sequenceNumber: 0,
       });
       expect(client.sendMessage).toHaveBeenNthCalledWith(2, {
         conversationId: 'conv-1',
         content: { text: 'world' },
-        sequenceNumber: 1,
       });
-    });
-
-    it('tracks sequenceNumbers per conversation', async () => {
-      const { app, client } = await createApp();
-
-      await app.sendMessage('conv-a', 'a1');
-      await app.sendMessage('conv-b', 'b1');
-      await app.sendMessage('conv-a', 'a2');
-
-      expect(client.sendMessage).toHaveBeenNthCalledWith(
-        1,
-        expect.objectContaining({ conversationId: 'conv-a', sequenceNumber: 0 }),
-      );
-      expect(client.sendMessage).toHaveBeenNthCalledWith(
-        2,
-        expect.objectContaining({ conversationId: 'conv-b', sequenceNumber: 0 }),
-      );
-      expect(client.sendMessage).toHaveBeenNthCalledWith(
-        3,
-        expect.objectContaining({ conversationId: 'conv-a', sequenceNumber: 1 }),
-      );
     });
   });
 

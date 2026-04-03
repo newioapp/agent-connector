@@ -263,10 +263,10 @@ describe('NewioClient', () => {
   // -------------------------------------------------------------------------
 
   describe('messages', () => {
-    it('sendMessage passes sequenceNumber from input', async () => {
+    it('sendMessage sends content without sequenceNumber', async () => {
       mockFetch([{ status: 201, body: { message: { messageId: 'm1' } } }]);
-      await createClient().sendMessage({ conversationId: 'c1', content: { text: 'Hello' }, sequenceNumber: 5 });
-      expect(fetchCalls[0]?.body).toEqual({ content: { text: 'Hello' }, sequenceNumber: 5 });
+      await createClient().sendMessage({ conversationId: 'c1', content: { text: 'Hello' } });
+      expect(fetchCalls[0]?.body).toEqual({ content: { text: 'Hello' } });
     });
 
     it('listMessages with pagination', async () => {

@@ -349,7 +349,7 @@ export class NewioClient {
   async sendMessage(input: SendMessageRequest): Promise<SendMessageResponse> {
     return this.http.request(`/conversations/${encodeURIComponent(input.conversationId)}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ content: input.content, sequenceNumber: input.sequenceNumber }),
+      body: JSON.stringify({ content: input.content }),
     });
   }
 
