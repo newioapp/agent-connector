@@ -7,6 +7,10 @@
  */
 import { ApprovalTimeoutError, NewioApp, NEWIO_API_BASE_URL, NEWIO_WS_URL } from '@newio/sdk';
 import type { IncomingMessage } from '@newio/sdk';
+import { createMcpServer, startUdsServer } from '@newio/mcp-server';
+import type { Server } from 'net';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import type { AgentConfigManager } from '../agent-config-manager';
 import type { AgentRuntimeStatus, AgentConfig } from '../types';
 import { DEFAULT_SESSION_IDLE_TIMEOUT_MS } from '../types';
@@ -39,6 +43,10 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private readonly activeConversation = new Map<string, string>();
   private abortController?: AbortController;
   private idleTimer?: ReturnType<typeof setInterval>;
+  private udsServer?: Server;
+
+  /** Socket path for the MCP UDS server. Set after auth in start(). */
+  protected mcpSocketPath?: string;
 
   constructor(
     protected readonly config: AgentConfig,
@@ -92,6 +100,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
       this.listener.onConfigUpdated();
 
       this.setStatus('initializing');
+      const mcpSocketPath = join(tmpdir(), `newio-mcp-${username}.sock`);
+      this.mcpSocketPath = mcpSocketPath;
 
       await this.app.init();
 
@@ -107,6 +117,17 @@ export abstract class BaseAgentInstance implements AgentInstance {
           this.messageQueue.enqueue(msg);
         }
       });
+
+      // Start MCP server on UDS for agent sessions
+      const mcpServer = createMcpServer(this.app);
+      this.udsServer = startUdsServer({
+        socketPath: mcpSocketPath,
+        onConnection: (transport) => {
+          log.info(`MCP client connected via ${mcpSocketPath}`);
+          void mcpServer.connect(transport);
+        },
+      });
+      log.info(`MCP UDS server listening on ${mcpSocketPath}`);
 
       this.startIdleCleanup();
       await this.onConnected();
@@ -148,6 +169,12 @@ export abstract class BaseAgentInstance implements AgentInstance {
       live.session.dispose();
     }
     this.liveSessions.clear();
+
+    if (this.udsServer) {
+      this.udsServer.close();
+      this.udsServer = undefined;
+      log.debug('MCP UDS server closed');
+    }
 
     if (this.app) {
       try {

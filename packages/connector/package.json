@@ -24,6 +24,7 @@
     "@agentclientprotocol/sdk": "^0.17.1",
     "@anthropic-ai/claude-agent-sdk": "^0.2.87",
     "@electron-toolkit/utils": "^4.0.0",
+    "@newio/mcp-server": "workspace:*",
     "@newio/sdk": "workspace:*",
     "better-sqlite3": "^12.8.0",
     "electron-store": "^8.2.0",

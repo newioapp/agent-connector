@@ -29,6 +29,9 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "newio-mcp-bridge": "./dist/bridge.js"
+  },
   "files": [
     "dist"
   ],
@@ -50,6 +53,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/node": "^25.5.2",
     "@vitest/coverage-v8": "^3.2.3",
     "tsup": "^8.5.0",
     "typescript": "^5.8.3",
