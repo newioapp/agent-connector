@@ -639,7 +639,6 @@ export interface UpdateNotifyLevelResponse {
 export interface SendMessageRequest {
   readonly conversationId: string;
   readonly content: MessageContent;
-  readonly sequenceNumber: number;
 }
 
 export interface SendMessageResponse {

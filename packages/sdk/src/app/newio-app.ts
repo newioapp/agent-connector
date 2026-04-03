@@ -246,11 +246,9 @@ export class NewioApp {
 
   /** Send a text message to a conversation. */
   async sendMessage(conversationId: string, text: string): Promise<void> {
-    const seq = this.store.nextSequenceNumber(conversationId);
     await this.client.sendMessage({
       conversationId,
       content: { text },
-      sequenceNumber: seq,
     });
   }
 
@@ -298,8 +296,7 @@ export class NewioApp {
       text: text || undefined,
       attachments: attachments && attachments.length > 0 ? attachments : undefined,
     };
-    const seq = this.store.nextSequenceNumber(conversationId);
-    await this.client.sendMessage({ conversationId, content, sequenceNumber: seq });
+    await this.client.sendMessage({ conversationId, content });
   }
 
   // ---------------------------------------------------------------------------

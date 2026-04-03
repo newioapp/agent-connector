@@ -207,14 +207,6 @@ export class NewioAppStore {
     this.sequenceNumbers.set(conversationId, seq);
   }
 
-  /** Increment and return the next sequence number for a conversation. */
-  nextSequenceNumber(conversationId: string): number {
-    const current = this.sequenceNumbers.get(conversationId) ?? -1;
-    const next = current + 1;
-    this.sequenceNumbers.set(conversationId, next);
-    return next;
-  }
-
   // ---------------------------------------------------------------------------
   // Session IDs & notify levels
   // ---------------------------------------------------------------------------
