@@ -301,10 +301,14 @@ export abstract class BaseAgentInstance implements AgentInstance {
     this.activeConversation.set(session.correlationId, conversationId);
 
     try {
-      const response = await session.prompt(userText);
-
-      if (response && response.trim().toLowerCase() !== '_skip') {
-        await app.sendMessage(conversationId, response.trim());
+      for await (const segment of session.prompt(userText)) {
+        if (
+          segment.type === 'agent_message_chunk' &&
+          segment.text.trim() &&
+          segment.text.trim().toLowerCase() !== '_skip'
+        ) {
+          await app.sendMessage(conversationId, segment.text.trim());
+        }
       }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';

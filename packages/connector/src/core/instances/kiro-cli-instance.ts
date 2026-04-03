@@ -8,6 +8,7 @@
 import { BaseAgentInstance } from './base-agent-instance';
 import { KiroCliSession } from './kiro-cli-session';
 import type { AgentSession } from '../agent-session';
+import type { SessionStreamSegment } from './session-stream';
 import { Logger } from '../logger';
 
 const log = new Logger('kiro-cli-instance');
@@ -46,7 +47,11 @@ export class KiroCliInstance extends BaseAgentInstance {
     // Send Newio instruction as the first prompt so the session has context
     log.debug(`[${session.correlationId}] Sending Newio instruction to new session`);
     const instruction = this.requireApp().buildNewioInstruction();
-    await session.prompt(instruction);
+    // Drain the generator — we don't need the instruction response
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    for await (const _ of session.prompt(instruction)) {
+      // discard
+    }
     log.debug(`[${session.correlationId}] Newio instruction delivered`);
 
     return session;
@@ -96,7 +101,7 @@ export class KiroCliInstance extends BaseAgentInstance {
 
     let greeting: string | undefined;
     try {
-      greeting = await session.prompt(prompt);
+      greeting = await collectAgentMessage(session.prompt(prompt));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       log.error(`[${session.correlationId}] Greeting prompt failed: ${message}`);
@@ -111,4 +116,15 @@ export class KiroCliInstance extends BaseAgentInstance {
     await app.sendMessage(ownerDmConversationId, greeting.trim());
     log.info(`[${session.correlationId}] Greeting sent to owner`);
   }
+}
+
+/** Drain a prompt generator and return concatenated agent_message text. */
+async function collectAgentMessage(gen: AsyncGenerator<SessionStreamSegment>): Promise<string | undefined> {
+  const parts: string[] = [];
+  for await (const segment of gen) {
+    if (segment.type === 'agent_message_chunk') {
+      parts.push(segment.text);
+    }
+  }
+  return parts.length > 0 ? parts.join('') : undefined;
 }
