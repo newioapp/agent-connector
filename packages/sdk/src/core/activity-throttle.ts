@@ -60,7 +60,7 @@ export class ActivityThrottle {
       this.emit(conversationId, status);
       this.scheduleHeartbeat(conversationId, state);
     } else {
-      log.debug('throttled', { conversationId, status, sinceLast: now - state.lastEmitAt });
+      // log.debug('throttled', { conversationId, status, sinceLast: now - state.lastEmitAt });
     }
   }
 

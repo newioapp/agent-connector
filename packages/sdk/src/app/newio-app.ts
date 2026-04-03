@@ -40,7 +40,7 @@ import type {
   NewioTokens,
 } from './types.js';
 
-const log = getLogger('app');
+const log = getLogger('newio-app');
 
 /** Extract all @username tokens from a message (preceded by whitespace or start-of-line). */
 const MENTION_EXTRACT_RE = /(?:^|[\s])@([a-zA-Z][a-zA-Z0-9]*)/g;
@@ -284,7 +284,7 @@ export class NewioApp {
    * Throttled: duplicate statuses are suppressed, heartbeats keep the receiver alive.
    */
   setStatus(status: ActivityStatus, conversationId?: string): void {
-    log.debug('setStatus called', { status, conversationId });
+    // log.debug('setStatus called', { status, conversationId });
     if (conversationId) {
       this.activityThrottle.update(conversationId, status);
     }
