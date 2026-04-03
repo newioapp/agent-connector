@@ -35,6 +35,7 @@ const api: ConnectorAPI = {
   // Push events
   onAgentStatusChanged: (callback) => onEvent(EVENT_CHANNELS['agent-status-changed'], callback),
   onAgentApprovalUrl: (callback) => onEvent(EVENT_CHANNELS['agent-approval-url'], callback),
+  onAgentPollAttempt: (callback) => onEvent(EVENT_CHANNELS['agent-poll-attempt'], callback),
   onAgentConfigUpdated: (callback) => onEvent(EVENT_CHANNELS['agent-config-updated'], callback),
 };
 

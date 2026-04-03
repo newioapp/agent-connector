@@ -7,6 +7,7 @@ import type { MainToRendererEvents } from '../shared/ipc-events';
 export interface ConnectorAPI extends IpcApi {
   onAgentStatusChanged(callback: (data: MainToRendererEvents['agent-status-changed']) => void): () => void;
   onAgentApprovalUrl(callback: (data: MainToRendererEvents['agent-approval-url']) => void): () => void;
+  onAgentPollAttempt(callback: (data: MainToRendererEvents['agent-poll-attempt']) => void): () => void;
   onAgentConfigUpdated(callback: (data: MainToRendererEvents['agent-config-updated']) => void): () => void;
 }
 

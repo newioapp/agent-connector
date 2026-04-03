@@ -9,6 +9,7 @@ import type { AgentRuntimeStatus } from '../types';
 export interface AgentInstanceListener {
   onStatusChanged(status: AgentRuntimeStatus, error?: string): void;
   onApprovalUrl(approvalUrl: string): void;
+  onPollAttempt(): void;
   onConfigUpdated(): void;
 }
 

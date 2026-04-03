@@ -18,6 +18,7 @@ export class KiroCliInstance extends BaseAgentInstance {
   // ---------------------------------------------------------------------------
 
   protected async onConnected(): Promise<void> {
+    log.info('Kiro CLI instance connected, preparing greeting...');
     this.requireApp();
     if (!this.config.kiroCli) {
       throw new Error('Kiro CLI config missing');
@@ -26,7 +27,7 @@ export class KiroCliInstance extends BaseAgentInstance {
   }
 
   protected onStopped(): void {
-    // All session cleanup handled by BaseAgentInstance.stop()
+    log.info('Kiro CLI instance stopped');
   }
 
   // ---------------------------------------------------------------------------
@@ -38,11 +39,15 @@ export class KiroCliInstance extends BaseAgentInstance {
       throw new Error('Kiro CLI config missing');
     }
 
+    log.info('Creating new Kiro CLI session...');
     const session = await KiroCliSession.create(this.config.kiroCli);
+    log.info(`Session created: ${session.correlationId}`);
 
     // Send Newio instruction as the first prompt so the session has context
+    log.debug(`[${session.correlationId}] Sending Newio instruction to new session`);
     const instruction = this.requireApp().buildNewioInstruction();
     await session.prompt(instruction);
+    log.debug(`[${session.correlationId}] Newio instruction delivered`);
 
     return session;
   }
@@ -51,6 +56,7 @@ export class KiroCliInstance extends BaseAgentInstance {
     if (!this.config.kiroCli) {
       throw new Error('Kiro CLI config missing');
     }
+    log.info(`Resuming Kiro CLI session: ${correlationId}`);
     return KiroCliSession.resume(this.config.kiroCli, correlationId);
   }
 
@@ -61,34 +67,48 @@ export class KiroCliInstance extends BaseAgentInstance {
   private async sendGreeting(): Promise<void> {
     const app = this.requireApp();
     if (!app.identity.ownerId) {
+      log.warn('No ownerId set, skipping greeting');
       return;
     }
 
     // Find or create DM with owner
+    log.debug('Finding or creating DM with owner...');
     const ownerDmConversationId = await app.getOwnerDmConversationId();
     if (!ownerDmConversationId) {
+      log.warn('Could not get owner DM conversation, skipping greeting');
       return;
     }
+    log.debug(`Owner DM conversation: ${ownerDmConversationId}`);
 
+    this.setStatus('greeting');
     // Get or create the session for the owner DM
     const session = await this.getOrCreateSession(ownerDmConversationId);
+    log.debug(`[${session.correlationId}] Generating greeting for owner...`);
 
     const ownerName = app.getOwnerDisplayName() ?? 'your owner';
-    const prompt = `You just connected to the Newio messaging platform. Send a brief, friendly greeting to ${ownerName} to let them know you are online and ready. Keep it to 1-2 sentences.`;
+    const prompt =
+      `Context: You are running as an ACP (Agent Client Protocol) agent inside the Newio Agent Connector. ` +
+      `The connector has already handled authentication and connected you to the Newio messaging platform on your behalf — you do not need to do anything to connect. ` +
+      `This is a startup test to verify the connection is working. ` +
+      `Your response will be sent as a message to ${ownerName} in your DM conversation.\n\n` +
+      `Task: Write a brief, friendly greeting (1-2 sentences) to let ${ownerName} know you are online and ready. ` +
+      `Just output the greeting text, nothing else.`;
 
     let greeting: string | undefined;
     try {
       greeting = await session.prompt(prompt);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
+      log.error(`[${session.correlationId}] Greeting prompt failed: ${message}`);
       throw new Error(`Kiro CLI connection test failed: ${message}`);
     }
 
     if (!greeting || greeting.trim().length === 0) {
+      log.error(`[${session.correlationId}] Agent returned empty greeting`);
       throw new Error('Kiro CLI test failed: agent returned an empty response');
     }
 
     await app.sendMessage(ownerDmConversationId, greeting.trim());
-    log.info('Greeting sent to owner');
+    log.info(`[${session.correlationId}] Greeting sent to owner`);
   }
 }

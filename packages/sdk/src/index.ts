@@ -66,6 +66,7 @@ export type {
   ImageMetadata,
   BlockRecord,
   AgentSettings,
+  AgentMemberSettings,
   ConversationSettings,
   UserProfile,
   UserSummary,

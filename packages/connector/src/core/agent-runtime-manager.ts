@@ -14,6 +14,7 @@ import { KiroCliInstance } from './instances/kiro-cli-instance';
 export interface StatusListener {
   onStatusChanged(agentId: string, status: AgentRuntimeStatus, error?: string): void;
   onApprovalUrl(agentId: string, approvalUrl: string): void;
+  onPollAttempt(agentId: string): void;
   onConfigUpdated(agentId: string): void;
 }
 
@@ -51,6 +52,9 @@ export class AgentRuntimeManager {
       },
       onApprovalUrl: (approvalUrl: string) => {
         this.listener.onApprovalUrl(agentId, approvalUrl);
+      },
+      onPollAttempt: () => {
+        this.listener.onPollAttempt(agentId);
       },
       onConfigUpdated: () => {
         this.listener.onConfigUpdated(agentId);

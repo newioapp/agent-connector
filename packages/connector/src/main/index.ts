@@ -1,6 +1,7 @@
 import { app, BrowserWindow, nativeTheme, shell } from 'electron';
 import { join } from 'path';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
+import { setLogHandler } from '@newio/sdk';
 import { createStore } from './store';
 import { MainWindowManager } from './main-window';
 import { StoreAgentConfigManager } from './agent-config-manager';
@@ -9,6 +10,13 @@ import { SessionStore } from '../core/session-store';
 import { IpcHandler } from './ipc-handler';
 import { registerIpcHandlers } from './ipc-registry';
 import { EVENT_CHANNELS } from '../shared/ipc-events';
+
+// Route SDK logs through the connector's log format at debug level
+setLogHandler((level, name, message, args) => {
+  const timestamp = new Date().toISOString();
+  const prefix = `${timestamp} [${level.toUpperCase()}] [sdk:${name}]`;
+  console[level](prefix, message, ...args);
+});
 
 void app.whenReady().then(async () => {
   electronApp.setAppUserModelId('dev.newio.connector');
@@ -29,6 +37,9 @@ void app.whenReady().then(async () => {
     onApprovalUrl(agentId, approvalUrl) {
       mainWindowManager.send(EVENT_CHANNELS['agent-approval-url'], { agentId, approvalUrl });
       void shell.openExternal(approvalUrl);
+    },
+    onPollAttempt(agentId) {
+      mainWindowManager.send(EVENT_CHANNELS['agent-poll-attempt'], { agentId });
     },
     onConfigUpdated(agentId) {
       const config = agentConfigManager.get(agentId);

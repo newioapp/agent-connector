@@ -52,6 +52,8 @@ export interface WaitForApprovalOptions {
   readonly timeoutMs?: number;
   /** Abort signal to cancel polling. */
   readonly signal?: AbortSignal;
+  /** Called each time a poll request is made. */
+  readonly onPollAttempt?: () => void;
 }
 
 /** Handle returned by register/login — call `waitForApproval()` to get tokens. */
@@ -208,6 +210,7 @@ export class AuthManager {
       }
 
       const pollUrl = `/approvals/${approvalId}/status${this.http.qs({ token: approvalToken })}`;
+      options?.onPollAttempt?.();
       const res = await this.http.request<PollApprovalStatusResponse>(pollUrl);
 
       if (res.status === 'active' && res.accessToken && res.refreshToken) {

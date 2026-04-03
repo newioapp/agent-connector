@@ -80,7 +80,7 @@ export class KiroCliSession implements AgentSession, acp.Client {
     });
 
     (session as { correlationId: string }).correlationId = sessionResult.sessionId;
-    log.info(`ACP session created: ${sessionResult.sessionId}`);
+    log.info(`[${session.correlationId}] ACP session created`);
     return session;
   }
 
@@ -97,7 +97,7 @@ export class KiroCliSession implements AgentSession, acp.Client {
       cwd: config.cwd ?? process.cwd(),
       mcpServers: [],
     });
-    log.info(`ACP session resumed: ${correlationId}`);
+    log.info(`[${correlationId}] ACP session resumed`);
     return session;
   }
 
@@ -145,7 +145,7 @@ export class KiroCliSession implements AgentSession, acp.Client {
     session.childProcess = child;
 
     child.on('exit', (code, signal) => {
-      log.info(`kiro-cli exited (code=${String(code)}, signal=${String(signal)}) [session=${session.correlationId}]`);
+      log.info(`[${session.correlationId}] kiro-cli exited (code=${String(code)}, signal=${String(signal)})`);
     });
 
     const conn = new ClientSideConnection((_agent) => session, stream);
@@ -157,7 +157,7 @@ export class KiroCliSession implements AgentSession, acp.Client {
         fs: { readTextFile: true, writeTextFile: true },
       },
     });
-    log.info(`ACP initialized (protocol v${String(initResult.protocolVersion)})`);
+    log.info(`[${session.correlationId}] ACP initialized (protocol v${String(initResult.protocolVersion)})`);
 
     return session;
   }
@@ -170,37 +170,91 @@ export class KiroCliSession implements AgentSession, acp.Client {
     this.statusListener = listener;
   }
 
+  private prompting = false;
+
   async prompt(text: string): Promise<string | undefined> {
     const conn = this.connection;
     if (!conn) {
       return undefined;
     }
 
+    this.prompting = true;
     this.statusListener('thinking');
     const responsePromise = this.startCollecting();
 
-    const promptResult = await conn.prompt({
-      sessionId: this.correlationId,
-      prompt: [{ type: 'text', text }],
-    });
+    try {
+      const promptResult = await conn.prompt({
+        sessionId: this.correlationId,
+        prompt: [{ type: 'text', text }],
+      });
 
-    this.finishCollecting();
-    this.statusListener('idle');
+      this.finishCollecting();
 
-    if (promptResult.stopReason !== 'end_turn') {
-      log.warn(`Prompt ended with stop reason: ${promptResult.stopReason}`);
+      if (promptResult.stopReason !== 'end_turn') {
+        log.warn(`[${this.correlationId}] Prompt ended with stop reason: ${promptResult.stopReason}`);
+      }
+
+      return await responsePromise;
+    } finally {
+      this.prompting = false;
+      this.statusListener('idle');
     }
-
-    return await responsePromise;
   }
 
   dispose(): void {
-    if (this.childProcess) {
-      this.childProcess.kill();
-      this.childProcess = undefined;
+    this.disposeAsync().catch((err: unknown) => {
+      log.error(
+        `[${this.correlationId}] Error during async dispose: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
+  }
+
+  private async disposeAsync(): Promise<void> {
+    const conn = this.connection;
+    const child = this.childProcess;
+
+    // 1. Cancel any in-flight prompt via ACP session/cancel
+    if (conn && this.prompting) {
+      log.info(`[${this.correlationId}] Cancelling in-flight prompt...`);
+      try {
+        await conn.cancel({ sessionId: this.correlationId });
+      } catch (err) {
+        log.debug(
+          `[${this.correlationId}] Cancel notification failed (expected if already done): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
+
     this.connection = undefined;
-    log.info(`Session disposed: ${this.correlationId}`);
+
+    if (!child) {
+      log.info(`[${this.correlationId}] Session disposed (no child process)`);
+      return;
+    }
+
+    // 2. Close stdin to signal the child process to exit
+    if (child.stdin && !child.stdin.destroyed) {
+      child.stdin.end();
+    }
+
+    // 3. Wait for graceful exit with a 5s hard timeout
+    const exited = await Promise.race([
+      new Promise<boolean>((resolve) => {
+        child.once('exit', () => resolve(true));
+        if (child.exitCode !== null) {
+          resolve(true);
+        }
+      }),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5000)),
+    ]);
+
+    if (!exited) {
+      log.warn(`[${this.correlationId}] Child process did not exit within 5s, sending SIGKILL`);
+      child.kill('SIGKILL');
+    }
+
+    this.childProcess = undefined;
+    log.info(`[${this.correlationId}] Session disposed`);
   }
 
   // ---------------------------------------------------------------------------
@@ -235,16 +289,16 @@ export class KiroCliSession implements AgentSession, acp.Client {
         this.statusListener('typing');
         break;
       case 'tool_call':
-        log.debug(`Tool call: ${u.title} (${u.status})`);
+        log.debug(`[${this.correlationId}] Tool call: ${u.title} (${u.status})`);
         this.statusListener('tool_calling');
         break;
       case 'tool_call_update':
-        log.debug(`Tool call update: ${u.toolCallId} ${u.status}`);
+        log.debug(`[${this.correlationId}] Tool call update: ${u.toolCallId} ${u.status}`);
         this.statusListener('tool_calling');
         break;
       case 'agent_thought_chunk':
         if (u.content.type === 'text') {
-          log.debug(`Thought: ${u.content.text}`);
+          log.debug(`[${this.correlationId}] Thought: ${u.content.text}`);
         }
         this.statusListener('thinking');
         break;
@@ -287,12 +341,12 @@ export class KiroCliSession implements AgentSession, acp.Client {
   // ---------------------------------------------------------------------------
 
   extMethod(method: string, _params: Record<string, unknown>): Promise<Record<string, unknown>> {
-    log.debug(`ext method: ${method}`);
+    log.debug(`[${this.correlationId}] ext method: ${method}`);
     return Promise.resolve({});
   }
 
   extNotification(method: string, _params: Record<string, unknown>): Promise<void> {
-    log.debug(`ext notification: ${method}`);
+    log.debug(`[${this.correlationId}] ext notification: ${method}`);
     return Promise.resolve();
   }
 }
