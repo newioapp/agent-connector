@@ -41,7 +41,7 @@ export class KiroCliInstance extends BaseAgentInstance {
     }
 
     log.info('Creating new Kiro CLI session...');
-    const session = await KiroCliSession.create(this.config.kiroCli);
+    const session = await KiroCliSession.create(this.config.kiroCli, this.mcpSocketPath);
     log.info(`Session created: ${session.correlationId}`);
 
     // Send Newio instruction as the first prompt so the session has context
@@ -62,7 +62,7 @@ export class KiroCliInstance extends BaseAgentInstance {
       throw new Error('Kiro CLI config missing');
     }
     log.info(`Resuming Kiro CLI session: ${correlationId}`);
-    return KiroCliSession.resume(this.config.kiroCli, correlationId);
+    return KiroCliSession.resume(this.config.kiroCli, correlationId, this.mcpSocketPath);
   }
 
   // ---------------------------------------------------------------------------

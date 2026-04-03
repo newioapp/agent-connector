@@ -12,6 +12,7 @@ import { ClientSideConnection, ndJsonStream, PROTOCOL_VERSION } from '@agentclie
 import type * as acp from '@agentclientprotocol/sdk';
 import type { AgentSession, SessionStatusListener } from '../agent-session';
 import type { KiroCliConfig } from '../types';
+import type { McpServer as AcpMcpServer } from '@agentclientprotocol/sdk';
 import { SessionStream } from './session-stream';
 import type { SessionStreamSegment } from './session-stream';
 import { Logger } from '../logger';
@@ -71,13 +72,13 @@ export class KiroCliSession implements AgentSession, acp.Client {
   /**
    * Spawn a kiro-cli process, establish ACP connection, create a new ACP session.
    */
-  static async create(config: KiroCliConfig): Promise<KiroCliSession> {
+  static async create(config: KiroCliConfig, mcpSocketPath?: string): Promise<KiroCliSession> {
     const session = await KiroCliSession.spawnAndInit(config);
     const conn = session.getConnection();
 
     const sessionResult = await conn.newSession({
       cwd: config.cwd ?? process.cwd(),
-      mcpServers: [],
+      mcpServers: buildMcpServers(mcpSocketPath),
     });
 
     (session as { correlationId: string }).correlationId = sessionResult.sessionId;
@@ -89,14 +90,14 @@ export class KiroCliSession implements AgentSession, acp.Client {
    * Spawn a kiro-cli process, establish ACP connection, and resume an existing session.
    * Uses ACP `session/load` to restore the previous context window.
    */
-  static async resume(config: KiroCliConfig, correlationId: string): Promise<KiroCliSession> {
+  static async resume(config: KiroCliConfig, correlationId: string, mcpSocketPath?: string): Promise<KiroCliSession> {
     const session = await KiroCliSession.spawnAndInit(config);
     (session as { correlationId: string }).correlationId = correlationId;
 
     await session.getConnection().loadSession({
       sessionId: correlationId,
       cwd: config.cwd ?? process.cwd(),
-      mcpServers: [],
+      mcpServers: buildMcpServers(mcpSocketPath),
     });
     log.info(`[${correlationId}] ACP session resumed`);
     return session;
@@ -317,4 +318,23 @@ export class KiroCliSession implements AgentSession, acp.Client {
     log.debug(`[${this.correlationId}] ext notification: ${method}`);
     return Promise.resolve();
   }
+}
+
+function buildMcpServers(mcpSocketPath?: string): AcpMcpServer[] {
+  if (!mcpSocketPath) {
+    return [];
+  }
+  return [
+    {
+      name: 'newio',
+      command: 'node',
+      args: [resolveBridgePath(), mcpSocketPath],
+      env: [],
+    },
+  ];
+}
+
+/** Resolve absolute path to the bridge script from @newio/mcp-server package. */
+function resolveBridgePath(): string {
+  return require.resolve('@newio/mcp-server/bridge');
 }
