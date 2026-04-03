@@ -2,15 +2,16 @@
  * Agent detail panel — shows config, status, and lifecycle actions.
  */
 import { useEffect, useRef, useState } from 'react';
-import { Bot, Terminal, Trash2, Play, Square, ExternalLink, Loader2, Pencil } from 'lucide-react';
+import { Bot, Terminal, Trash2, Play, Square, ExternalLink, Loader2, Pencil, RefreshCw } from 'lucide-react';
 import type { AgentStatusInfo } from '../../../shared/types';
 import { useAgentStore } from '../stores/agent-store';
 
 const STATUS_LABELS: Record<string, string> = {
   stopped: 'Stopped',
-  starting: 'Starting…',
+  starting: 'Connecting to Newio…',
   awaiting_approval: 'Awaiting approval',
   initializing: 'Initializing…',
+  greeting: 'Starting session…',
   running: 'Running',
   error: 'Error',
 };
@@ -20,6 +21,7 @@ const STATUS_CLASSES: Record<string, string> = {
   starting: 'text-warning',
   awaiting_approval: 'text-warning',
   initializing: 'text-warning',
+  greeting: 'text-warning',
   running: 'text-success',
   error: 'text-destructive',
 };
@@ -29,6 +31,7 @@ const DOT_CLASSES: Record<string, string> = {
   starting: 'bg-warning',
   awaiting_approval: 'bg-warning',
   initializing: 'bg-warning',
+  greeting: 'bg-warning',
   running: 'bg-success',
   error: 'bg-destructive',
 };
@@ -86,7 +89,18 @@ export function AgentDetailPanel({
   const startAgent = useAgentStore((s) => s.startAgent);
   const stopAgent = useAgentStore((s) => s.stopAgent);
   const approvalUrl = useAgentStore((s) => s.approvalUrls[agent.id]);
+  const pollTimestamp = useAgentStore((s) => s.pollTimestamps[agent.id]);
+  const [polling, setPolling] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  useEffect(() => {
+    if (!pollTimestamp) {
+      return;
+    }
+    setPolling(true);
+    const id = setTimeout(() => setPolling(false), 800);
+    return () => clearTimeout(id);
+  }, [pollTimestamp]);
   const countdown = useCountdown(agent.runtimeStatus === 'awaiting_approval');
 
   const { config } = agent;
@@ -95,7 +109,8 @@ export function AgentDetailPanel({
   const isBusy =
     agent.runtimeStatus === 'starting' ||
     agent.runtimeStatus === 'awaiting_approval' ||
-    agent.runtimeStatus === 'initializing';
+    agent.runtimeStatus === 'initializing' ||
+    agent.runtimeStatus === 'greeting';
 
   function handleDelete(): void {
     if (!confirmDelete) {
@@ -171,7 +186,10 @@ export function AgentDetailPanel({
         {agent.runtimeStatus === 'awaiting_approval' && approvalUrl && (
           <div className="mb-4 rounded-md border border-warning/30 bg-warning/10 px-4 py-3">
             <div className="mb-1 flex items-center justify-between">
-              <span className="text-xs font-medium text-warning">Owner approval required</span>
+              <span className="flex items-center gap-1.5 text-xs font-medium text-warning">
+                <RefreshCw size={12} className={polling ? 'animate-spin' : ''} />
+                Owner approval required
+              </span>
               <span className="text-xs tabular-nums text-muted-foreground">
                 Expires in {formatCountdown(countdown)}
               </span>

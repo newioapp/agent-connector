@@ -14,6 +14,7 @@ interface AgentState {
   readonly agents: AgentStatusInfo[];
   readonly selectedAgentId: string | null;
   readonly approvalUrls: Record<string, string>;
+  readonly pollTimestamps: Record<string, number>;
 }
 
 interface AgentActions {
@@ -26,6 +27,7 @@ interface AgentActions {
   selectAgent(agentId: string | null): void;
   setAgentStatus(agentId: string, status: AgentRuntimeStatus, error?: string): void;
   setApprovalUrl(agentId: string, url: string): void;
+  setPollTimestamp(agentId: string): void;
   updateConfig(agentId: string, config: AgentConfig): void;
 }
 
@@ -35,6 +37,7 @@ export const useAgentStore = create<AgentStore>((set) => ({
   agents: [],
   selectedAgentId: null,
   approvalUrls: {},
+  pollTimestamps: {},
 
   async load(): Promise<void> {
     const agents = await window.api.listAgents();
@@ -88,6 +91,12 @@ export const useAgentStore = create<AgentStore>((set) => ({
   setApprovalUrl(agentId: string, url: string): void {
     set((state: AgentState) => ({
       approvalUrls: { ...state.approvalUrls, [agentId]: url },
+    }));
+  },
+
+  setPollTimestamp(agentId: string): void {
+    set((state: AgentState) => ({
+      pollTimestamps: { ...state.pollTimestamps, [agentId]: Date.now() },
     }));
   },
 

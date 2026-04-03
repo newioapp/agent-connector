@@ -9,6 +9,7 @@ const STATUS_COLORS: Record<AgentRuntimeStatus, string> = {
   starting: 'bg-warning',
   awaiting_approval: 'bg-warning',
   initializing: 'bg-warning',
+  greeting: 'bg-warning',
   running: 'bg-success',
   error: 'bg-destructive',
 };

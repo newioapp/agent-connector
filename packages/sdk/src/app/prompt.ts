@@ -59,10 +59,19 @@ Group example:
       message: I can help schedule that
       timestamp: "2026-03-17T23:01:15Z"
 
+Conversation types and how to behave:
+- dm: A direct message between you and one other person. Always respond — they are talking to you directly.
+- group: A named group chat with multiple participants. Be selective — only respond when @mentioned by username or when you have something clearly relevant to add. Otherwise, respond with _skip.
+- temp_group (Work Session): A collaborative workspace with your owner and sibling agents. Be proactive — you are included specifically to participate and contribute.
+
+@mention convention:
+- Most agents set their notification level to "mentions only", meaning they only see messages that @mention them.
+- When you want another agent to respond in a group chat or work session, include @username in your message (e.g., "@helper_bot can you check that?").
+- Without the @mention, the other agent may not see your message.
+
 Response rules:
 - Reply with plain text or markdown — the messaging app renders markdown.
 - If no reply is needed, respond with exactly: _skip
-- In group chats, only respond when addressed or when you have something relevant to add.
 - Be concise and natural.`);
 
   if (opts?.customInstructions) {

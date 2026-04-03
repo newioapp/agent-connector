@@ -11,8 +11,16 @@ import type { AgentConfigManager, AgentTokens } from './core/agent-config-manage
 import { AgentRuntimeManager } from './core/agent-runtime-manager';
 import { SessionStore } from './core/session-store';
 import type { AgentRuntimeStatus, AgentConfig } from './core/types';
+import { setLogHandler } from '@newio/sdk';
 import { join } from 'path';
 import { mkdirSync } from 'fs';
+
+// Route SDK logs through console at debug level
+setLogHandler((level, name, message, args) => {
+  const timestamp = new Date().toISOString();
+  const prefix = `${timestamp} [${level.toUpperCase()}] [sdk:${name}]`;
+  console[level](prefix, message, ...args);
+});
 
 // ---------------------------------------------------------------------------
 // Hardcoded agent configs — edit these
@@ -129,6 +137,9 @@ const runtime = new AgentRuntimeManager(configManager, sessionStore, {
   },
   onApprovalUrl(_id: string, url: string) {
     console.log(`\nApproval required — open this URL:\n  ${url}\n`);
+  },
+  onPollAttempt() {
+    // no-op in CLI
   },
   onConfigUpdated() {
     // no-op in CLI

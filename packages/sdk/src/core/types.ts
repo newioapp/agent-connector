@@ -48,7 +48,7 @@ export interface ContactRecord {
   readonly ownerDisplayName?: string;
   readonly note?: string;
   readonly createdAt: string;
-  readonly updatedAt?: string;
+  readonly updatedAt: string;
 }
 
 /** A conversation list item (per-user view including read state). */
@@ -58,12 +58,12 @@ export interface ConversationListItem {
   readonly name?: string;
   readonly description?: string;
   readonly avatarUrl?: string;
-  readonly createdBy?: string;
+  readonly createdBy: string;
   readonly settings?: ConversationSettings;
   readonly lastMessageAt?: string;
   readonly disabledAt?: string;
-  readonly createdAt?: string;
-  readonly updatedAt?: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
   readonly readUntil?: string;
   readonly notifyLevel?: NotifyLevel;
   /** Session ID for agent members. Only present when the caller is an agent. */
@@ -73,8 +73,8 @@ export interface ConversationListItem {
 /** A conversation member record. */
 export interface MemberRecord {
   readonly userId: string;
-  readonly role?: string;
-  readonly accountType?: string;
+  readonly role: MemberRole;
+  readonly accountType: AccountType;
   readonly canSend?: boolean;
   readonly notifyLevel?: NotifyLevel;
   readonly sessionId?: string;
@@ -134,10 +134,10 @@ export interface ImageMetadata {
 export interface BlockRecord {
   readonly userId: string;
   readonly blockedUserId: string;
-  readonly blockedDisplayName?: string;
+  readonly blockedDisplayName: string;
   readonly blockedUsername?: string;
   readonly blockedAvatarUrl?: string;
-  readonly blockedAccountType?: AccountType;
+  readonly blockedAccountType: AccountType;
   readonly createdAt: string;
 }
 
@@ -154,6 +154,13 @@ export interface ConversationSettings {
   readonly maxMembers?: number;
 }
 
+/** Per-agent member settings for conversation creation and add-members. */
+export interface AgentMemberSettings {
+  readonly sessionId?: string;
+  readonly canSend?: boolean;
+  readonly notifyLevel?: NotifyLevel;
+}
+
 /** A user's public profile. */
 export interface UserProfile {
   readonly userId: string;
@@ -165,7 +172,7 @@ export interface UserProfile {
   readonly accountType: AccountType;
   readonly ownerId?: string;
   readonly createdAt: string;
-  readonly updatedAt?: string;
+  readonly updatedAt: string;
 }
 
 /** Minimal user summary for display purposes. */
@@ -181,7 +188,7 @@ export interface UserSummary {
 /** Owned agent summary. */
 export interface AgentSummary {
   readonly agentId: string;
-  readonly name?: string;
+  readonly name: string;
   readonly username?: string;
   readonly avatarUrl?: string;
   readonly bio?: string;
@@ -250,7 +257,7 @@ export interface GetMeResponse {
   readonly accountType: AccountType;
   readonly ownerId?: string;
   readonly createdAt: string;
-  readonly updatedAt?: string;
+  readonly updatedAt: string;
 }
 
 export interface UpdateMeRequest {
@@ -270,7 +277,7 @@ export interface UpdateMeResponse {
   readonly accountType: AccountType;
   readonly ownerId?: string;
   readonly createdAt: string;
-  readonly updatedAt?: string;
+  readonly updatedAt: string;
 }
 
 export interface CheckUsernameAvailabilityRequest {
@@ -296,7 +303,7 @@ export interface GetUserByUsernameResponse {
   readonly accountType: AccountType;
   readonly ownerId?: string;
   readonly createdAt: string;
-  readonly updatedAt?: string;
+  readonly updatedAt: string;
 }
 
 export interface GetUserRequest {
@@ -313,7 +320,7 @@ export interface GetUserResponse {
   readonly accountType: AccountType;
   readonly ownerId?: string;
   readonly createdAt: string;
-  readonly updatedAt?: string;
+  readonly updatedAt: string;
 }
 
 export interface SearchUsersRequest {
@@ -379,7 +386,7 @@ export interface ListIncomingRequestsRequest {
 }
 
 export interface ListIncomingRequestsResponse {
-  readonly requests: readonly ContactRecord[];
+  readonly contacts: readonly ContactRecord[];
   readonly cursor?: string;
 }
 
@@ -389,7 +396,7 @@ export interface ListOutgoingRequestsRequest {
 }
 
 export interface ListOutgoingRequestsResponse {
-  readonly requests: readonly ContactRecord[];
+  readonly contacts: readonly ContactRecord[];
   readonly cursor?: string;
 }
 
@@ -417,7 +424,7 @@ export interface AcceptFriendRequestResponse {
   readonly ownerId?: string;
   readonly ownerDisplayName?: string;
   readonly createdAt: string;
-  readonly updatedAt?: string;
+  readonly updatedAt: string;
 }
 
 export interface RejectFriendRequestRequest {
@@ -445,7 +452,7 @@ export interface UpdateFriendNameResponse {
   readonly ownerId?: string;
   readonly ownerDisplayName?: string;
   readonly createdAt: string;
-  readonly updatedAt?: string;
+  readonly updatedAt: string;
 }
 
 export interface RemoveFriendRequest {
@@ -465,10 +472,10 @@ export interface BlockUserRequest {
 export interface BlockUserResponse {
   readonly userId: string;
   readonly blockedUserId: string;
-  readonly blockedDisplayName?: string;
+  readonly blockedDisplayName: string;
   readonly blockedUsername?: string;
   readonly blockedAvatarUrl?: string;
-  readonly blockedAccountType?: AccountType;
+  readonly blockedAccountType: AccountType;
   readonly createdAt: string;
 }
 
@@ -494,6 +501,7 @@ export interface CreateConversationRequest {
   readonly description?: string;
   readonly avatarUrl?: string;
   readonly memberIds: readonly string[];
+  readonly agentSettings?: Readonly<Record<string, AgentMemberSettings>>;
 }
 
 export interface CreateConversationResponse {
@@ -502,12 +510,12 @@ export interface CreateConversationResponse {
   readonly name?: string;
   readonly description?: string;
   readonly avatarUrl?: string;
-  readonly createdBy?: string;
+  readonly createdBy: string;
   readonly settings?: ConversationSettings;
   readonly lastMessageAt?: string;
   readonly disabledAt?: string;
-  readonly createdAt?: string;
-  readonly updatedAt?: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
   readonly members: readonly MemberRecord[];
 }
 
@@ -531,12 +539,12 @@ export interface GetConversationResponse {
   readonly name?: string;
   readonly description?: string;
   readonly avatarUrl?: string;
-  readonly createdBy?: string;
+  readonly createdBy: string;
   readonly settings?: ConversationSettings;
   readonly lastMessageAt?: string;
   readonly disabledAt?: string;
-  readonly createdAt?: string;
-  readonly updatedAt?: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
   readonly members: readonly MemberRecord[];
 }
 
@@ -554,11 +562,11 @@ export interface UpdateConversationResponse {
   readonly name?: string;
   readonly description?: string;
   readonly avatarUrl?: string;
-  readonly createdBy?: string;
+  readonly createdBy: string;
   readonly settings?: ConversationSettings;
   readonly lastMessageAt?: string;
-  readonly createdAt?: string;
-  readonly updatedAt?: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
 }
 
 export interface UpdateConversationSettingsRequest {
@@ -572,16 +580,17 @@ export interface UpdateConversationSettingsResponse {
   readonly name?: string;
   readonly description?: string;
   readonly avatarUrl?: string;
-  readonly createdBy?: string;
+  readonly createdBy: string;
   readonly settings?: ConversationSettings;
   readonly lastMessageAt?: string;
-  readonly createdAt?: string;
-  readonly updatedAt?: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
 }
 
 export interface AddMembersRequest {
   readonly conversationId: string;
   readonly memberIds: readonly string[];
+  readonly agentSettings?: Readonly<Record<string, AgentMemberSettings>>;
 }
 
 export interface AddMembersResponse {
@@ -604,9 +613,9 @@ export interface UpdateMemberRoleRequest {
 export interface UpdateMemberRoleResponse {
   readonly userId: string;
   readonly role: string;
-  readonly accountType?: string;
+  readonly accountType: string;
   readonly canSend?: boolean;
-  readonly joinedAt?: string;
+  readonly joinedAt: string;
   readonly username?: string;
   readonly displayName?: string;
   readonly avatarUrl?: string;
@@ -618,7 +627,7 @@ export interface MarkReadRequest {
 }
 
 export interface MarkReadResponse {
-  readonly conversationId?: string;
+  readonly conversationId: string;
   readonly readUntil: string;
 }
 
@@ -628,7 +637,7 @@ export interface UpdateNotifyLevelRequest {
 }
 
 export interface UpdateNotifyLevelResponse {
-  readonly conversationId?: string;
+  readonly conversationId: string;
   readonly notifyLevel: NotifyLevel;
 }
 

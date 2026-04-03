@@ -71,6 +71,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
           this.listener.onApprovalUrl(url);
           this.setStatus('awaiting_approval');
         },
+        onPollAttempt: () => {
+          this.listener.onPollAttempt();
+        },
         onTokens: (tokens) => {
           log.debug('Tokens received, persisting');
           this.configManager.setTokens(this.config.id, tokens);
@@ -89,6 +92,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
       this.listener.onConfigUpdated();
 
       this.setStatus('initializing');
+
+      await this.app.init();
 
       this.app.onDisconnect(() => {
         if (!abortController.signal.aborted) {
@@ -217,10 +222,16 @@ export abstract class BaseAgentInstance implements AgentInstance {
   ): Promise<AgentSession> {
     if (existingCorrelationId) {
       log.info(`Resuming session: correlation=${existingCorrelationId}`);
-      const session = await this.resumeSession(existingCorrelationId);
-      this.wireStatusListener(session);
-      this.liveSessions.set(existingCorrelationId, { session, lastActivityAt: Date.now() });
-      return session;
+      try {
+        const session = await this.resumeSession(existingCorrelationId);
+        this.wireStatusListener(session);
+        this.liveSessions.set(existingCorrelationId, { session, lastActivityAt: Date.now() });
+        return session;
+      } catch (err) {
+        log.warn(
+          `Failed to resume session ${existingCorrelationId}, falling back to new session: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
 
     const session = await this.createSession();
@@ -382,7 +393,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   // Internal
   // ---------------------------------------------------------------------------
 
-  private setStatus(status: AgentRuntimeStatus, error?: string): void {
+  protected setStatus(status: AgentRuntimeStatus, error?: string): void {
     this.status = status;
     this.error = error;
     this.listener.onStatusChanged(status, error);

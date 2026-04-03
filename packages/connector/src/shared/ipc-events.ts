@@ -16,6 +16,9 @@ export interface MainToRendererEvents {
     readonly agentId: string;
     readonly approvalUrl: string;
   };
+  readonly 'agent-poll-attempt': {
+    readonly agentId: string;
+  };
   readonly 'agent-config-updated': {
     readonly agentId: string;
     readonly config: AgentConfig;
@@ -26,5 +29,6 @@ export interface MainToRendererEvents {
 export const EVENT_CHANNELS: { readonly [K in keyof MainToRendererEvents]: K } = {
   'agent-status-changed': 'agent-status-changed',
   'agent-approval-url': 'agent-approval-url',
+  'agent-poll-attempt': 'agent-poll-attempt',
   'agent-config-updated': 'agent-config-updated',
 };

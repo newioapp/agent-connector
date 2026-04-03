@@ -32,6 +32,9 @@ export function wireEvents(
       conversationId: event.payload.conversationId,
       type: event.payload.type as ConversationType,
       name: event.payload.name,
+      createdBy: event.payload.createdBy,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     });
     void loadConversation(store, client, identity, event.payload.conversationId);
   });
@@ -302,6 +305,9 @@ async function loadConversation(
       name: conv.name,
       description: conv.description,
       avatarUrl: conv.avatarUrl,
+      createdBy: conv.createdBy,
+      createdAt: conv.createdAt,
+      updatedAt: conv.updatedAt,
       lastMessageAt: conv.lastMessageAt,
     });
     store.setMembers(conversationId, conv.members);

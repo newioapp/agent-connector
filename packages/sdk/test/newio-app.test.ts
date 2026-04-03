@@ -20,6 +20,7 @@ function makeContact(overrides: Partial<ContactRecord> = {}): ContactRecord {
     friendUsername: 'alice',
     friendDisplayName: 'Alice',
     createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
     ...overrides,
   };
 }
@@ -28,6 +29,9 @@ function makeConversation(overrides: Partial<ConversationListItem> = {}): Conver
   return {
     conversationId: overrides.conversationId ?? 'conv-1',
     type: 'dm',
+    createdBy: 'me',
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
     ...overrides,
   };
 }
@@ -62,17 +66,21 @@ function mockClient(contacts: ContactRecord[] = [], conversations: ConversationL
     createConversation: vi.fn().mockResolvedValue({
       conversationId: 'new-conv',
       type: 'dm',
+      createdBy: 'me',
       createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
       members: [],
     }),
     getConversation: vi.fn().mockResolvedValue({
       conversationId: 'conv-1',
       type: 'dm',
+      createdBy: 'me',
       createdAt: '2026-01-01T00:00:00Z',
-      members: [{ userId: 'me', joinedAt: '2026-01-01T00:00:00Z' }],
+      updatedAt: '2026-01-01T00:00:00Z',
+      members: [{ userId: 'me', role: 'member', accountType: 'agent', joinedAt: '2026-01-01T00:00:00Z' }],
     }),
     listMessages: vi.fn().mockResolvedValue({ messages: [] }),
-    listIncomingRequests: vi.fn().mockResolvedValue({ requests: [] }),
+    listIncomingRequests: vi.fn().mockResolvedValue({ contacts: [] }),
   } as unknown as NewioClient;
 }
 
@@ -95,7 +103,8 @@ async function createApp(
   eventHandlers.clear();
   const client = mockClient(contacts, conversations);
   const ws = mockWs();
-  const app = await NewioApp.createFromComponents(identity, mockAuth(), client, ws);
+  const app = NewioApp.createFromComponents(identity, mockAuth(), client, ws);
+  await app.init();
   return { app, client, ws };
 }
 
@@ -339,6 +348,27 @@ describe('NewioApp', () => {
       const prompt = app.buildNewioInstruction();
 
       expect(prompt).toContain('markdown');
+    });
+
+    it('includes conversation type guidance', async () => {
+      const { app } = await createApp();
+      const prompt = app.buildNewioInstruction();
+
+      expect(prompt).toContain('dm:');
+      expect(prompt).toContain('Always respond');
+      expect(prompt).toContain('group:');
+      expect(prompt).toContain('Be selective');
+      expect(prompt).toContain('temp_group (Work Session)');
+      expect(prompt).toContain('Be proactive');
+    });
+
+    it('includes @mention convention', async () => {
+      const { app } = await createApp();
+      const prompt = app.buildNewioInstruction();
+
+      expect(prompt).toContain('@mention');
+      expect(prompt).toContain('mentions only');
+      expect(prompt).toContain('@username');
     });
   });
 });

@@ -78,6 +78,8 @@ export interface NewioAppCreateOptions {
   readonly tokens?: NewioTokens;
   /** Called when the approval URL is available (user must open it). */
   readonly onApprovalUrl?: (url: string) => void;
+  /** Called each time a poll request is made during approval. */
+  readonly onPollAttempt?: () => void;
   /** Called when new tokens are obtained. */
   readonly onTokens?: (tokens: NewioTokens) => void;
   /** Abort signal to cancel the auth flow. */
@@ -129,15 +131,14 @@ export class NewioApp {
    * Create a NewioApp from pre-initialized components (for testing).
    * Loads contacts/conversations and wires WebSocket events.
    */
-  static async createFromComponents(
+  static createFromComponents(
     identity: NewioIdentity,
     auth: AuthManager,
     client: NewioClient,
     ws: NewioWebSocket,
     store?: NewioAppStore,
-  ): Promise<NewioApp> {
+  ): NewioApp {
     const app = new NewioApp(identity, auth, client, ws, store ?? new NewioAppStore());
-    await app.loadData();
     wireEvents(ws, app.store, client, identity, () => app.eventHandlers);
     return app;
   }
@@ -199,17 +200,21 @@ export class NewioApp {
 
     const store = new NewioAppStore(opts.persistence);
     const app = new NewioApp(identity, auth, client, ws, store, opts.downloadDir);
-    log.info('Loading initial data (contacts, conversations, requests)...');
-    await app.loadData();
-    log.info(
-      `Ready. ${app.store.getAllContacts().length} contacts, ${app.store.getAllConversations().length} conversations.`,
-    );
     wireEvents(ws, store, client, identity, () => app.eventHandlers);
     return app;
   }
 
+  async init(): Promise<void> {
+    log.info('Loading initial data (contacts, conversations, requests)...');
+    await Promise.all([this.loadContacts(), this.loadConversations(), this.loadIncomingRequests()]);
+    log.info(
+      `Init complete. ${this.store.getAllContacts().length} contacts, ${this.store.getAllConversations().length} conversations, ${this.store.getIncomingRequests().length} incoming requests.`,
+    );
+  }
+
   /** Disconnect WebSocket and dispose auth. */
   dispose(): void {
+    log.info('Disposing NewioApp...');
     this.ws.disconnect();
     this.auth.dispose();
   }
@@ -246,6 +251,7 @@ export class NewioApp {
 
   /** Send a text message to a conversation. */
   async sendMessage(conversationId: string, text: string): Promise<void> {
+    log.debug(`Sending message to ${conversationId} (${text.length} chars)`);
     await this.client.sendMessage({
       conversationId,
       content: { text },
@@ -265,8 +271,10 @@ export class NewioApp {
   /** Send a DM to the agent's owner. No-op if ownerId is not set. */
   async dmOwner(text: string): Promise<void> {
     if (!this.identity.ownerId) {
+      log.warn('dmOwner called but no ownerId set');
       return;
     }
+    log.debug(`Sending DM to owner ${this.identity.ownerId}`);
     const conversationId = await this.findOrCreateDm(this.identity.ownerId);
     await this.sendMessage(conversationId, text);
   }
@@ -281,6 +289,7 @@ export class NewioApp {
 
   /** Send a DM by username. Creates the DM conversation if it doesn't exist. */
   async sendDm(username: string, text: string): Promise<void> {
+    log.debug(`Sending DM to @${username}`);
     const userId = await this.resolveUsername(username);
     const conversationId = await this.findOrCreateDm(userId);
     await this.sendMessage(conversationId, text);
@@ -291,6 +300,7 @@ export class NewioApp {
    * Accepts local file paths — handles upload to S3 automatically.
    */
   async sendMessageWithAttachments(conversationId: string, text: string, filePaths?: readonly string[]): Promise<void> {
+    log.debug(`Sending message with ${filePaths?.length ?? 0} attachments to ${conversationId}`);
     const attachments = filePaths ? await uploadFiles(this.client, filePaths) : undefined;
     const content: MessageContent = {
       text: text || undefined,
@@ -305,6 +315,7 @@ export class NewioApp {
 
   /** Send a friend request by username. */
   async sendFriendRequestByUsername(username: string, note?: string): Promise<void> {
+    log.info(`Sending friend request to @${username}`);
     const userId = await this.resolveUsername(username);
     await this.client.sendFriendRequest({ contactId: userId, note });
   }
@@ -322,6 +333,7 @@ export class NewioApp {
 
   /** Accept an incoming friend request by the sender's username. */
   async acceptFriendRequestByUsername(username: string): Promise<void> {
+    log.info(`Accepting friend request from @${username}`);
     const request = await this.findIncomingRequestByUsername(username);
     await this.client.acceptFriendRequest({ requestId: request.contactId });
     this.store.removeIncomingRequest(request.contactId);
@@ -330,6 +342,7 @@ export class NewioApp {
 
   /** Reject an incoming friend request by the sender's username. */
   async rejectFriendRequestByUsername(username: string): Promise<void> {
+    log.info(`Rejecting friend request from @${username}`);
     const request = await this.findIncomingRequestByUsername(username);
     await this.client.rejectFriendRequest({ requestId: request.contactId });
     this.store.removeIncomingRequest(request.contactId);
@@ -337,6 +350,7 @@ export class NewioApp {
 
   /** Remove a friend by username. */
   async removeFriendByUsername(username: string): Promise<void> {
+    log.info(`Removing friend @${username}`);
     const userId = await this.resolveUsername(username);
     await this.client.removeFriend({ userId });
     this.store.removeContact(userId);
@@ -351,6 +365,7 @@ export class NewioApp {
    * Returns the local file path.
    */
   async downloadAttachment(conversationId: string, s3Key: string, fileName: string): Promise<string> {
+    log.debug(`Downloading attachment ${fileName} from ${conversationId}`);
     return downloadAttachment(this.client, this.downloadDir, conversationId, s3Key, fileName);
   }
 
@@ -362,9 +377,11 @@ export class NewioApp {
   async resolveUsername(username: string): Promise<string> {
     const cached = this.store.resolveUsernameFromCache(username);
     if (cached) {
+      log.debug(`Resolved @${username} → ${cached} (cache)`);
       return cached;
     }
     const user = await this.client.getUserByUsername({ username });
+    log.debug(`Resolved @${username} → ${user.userId} (API)`);
     return user.userId;
   }
 
@@ -438,8 +455,10 @@ export class NewioApp {
   async resolveSessionId(conversationId: string): Promise<string> {
     const cached = this.store.getSessionId(conversationId);
     if (cached) {
+      log.debug(`Resolved sessionId for ${conversationId} → ${cached} (cache)`);
       return cached;
     }
+    log.debug(`Fetching sessionId for ${conversationId} from API`);
     const conv = await this.client.getConversation({ conversationId });
     const self = conv.members.find((m) => m.userId === this.identity.userId);
     if (self?.sessionId) {
@@ -451,6 +470,7 @@ export class NewioApp {
 
   /** Get members of a conversation as agent-friendly summaries. */
   async getMembers(conversationId: string): Promise<MemberSummary[]> {
+    log.debug(`Getting members for ${conversationId}`);
     const members = await this.getMembersRaw(conversationId);
     return members.map((m) => {
       const contact = this.store.getContact(m.userId);
@@ -470,12 +490,14 @@ export class NewioApp {
 
   /** Find or create a DM by username. */
   async findOrCreateDmByUsername(username: string): Promise<string> {
+    log.debug(`Finding or creating DM with @${username}`);
     const userId = await this.resolveUsername(username);
     return this.findOrCreateDm(userId);
   }
 
   /** Find an existing DM with a user, or create one. */
   private async findOrCreateDm(userId: string): Promise<string> {
+    log.debug(`Finding or creating DM with ${userId}`);
     for (const conv of this.store.getAllConversations()) {
       if (conv.type === 'dm') {
         const members = await this.getMembersRaw(conv.conversationId);
@@ -492,6 +514,9 @@ export class NewioApp {
       conversationId: resp.conversationId,
       type: resp.type,
       name: resp.name,
+      createdBy: resp.createdBy,
+      createdAt: resp.createdAt,
+      updatedAt: resp.updatedAt,
       lastMessageAt: resp.lastMessageAt,
     });
     this.store.setMembers(resp.conversationId, resp.members);
@@ -500,6 +525,7 @@ export class NewioApp {
 
   /** Create a group conversation. */
   async createGroup(name: string, memberUsernames: readonly string[]): Promise<string> {
+    log.info(`Creating group "${name}" with ${memberUsernames.length} members`);
     const memberIds = await Promise.all(memberUsernames.map((u) => this.resolveUsername(u)));
     const resp = await this.client.createConversation({
       type: 'group',
@@ -510,6 +536,9 @@ export class NewioApp {
       conversationId: resp.conversationId,
       type: resp.type,
       name: resp.name,
+      createdBy: resp.createdBy,
+      createdAt: resp.createdAt,
+      updatedAt: resp.updatedAt,
       lastMessageAt: resp.lastMessageAt,
     });
     this.store.setMembers(resp.conversationId, resp.members);
@@ -518,6 +547,7 @@ export class NewioApp {
 
   /** Create a work session (temp_group) conversation. */
   async createWorkSession(name: string, memberUsernames: readonly string[]): Promise<string> {
+    log.info(`Creating work session "${name}" with ${memberUsernames.length} members`);
     const memberIds = await Promise.all(memberUsernames.map((u) => this.resolveUsername(u)));
     const resp = await this.client.createConversation({
       type: 'temp_group',
@@ -528,6 +558,9 @@ export class NewioApp {
       conversationId: resp.conversationId,
       type: resp.type,
       name: resp.name,
+      createdBy: resp.createdBy,
+      createdAt: resp.createdAt,
+      updatedAt: resp.updatedAt,
       lastMessageAt: resp.lastMessageAt,
     });
     this.store.setMembers(resp.conversationId, resp.members);
@@ -553,10 +586,6 @@ export class NewioApp {
   // ---------------------------------------------------------------------------
   // Internal — data loading
   // ---------------------------------------------------------------------------
-
-  private async loadData(): Promise<void> {
-    await Promise.all([this.loadContacts(), this.loadConversations(), this.loadIncomingRequests()]);
-  }
 
   private async loadContacts(): Promise<void> {
     let cursor: string | undefined;
@@ -584,7 +613,7 @@ export class NewioApp {
     let cursor: string | undefined;
     do {
       const resp = await this.client.listIncomingRequests({ cursor, limit: 100 });
-      for (const r of resp.requests) {
+      for (const r of resp.contacts) {
         this.store.addIncomingRequest(r);
       }
       cursor = resp.cursor;
@@ -632,6 +661,7 @@ async function doApprovalFlow(
     username?: string;
     name: string;
     onApprovalUrl?: (url: string) => void;
+    onPollAttempt?: () => void;
     signal?: AbortSignal;
   },
 ): Promise<void> {
@@ -644,5 +674,5 @@ async function doApprovalFlow(
     handle = await auth.register({ name: opts.name });
   }
   opts.onApprovalUrl?.(handle.approvalUrl);
-  await handle.waitForApproval({ signal: opts.signal });
+  await handle.waitForApproval({ signal: opts.signal, onPollAttempt: opts.onPollAttempt });
 }
