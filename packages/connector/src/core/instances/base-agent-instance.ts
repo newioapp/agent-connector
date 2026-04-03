@@ -248,6 +248,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
       const convId = this.activeConversation.get(session.correlationId);
       if (convId) {
         this.requireApp().setStatus(status, convId);
+      } else {
+        log.warn(`Status '${status}' from session ${session.correlationId} dropped — no active conversation mapped.`);
       }
     });
   }
