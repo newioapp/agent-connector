@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { createMcpServer } from '../src/server.js';
+import { NewioMcpServer } from '../src/server.js';
 import type { NewioApp, ContactSummary, ConversationSummary, FriendRequestSummary } from '@newio/sdk';
 
 function mockApp(
@@ -47,7 +47,17 @@ function mockApp(
 }
 
 async function createConnectedClient(app: NewioApp): Promise<Client> {
-  const server = createMcpServer(app);
+  const server = new NewioMcpServer(app);
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverTransport);
+  const client = new Client({ name: 'test-client', version: '1.0.0' });
+  await client.connect(clientTransport);
+  return client;
+}
+
+async function createConnectedClientWithSession(app: NewioApp, sessionId: string): Promise<Client> {
+  const server = new NewioMcpServer(app);
+  server.setSessionId(sessionId);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
   const client = new Client({ name: 'test-client', version: '1.0.0' });
@@ -118,7 +128,7 @@ describe('MCP Server', () => {
       name: 'create_work_session',
       arguments: { name: 'Sprint Planning', usernames: ['alice', 'bob'] },
     });
-    expect(app.createWorkSession).toHaveBeenCalledWith('Sprint Planning', ['alice', 'bob']);
+    expect(app.createWorkSession).toHaveBeenCalledWith('Sprint Planning', ['alice', 'bob'], undefined);
     const parsed = JSON.parse((result.content[0] as { text: string }).text) as { conversationId: string };
     expect(parsed.conversationId).toBe('ws-conv-id');
   });
@@ -130,7 +140,7 @@ describe('MCP Server', () => {
       name: 'create_group',
       arguments: { usernames: ['alice', 'bob'], name: 'Team' },
     });
-    expect(app.createGroup).toHaveBeenCalledWith('Team', ['alice', 'bob']);
+    expect(app.createGroup).toHaveBeenCalledWith('Team', ['alice', 'bob'], undefined);
     const parsed = JSON.parse((result.content[0] as { text: string }).text) as { conversationId: string };
     expect(parsed.conversationId).toBe('group-conv-id');
   });
@@ -177,6 +187,26 @@ describe('MCP Server', () => {
     const result = await client.callTool({ name: 'search_users', arguments: { query: 'alice' } });
     const parsed = JSON.parse((result.content[0] as { text: string }).text) as unknown[];
     expect(parsed).toHaveLength(1);
+  });
+
+  it('create_work_session passes sessionId when set', async () => {
+    const app = mockApp();
+    const client = await createConnectedClientWithSession(app, 'session-123');
+    await client.callTool({
+      name: 'create_work_session',
+      arguments: { name: 'Sprint', usernames: ['alice'] },
+    });
+    expect(app.createWorkSession).toHaveBeenCalledWith('Sprint', ['alice'], 'session-123');
+  });
+
+  it('create_group passes sessionId when set', async () => {
+    const app = mockApp();
+    const client = await createConnectedClientWithSession(app, 'session-456');
+    await client.callTool({
+      name: 'create_group',
+      arguments: { name: 'Team', usernames: ['alice'] },
+    });
+    expect(app.createGroup).toHaveBeenCalledWith('Team', ['alice'], 'session-456');
   });
 
   it('list_incoming_friend_requests returns summaries', async () => {

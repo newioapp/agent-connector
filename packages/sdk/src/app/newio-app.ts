@@ -539,15 +539,17 @@ export class NewioApp {
     return resp.conversationId;
   }
 
-  /** Create a group conversation. */
-  async createGroup(name: string, memberUsernames: readonly string[]): Promise<string> {
+  /** Create a group conversation. If `sessionId` is provided, the agent joins under that session. */
+  async createGroup(name: string, memberUsernames: readonly string[], sessionId?: string): Promise<string> {
     const filtered = memberUsernames.filter((u) => u.toLowerCase() !== this.identity.username.toLowerCase());
     log.info(`Creating group "${name}" with ${filtered.length} members`);
     const memberIds = await Promise.all(filtered.map((u) => this.resolveUsername(u)));
+    const agentSettings = sessionId ? { [this.identity.userId]: { sessionId } } : undefined;
     const resp = await this.client.createConversation({
       type: 'group',
       name,
       memberIds,
+      agentSettings,
     });
     this.store.setConversation({
       conversationId: resp.conversationId,
@@ -562,15 +564,17 @@ export class NewioApp {
     return resp.conversationId;
   }
 
-  /** Create a work session (temp_group) conversation. */
-  async createWorkSession(name: string, memberUsernames: readonly string[]): Promise<string> {
+  /** Create a work session (temp_group) conversation. If `sessionId` is provided, the agent joins under that session. */
+  async createWorkSession(name: string, memberUsernames: readonly string[], sessionId?: string): Promise<string> {
     const filtered = memberUsernames.filter((u) => u.toLowerCase() !== this.identity.username.toLowerCase());
     log.info(`Creating work session "${name}" with ${filtered.length} members`);
     const memberIds = await Promise.all(filtered.map((u) => this.resolveUsername(u)));
+    const agentSettings = sessionId ? { [this.identity.userId]: { sessionId } } : undefined;
     const resp = await this.client.createConversation({
       type: 'temp_group',
       name,
       memberIds,
+      agentSettings,
     });
     this.store.setConversation({
       conversationId: resp.conversationId,
