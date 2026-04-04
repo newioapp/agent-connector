@@ -95,7 +95,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         newioAgentId: userId,
         newioUsername: username,
         newioDisplayName: displayName,
-        newioAvatarUrl: undefined,
+        newioAvatarUrl: this.app.identity.avatarUrl,
       });
       this.listener.onConfigUpdated();
 

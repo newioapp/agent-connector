@@ -28,6 +28,14 @@ export interface IpcApi {
   // Agent lifecycle
   startAgent(agentId: string): Promise<void>;
   stopAgent(agentId: string): Promise<void>;
+
+  // Environment
+  /** List supported shells available on the system. */
+  listShells(): Promise<string[]>;
+  /** Resolve environment variables from a specific shell. */
+  getShellEnv(shell: string): Promise<Record<string, string>>;
+  /** Update only the envVars on an agent config (no restart required). */
+  updateAgentEnvVars(agentId: string, envVars: Record<string, string>): Promise<AgentConfig>;
 }
 
 /** Channel name for each IpcApi method. */
@@ -43,4 +51,7 @@ export const IPC_CHANNELS: { readonly [K in keyof IpcApi]: string } = {
   removeAgent: 'remove-agent',
   startAgent: 'start-agent',
   stopAgent: 'stop-agent',
+  listShells: 'list-shells',
+  getShellEnv: 'get-shell-env',
+  updateAgentEnvVars: 'update-agent-env-vars',
 };

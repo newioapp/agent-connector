@@ -201,6 +201,7 @@ export class NewioApp {
       userId: me.userId,
       username: me.username,
       displayName: me.displayName,
+      avatarUrl: me.avatarUrl,
       ownerId: me.ownerId,
     };
     log.info(`Authenticated as @${identity.username} (${identity.userId}).`);

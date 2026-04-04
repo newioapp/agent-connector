@@ -79,6 +79,7 @@ export interface NewioIdentity {
   readonly userId: string;
   readonly username: string;
   readonly displayName?: string;
+  readonly avatarUrl?: string;
   readonly ownerId?: string;
 }
 

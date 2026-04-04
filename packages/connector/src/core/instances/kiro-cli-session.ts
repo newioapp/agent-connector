@@ -72,8 +72,12 @@ export class KiroCliSession implements AgentSession, acp.Client {
   /**
    * Spawn a kiro-cli process, establish ACP connection, create a new ACP session.
    */
-  static async create(config: KiroCliConfig, mcpSocketPath?: string): Promise<KiroCliSession> {
-    const session = await KiroCliSession.spawnAndInit(config);
+  static async create(
+    config: KiroCliConfig,
+    mcpSocketPath?: string,
+    envVars?: Readonly<Record<string, string>>,
+  ): Promise<KiroCliSession> {
+    const session = await KiroCliSession.spawnAndInit(config, envVars);
     const conn = session.getConnection();
 
     const sessionResult = await conn.newSession({
@@ -90,8 +94,13 @@ export class KiroCliSession implements AgentSession, acp.Client {
    * Spawn a kiro-cli process, establish ACP connection, and resume an existing session.
    * Uses ACP `session/load` to restore the previous context window.
    */
-  static async resume(config: KiroCliConfig, correlationId: string, mcpSocketPath?: string): Promise<KiroCliSession> {
-    const session = await KiroCliSession.spawnAndInit(config);
+  static async resume(
+    config: KiroCliConfig,
+    correlationId: string,
+    mcpSocketPath?: string,
+    envVars?: Readonly<Record<string, string>>,
+  ): Promise<KiroCliSession> {
+    const session = await KiroCliSession.spawnAndInit(config, envVars);
     (session as { correlationId: string }).correlationId = correlationId;
 
     await session.getConnection().loadSession({
@@ -111,7 +120,10 @@ export class KiroCliSession implements AgentSession, acp.Client {
   }
 
   /** Spawn kiro-cli process and initialize ACP connection (shared by create/resume). */
-  private static async spawnAndInit(config: KiroCliConfig): Promise<KiroCliSession> {
+  private static async spawnAndInit(
+    config: KiroCliConfig,
+    envVars?: Readonly<Record<string, string>>,
+  ): Promise<KiroCliSession> {
     const { agentName, model, kiroCliPath, cwd } = config;
     const executable = kiroCliPath ?? resolvedKiroCliPath;
     const args = ['acp', '--trust-all-tools'];
@@ -126,7 +138,7 @@ export class KiroCliSession implements AgentSession, acp.Client {
 
     const child = spawn(executable, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, TERM: 'dumb' },
+      env: { ...envVars, TERM: 'dumb' },
       ...(cwd ? { cwd } : {}),
     });
 

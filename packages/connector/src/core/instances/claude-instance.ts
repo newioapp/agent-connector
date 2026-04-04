@@ -159,6 +159,7 @@ export class ClaudeInstance extends BaseAgentInstance {
         persistSession: false,
         maxTurns: 1,
         env: {
+          ...this.config.envVars,
           ANTHROPIC_API_KEY: this.config.claude.apiKey,
         },
       },
@@ -240,6 +241,7 @@ export class ClaudeInstance extends BaseAgentInstance {
         maxTurns: 1,
         includePartialMessages: true,
         env: {
+          ...this.config.envVars,
           ANTHROPIC_API_KEY: this.config.claude.apiKey,
         },
       },

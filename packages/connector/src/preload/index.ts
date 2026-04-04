@@ -31,6 +31,9 @@ const api: ConnectorAPI = {
   removeAgent: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.removeAgent, agentId),
   startAgent: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.startAgent, agentId),
   stopAgent: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.stopAgent, agentId),
+  listShells: () => ipcRenderer.invoke(IPC_CHANNELS.listShells),
+  getShellEnv: (shell) => ipcRenderer.invoke(IPC_CHANNELS.getShellEnv, shell),
+  updateAgentEnvVars: (agentId, envVars) => ipcRenderer.invoke(IPC_CHANNELS.updateAgentEnvVars, agentId, envVars),
 
   // Push events
   onAgentStatusChanged: (callback) => onEvent(EVENT_CHANNELS['agent-status-changed'], callback),

@@ -41,7 +41,10 @@ export const useAgentStore = create<AgentStore>((set) => ({
 
   async load(): Promise<void> {
     const agents = await window.api.listAgents();
-    set({ agents });
+    set((state: AgentState) => ({
+      agents,
+      selectedAgentId: state.selectedAgentId ?? (agents.length > 0 ? agents[0].id : null),
+    }));
   },
 
   async addAgent(input: AddAgentInput): Promise<void> {

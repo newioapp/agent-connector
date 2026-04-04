@@ -12,6 +12,7 @@ import type { ThemeSource, AgentConfig, AddAgentInput, UpdateAgentInput, AgentSt
 import type { StoreSchema } from './store';
 import type { AgentConfigManager } from '../core/agent-config-manager';
 import type { AgentRuntimeManager } from '../core/agent-runtime-manager';
+import { getShellEnv, listAvailableShells } from './shell-env';
 
 interface IpcHandlerDeps {
   readonly store: Store<StoreSchema>;
@@ -59,7 +60,7 @@ export class IpcHandler implements IpcApi {
   }
 
   async addAgent(input: AddAgentInput): Promise<AgentConfig> {
-    return this.agentConfigManager.add(input);
+    return await this.agentConfigManager.add(input);
   }
 
   async updateAgent(agentId: string, updates: UpdateAgentInput): Promise<AgentConfig> {
@@ -77,5 +78,17 @@ export class IpcHandler implements IpcApi {
 
   async stopAgent(agentId: string): Promise<void> {
     await this.agentRuntimeManager.stop(agentId);
+  }
+
+  async listShells(): Promise<string[]> {
+    return listAvailableShells();
+  }
+
+  async getShellEnv(shell: string): Promise<Record<string, string>> {
+    return getShellEnv(shell);
+  }
+
+  async updateAgentEnvVars(agentId: string, envVars: Record<string, string>): Promise<AgentConfig> {
+    return this.agentConfigManager.update(agentId, { envVars });
   }
 }
