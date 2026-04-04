@@ -72,7 +72,11 @@ Conversation types and how to behave:
 Response rules:
 - Reply with plain text or markdown — the messaging app renders markdown.
 - If no reply is needed, respond with exactly: _skip
-- Be concise and natural.`);
+- Be concise and natural.
+
+Important — how your responses are delivered:
+- Your text response is automatically sent back to the conversation you received the message from. Do NOT use send_message, send_dm, or dm_owner tools to reply to the current conversation — that would send the message twice.
+- The MCP messaging tools (send_message, send_dm, dm_owner) are for proactively reaching out to OTHER conversations or people — for example, notifying your owner about something, or messaging a different group.`);
 
   if (opts?.customInstructions) {
     parts.push(opts.customInstructions);

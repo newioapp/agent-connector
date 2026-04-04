@@ -409,7 +409,7 @@ export class NewioApp {
     if (!c) {
       return undefined;
     }
-    return { username: c.friendUsername, displayName: c.friendDisplayName, accountType: c.friendAccountType };
+    return this.toContactSummary(c);
   }
 
   /** Get a conversation by ID. */
@@ -438,11 +438,7 @@ export class NewioApp {
 
   /** Get all contacts as agent-friendly summaries. */
   getAllContacts(): ContactSummary[] {
-    return this.store.getAllContacts().map((c) => ({
-      username: c.friendUsername,
-      displayName: c.friendDisplayName,
-      accountType: c.friendAccountType,
-    }));
+    return this.store.getAllContacts().map((c) => this.toContactSummary(c));
   }
 
   /** Get recent cached messages for a conversation, sorted oldest-first. */
@@ -453,6 +449,17 @@ export class NewioApp {
   /** Get the backend session ID for a conversation, if known. */
   getSessionId(conversationId: string): string | undefined {
     return this.store.getSessionId(conversationId);
+  }
+
+  private toContactSummary(c: ContactRecord): ContactSummary {
+    const owner = c.friendAccountType === 'agent' && c.ownerId ? this.store.getOwnerProfile(c.ownerId) : undefined;
+    return {
+      username: c.friendUsername,
+      displayName: c.friendDisplayName,
+      accountType: c.friendAccountType,
+      ...(owner?.username ? { ownerUsername: owner.username } : {}),
+      ...(owner?.displayName ? { ownerDisplayName: owner.displayName } : {}),
+    };
   }
 
   /**
@@ -533,8 +540,9 @@ export class NewioApp {
 
   /** Create a group conversation. */
   async createGroup(name: string, memberUsernames: readonly string[]): Promise<string> {
-    log.info(`Creating group "${name}" with ${memberUsernames.length} members`);
-    const memberIds = await Promise.all(memberUsernames.map((u) => this.resolveUsername(u)));
+    const filtered = memberUsernames.filter((u) => u.toLowerCase() !== this.identity.username.toLowerCase());
+    log.info(`Creating group "${name}" with ${filtered.length} members`);
+    const memberIds = await Promise.all(filtered.map((u) => this.resolveUsername(u)));
     const resp = await this.client.createConversation({
       type: 'group',
       name,
@@ -555,8 +563,9 @@ export class NewioApp {
 
   /** Create a work session (temp_group) conversation. */
   async createWorkSession(name: string, memberUsernames: readonly string[]): Promise<string> {
-    log.info(`Creating work session "${name}" with ${memberUsernames.length} members`);
-    const memberIds = await Promise.all(memberUsernames.map((u) => this.resolveUsername(u)));
+    const filtered = memberUsernames.filter((u) => u.toLowerCase() !== this.identity.username.toLowerCase());
+    log.info(`Creating work session "${name}" with ${filtered.length} members`);
+    const memberIds = await Promise.all(filtered.map((u) => this.resolveUsername(u)));
     const resp = await this.client.createConversation({
       type: 'temp_group',
       name,
@@ -604,6 +613,40 @@ export class NewioApp {
       }
       cursor = resp.cursor;
     } while (cursor);
+
+    await this.resolveOwnerProfiles();
+  }
+
+  /** Batch-fetch owner profiles for agent contacts whose owners aren't in the contact cache. */
+  private async resolveOwnerProfiles(): Promise<void> {
+    const missingOwnerIds: string[] = [];
+    for (const contact of this.store.getAllContacts()) {
+      if (contact.friendAccountType !== 'agent' || !contact.ownerId) {
+        continue;
+      }
+      const ownerId = contact.ownerId;
+      // Try resolving from contact cache first
+      const cached = this.store.getContact(ownerId);
+      if (cached) {
+        this.store.setOwnerProfile(ownerId, { username: cached.friendUsername, displayName: cached.friendDisplayName });
+      } else if (!this.store.getOwnerProfile(ownerId)) {
+        missingOwnerIds.push(ownerId);
+      }
+    }
+
+    if (missingOwnerIds.length === 0) {
+      return;
+    }
+
+    const unique = [...new Set(missingOwnerIds)];
+    // Batch in chunks of 25 (API limit)
+    for (let i = 0; i < unique.length; i += 25) {
+      const batch = unique.slice(i, i + 25);
+      const resp = await this.client.getUserSummaries({ userIds: batch });
+      for (const user of resp.users) {
+        this.store.setOwnerProfile(user.userId, { username: user.username, displayName: user.displayName });
+      }
+    }
   }
 
   private async loadConversations(): Promise<void> {

@@ -119,11 +119,12 @@ export abstract class BaseAgentInstance implements AgentInstance {
       });
 
       // Start MCP server on UDS for agent sessions
-      const mcpServer = createMcpServer(this.app);
+      const app = this.app;
       this.udsServer = startUdsServer({
         socketPath: mcpSocketPath,
         onConnection: (transport) => {
           log.info(`MCP client connected via ${mcpSocketPath}`);
+          const mcpServer = createMcpServer(app);
           void mcpServer.connect(transport);
         },
       });

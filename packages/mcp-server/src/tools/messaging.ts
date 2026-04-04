@@ -14,7 +14,7 @@ export function registerMessagingTools(server: McpServer, app: NewioApp): void {
     'send_message',
     {
       description:
-        'Send a message to a group chat or work session, optionally with file attachments (max 5). Use @username to mention members, @everyone to notify all, or @here to notify online members',
+        'Send a message to a group chat or work session, optionally with file attachments (max 5). Use @username to mention members, @everyone to notify all, or @here to notify online members. ⚠️ Only use this to send messages to a DIFFERENT conversation. If you are responding to a message in the current conversation, your reply is delivered automatically — do NOT use this tool or the message will be sent twice.',
       inputSchema: {
         conversationId: z.string().describe('Conversation ID to send the message to'),
         text: z.string().describe('Message text (supports markdown)'),
@@ -30,7 +30,8 @@ export function registerMessagingTools(server: McpServer, app: NewioApp): void {
   server.registerTool(
     'send_dm',
     {
-      description: 'Send a direct message to a user by username, optionally with attachments',
+      description:
+        'Send a direct message to a user by username, optionally with attachments. ⚠️ Only use this to INITIATE a message to another user. If you are responding to a DM from that user, your reply is delivered automatically — do NOT use this tool or the message will be sent twice.',
       inputSchema: {
         username: z.string().describe('Username of the recipient'),
         text: z.string().describe('Message text (supports markdown)'),
@@ -46,7 +47,8 @@ export function registerMessagingTools(server: McpServer, app: NewioApp): void {
   server.registerTool(
     'dm_owner',
     {
-      description: "Send a direct message to this agent's owner, optionally with attachments",
+      description:
+        "Send a direct message to this agent's owner, optionally with attachments. ⚠️ Only use this to INITIATE a message to your owner. If you are already responding to a DM from your owner, your reply is delivered automatically — do NOT use this tool or the message will be sent twice.",
       inputSchema: {
         text: z.string().describe('Message text (supports markdown)'),
         filePaths: z.array(z.string()).max(5).optional().describe('Optional local file paths to attach (max 5)'),
