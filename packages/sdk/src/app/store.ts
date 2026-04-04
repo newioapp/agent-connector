@@ -72,6 +72,8 @@ export class NewioAppStore {
   private readonly messageCache = new Map<string, IncomingMessage[]>();
   /** contactId → pending incoming friend request */
   private readonly incomingRequests = new Map<string, ContactRecord>();
+  /** ownerId → { username, displayName } for agent owner resolution */
+  private readonly ownerProfiles = new Map<string, { username?: string; displayName?: string }>();
 
   private readonly persistence: StorePersistence | undefined;
 
@@ -120,6 +122,16 @@ export class NewioAppStore {
   /** Get all contacts (raw records). */
   getAllContacts(): ContactRecord[] {
     return [...this.contacts.values()];
+  }
+
+  /** Store an owner profile for agent owner resolution. */
+  setOwnerProfile(ownerId: string, profile: { username?: string; displayName?: string }): void {
+    this.ownerProfiles.set(ownerId, profile);
+  }
+
+  /** Get an owner profile by ownerId. */
+  getOwnerProfile(ownerId: string): { username?: string; displayName?: string } | undefined {
+    return this.ownerProfiles.get(ownerId);
   }
 
   // ---------------------------------------------------------------------------

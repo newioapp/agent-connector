@@ -11,6 +11,9 @@
  * - `idle` is always emitted immediately and cleans up state.
  */
 import type { ActivityStatus } from './types';
+import { getLogger } from './logger.js';
+
+const log = getLogger('activity-throttle');
 
 /** Suppress duplicate emissions within this window. */
 const THROTTLE_MS = 3_000;
@@ -35,6 +38,7 @@ export class ActivityThrottle {
   /** Call on every raw status update. */
   update(conversationId: string, status: ActivityStatus): void {
     if (status === 'idle') {
+      log.debug('idle received, flushing', { conversationId });
       this.flush(conversationId);
       return;
     }
@@ -50,10 +54,13 @@ export class ActivityThrottle {
     const changed = status !== state.status;
 
     if (changed || now - state.lastEmitAt >= THROTTLE_MS) {
+      log.debug('emitting status', { conversationId, status, changed, sinceLast: now - state.lastEmitAt });
       state.status = status;
       state.lastEmitAt = now;
       this.emit(conversationId, status);
       this.scheduleHeartbeat(conversationId, state);
+    } else {
+      // log.debug('throttled', { conversationId, status, sinceLast: now - state.lastEmitAt });
     }
   }
 
@@ -65,6 +72,7 @@ export class ActivityThrottle {
     }
     this.clearHeartbeat(state);
     if (state.status !== 'idle') {
+      log.debug('flushing to idle', { conversationId, previousStatus: state.status });
       this.emit(conversationId, 'idle');
     }
     this.conversations.delete(conversationId);
@@ -82,6 +90,7 @@ export class ActivityThrottle {
     this.clearHeartbeat(state);
     state.heartbeatTimer = setTimeout(() => {
       if (state.status !== 'idle') {
+        log.debug('heartbeat re-emit', { conversationId, status: state.status });
         state.lastEmitAt = Date.now();
         this.emit(conversationId, state.status);
         this.scheduleHeartbeat(conversationId, state);

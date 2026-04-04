@@ -46,6 +46,8 @@ export interface ContactSummary {
   readonly username: string | undefined;
   readonly displayName: string | undefined;
   readonly accountType: AccountType;
+  readonly ownerUsername?: string;
+  readonly ownerDisplayName?: string;
 }
 
 /** Agent-friendly conversation summary. */

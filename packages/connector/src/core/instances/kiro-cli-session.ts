@@ -12,6 +12,9 @@ import { ClientSideConnection, ndJsonStream, PROTOCOL_VERSION } from '@agentclie
 import type * as acp from '@agentclientprotocol/sdk';
 import type { AgentSession, SessionStatusListener } from '../agent-session';
 import type { KiroCliConfig } from '../types';
+import type { McpServer as AcpMcpServer } from '@agentclientprotocol/sdk';
+import { SessionStream } from './session-stream';
+import type { SessionStreamSegment } from './session-stream';
 import { Logger } from '../logger';
 
 const log = new Logger('kiro-cli-session');
@@ -59,8 +62,7 @@ export class KiroCliSession implements AgentSession, acp.Client {
 
   private childProcess?: ChildProcess;
   private connection?: ClientSideConnection;
-  private chunks: string[] = [];
-  private resolve: ((text: string) => void) | null = null;
+  private stream?: SessionStream;
   private statusListener: SessionStatusListener = () => {};
 
   private constructor(correlationId: string) {
@@ -70,13 +72,13 @@ export class KiroCliSession implements AgentSession, acp.Client {
   /**
    * Spawn a kiro-cli process, establish ACP connection, create a new ACP session.
    */
-  static async create(config: KiroCliConfig): Promise<KiroCliSession> {
+  static async create(config: KiroCliConfig, mcpSocketPath?: string): Promise<KiroCliSession> {
     const session = await KiroCliSession.spawnAndInit(config);
     const conn = session.getConnection();
 
     const sessionResult = await conn.newSession({
       cwd: config.cwd ?? process.cwd(),
-      mcpServers: [],
+      mcpServers: buildMcpServers(mcpSocketPath),
     });
 
     (session as { correlationId: string }).correlationId = sessionResult.sessionId;
@@ -88,14 +90,14 @@ export class KiroCliSession implements AgentSession, acp.Client {
    * Spawn a kiro-cli process, establish ACP connection, and resume an existing session.
    * Uses ACP `session/load` to restore the previous context window.
    */
-  static async resume(config: KiroCliConfig, correlationId: string): Promise<KiroCliSession> {
+  static async resume(config: KiroCliConfig, correlationId: string, mcpSocketPath?: string): Promise<KiroCliSession> {
     const session = await KiroCliSession.spawnAndInit(config);
     (session as { correlationId: string }).correlationId = correlationId;
 
     await session.getConnection().loadSession({
       sessionId: correlationId,
       cwd: config.cwd ?? process.cwd(),
-      mcpServers: [],
+      mcpServers: buildMcpServers(mcpSocketPath),
     });
     log.info(`[${correlationId}] ACP session resumed`);
     return session;
@@ -172,30 +174,39 @@ export class KiroCliSession implements AgentSession, acp.Client {
 
   private prompting = false;
 
-  async prompt(text: string): Promise<string | undefined> {
+  async *prompt(text: string): AsyncGenerator<SessionStreamSegment> {
     const conn = this.connection;
     if (!conn) {
-      return undefined;
+      return;
     }
 
     this.prompting = true;
     this.statusListener('thinking');
-    const responsePromise = this.startCollecting();
+    const stream = new SessionStream(this.statusListener);
+    this.stream = stream;
 
-    try {
-      const promptResult = await conn.prompt({
+    const promptDone = conn
+      .prompt({
         sessionId: this.correlationId,
         prompt: [{ type: 'text', text }],
+      })
+      .then((result) => {
+        stream.finish();
+        if (result.stopReason !== 'end_turn') {
+          log.warn(`[${this.correlationId}] Prompt ended with stop reason: ${result.stopReason}`);
+        }
+      })
+      .catch((err: unknown) => {
+        log.error(`[${this.correlationId}] Prompt failed: ${err instanceof Error ? err.message : String(err)}`);
+        stream.finish();
+        throw err;
       });
 
-      this.finishCollecting();
-
-      if (promptResult.stopReason !== 'end_turn') {
-        log.warn(`[${this.correlationId}] Prompt ended with stop reason: ${promptResult.stopReason}`);
-      }
-
-      return await responsePromise;
+    try {
+      yield* stream.segments();
+      await promptDone;
     } finally {
+      this.stream = undefined;
       this.prompting = false;
       this.statusListener('idle');
     }
@@ -258,53 +269,11 @@ export class KiroCliSession implements AgentSession, acp.Client {
   }
 
   // ---------------------------------------------------------------------------
-  // Internal — response collection
-  // ---------------------------------------------------------------------------
-
-  private startCollecting(): Promise<string> {
-    this.chunks = [];
-    return new Promise<string>((r) => {
-      this.resolve = r;
-    });
-  }
-
-  private finishCollecting(): void {
-    const text = this.chunks.join('');
-    this.chunks = [];
-    this.resolve?.(text);
-    this.resolve = null;
-  }
-
-  // ---------------------------------------------------------------------------
   // acp.Client — session updates
   // ---------------------------------------------------------------------------
 
   sessionUpdate(params: acp.SessionNotification): Promise<void> {
-    const u = params.update;
-    switch (u.sessionUpdate) {
-      case 'agent_message_chunk':
-        if (u.content.type === 'text') {
-          this.chunks.push(u.content.text);
-        }
-        this.statusListener('typing');
-        break;
-      case 'tool_call':
-        log.debug(`[${this.correlationId}] Tool call: ${u.title} (${u.status})`);
-        this.statusListener('tool_calling');
-        break;
-      case 'tool_call_update':
-        log.debug(`[${this.correlationId}] Tool call update: ${u.toolCallId} ${u.status}`);
-        this.statusListener('tool_calling');
-        break;
-      case 'agent_thought_chunk':
-        if (u.content.type === 'text') {
-          log.debug(`[${this.correlationId}] Thought: ${u.content.text}`);
-        }
-        this.statusListener('thinking');
-        break;
-      default:
-        break;
-    }
+    this.stream?.handleSessionUpdate(params);
     return Promise.resolve();
   }
 
@@ -349,4 +318,23 @@ export class KiroCliSession implements AgentSession, acp.Client {
     log.debug(`[${this.correlationId}] ext notification: ${method}`);
     return Promise.resolve();
   }
+}
+
+function buildMcpServers(mcpSocketPath?: string): AcpMcpServer[] {
+  if (!mcpSocketPath) {
+    return [];
+  }
+  return [
+    {
+      name: 'newio',
+      command: 'node',
+      args: [resolveBridgePath(), mcpSocketPath],
+      env: [],
+    },
+  ];
+}
+
+/** Resolve absolute path to the bridge script from @newio/mcp-server package. */
+function resolveBridgePath(): string {
+  return require.resolve('@newio/mcp-server/bridge');
 }

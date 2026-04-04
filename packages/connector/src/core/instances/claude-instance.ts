@@ -15,6 +15,7 @@ import { createRequire } from 'module';
 import { execFileSync } from 'child_process';
 import { BaseAgentInstance } from './base-agent-instance';
 import type { AgentSession, SessionStatusListener } from '../agent-session';
+import type { SessionStreamSegment } from './session-stream';
 import { Logger } from '../logger';
 
 const log = new Logger('claude-instance');
@@ -86,8 +87,11 @@ class ClaudeSession implements AgentSession {
     this.instance = instance;
   }
 
-  async prompt(text: string): Promise<string | undefined> {
-    return this.instance.queryAgent(text, this.statusListener);
+  async *prompt(text: string): AsyncGenerator<SessionStreamSegment> {
+    const result = await this.instance.queryAgent(text, this.statusListener);
+    if (result) {
+      yield { type: 'agent_message_chunk', text: result };
+    }
   }
 
   onStatus(listener: SessionStatusListener): void {
