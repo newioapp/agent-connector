@@ -273,7 +273,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
     const launch = this.launchQueue.then(() => this.launchRunner(newioSessionId));
     this.launchQueue = launch.then(
       () => {},
-      () => {},
+      (err: unknown) => {
+        log.error(`Session launch failed for ${newioSessionId}: ${err instanceof Error ? err.message : String(err)}`);
+      },
     );
     return launch;
   }
