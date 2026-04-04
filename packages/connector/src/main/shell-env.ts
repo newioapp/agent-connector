@@ -1,30 +1,23 @@
 /**
  * Resolve environment variables from the user's login shell.
  *
- * Electron apps launched from the macOS Dock inherit a minimal environment
- * (/usr/bin:/bin). This module spawns the user's shell in interactive login
- * mode and captures the full environment, including PATH additions from
- * .zshrc, .bashrc, nvm, homebrew, etc.
+ * Spawns the specified shell in interactive login mode and captures the full
+ * environment, including PATH additions from .zshrc, .bashrc, nvm, homebrew, etc.
+ * Works on macOS and Linux (both use /etc/shells and `-ilc`).
  */
 import { execFile } from 'child_process';
 import { readFileSync } from 'fs';
 
 /** Shells we know how to invoke with `-ilc`. */
-const SUPPORTED_SHELLS = new Set([
-  '/bin/zsh',
-  '/bin/bash',
-  '/usr/bin/zsh',
-  '/usr/bin/bash',
-  '/opt/homebrew/bin/bash',
-  '/opt/homebrew/bin/zsh',
-]);
+const SUPPORTED_SHELL_NAMES = new Set(['zsh', 'bash']);
 
 /** Cached results keyed by shell path. */
 const cache = new Map<string, Record<string, string>>();
 
 /**
  * List shells installed on the system that we support.
- * Reads /etc/shells and filters to known-supported entries.
+ * Reads /etc/shells and filters to shells whose basename is zsh or bash.
+ * Returns empty array if /etc/shells doesn't exist (e.g. Windows).
  */
 export function listAvailableShells(): string[] {
   try {
@@ -32,11 +25,15 @@ export function listAvailableShells(): string[] {
     return content
       .split('\n')
       .map((line) => line.trim())
-      .filter((line) => line.length > 0 && !line.startsWith('#') && SUPPORTED_SHELLS.has(line));
+      .filter((line) => {
+        if (line.length === 0 || line.startsWith('#')) {
+          return false;
+        }
+        const basename = line.split('/').pop() ?? '';
+        return SUPPORTED_SHELL_NAMES.has(basename);
+      });
   } catch {
-    // Fallback: just check the user's default shell
-    const defaultShell = process.env.SHELL ?? '/bin/zsh';
-    return SUPPORTED_SHELLS.has(defaultShell) ? [defaultShell] : ['/bin/zsh'];
+    return [];
   }
 }
 
@@ -44,16 +41,14 @@ export function listAvailableShells(): string[] {
  * Get environment variables from a specific shell.
  * Results are cached per shell path for the lifetime of the process.
  */
-export async function getShellEnv(shell?: string): Promise<Record<string, string>> {
-  const shellPath = shell ?? process.env.SHELL ?? '/bin/zsh';
-
-  const cached = cache.get(shellPath);
+export async function getShellEnv(shell: string): Promise<Record<string, string>> {
+  const cached = cache.get(shell);
   if (cached) {
     return cached;
   }
 
-  const env = await resolveFromShell(shellPath);
-  cache.set(shellPath, env);
+  const env = await resolveFromShell(shell);
+  cache.set(shell, env);
   return env;
 }
 
@@ -61,9 +56,7 @@ function resolveFromShell(shell: string): Promise<Record<string, string>> {
   return new Promise((resolve) => {
     execFile(shell, ['-ilc', 'env -0'], { encoding: 'utf8', timeout: 10_000, env: { TERM: 'dumb' } }, (err, stdout) => {
       if (err || !stdout) {
-        resolve(
-          Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined)),
-        );
+        resolve({});
         return;
       }
 

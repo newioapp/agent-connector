@@ -32,8 +32,8 @@ export interface IpcApi {
   // Environment
   /** List supported shells available on the system. */
   listShells(): Promise<string[]>;
-  /** Resolve environment variables from a specific shell (defaults to user's login shell). */
-  getShellEnv(shell?: string): Promise<Record<string, string>>;
+  /** Resolve environment variables from a specific shell. */
+  getShellEnv(shell: string): Promise<Record<string, string>>;
   /** Update only the envVars on an agent config (no restart required). */
   updateAgentEnvVars(agentId: string, envVars: Record<string, string>): Promise<AgentConfig>;
 }

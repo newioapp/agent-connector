@@ -8,7 +8,7 @@ import { randomUUID } from 'crypto';
 import type Store from 'electron-store';
 import type { StoreSchema } from './store';
 import type { AgentConfig, AddAgentInput, UpdateAgentInput } from '../shared/types';
-import { getShellEnv } from './shell-env';
+import { getShellEnv, listAvailableShells } from './shell-env';
 
 export type { AgentConfigManager, AgentTokens } from '../core/agent-config-manager';
 import type { AgentConfigManager, AgentTokens } from '../core/agent-config-manager';
@@ -29,7 +29,8 @@ export class StoreAgentConfigManager implements AgentConfigManager {
   }
 
   async add(input: AddAgentInput): Promise<AgentConfig> {
-    const envVars = await getShellEnv();
+    const shells = listAvailableShells();
+    const envVars = shells.length > 0 ? await getShellEnv(shells[0]) : {};
     const config: AgentConfig = {
       id: randomUUID(),
       name: input.name,

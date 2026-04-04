@@ -138,7 +138,7 @@ export class KiroCliSession implements AgentSession, acp.Client {
 
     const child = spawn(executable, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, ...envVars, TERM: 'dumb' },
+      env: { ...envVars, TERM: 'dumb' },
       ...(cwd ? { cwd } : {}),
     });
 

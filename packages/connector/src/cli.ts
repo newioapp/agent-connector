@@ -39,6 +39,7 @@ const AGENTS: AgentConfig[] = [
     name: 'Kiro',
     type: 'kiro-cli',
     newioUsername: 'kiro',
+    envVars: {},
     kiroCli: { agentName: 'pineapple', cwd: '/Users/pineapple/workspace/conduit' },
   },
 ];

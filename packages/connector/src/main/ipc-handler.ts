@@ -84,7 +84,7 @@ export class IpcHandler implements IpcApi {
     return listAvailableShells();
   }
 
-  async getShellEnv(shell?: string): Promise<Record<string, string>> {
+  async getShellEnv(shell: string): Promise<Record<string, string>> {
     return getShellEnv(shell);
   }
 

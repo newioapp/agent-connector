@@ -52,8 +52,8 @@ export interface AgentConfig {
   /** Idle timeout for sessions in ms. Sessions with no activity are stopped. Default: 1 hour. */
   readonly sessionIdleTimeoutMs?: number;
 
-  /** Custom environment variables passed to the agent process. */
-  readonly envVars?: Readonly<Record<string, string>>;
+  /** Environment variables passed to the agent process. */
+  readonly envVars: Readonly<Record<string, string>>;
 
   readonly claude?: ClaudeConfig;
   readonly kiroCli?: KiroCliConfig;
