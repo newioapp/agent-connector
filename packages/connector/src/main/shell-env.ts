@@ -4,6 +4,9 @@
  * Spawns the specified shell in interactive login mode and captures the full
  * environment, including PATH additions from .zshrc, .bashrc, nvm, homebrew, etc.
  * Works on macOS and Linux (both use /etc/shells and `-ilc`).
+ *
+ * When no supported shell is found, falls back to 'environment' which reads
+ * from the current process.env.
  */
 import { execFile } from 'child_process';
 import { readFileSync } from 'fs';
@@ -11,18 +14,18 @@ import { readFileSync } from 'fs';
 /** Shells we know how to invoke with `-ilc`. */
 const SUPPORTED_SHELL_NAMES = new Set(['zsh', 'bash']);
 
-/** Cached results keyed by shell path. */
-const cache = new Map<string, Record<string, string>>();
+/** Special value meaning "use process.env". */
+export const ENVIRONMENT_SOURCE = 'environment';
 
 /**
  * List shells installed on the system that we support.
  * Reads /etc/shells and filters to shells whose basename is zsh or bash.
- * Returns empty array if /etc/shells doesn't exist (e.g. Windows).
+ * Falls back to ['environment'] if no supported shell is found.
  */
 export function listAvailableShells(): string[] {
   try {
     const content = readFileSync('/etc/shells', 'utf8');
-    return content
+    const shells = content
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => {
@@ -32,24 +35,21 @@ export function listAvailableShells(): string[] {
         const basename = line.split('/').pop() ?? '';
         return SUPPORTED_SHELL_NAMES.has(basename);
       });
+    return shells.length > 0 ? shells : [ENVIRONMENT_SOURCE];
   } catch {
-    return [];
+    return [ENVIRONMENT_SOURCE];
   }
 }
 
 /**
- * Get environment variables from a specific shell.
- * Results are cached per shell path for the lifetime of the process.
+ * Get environment variables from a specific shell, or from process.env
+ * if shell is 'environment'. Always fetches fresh (no caching).
  */
 export async function getShellEnv(shell: string): Promise<Record<string, string>> {
-  const cached = cache.get(shell);
-  if (cached) {
-    return cached;
+  if (shell === ENVIRONMENT_SOURCE) {
+    return Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined));
   }
-
-  const env = await resolveFromShell(shell);
-  cache.set(shell, env);
-  return env;
+  return resolveFromShell(shell);
 }
 
 function resolveFromShell(shell: string): Promise<Record<string, string>> {

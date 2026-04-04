@@ -15,8 +15,11 @@ interface EnvEntry {
   readonly value: string;
 }
 
-/** Extract short label from shell path, e.g. "/bin/zsh" → "zsh". */
+/** Extract short label from shell path, e.g. "/bin/zsh" → "zsh", "environment" → "environment". */
 function shellLabel(path: string): string {
+  if (path === 'environment') {
+    return 'environment';
+  }
   return path.split('/').pop() ?? path;
 }
 
@@ -131,48 +134,44 @@ export function EnvVarsTab({ agent }: { readonly agent: AgentStatusInfo }): Reac
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-6 py-3">
         {/* Shell selector + sync button */}
-        {shells.length > 0 ? (
-          <div className="relative flex items-stretch">
-            <button
-              className="flex items-center gap-1.5 rounded-l-md border border-input px-2.5 py-1.5 text-xs text-foreground transition-colors hover:bg-accent disabled:opacity-40"
-              disabled={disabled || importing}
-              onClick={() => void handleSyncShellEnv()}
-            >
-              {importing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-              Sync from {shellLabel(selectedShell)}
-            </button>
-            {shells.length > 1 && (
-              <>
-                <button
-                  className="flex items-center rounded-r-md border border-l-0 border-input px-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent"
-                  onClick={() => setShellDropdownOpen((o) => !o)}
-                >
-                  <ChevronDown size={12} className={shellDropdownOpen ? 'rotate-180' : ''} />
-                </button>
-                {shellDropdownOpen && (
-                  <div className="absolute right-0 top-full z-10 mt-1 min-w-[160px] rounded-md border border-border bg-card py-1 shadow-md">
-                    {shells.map((s) => (
-                      <button
-                        key={s}
-                        className={`flex w-full px-3 py-1.5 text-left text-xs transition-colors hover:bg-accent ${
-                          s === selectedShell ? 'text-primary font-medium' : 'text-foreground'
-                        }`}
-                        onClick={() => {
-                          setSelectedShell(s);
-                          setShellDropdownOpen(false);
-                        }}
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        ) : (
-          <span className="text-xs text-muted-foreground">No supported shell found. Configure variables manually.</span>
-        )}
+        <div className="relative flex items-stretch">
+          <button
+            className="flex items-center gap-1.5 rounded-l-md border border-input px-2.5 py-1.5 text-xs text-foreground transition-colors hover:bg-accent disabled:opacity-40"
+            disabled={disabled || importing}
+            onClick={() => void handleSyncShellEnv()}
+          >
+            {importing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+            Sync from {shellLabel(selectedShell)}
+          </button>
+          {shells.length > 1 && (
+            <>
+              <button
+                className="flex items-center rounded-r-md border border-l-0 border-input px-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent"
+                onClick={() => setShellDropdownOpen((o) => !o)}
+              >
+                <ChevronDown size={12} className={shellDropdownOpen ? 'rotate-180' : ''} />
+              </button>
+              {shellDropdownOpen && (
+                <div className="absolute right-0 top-full z-10 mt-1 min-w-[160px] rounded-md border border-border bg-card py-1 shadow-md">
+                  {shells.map((s) => (
+                    <button
+                      key={s}
+                      className={`flex w-full px-3 py-1.5 text-left text-xs transition-colors hover:bg-accent ${
+                        s === selectedShell ? 'text-primary font-medium' : 'text-foreground'
+                      }`}
+                      onClick={() => {
+                        setSelectedShell(s);
+                        setShellDropdownOpen(false);
+                      }}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
 
         <div className="flex-1" />
       </div>
