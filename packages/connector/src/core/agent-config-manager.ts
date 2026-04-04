@@ -15,7 +15,7 @@ export interface AgentTokens {
 export interface AgentConfigManager {
   list(): AgentConfig[];
   get(agentId: string): AgentConfig | undefined;
-  add(input: AddAgentInput): AgentConfig;
+  add(input: AddAgentInput): AgentConfig | Promise<AgentConfig>;
   update(agentId: string, updates: UpdateAgentInput): AgentConfig;
   remove(agentId: string): void;
   setNewioIdentity(

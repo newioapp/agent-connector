@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto';
 import type Store from 'electron-store';
 import type { StoreSchema } from './store';
 import type { AgentConfig, AddAgentInput, UpdateAgentInput } from '../shared/types';
+import { getShellEnv } from './shell-env';
 
 export type { AgentConfigManager, AgentTokens } from '../core/agent-config-manager';
 import type { AgentConfigManager, AgentTokens } from '../core/agent-config-manager';
@@ -27,12 +28,14 @@ export class StoreAgentConfigManager implements AgentConfigManager {
     return this.store.get('agents').find((a) => a.id === agentId);
   }
 
-  add(input: AddAgentInput): AgentConfig {
+  async add(input: AddAgentInput): Promise<AgentConfig> {
+    const envVars = await getShellEnv();
     const config: AgentConfig = {
       id: randomUUID(),
       name: input.name,
       type: input.type,
       ...(input.newioUsername ? { newioUsername: input.newioUsername } : {}),
+      envVars,
       ...(input.claude ? { claude: input.claude } : {}),
       ...(input.kiroCli ? { kiroCli: input.kiroCli } : {}),
     };
@@ -55,6 +58,7 @@ export class StoreAgentConfigManager implements AgentConfigManager {
       ...(updates.newioUsername !== undefined ? { newioUsername: updates.newioUsername } : {}),
       // Reset Newio profile when username changes — will be re-synced on next start
       ...(usernameChanged ? { newioAgentId: undefined, newioDisplayName: undefined, newioAvatarUrl: undefined } : {}),
+      ...(updates.envVars !== undefined ? { envVars: updates.envVars } : {}),
       ...(updates.claude !== undefined ? { claude: updates.claude } : {}),
       ...(updates.kiroCli !== undefined ? { kiroCli: updates.kiroCli } : {}),
     };

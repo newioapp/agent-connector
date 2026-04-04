@@ -2,15 +2,15 @@
  * Agent form panel — used for both adding and editing agents.
  * Renders in the detail panel area (right side) instead of a modal.
  */
-import { useEffect, useRef, useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import type { AgentType, AgentConfig } from '../../../shared/types';
 import { useAgentStore } from '../stores/agent-store';
+import { Button, Input, Textarea, Dropdown, Label, Hint } from './ui';
 
-const AGENT_TYPE_LABELS: Record<AgentType, string> = {
-  'claude-code': 'Claude Code',
-  'kiro-cli': 'Kiro CLI',
-};
+const AGENT_TYPE_OPTIONS: readonly { value: AgentType; label: string }[] = [
+  { value: 'claude-code', label: 'Claude Code' },
+  { value: 'kiro-cli', label: 'Kiro CLI' },
+];
 
 export function AgentFormPanel({
   editAgent,
@@ -40,19 +40,6 @@ export function AgentFormPanel({
   const [kiroCliPath, setKiroCliPath] = useState('');
   const [kiroCwd, setKiroCwd] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [typeOpen, setTypeOpen] = useState(false);
-  const typeRef = useRef<HTMLDivElement>(null);
-
-  // Close dropdown on outside click
-  useEffect(() => {
-    function handleClick(e: MouseEvent): void {
-      if (typeRef.current && !typeRef.current.contains(e.target as Node)) {
-        setTypeOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, []);
 
   // Populate fields when editing
   useEffect(() => {
@@ -139,45 +126,13 @@ export function AgentFormPanel({
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-6 py-4">
         {/* Type selector */}
-        <div className="mb-4">
-          <span className="mb-1 block text-xs font-medium text-muted-foreground">Type</span>
-          <div className="relative" ref={typeRef}>
-            <button
-              type="button"
-              className="flex w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
-              disabled={isEdit}
-              onClick={() => setTypeOpen((o) => !o)}
-            >
-              {AGENT_TYPE_LABELS[type]}
-              <ChevronDown
-                size={14}
-                className={`text-muted-foreground transition-transform ${typeOpen ? 'rotate-180' : ''}`}
-              />
-            </button>
-            {typeOpen && (
-              <div className="absolute z-10 mt-1 w-full rounded-md border border-border bg-card py-1 shadow-md">
-                {(Object.keys(AGENT_TYPE_LABELS) as AgentType[]).map((t) => (
-                  <button
-                    key={t}
-                    className={`flex w-full px-3 py-2 text-left text-sm transition-colors hover:bg-accent ${
-                      type === t ? 'text-primary font-medium' : 'text-foreground'
-                    }`}
-                    onClick={() => {
-                      setType(t);
-                      setTypeOpen(false);
-                    }}
-                  >
-                    {AGENT_TYPE_LABELS[t]}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+        <Label text="Type">
+          <Dropdown options={AGENT_TYPE_OPTIONS} value={type} onChange={setType} disabled={isEdit} />
+        </Label>
 
         {/* Type description */}
         {type === 'claude-code' && (
-          <div className="mb-4 rounded-md bg-muted px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
+          <Hint className="mb-4">
             Powered by the Claude Agent SDK — the same agent that runs Claude Code CLI. Requires an Anthropic API key
             (pay-per-use). Get one at{' '}
             <button
@@ -187,10 +142,10 @@ export function AgentFormPanel({
               console.anthropic.com
             </button>
             .
-          </div>
+          </Hint>
         )}
         {type === 'kiro-cli' && (
-          <div className="mb-4 rounded-md bg-muted px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
+          <Hint className="mb-4">
             Runs a Kiro CLI agent as a child process via{' '}
             <button
               className="text-primary hover:underline"
@@ -200,158 +155,98 @@ export function AgentFormPanel({
             </button>
             . Requires <span className="font-medium text-foreground">kiro-cli</span> installed and configured on your
             system.
-          </div>
+          </Hint>
         )}
 
         {/* Name */}
-        <label className="mb-4 block">
-          <span className="mb-1 block text-xs font-medium text-muted-foreground">Name</span>
-          <input
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
-            placeholder="My Agent"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </label>
+        <Label text="Name">
+          <Input placeholder="My Agent" value={name} onChange={(e) => setName(e.target.value)} />
+        </Label>
 
         {/* Newio username */}
-        <label className="mb-4 block">
-          <span className="mb-1 block text-xs font-medium text-muted-foreground">Newio Username (optional)</span>
-          <input
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
-            placeholder="myagent"
-            value={newioUsername}
-            onChange={(e) => setNewioUsername(e.target.value)}
-          />
-          <span className="mt-1 block text-xs text-muted-foreground">
-            {isEdit
+        <Label
+          text="Newio Username (optional)"
+          hint={
+            isEdit
               ? 'Changing this will clear the stored Newio identity and tokens.'
-              : 'Enter an existing agent username to login. Leave blank to register a new agent.'}
-          </span>
-        </label>
+              : 'Enter an existing agent username to login. Leave blank to register a new agent.'
+          }
+        >
+          <Input placeholder="myagent" value={newioUsername} onChange={(e) => setNewioUsername(e.target.value)} />
+        </Label>
 
         {/* Claude config */}
         {type === 'claude-code' && (
           <>
-            <label className="mb-4 block">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">API Key</span>
-              <input
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
-                type="text"
-                placeholder="sk-ant-..."
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-              />
-            </label>
-            <label className="mb-4 block">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">Model</span>
-              <input
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-              />
-            </label>
-            <label className="mb-4 block">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">
-                Custom Instructions (optional)
-              </span>
-              <textarea
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
+            <Label text="API Key">
+              <Input type="text" placeholder="sk-ant-..." value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+            </Label>
+            <Label text="Model">
+              <Input value={model} onChange={(e) => setModel(e.target.value)} />
+            </Label>
+            <Label text="Custom Instructions (optional)">
+              <Textarea
                 rows={3}
                 placeholder="Additional instructions for the agent..."
                 value={userPrompt}
                 onChange={(e) => setUserPrompt(e.target.value)}
               />
-            </label>
-            <label className="mb-4 block">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">Node.js Path (optional)</span>
-              <input
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
+            </Label>
+            <Label
+              text="Node.js Path (optional)"
+              hint="Defaults to the Electron runtime. Override if Claude Code needs a specific Node.js."
+            >
+              <Input
                 placeholder="e.g. /usr/local/bin/node"
                 value={nodePath}
                 onChange={(e) => setNodePath(e.target.value)}
               />
-              <span className="mt-1 block text-xs text-muted-foreground">
-                Defaults to the Electron runtime. Override if Claude Code needs a specific Node.js.
-              </span>
-            </label>
-            <label className="mb-4 block">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">
-                Claude Code CLI Path (optional)
-              </span>
-              <input
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
+            </Label>
+            <Label
+              text="Claude Code CLI Path (optional)"
+              hint="Defaults to the CLI bundled with @anthropic-ai/claude-agent-sdk."
+            >
+              <Input
                 placeholder="e.g. /path/to/cli.js"
                 value={claudeCodeCliPath}
                 onChange={(e) => setClaudeCodeCliPath(e.target.value)}
               />
-              <span className="mt-1 block text-xs text-muted-foreground">
-                Defaults to the CLI bundled with @anthropic-ai/claude-agent-sdk.
-              </span>
-            </label>
-            <label className="mb-4 block">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">Working Directory (optional)</span>
-              <input
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
-                placeholder="e.g. /Users/me/projects"
-                value={cwd}
-                onChange={(e) => setCwd(e.target.value)}
-              />
-              <span className="mt-1 block text-xs text-muted-foreground">
-                Working directory for Claude Code sessions. Defaults to the app's process directory.
-              </span>
-            </label>
+            </Label>
+            <Label
+              text="Working Directory (optional)"
+              hint="Working directory for Claude Code sessions. Defaults to the app's process directory."
+            >
+              <Input placeholder="e.g. /Users/me/projects" value={cwd} onChange={(e) => setCwd(e.target.value)} />
+            </Label>
           </>
         )}
 
         {/* Kiro CLI config */}
         {type === 'kiro-cli' && (
           <>
-            <label className="mb-4 block">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">Kiro Agent Name</span>
-              <input
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
-                placeholder="my-agent"
-                value={agentName}
-                onChange={(e) => setAgentName(e.target.value)}
-              />
-              <span className="mt-1 block text-xs text-muted-foreground">
-                Runs: kiro-cli acp --agent {agentName || '<name>'}
-              </span>
-            </label>
-            <label className="mb-4 block">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">Model (optional)</span>
-              <input
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
-                placeholder="auto"
-                value={kiroModel}
-                onChange={(e) => setKiroModel(e.target.value)}
-              />
-            </label>
-            <label className="mb-4 block">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">Kiro CLI Path (optional)</span>
-              <input
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
+            <Label text="Kiro Agent Name" hint={`Runs: kiro-cli acp --agent ${agentName || '<name>'}`}>
+              <Input placeholder="my-agent" value={agentName} onChange={(e) => setAgentName(e.target.value)} />
+            </Label>
+            <Label text="Model (optional)">
+              <Input placeholder="auto" value={kiroModel} onChange={(e) => setKiroModel(e.target.value)} />
+            </Label>
+            <Label text="Kiro CLI Path (optional)" hint="Override if kiro-cli is not on your PATH.">
+              <Input
                 placeholder="e.g. /Users/me/.local/bin/kiro-cli"
                 value={kiroCliPath}
                 onChange={(e) => setKiroCliPath(e.target.value)}
               />
-              <span className="mt-1 block text-xs text-muted-foreground">
-                Override if kiro-cli is not on your PATH.
-              </span>
-            </label>
-            <label className="mb-4 block">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">Working Directory (optional)</span>
-              <input
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
+            </Label>
+            <Label
+              text="Working Directory (optional)"
+              hint="Working directory for the Kiro CLI agent. Defaults to the app's process directory."
+            >
+              <Input
                 placeholder="e.g. /Users/me/projects"
                 value={kiroCwd}
                 onChange={(e) => setKiroCwd(e.target.value)}
               />
-              <span className="mt-1 block text-xs text-muted-foreground">
-                Working directory for the Kiro CLI agent. Defaults to the app's process directory.
-              </span>
-            </label>
+            </Label>
           </>
         )}
       </div>
@@ -359,20 +254,13 @@ export function AgentFormPanel({
       {/* Footer */}
       <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-3">
         {isEdit && (
-          <button
-            className="rounded-md border border-input px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent"
-            onClick={onDone}
-          >
+          <Button variant="outline" onClick={onDone}>
             Cancel
-          </button>
+          </Button>
         )}
-        <button
-          className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:opacity-90 disabled:opacity-50"
-          disabled={!canSubmit || submitting}
-          onClick={() => void handleSubmit()}
-        >
+        <Button variant="primary" disabled={!canSubmit || submitting} onClick={() => void handleSubmit()}>
           {submitting ? (isEdit ? 'Saving...' : 'Adding...') : isEdit ? 'Save' : 'Add Agent'}
-        </button>
+        </Button>
       </div>
     </div>
   );
