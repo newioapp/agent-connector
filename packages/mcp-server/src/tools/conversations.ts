@@ -9,7 +9,11 @@ const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
 
 /** Register conversations tools on the MCP server. */
-export function registerConversationsTools(server: McpServer, app: NewioApp): void {
+export function registerConversationsTools(
+  server: McpServer,
+  app: NewioApp,
+  getSessionId: () => string | undefined,
+): void {
   server.registerTool('list_conversations', { description: 'List all conversations this agent is part of' }, () => {
     return json(app.getAllConversations());
   });
@@ -24,7 +28,7 @@ export function registerConversationsTools(server: McpServer, app: NewioApp): vo
       },
     },
     async ({ name, usernames }) => {
-      const conversationId = await app.createWorkSession(name, usernames);
+      const conversationId = await app.createWorkSession(name, usernames, getSessionId());
       return json({ conversationId });
     },
   );
@@ -39,7 +43,7 @@ export function registerConversationsTools(server: McpServer, app: NewioApp): vo
       },
     },
     async ({ name, usernames }) => {
-      const conversationId = await app.createGroup(name, usernames);
+      const conversationId = await app.createGroup(name, usernames, getSessionId());
       return json({ conversationId });
     },
   );

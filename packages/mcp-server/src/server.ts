@@ -4,6 +4,9 @@
  * Wraps a {@link NewioApp} instance and exposes developer-friendly MCP tools
  * with username-based lookups instead of UUIDs. Transport-agnostic — callers
  * provide the transport (stdio, socket, etc.).
+ *
+ * Supports a mutable `sessionId` that is injected after construction, allowing
+ * conversation-creation tools to inherit the agent's current session context.
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
@@ -15,35 +18,50 @@ import { registerUsersTools } from './tools/users.js';
 import { registerMediaTools } from './tools/media.js';
 
 /**
- * Create and configure a Newio MCP server.
+ * MCP server that exposes Newio tools to agent sessions.
  *
- * @param app - A fully initialized {@link NewioApp} instance (pre-authenticated).
- * @returns An {@link McpServer} with all Newio tools registered.
+ * The `sessionId` is set after construction — conversation-creation tools
+ * read it lazily at call time so the value is always up to date.
  *
  * @example
  * ```ts
- * import { NewioApp } from '@newio/sdk';
- * import { createMcpServer } from '@newio/mcp-server';
- * import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
- *
- * const app = await NewioApp.create({ ... });
- * const server = createMcpServer(app);
- * await server.connect(new StdioServerTransport());
+ * const mcpServer = new NewioMcpServer(app);
+ * await mcpServer.connect(transport);
+ * // Later, after the agent session is launched:
+ * mcpServer.setSessionId('session-abc');
  * ```
  */
-export function createMcpServer(app: NewioApp): McpServer {
-  const server = new McpServer({
-    name: `newio-mcp-server`,
-    version: '0.1.0',
-  });
+export class NewioMcpServer {
+  private readonly server: McpServer;
+  private sessionId: string | undefined;
 
-  registerContactsTools(server, app);
-  registerConversationsTools(server, app);
-  registerMessagingTools(server, app);
-  registerUsersTools(server, app);
-  registerMediaTools(server, app);
+  constructor(app: NewioApp) {
+    this.server = new McpServer({
+      name: 'newio-mcp-server',
+      version: '0.1.0',
+    });
 
-  return server;
+    registerContactsTools(this.server, app);
+    registerConversationsTools(this.server, app, () => this.sessionId);
+    registerMessagingTools(this.server, app);
+    registerUsersTools(this.server, app);
+    registerMediaTools(this.server, app);
+  }
+
+  /** Set the Newio session ID for this MCP connection. */
+  setSessionId(id: string): void {
+    this.sessionId = id;
+  }
+
+  /** Get the current Newio session ID, if set. */
+  getSessionId(): string | undefined {
+    return this.sessionId;
+  }
+
+  /** Connect to a transport. */
+  connect(transport: Transport): Promise<void> {
+    return this.server.connect(transport);
+  }
 }
 
 export type { Transport };

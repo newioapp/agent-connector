@@ -2,12 +2,13 @@
  * Base agent instance — shared auth, WebSocket, session routing, and lifecycle logic.
  *
  * Uses NewioApp for all Newio interactions. Manages multiple sessions per agent,
- * routing incoming messages by conversationId → newioSessionId → AgentSession.
+ * routing incoming messages by conversationId → newioSessionId → per-session queue.
+ * Each session processes its own message queue concurrently.
  * Subclasses implement session creation and greeting logic.
  */
 import { ApprovalTimeoutError, NewioApp, NEWIO_API_BASE_URL, NEWIO_WS_URL } from '@newio/sdk';
 import type { IncomingMessage } from '@newio/sdk';
-import { createMcpServer, startUdsServer } from '@newio/mcp-server';
+import { NewioMcpServer, startUdsServer } from '@newio/mcp-server';
 import type { Server } from 'net';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -18,13 +19,16 @@ import type { AgentInstance, AgentInstanceListener } from './agent-instance';
 import type { AgentSession } from '../agent-session';
 import type { SessionStore } from '../session-store';
 import { MessageQueue } from './message-queue';
+import { formatMessagePrompt } from './prompt-manager';
 import { Logger } from '../logger';
 import WebSocket from 'ws';
 
 const log = new Logger('base-agent-instance');
 
-interface LiveSession {
+/** A running session with its own message queue and processing loop. */
+interface SessionRunner {
   readonly session: AgentSession;
+  readonly queue: MessageQueue;
   lastActivityAt: number;
 }
 
@@ -33,17 +37,20 @@ export abstract class BaseAgentInstance implements AgentInstance {
   error?: string;
 
   protected app?: NewioApp;
-  protected readonly messageQueue = new MessageQueue();
 
-  /** correlationId → live session */
-  private readonly liveSessions = new Map<string, LiveSession>();
+  /** newioSessionId → running session with its own message queue */
+  private readonly runners = new Map<string, SessionRunner>();
   /** newioSessionId → in-flight creation/resume promise (dedup concurrent calls) */
-  private readonly pendingSessions = new Map<string, Promise<AgentSession>>();
+  private readonly pendingSessions = new Map<string, Promise<SessionRunner>>();
+  /** Serializes session launches so only one runs at a time (protects latestMcpServer wiring). */
+  private launchQueue: Promise<void> = Promise.resolve();
   /** correlationId → conversationId currently being processed */
   private readonly activeConversation = new Map<string, string>();
   private abortController?: AbortController;
   private idleTimer?: ReturnType<typeof setInterval>;
   private udsServer?: Server;
+  /** Most recently created MCP server awaiting a sessionId to be wired. */
+  private pendingMcpServer?: NewioMcpServer;
 
   /** Socket path for the MCP UDS server. Set after auth in start(). */
   protected mcpSocketPath?: string;
@@ -114,7 +121,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
       this.app.on('message.new', (msg) => {
         if (!msg.isOwnMessage) {
-          this.messageQueue.enqueue(msg);
+          void this.routeMessage(msg);
         }
       });
 
@@ -124,7 +131,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
         socketPath: mcpSocketPath,
         onConnection: (transport) => {
           log.info(`MCP client connected via ${mcpSocketPath}`);
-          const mcpServer = createMcpServer(app);
+          if (this.pendingMcpServer) {
+            log.warn('New MCP connection arrived before previous one was wired to a session');
+          }
+          const mcpServer = new NewioMcpServer(app);
+          this.pendingMcpServer = mcpServer;
           void mcpServer.connect(transport);
         },
       });
@@ -132,7 +143,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
       this.startIdleCleanup();
       await this.onConnected();
-      void this.processLoop();
       log.info('Agent running');
       this.setStatus('running');
     } catch (err: unknown) {
@@ -164,12 +174,13 @@ export abstract class BaseAgentInstance implements AgentInstance {
       this.idleTimer = undefined;
     }
 
-    // Dispose all live sessions
-    for (const [correlationId, live] of this.liveSessions) {
-      log.debug(`Disposing session: ${correlationId}`);
-      live.session.dispose();
+    // Close all session runners
+    for (const [newioSessionId, runner] of this.runners) {
+      log.debug(`Disposing session runner: ${newioSessionId}`);
+      runner.queue.close();
+      runner.session.dispose();
     }
-    this.liveSessions.clear();
+    this.runners.clear();
 
     if (this.udsServer) {
       this.udsServer.close();
@@ -189,7 +200,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
 
     this.configManager.clearTokens(this.config.id);
-    this.messageQueue.close();
 
     await this.onStopped();
     this.setStatus('stopped');
@@ -205,36 +215,47 @@ export abstract class BaseAgentInstance implements AgentInstance {
   }
 
   // ---------------------------------------------------------------------------
+  // Message routing
+  // ---------------------------------------------------------------------------
+
+  /** Route an incoming message to the correct session's queue. */
+  private async routeMessage(msg: IncomingMessage): Promise<void> {
+    try {
+      const runner = await this.getOrCreateRunner(msg.conversationId);
+      runner.queue.enqueue(msg);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
+      log.error(`Failed to route message for ${msg.conversationId}: ${errMsg}`);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Session routing
   // ---------------------------------------------------------------------------
 
   /**
-   * Get, resume, or create a session for a conversation.
+   * Get or create a SessionRunner for a conversation.
    * 1. Resolves conversationId → newioSessionId via NewioApp
-   * 2. Checks if a live session exists → return it
-   * 3. Checks if a persisted mapping exists → resume the session
-   * 4. Otherwise → create a new session
+   * 2. Returns existing runner if live
+   * 3. Otherwise launches a new session (serialized) and starts its processing loop
    */
-  protected async getOrCreateSession(conversationId: string): Promise<AgentSession> {
+  private async getOrCreateRunner(conversationId: string): Promise<SessionRunner> {
     const newioSessionId = await this.requireApp().resolveSessionId(conversationId);
 
     // Check if already running
-    const existingCorrelationId = this.sessionStore.get(newioSessionId);
-    if (existingCorrelationId) {
-      const live = this.liveSessions.get(existingCorrelationId);
-      if (live) {
-        live.lastActivityAt = Date.now();
-        return live.session;
-      }
+    const existing = this.runners.get(newioSessionId);
+    if (existing) {
+      existing.lastActivityAt = Date.now();
+      return existing;
     }
 
-    // Deduplicate concurrent create/resume calls for the same session
+    // Deduplicate concurrent launches for the same session
     const pending = this.pendingSessions.get(newioSessionId);
     if (pending) {
       return pending;
     }
 
-    const promise = this.resolveSession(newioSessionId, existingCorrelationId);
+    const promise = this.enqueueLaunch(newioSessionId);
     this.pendingSessions.set(newioSessionId, promise);
     try {
       return await promise;
@@ -243,35 +264,51 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
   }
 
-  /** Create or resume a session — called only once per newioSessionId (guarded by pendingSessions). */
-  private async resolveSession(
-    newioSessionId: string,
-    existingCorrelationId: string | undefined,
-  ): Promise<AgentSession> {
+  /**
+   * Enqueue a session launch so only one runs at a time.
+   * This ensures the MCP bridge that connects during launch is correctly
+   * wired to the right newioSessionId via `latestMcpServer`.
+   */
+  private enqueueLaunch(newioSessionId: string): Promise<SessionRunner> {
+    const launch = this.launchQueue.then(() => this.launchRunner(newioSessionId));
+    this.launchQueue = launch.then(
+      () => {},
+      (err: unknown) => {
+        log.error(`Session launch failed for ${newioSessionId}: ${err instanceof Error ? err.message : String(err)}`);
+      },
+    );
+    return launch;
+  }
+
+  /** Launch a session runner — create or resume the session, wire MCP, start its processing loop. */
+  private async launchRunner(newioSessionId: string): Promise<SessionRunner> {
+    const existingCorrelationId = this.sessionStore.get(newioSessionId);
+    let session: AgentSession;
+
     if (existingCorrelationId) {
       log.info(`Resuming session: correlation=${existingCorrelationId}`);
       try {
-        const session = await this.resumeSession(existingCorrelationId);
-        this.wireStatusListener(session);
-        this.liveSessions.set(existingCorrelationId, { session, lastActivityAt: Date.now() });
-        return session;
+        session = await this.resumeSession(existingCorrelationId);
       } catch (err) {
         log.warn(
           `Failed to resume session ${existingCorrelationId}, falling back to new session: ${err instanceof Error ? err.message : String(err)}`,
         );
+        session = await this.createSession();
+        this.sessionStore.set(newioSessionId, session.correlationId);
       }
+    } else {
+      session = await this.createSession();
+      this.sessionStore.set(newioSessionId, session.correlationId);
     }
 
-    const session = await this.createSession();
-    this.wireStatusListener(session);
-    this.sessionStore.set(newioSessionId, session.correlationId);
-    this.liveSessions.set(session.correlationId, { session, lastActivityAt: Date.now() });
-    log.info(`New session: newio=${newioSessionId} → correlation=${session.correlationId}`);
-    return session;
-  }
+    // Wire MCP sessionId
+    if (this.pendingMcpServer) {
+      this.pendingMcpServer.setSessionId(newioSessionId);
+      this.pendingMcpServer = undefined;
+      log.debug(`Wired sessionId ${newioSessionId} to pending MCP server`);
+    }
 
-  /** Attach a status listener that routes session status to the active conversation. */
-  private wireStatusListener(session: AgentSession): void {
+    // Wire status listener
     session.onStatus((status) => {
       const convId = this.activeConversation.get(session.correlationId);
       if (convId) {
@@ -280,11 +317,35 @@ export abstract class BaseAgentInstance implements AgentInstance {
         log.warn(`Status '${status}' from session ${session.correlationId} dropped — no active conversation mapped.`);
       }
     });
+
+    const runner: SessionRunner = {
+      session,
+      queue: new MessageQueue(),
+      lastActivityAt: Date.now(),
+    };
+    this.runners.set(newioSessionId, runner);
+    log.info(`New runner: newio=${newioSessionId} → correlation=${session.correlationId}`);
+
+    // Start the per-session processing loop (runs concurrently)
+    void this.runSessionLoop(newioSessionId, runner);
+
+    return runner;
   }
 
   /** Get a live session by its correlation ID, if running. */
   protected getLiveSession(correlationId: string): AgentSession | undefined {
-    return this.liveSessions.get(correlationId)?.session;
+    for (const runner of this.runners.values()) {
+      if (runner.session.correlationId === correlationId) {
+        return runner.session;
+      }
+    }
+    return undefined;
+  }
+
+  /** Get or create a session for a conversation. Used by subclasses (e.g., greeting). */
+  protected async getOrCreateSession(conversationId: string): Promise<AgentSession> {
+    const runner = await this.getOrCreateRunner(conversationId);
+    return runner.session;
   }
 
   // ---------------------------------------------------------------------------
@@ -304,28 +365,25 @@ export abstract class BaseAgentInstance implements AgentInstance {
   protected abstract onStopped(): Promise<void> | void;
 
   // ---------------------------------------------------------------------------
-  // Processing loop
+  // Per-session processing loop
   // ---------------------------------------------------------------------------
 
-  private async processLoop(): Promise<void> {
-    for await (const [conversationId, messages] of this.messageQueue.batches()) {
-      await this.processBatch(conversationId, messages);
+  /** Process messages for a single session. Runs until the queue is closed. */
+  private async runSessionLoop(newioSessionId: string, runner: SessionRunner): Promise<void> {
+    for await (const [conversationId, messages] of runner.queue.batches()) {
+      runner.lastActivityAt = Date.now();
+      await this.processBatch(conversationId, runner.session, messages);
     }
+    log.debug(`Session loop ended: ${newioSessionId}`);
   }
 
-  private async processBatch(conversationId: string, messages: readonly IncomingMessage[]): Promise<void> {
+  private async processBatch(
+    conversationId: string,
+    session: AgentSession,
+    messages: readonly IncomingMessage[],
+  ): Promise<void> {
     const app = this.requireApp();
-
-    let session: AgentSession;
-    try {
-      session = await this.getOrCreateSession(conversationId);
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : 'Unknown error';
-      log.error(`Failed to get/create session for ${conversationId}: ${errMsg}`);
-      return;
-    }
-
-    const userText = this.formatPrompt(messages);
+    const userText = formatMessagePrompt(messages);
     this.activeConversation.set(session.correlationId, conversationId);
 
     try {
@@ -362,65 +420,14 @@ export abstract class BaseAgentInstance implements AgentInstance {
     const timeout = this.config.sessionIdleTimeoutMs ?? DEFAULT_SESSION_IDLE_TIMEOUT_MS;
     const now = Date.now();
 
-    for (const [correlationId, live] of this.liveSessions) {
-      if (now - live.lastActivityAt > timeout) {
-        log.info(`Idle session cleanup: ${correlationId} (idle ${Math.round((now - live.lastActivityAt) / 1000)}s)`);
-        live.session.dispose();
-        this.liveSessions.delete(correlationId);
+    for (const [newioSessionId, runner] of this.runners) {
+      if (now - runner.lastActivityAt > timeout) {
+        log.info(`Idle session cleanup: ${newioSessionId} (idle ${Math.round((now - runner.lastActivityAt) / 1000)}s)`);
+        runner.queue.close();
+        runner.session.dispose();
+        this.runners.delete(newioSessionId);
       }
     }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Prompt formatting
-  // ---------------------------------------------------------------------------
-
-  protected formatPrompt(messages: readonly IncomingMessage[]): string {
-    const first = messages[0];
-    const isGroup = first.conversationType === 'group' || first.conversationType === 'temp_group';
-    if (isGroup) {
-      return this.formatGroupBatch(first.conversationId, first.groupName, messages);
-    }
-    return this.formatDmBatch(first.conversationId, messages);
-  }
-
-  private formatSender(m: IncomingMessage): string {
-    return [
-      `    username: ${m.senderUsername ?? 'unknown'}`,
-      `    displayName: ${m.senderDisplayName ?? 'Unknown'}`,
-      `    accountType: ${m.senderAccountType ?? 'unknown'}`,
-      `    inContact: ${String(m.inContact)}`,
-    ].join('\n');
-  }
-
-  private formatDmBatch(conversationId: string, messages: readonly IncomingMessage[]): string {
-    const first = messages[0];
-    const lines = [`conversationId: ${conversationId}`, `type: dm`, `from:`, this.formatSender(first), `messages:`];
-    for (const m of messages) {
-      lines.push(`  - message: ${m.text}`);
-      lines.push(`    timestamp: "${m.timestamp}"`);
-    }
-    return lines.join('\n');
-  }
-
-  private formatGroupBatch(
-    conversationId: string,
-    groupName: string | undefined,
-    messages: readonly IncomingMessage[],
-  ): string {
-    const lines = [
-      `conversationId: ${conversationId}`,
-      `type: group`,
-      `groupName: ${groupName ?? 'Unnamed Group'}`,
-      `messages:`,
-    ];
-    for (const m of messages) {
-      lines.push(`  - from:`);
-      lines.push(this.formatSender(m));
-      lines.push(`    message: ${m.text}`);
-      lines.push(`    timestamp: "${m.timestamp}"`);
-    }
-    return lines.join('\n');
   }
 
   // ---------------------------------------------------------------------------
