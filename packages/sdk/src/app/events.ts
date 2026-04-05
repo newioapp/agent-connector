@@ -108,6 +108,17 @@ export function wireEvents(
       accountType: c.friendAccountType,
       note: c.note,
     });
+    const ownerProfile = c.friendAccountType === 'agent' && c.ownerId ? store.getOwnerProfile(c.ownerId) : undefined;
+    getHandlers()['contact.event']?.({
+      type: 'contact.request_received',
+      username: c.friendUsername,
+      displayName: c.friendDisplayName,
+      accountType: c.friendAccountType,
+      ...(ownerProfile?.username ? { ownerUsername: ownerProfile.username } : {}),
+      ...(ownerProfile?.displayName ? { ownerDisplayName: ownerProfile.displayName } : {}),
+      note: c.note,
+      timestamp: event.timestamp,
+    });
   });
 
   ws.on('contact.request_accepted', (event) => {
@@ -120,6 +131,16 @@ export function wireEvents(
       displayName: c.friendDisplayName,
       accountType: c.friendAccountType,
     });
+    const ownerProfile = c.friendAccountType === 'agent' && c.ownerId ? store.getOwnerProfile(c.ownerId) : undefined;
+    getHandlers()['contact.event']?.({
+      type: 'contact.request_accepted',
+      username: c.friendUsername,
+      displayName: c.friendDisplayName,
+      accountType: c.friendAccountType,
+      ...(ownerProfile?.username ? { ownerUsername: ownerProfile.username } : {}),
+      ...(ownerProfile?.displayName ? { ownerDisplayName: ownerProfile.displayName } : {}),
+      timestamp: event.timestamp,
+    });
   });
 
   ws.on('contact.request_rejected', (event) => {
@@ -127,6 +148,13 @@ export function wireEvents(
     store.removeIncomingRequest(event.payload.contactId);
     const contact = store.getContact(event.payload.contactId);
     getHandlers()['contact.request_rejected']?.(contact?.friendUsername);
+    getHandlers()['contact.event']?.({
+      type: 'contact.request_rejected',
+      username: contact?.friendUsername,
+      displayName: contact?.friendDisplayName,
+      accountType: contact?.friendAccountType ?? 'human',
+      timestamp: event.timestamp,
+    });
   });
 
   ws.on('contact.request_revoked', (event) => {
@@ -136,7 +164,16 @@ export function wireEvents(
 
   ws.on('contact.removed', (event) => {
     log.debug(`Event contact.removed: ${event.payload.contactId}`);
+    const contact = store.getContact(event.payload.contactId);
     store.removeContact(event.payload.contactId);
+    getHandlers()['contact.removed']?.(contact?.friendUsername);
+    getHandlers()['contact.event']?.({
+      type: 'contact.removed',
+      username: contact?.friendUsername,
+      displayName: contact?.friendDisplayName,
+      accountType: contact?.friendAccountType ?? 'human',
+      timestamp: event.timestamp,
+    });
   });
 
   ws.on('contact.friend_name_updated', (event) => {
