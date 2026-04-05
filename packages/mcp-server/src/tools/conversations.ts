@@ -8,6 +8,14 @@ import type { NewioApp } from '@newio/sdk';
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
 
+function requireSessionId(getSessionId: () => string | undefined): string {
+  const id = getSessionId();
+  if (!id) {
+    throw new Error('MCP server has no session ID wired — cannot create conversation without a session context.');
+  }
+  return id;
+}
+
 /** Register conversations tools on the MCP server. */
 export function registerConversationsTools(
   server: McpServer,
@@ -28,7 +36,7 @@ export function registerConversationsTools(
       },
     },
     async ({ name, usernames }) => {
-      const conversationId = await app.createWorkSession(name, usernames, getSessionId());
+      const conversationId = await app.createWorkSession(name, usernames, requireSessionId(getSessionId));
       return json({ conversationId });
     },
   );
@@ -43,7 +51,7 @@ export function registerConversationsTools(
       },
     },
     async ({ name, usernames }) => {
-      const conversationId = await app.createGroup(name, usernames, getSessionId());
+      const conversationId = await app.createGroup(name, usernames, requireSessionId(getSessionId));
       return json({ conversationId });
     },
   );

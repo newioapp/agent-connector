@@ -3,7 +3,7 @@
  *
  * Owns the full Newio lifecycle: auth, HTTP client, WebSocket connection.
  * Delegates state management to {@link NewioAppStore}, media to helper functions,
- * event wiring to {@link wireEvents}, and prompt building to {@link buildNewioInstruction}.
+ * event wiring to {@link wireEvents}.
  *
  * Used by the Agent Connector, MCP server, and standalone agent implementations.
  */
@@ -15,7 +15,6 @@ import { getLogger } from '../core/logger.js';
 import { ActivityThrottle } from '../core/activity-throttle.js';
 import { NewioAppStore } from './store.js';
 import { wireEvents } from './events.js';
-import { buildNewioInstruction } from './prompt.js';
 import { uploadFiles, downloadAttachment } from './media.js';
 import type { WebSocketFactory } from '../core/websocket.js';
 import type { ApprovalHandle } from '../core/auth.js';
@@ -504,13 +503,6 @@ export class NewioApp {
   // Conversation helpers
   // ---------------------------------------------------------------------------
 
-  /** Find or create a DM by username. */
-  private async findOrCreateDmByUsername(username: string): Promise<string> {
-    log.debug(`Finding or creating DM with @${username}`);
-    const userId = await this.resolveUsername(username);
-    return this.findOrCreateDm(userId);
-  }
-
   /** Find an existing DM with a user, or create one. */
   private async findOrCreateDm(userId: string): Promise<string> {
     log.debug(`Finding or creating DM with ${userId}`);
@@ -587,16 +579,6 @@ export class NewioApp {
     });
     this.store.setMembers(resp.conversationId, resp.members);
     return resp.conversationId;
-  }
-
-  // ---------------------------------------------------------------------------
-  // System prompt
-  // ---------------------------------------------------------------------------
-
-  /** Build Newio-specific instructions describing the agent's identity and messaging context. */
-  buildNewioInstruction(opts?: { customInstructions?: string }): string {
-    const ownerContact = this.identity.ownerId ? this.store.getContact(this.identity.ownerId) : undefined;
-    return buildNewioInstruction(this.identity, ownerContact, opts);
   }
 
   /** Get the owner's display name, if the owner is in contacts. */

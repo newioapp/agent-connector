@@ -19,7 +19,7 @@ import type { AgentInstance, AgentInstanceListener } from './agent-instance';
 import type { AgentSession } from '../agent-session';
 import type { SessionStore } from '../session-store';
 import { MessageQueue } from './message-queue';
-import { formatMessagePrompt } from './prompt-manager';
+import { PromptManager } from './prompt-manager';
 import { Logger } from '../logger';
 import WebSocket from 'ws';
 
@@ -36,7 +36,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
   status: AgentRuntimeStatus = 'stopped';
   error?: string;
 
-  protected app?: NewioApp;
+  private _app?: NewioApp;
+  private _promptManager?: PromptManager;
 
   /** newioSessionId → running session with its own message queue */
   private readonly runners = new Map<string, SessionRunner>();
@@ -72,7 +73,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       const storedTokens = this.configManager.getTokens(this.config.id);
       log.debug(storedTokens ? 'Found persisted tokens' : 'No persisted tokens, will run auth flow');
 
-      this.app = await NewioApp.create({
+      this._app = await NewioApp.create({
         agentId: this.config.newioAgentId,
         username: this.config.newioUsername,
         name: this.config.name,
@@ -95,14 +96,16 @@ export abstract class BaseAgentInstance implements AgentInstance {
         },
       });
 
+      const app = this._app;
+
       // Sync profile to config
-      const { userId, username, displayName } = this.app.identity;
+      const { userId, username, displayName } = app.identity;
       log.info(`Authenticated as ${username} (${userId})`);
       this.configManager.setNewioIdentity(this.config.id, {
         newioAgentId: userId,
         newioUsername: username,
         newioDisplayName: displayName,
-        newioAvatarUrl: this.app.identity.avatarUrl,
+        newioAvatarUrl: app.identity.avatarUrl,
       });
       this.listener.onConfigUpdated();
 
@@ -110,23 +113,25 @@ export abstract class BaseAgentInstance implements AgentInstance {
       const mcpSocketPath = join(tmpdir(), `newio-mcp-${username}.sock`);
       this.mcpSocketPath = mcpSocketPath;
 
-      await this.app.init();
+      await app.init();
 
-      this.app.onDisconnect(() => {
+      app.onDisconnect(() => {
         if (!abortController.signal.aborted) {
           log.warn('WebSocket disconnected unexpectedly');
           this.setStatus('error', 'WebSocket disconnected');
         }
       });
 
-      this.app.on('message.new', (msg) => {
+      app.on('message.new', (msg) => {
         if (!msg.isOwnMessage) {
           void this.routeMessage(msg);
         }
       });
 
       // Start MCP server on UDS for agent sessions
-      const app = this.app;
+
+      this._promptManager = new PromptManager(app);
+
       this.udsServer = startUdsServer({
         socketPath: mcpSocketPath,
         onConnection: (transport) => {
@@ -146,8 +151,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
       log.info('Agent running');
       this.setStatus('running');
     } catch (err: unknown) {
-      this.app?.dispose();
-      this.app = undefined;
+      this._app?.dispose();
+      this._app = undefined;
 
       if (abortController.signal.aborted) {
         log.info('Start aborted');
@@ -188,15 +193,15 @@ export abstract class BaseAgentInstance implements AgentInstance {
       log.debug('MCP UDS server closed');
     }
 
-    if (this.app) {
+    if (this._app) {
       try {
-        await this.app.auth.revoke();
+        await this._app.auth.revoke();
         log.debug('Tokens revoked');
       } catch {
         log.warn('Token revocation failed (best-effort)');
       }
-      this.app.dispose();
-      this.app = undefined;
+      this._app.dispose();
+      this._app = undefined;
     }
 
     this.configManager.clearTokens(this.config.id);
@@ -207,11 +212,18 @@ export abstract class BaseAgentInstance implements AgentInstance {
   }
 
   /** Get the NewioApp instance. Throws if not connected. */
-  protected requireApp(): NewioApp {
-    if (!this.app) {
+  get app(): NewioApp {
+    if (!this._app) {
       throw new Error('Agent is not connected — NewioApp is not initialized.');
     }
-    return this.app;
+    return this._app;
+  }
+
+  get promptManager(): PromptManager {
+    if (!this._promptManager) {
+      throw new Error('PromptManager is not created.');
+    }
+    return this._promptManager;
   }
 
   // ---------------------------------------------------------------------------
@@ -240,7 +252,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
    * 3. Otherwise launches a new session (serialized) and starts its processing loop
    */
   private async getOrCreateRunner(conversationId: string): Promise<SessionRunner> {
-    const newioSessionId = await this.requireApp().resolveSessionId(conversationId);
+    const newioSessionId = await this.app.resolveSessionId(conversationId);
 
     // Check if already running
     const existing = this.runners.get(newioSessionId);
@@ -282,6 +294,10 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** Launch a session runner — create or resume the session, wire MCP, start its processing loop. */
   private async launchRunner(newioSessionId: string): Promise<SessionRunner> {
+    if (this.abortController?.signal.aborted) {
+      throw new Error('Agent is stopping — session launch aborted');
+    }
+
     const existingCorrelationId = this.sessionStore.get(newioSessionId);
     let session: AgentSession;
 
@@ -312,7 +328,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
     session.onStatus((status) => {
       const convId = this.activeConversation.get(session.correlationId);
       if (convId) {
-        this.requireApp().setStatus(status, convId);
+        this.app.setStatus(status, convId);
       } else {
         log.warn(`Status '${status}' from session ${session.correlationId} dropped — no active conversation mapped.`);
       }
@@ -382,8 +398,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
     session: AgentSession,
     messages: readonly IncomingMessage[],
   ): Promise<void> {
-    const app = this.requireApp();
-    const userText = formatMessagePrompt(messages);
+    const userText = this.promptManager.formatMessagePrompt(messages);
     this.activeConversation.set(session.correlationId, conversationId);
 
     try {
@@ -393,7 +408,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
           segment.text.trim() &&
           segment.text.trim().toLowerCase() !== '_skip'
         ) {
-          await app.sendMessage(conversationId, segment.text.trim());
+          await this.app.sendMessage(conversationId, segment.text.trim());
         }
       }
     } catch (err: unknown) {
@@ -401,7 +416,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       log.error(`Prompt/send failed for ${conversationId}: ${errMsg}`);
     } finally {
       this.activeConversation.delete(session.correlationId);
-      app.setStatus('idle', conversationId);
+      this.app.setStatus('idle', conversationId);
     }
   }
 
