@@ -20,7 +20,6 @@ export class KiroCliInstance extends BaseAgentInstance {
 
   protected async onConnected(): Promise<void> {
     log.info('Kiro CLI instance connected, preparing greeting...');
-    this.requireApp();
     if (!this.config.kiroCli) {
       throw new Error('Kiro CLI config missing');
     }
@@ -46,7 +45,7 @@ export class KiroCliInstance extends BaseAgentInstance {
 
     // Send Newio instruction as the first prompt so the session has context
     log.debug(`[${session.correlationId}] Sending Newio instruction to new session`);
-    const instruction = this.requireApp().buildNewioInstruction();
+    const instruction = this.promptManager.buildNewioInstruction();
     // Drain the generator — we don't need the instruction response
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     for await (const _ of session.prompt(instruction)) {
@@ -70,15 +69,14 @@ export class KiroCliInstance extends BaseAgentInstance {
   // ---------------------------------------------------------------------------
 
   private async sendGreeting(): Promise<void> {
-    const app = this.requireApp();
-    if (!app.identity.ownerId) {
+    if (!this.app.identity.ownerId) {
       log.warn('No ownerId set, skipping greeting');
       return;
     }
 
     // Find or create DM with owner
     log.debug('Finding or creating DM with owner...');
-    const ownerDmConversationId = await app.getOwnerDmConversationId();
+    const ownerDmConversationId = await this.app.getOwnerDmConversationId();
     if (!ownerDmConversationId) {
       log.warn('Could not get owner DM conversation, skipping greeting');
       return;
@@ -90,18 +88,9 @@ export class KiroCliInstance extends BaseAgentInstance {
     const session = await this.getOrCreateSession(ownerDmConversationId);
     log.debug(`[${session.correlationId}] Generating greeting for owner...`);
 
-    const ownerName = app.getOwnerDisplayName() ?? 'your owner';
-    const prompt =
-      `Context: You are running as an ACP (Agent Client Protocol) agent inside the Newio Agent Connector. ` +
-      `The connector has already handled authentication and connected you to the Newio messaging platform on your behalf — you do not need to do anything to connect. ` +
-      `This is a startup test to verify the connection is working. ` +
-      `Your response will be sent as a message to ${ownerName} in your DM conversation.\n\n` +
-      `Task: Write a brief, friendly greeting (1-2 sentences) to let ${ownerName} know you are online and ready. ` +
-      `Just output the greeting text, nothing else.`;
-
     let greeting: string | undefined;
     try {
-      greeting = await collectAgentMessage(session.prompt(prompt));
+      greeting = await collectAgentMessage(session.prompt(this.promptManager.buildGreetingPrompt()));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       log.error(`[${session.correlationId}] Greeting prompt failed: ${message}`);
@@ -113,7 +102,7 @@ export class KiroCliInstance extends BaseAgentInstance {
       throw new Error('Kiro CLI test failed: agent returned an empty response');
     }
 
-    await app.sendMessage(ownerDmConversationId, greeting.trim());
+    await this.app.sendMessage(ownerDmConversationId, greeting.trim());
     log.info(`[${session.correlationId}] Greeting sent to owner`);
   }
 }

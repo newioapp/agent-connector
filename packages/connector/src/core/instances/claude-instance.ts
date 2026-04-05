@@ -119,8 +119,7 @@ export class ClaudeInstance extends BaseAgentInstance {
   }
 
   private async sendGreeting(): Promise<void> {
-    const app = this.requireApp();
-    if (!app.identity.ownerId) {
+    if (!this.app.identity.ownerId) {
       return;
     }
 
@@ -136,18 +135,15 @@ export class ClaudeInstance extends BaseAgentInstance {
       throw new Error('Claude Code test failed: model returned an empty response');
     }
 
-    await app.dmOwner(greeting.trim());
+    await this.app.dmOwner(greeting.trim());
   }
 
   private async generateGreetingMessage(): Promise<string | undefined> {
-    const app = this.requireApp();
     if (!this.config.claude) {
       return undefined;
     }
 
-    const ownerName = app.getOwnerDisplayName() ?? 'your owner';
-    const prompt = `You just connected to the Newio messaging platform. Send a brief, friendly greeting to ${ownerName} to let them know you are online and ready. Keep it to 1-2 sentences.`;
-
+    const prompt = this.promptManager.buildGreetingPrompt();
     const q: Query = query({
       prompt,
       options: {
@@ -213,7 +209,6 @@ export class ClaudeInstance extends BaseAgentInstance {
 
   /** @internal — called by ClaudeSession */
   async queryAgent(userText: string, statusListener: SessionStatusListener): Promise<string | undefined> {
-    const app = this.requireApp();
     if (!this.config.claude) {
       return undefined;
     }
@@ -231,7 +226,7 @@ export class ClaudeInstance extends BaseAgentInstance {
         systemPrompt: {
           type: 'preset',
           preset: 'claude_code',
-          append: app.buildNewioInstruction({ customInstructions: this.config.claude.userPrompt }),
+          append: this.promptManager.buildNewioInstruction(this.config.claude.userPrompt),
         },
         tools: [],
         permissionMode: 'bypassPermissions',

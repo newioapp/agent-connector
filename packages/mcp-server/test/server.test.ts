@@ -121,28 +121,26 @@ describe('MCP Server', () => {
     expect(app.acceptFriendRequestByUsername).toHaveBeenCalledWith('bob');
   });
 
-  it('create_work_session creates temp_group with name', async () => {
+  it('create_work_session throws when sessionId is not set', async () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
     const result = await client.callTool({
       name: 'create_work_session',
       arguments: { name: 'Sprint Planning', usernames: ['alice', 'bob'] },
     });
-    expect(app.createWorkSession).toHaveBeenCalledWith('Sprint Planning', ['alice', 'bob'], undefined);
-    const parsed = JSON.parse((result.content[0] as { text: string }).text) as { conversationId: string };
-    expect(parsed.conversationId).toBe('ws-conv-id');
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain('no session ID');
   });
 
-  it('create_group creates named group', async () => {
+  it('create_group throws when sessionId is not set', async () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
     const result = await client.callTool({
       name: 'create_group',
       arguments: { usernames: ['alice', 'bob'], name: 'Team' },
     });
-    expect(app.createGroup).toHaveBeenCalledWith('Team', ['alice', 'bob'], undefined);
-    const parsed = JSON.parse((result.content[0] as { text: string }).text) as { conversationId: string };
-    expect(parsed.conversationId).toBe('group-conv-id');
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain('no session ID');
   });
 
   it('send_message supports file attachments', async () => {
