@@ -4,7 +4,7 @@
  * Implements AgentSession (common interface) and acp.Client (ACP protocol).
  * Owns its own kiro-cli child process and ACP connection.
  */
-import { spawn, execFileSync } from 'child_process';
+import { spawn } from 'child_process';
 import type { ChildProcess } from 'child_process';
 import { Writable, Readable } from 'stream';
 import * as fs from 'fs/promises';
@@ -19,54 +19,20 @@ import { Logger } from '../logger';
 
 const log = new Logger('kiro-cli-session');
 
-/**
- * Resolve the absolute path to `kiro-cli`. Electron's PATH when launched from
- * the Dock is minimal, so we try multiple strategies.
- */
-const resolvedKiroCliPath: string = (() => {
-  try {
-    execFileSync('kiro-cli', ['--version'], { encoding: 'utf8', timeout: 3000 });
-    return 'kiro-cli';
-  } catch {
-    // not on PATH
-  }
-
-  const shell = process.env.SHELL ?? '/bin/zsh';
-  try {
-    const path = execFileSync(shell, ['-ilc', 'which kiro-cli'], {
-      encoding: 'utf8',
-      timeout: 5000,
-      env: { ...process.env, TERM: 'dumb' },
-    }).trim();
-    if (path) {
-      return path;
-    }
-  } catch {
-    // shell resolution failed
-  }
-
-  for (const candidate of ['/Users/pineapple/.local/bin/kiro-cli', '/usr/local/bin/kiro-cli']) {
-    try {
-      execFileSync(candidate, ['--version'], { encoding: 'utf8', timeout: 3000 });
-      return candidate;
-    } catch {
-      // not here
-    }
-  }
-
-  return 'kiro-cli';
-})();
-
 export class KiroCliSession implements AgentSession, acp.Client {
-  readonly correlationId: string;
-
+  private _correlationId?: string;
   private childProcess?: ChildProcess;
   private connection?: ClientSideConnection;
   private stream?: SessionStream;
   private statusListener: SessionStatusListener = () => {};
 
-  private constructor(correlationId: string) {
-    this.correlationId = correlationId;
+  private constructor() {}
+
+  get correlationId() {
+    if (typeof this._correlationId !== 'string') {
+      throw new Error('');
+    }
+    return this._correlationId;
   }
 
   /**
@@ -74,8 +40,8 @@ export class KiroCliSession implements AgentSession, acp.Client {
    */
   static async create(
     config: KiroCliConfig,
-    mcpSocketPath?: string,
-    envVars?: Readonly<Record<string, string>>,
+    mcpSocketPath: string | undefined,
+    envVars: Readonly<Record<string, string>>,
   ): Promise<KiroCliSession> {
     const session = await KiroCliSession.spawnAndInit(config, envVars);
     const conn = session.getConnection();
@@ -85,7 +51,7 @@ export class KiroCliSession implements AgentSession, acp.Client {
       mcpServers: buildMcpServers(mcpSocketPath),
     });
 
-    (session as { correlationId: string }).correlationId = sessionResult.sessionId;
+    session._correlationId = sessionResult.sessionId;
     log.info(`[${session.correlationId}] ACP session created`);
     return session;
   }
@@ -97,11 +63,11 @@ export class KiroCliSession implements AgentSession, acp.Client {
   static async resume(
     config: KiroCliConfig,
     correlationId: string,
-    mcpSocketPath?: string,
-    envVars?: Readonly<Record<string, string>>,
+    mcpSocketPath: string | undefined,
+    envVars: Readonly<Record<string, string>>,
   ): Promise<KiroCliSession> {
     const session = await KiroCliSession.spawnAndInit(config, envVars);
-    (session as { correlationId: string }).correlationId = correlationId;
+    session._correlationId = correlationId;
 
     await session.getConnection().loadSession({
       sessionId: correlationId,
@@ -122,10 +88,10 @@ export class KiroCliSession implements AgentSession, acp.Client {
   /** Spawn kiro-cli process and initialize ACP connection (shared by create/resume). */
   private static async spawnAndInit(
     config: KiroCliConfig,
-    envVars?: Readonly<Record<string, string>>,
+    envVars: Readonly<Record<string, string>>,
   ): Promise<KiroCliSession> {
     const { agentName, model, kiroCliPath, cwd } = config;
-    const executable = kiroCliPath ?? resolvedKiroCliPath;
+    const executable = kiroCliPath ?? 'kiro-cli';
     const args = ['acp', '--trust-all-tools'];
     if (agentName) {
       args.push('--agent', agentName);
@@ -155,11 +121,11 @@ export class KiroCliSession implements AgentSession, acp.Client {
     const stream = ndJsonStream(output, input);
 
     // Create session object first so it can be used as the acp.Client
-    const session = new KiroCliSession(''); // correlationId set after ACP session creation
+    const session = new KiroCliSession(); // correlationId set after ACP session creation
     session.childProcess = child;
 
     child.on('exit', (code, signal) => {
-      log.info(`[${session.correlationId}] kiro-cli exited (code=${String(code)}, signal=${String(signal)})`);
+      log.info(`[${session._correlationId}] kiro-cli exited (code=${String(code)}, signal=${String(signal)})`);
     });
 
     const conn = new ClientSideConnection((_agent) => session, stream);
@@ -171,7 +137,7 @@ export class KiroCliSession implements AgentSession, acp.Client {
         fs: { readTextFile: true, writeTextFile: true },
       },
     });
-    log.info(`[${session.correlationId}] ACP initialized (protocol v${String(initResult.protocolVersion)})`);
+    log.info(`ACP initialized (protocol v${String(initResult.protocolVersion)})`);
 
     return session;
   }
