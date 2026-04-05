@@ -6,6 +6,30 @@ import { useEffect, useState } from 'react';
 import type { AgentType, AgentConfig } from '../../../shared/types';
 import { useAgentStore } from '../stores/agent-store';
 import { Button, Input, Textarea, Dropdown, Label, Hint } from './ui';
+import { FolderOpen } from 'lucide-react';
+
+function DirectoryPicker({
+  value,
+  onChange,
+}: {
+  readonly value: string;
+  readonly onChange: (v: string) => void;
+}): React.JSX.Element {
+  async function handleBrowse(): Promise<void> {
+    const dir = await window.api.selectDirectory();
+    if (dir) {
+      onChange(dir);
+    }
+  }
+  return (
+    <div className="flex gap-2">
+      <Input className="flex-1" value={value} readOnly placeholder="No directory selected" />
+      <Button variant="outline" onClick={() => void handleBrowse()}>
+        <FolderOpen size={16} />
+      </Button>
+    </div>
+  );
+}
 
 const AGENT_TYPE_OPTIONS: readonly { value: AgentType; label: string }[] = [
   { value: 'claude-code', label: 'Claude Code' },
@@ -38,34 +62,56 @@ export function AgentFormPanel({
   const [agentName, setAgentName] = useState('');
   const [kiroModel, setKiroModel] = useState('');
   const [kiroCliPath, setKiroCliPath] = useState('');
-  const [kiroCwd, setKiroCwd] = useState('');
+  const [kiroAgents, setKiroAgents] = useState<string[]>([]);
+  const [kiroModels, setKiroModels] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+
+  // Fetch available Kiro CLI agents and models when type is kiro-cli
+  useEffect(() => {
+    if (type !== 'kiro-cli') {
+      return;
+    }
+    const path = kiroCliPath.trim() || undefined;
+    const dir = cwd.trim() || undefined;
+    void window.api.listKiroAgents(path, dir).then((agents) => {
+      setKiroAgents(agents);
+      if (agents.length > 0 && !agentName) {
+        setAgentName(agents[0]);
+      }
+    });
+    void window.api.listKiroModels(path, dir).then((models) => {
+      setKiroModels(models);
+      if (models.length > 0 && !kiroModel) {
+        setKiroModel(models[0]);
+      }
+    });
+  }, [type, kiroCliPath, cwd]);
 
   // Populate fields when editing
   useEffect(() => {
     if (!editAgent) {
       return;
     }
-    setName(editAgent.name);
+    setName(editAgent.newio?.displayName ?? '');
     setType(editAgent.type);
-    setNewioUsername(editAgent.newioUsername ?? '');
+    setNewioUsername(editAgent.newio?.username ?? '');
     if (editAgent.claude) {
       setApiKey(editAgent.claude.apiKey);
       setModel(editAgent.claude.model);
       setUserPrompt(editAgent.claude.userPrompt ?? '');
       setNodePath(editAgent.claude.nodePath ?? '');
       setClaudeCodeCliPath(editAgent.claude.claudeCodeCliPath ?? '');
-      setCwd(editAgent.claude.cwd ?? '');
     }
+    setCwd(editAgent.claude?.cwd ?? editAgent.kiroCli?.cwd ?? '');
     if (editAgent.kiroCli) {
       setAgentName(editAgent.kiroCli.agentName ?? '');
       setKiroModel(editAgent.kiroCli.model ?? '');
       setKiroCliPath(editAgent.kiroCli.kiroCliPath ?? '');
-      setKiroCwd(editAgent.kiroCli.cwd ?? '');
     }
   }, [editAgent]);
 
-  const canSubmit = name.trim().length > 0 && (type === 'claude-code' ? apiKey.trim().length > 0 : true);
+  const canSubmit =
+    name.trim().length > 0 && cwd.trim().length > 0 && (type === 'claude-code' ? apiKey.trim().length > 0 : true);
 
   async function handleSubmit(): Promise<void> {
     if (!canSubmit || submitting) {
@@ -78,32 +124,32 @@ export function AgentFormPanel({
           ? {
               apiKey: apiKey.trim(),
               model: model.trim(),
+              cwd: cwd.trim(),
               ...(userPrompt.trim() ? { userPrompt: userPrompt.trim() } : {}),
               ...(nodePath.trim() ? { nodePath: nodePath.trim() } : {}),
               ...(claudeCodeCliPath.trim() ? { claudeCodeCliPath: claudeCodeCliPath.trim() } : {}),
-              ...(cwd.trim() ? { cwd: cwd.trim() } : {}),
             }
           : undefined;
       const kiroCliConfig =
         type === 'kiro-cli'
           ? {
+              cwd: cwd.trim(),
               ...(agentName.trim() ? { agentName: agentName.trim() } : {}),
               ...(kiroModel.trim() ? { model: kiroModel.trim() } : {}),
               ...(kiroCliPath.trim() ? { kiroCliPath: kiroCliPath.trim() } : {}),
-              ...(kiroCwd.trim() ? { cwd: kiroCwd.trim() } : {}),
             }
           : undefined;
 
       if (isEdit) {
         await updateAgent(editAgent.id, {
-          name: name.trim(),
+          displayName: name.trim(),
           newioUsername: newioUsername.trim(),
           ...(claudeConfig ? { claude: claudeConfig } : {}),
           ...(kiroCliConfig ? { kiroCli: kiroCliConfig } : {}),
         });
       } else {
         await addAgent({
-          name: name.trim(),
+          displayName: name.trim(),
           type,
           ...(newioUsername.trim() ? { newioUsername: newioUsername.trim() } : {}),
           ...(claudeConfig ? { claude: claudeConfig } : {}),
@@ -158,8 +204,8 @@ export function AgentFormPanel({
           </Hint>
         )}
 
-        {/* Name */}
-        <Label text="Name">
+        {/* Display Name */}
+        <Label text="Display Name">
           <Input placeholder="My Agent" value={name} onChange={(e) => setName(e.target.value)} />
         </Label>
 
@@ -173,6 +219,11 @@ export function AgentFormPanel({
           }
         >
           <Input placeholder="myagent" value={newioUsername} onChange={(e) => setNewioUsername(e.target.value)} />
+        </Label>
+
+        {/* Working Directory */}
+        <Label text="Working Directory" hint="Working directory for agent sessions.">
+          <DirectoryPicker value={cwd} onChange={setCwd} />
         </Label>
 
         {/* Claude config */}
@@ -212,39 +263,42 @@ export function AgentFormPanel({
                 onChange={(e) => setClaudeCodeCliPath(e.target.value)}
               />
             </Label>
-            <Label
-              text="Working Directory (optional)"
-              hint="Working directory for Claude Code sessions. Defaults to the app's process directory."
-            >
-              <Input placeholder="e.g. /Users/me/projects" value={cwd} onChange={(e) => setCwd(e.target.value)} />
-            </Label>
           </>
         )}
 
         {/* Kiro CLI config */}
         {type === 'kiro-cli' && (
           <>
-            <Label text="Kiro Agent Name" hint={`Runs: kiro-cli acp --agent ${agentName || '<name>'}`}>
-              <Input placeholder="my-agent" value={agentName} onChange={(e) => setAgentName(e.target.value)} />
+            <Label
+              text="Kiro Agent Name (optional)"
+              hint={`Runs: kiro-cli acp --agent ${agentName || '<name>'}${kiroModel ? ` --model ${kiroModel}` : ''}`}
+            >
+              {kiroAgents.length > 0 ? (
+                <Dropdown
+                  options={kiroAgents.map((a) => ({ value: a, label: a }))}
+                  value={agentName}
+                  onChange={setAgentName}
+                />
+              ) : (
+                <Input placeholder="my-agent" value={agentName} onChange={(e) => setAgentName(e.target.value)} />
+              )}
             </Label>
             <Label text="Model (optional)">
-              <Input placeholder="auto" value={kiroModel} onChange={(e) => setKiroModel(e.target.value)} />
+              {kiroModels.length > 0 ? (
+                <Dropdown
+                  options={kiroModels.map((m) => ({ value: m, label: m }))}
+                  value={kiroModel}
+                  onChange={setKiroModel}
+                />
+              ) : (
+                <Input placeholder="auto" value={kiroModel} onChange={(e) => setKiroModel(e.target.value)} />
+              )}
             </Label>
             <Label text="Kiro CLI Path (optional)" hint="Override if kiro-cli is not on your PATH.">
               <Input
                 placeholder="e.g. /Users/me/.local/bin/kiro-cli"
                 value={kiroCliPath}
                 onChange={(e) => setKiroCliPath(e.target.value)}
-              />
-            </Label>
-            <Label
-              text="Working Directory (optional)"
-              hint="Working directory for the Kiro CLI agent. Defaults to the app's process directory."
-            >
-              <Input
-                placeholder="e.g. /Users/me/projects"
-                value={kiroCwd}
-                onChange={(e) => setKiroCwd(e.target.value)}
               />
             </Label>
           </>

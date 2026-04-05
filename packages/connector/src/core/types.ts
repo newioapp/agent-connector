@@ -25,29 +25,34 @@ export interface ClaudeConfig {
   readonly userPrompt?: string;
   readonly nodePath?: string;
   readonly claudeCodeCliPath?: string;
-  readonly cwd?: string;
+  readonly cwd: string;
 }
 
 export interface KiroCliConfig {
   readonly agentName?: string;
   readonly model?: string;
   readonly kiroCliPath?: string;
-  readonly cwd?: string;
+  readonly cwd: string;
+}
+
+/** Newio identity — populated after first registration/login, synced on every start. */
+export interface NewioIdentity {
+  /** Newio user ID (present once registered). */
+  readonly agentId?: string;
+  /** Newio username (assigned by owner during approval). */
+  readonly username?: string;
+  /** Newio display name. */
+  readonly displayName?: string;
+  /** Newio avatar URL. */
+  readonly avatarUrl?: string;
 }
 
 export interface AgentConfig {
   readonly id: string;
-  readonly name: string;
   readonly type: AgentType;
 
-  /** Set after first Newio registration. */
-  readonly newioAgentId?: string;
-  /** Set after first Newio registration (assigned by owner during approval). */
-  readonly newioUsername?: string;
-  /** Newio display name (synced on every start). */
-  readonly newioDisplayName?: string;
-  /** Newio avatar URL (synced on every start). */
-  readonly newioAvatarUrl?: string;
+  /** Newio identity — set after first registration, synced on every start. */
+  readonly newio?: NewioIdentity;
 
   /** Idle timeout for sessions in ms. Sessions with no activity are stopped. Default: 1 hour. */
   readonly sessionIdleTimeoutMs?: number;
@@ -63,7 +68,7 @@ export interface AgentConfig {
 export const DEFAULT_SESSION_IDLE_TIMEOUT_MS = 60 * 60 * 1000;
 
 export interface AddAgentInput {
-  readonly name: string;
+  readonly displayName: string;
   readonly type: AgentType;
   /** Optional: existing Newio username to login with instead of registering a new agent. */
   readonly newioUsername?: string;
@@ -72,7 +77,7 @@ export interface AddAgentInput {
 }
 
 export interface UpdateAgentInput {
-  readonly name?: string;
+  readonly displayName?: string;
   readonly newioUsername?: string;
   readonly envVars?: Readonly<Record<string, string>>;
   readonly claude?: ClaudeConfig;

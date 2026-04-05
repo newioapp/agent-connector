@@ -10,7 +10,7 @@
  * Each session processes its own event queue concurrently.
  * Subclasses implement session creation and greeting logic.
  */
-import { ApprovalTimeoutError, NewioApp, NEWIO_API_BASE_URL, NEWIO_WS_URL } from '@newio/sdk';
+import { ApprovalTimeoutError, NewioApp, NEWIO_API_BASE_URL, NEWIO_WS_URL, NotFoundApiError } from '@newio/sdk';
 import type { IncomingMessage, ContactEvent, CronTriggerEvent } from '@newio/sdk';
 import { NewioMcpServer, startUdsServer } from '@newio/mcp-server';
 import type { Server } from 'net';
@@ -79,9 +79,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
       log.debug(storedTokens ? 'Found persisted tokens' : 'No persisted tokens, will run auth flow');
 
       this._app = await NewioApp.create({
-        agentId: this.config.newioAgentId,
-        username: this.config.newioUsername,
-        name: this.config.name,
+        agentId: this.config.newio?.agentId,
+        username: this.config.newio?.username,
+        name: this.config.newio?.displayName ?? 'Agent',
         apiBaseUrl: NEWIO_API_BASE_URL,
         wsUrl: NEWIO_WS_URL,
         wsFactory: (url) => new WebSocket(url) as never,
@@ -107,10 +107,10 @@ export abstract class BaseAgentInstance implements AgentInstance {
       const { userId, username, displayName } = app.identity;
       log.info(`Authenticated as ${username} (${userId})`);
       this.configManager.setNewioIdentity(this.config.id, {
-        newioAgentId: userId,
-        newioUsername: username,
-        newioDisplayName: displayName,
-        newioAvatarUrl: app.identity.avatarUrl,
+        agentId: userId,
+        username,
+        displayName,
+        avatarUrl: app.identity.avatarUrl,
       });
       this.listener.onConfigUpdated();
 
@@ -195,6 +195,13 @@ export abstract class BaseAgentInstance implements AgentInstance {
       if (err instanceof ApprovalTimeoutError) {
         log.warn('Approval timed out');
         this.setStatus('error', 'Approval timed out. Please try starting the agent again.');
+      } else if (err instanceof NotFoundApiError) {
+        const username = this.config.newio?.username;
+        log.warn('Agent not found', username);
+        this.setStatus('error', `Agent "${username ?? 'unknown'}" not found. Check the Newio Username and try again.`);
+      } else if (err instanceof Error && err.message.includes('WebSocket closed before open')) {
+        log.warn('WebSocket connection rejected — likely a duplicate session');
+        this.setStatus('error', 'Connection rejected. This agent may already be running in another instance.');
       } else {
         const message = err instanceof Error ? (err.stack ?? err.message) : 'Unknown error';
         log.error('Failed to start', message);

@@ -10,7 +10,7 @@
 import type { AgentConfigManager, AgentTokens } from './core/agent-config-manager';
 import { AgentRuntimeManager } from './core/agent-runtime-manager';
 import { SessionStore } from './core/session-store';
-import type { AgentRuntimeStatus, AgentConfig } from './core/types';
+import type { AgentRuntimeStatus, AgentConfig, NewioIdentity } from './core/types';
 import { setLogHandler } from '@newio/sdk';
 import { join } from 'path';
 import { mkdirSync } from 'fs';
@@ -29,16 +29,14 @@ setLogHandler((level, name, message, args) => {
 const AGENTS: AgentConfig[] = [
   // {
   //   id: 'claude-1',
-  //   name: 'My Claude Agent',
   //   type: 'claude-code',
-  //   newioUsername: 'my-agent',
+  //   newio: { username: 'my-agent', displayName: 'My Claude Agent' },
   //   claude: { apiKey: 'sk-ant-...', model: 'claude-sonnet-4-20250514' },
   // },
   {
     id: 'kiro-1',
-    name: 'Kiro',
     type: 'kiro-cli',
-    newioUsername: 'kiro',
+    newio: { username: 'kiro', displayName: 'Kiro' },
     envVars: {},
     kiroCli: { agentName: 'pineapple', cwd: '/Users/pineapple/workspace/conduit' },
   },
@@ -72,15 +70,12 @@ class InMemoryConfigManager implements AgentConfigManager {
     throw new Error('Not supported in CLI mode');
   }
 
-  setNewioIdentity(
-    agentId: string,
-    identity: { newioAgentId: string; newioUsername: string; newioDisplayName?: string; newioAvatarUrl?: string },
-  ): AgentConfig {
+  setNewioIdentity(agentId: string, identity: NewioIdentity): AgentConfig {
     const idx = this.configs.findIndex((a) => a.id === agentId);
     if (idx === -1) {
       throw new Error(`Agent ${agentId} not found.`);
     }
-    this.configs[idx] = { ...this.configs[idx], ...identity };
+    this.configs[idx] = { ...this.configs[idx], newio: identity };
     return this.configs[idx];
   }
 
@@ -117,7 +112,9 @@ if (!agentId) {
   } else {
     console.log('Configured agents:\n');
     for (const a of agents) {
-      console.log(`  ${a.id}  ${a.name} (${a.type})${a.newioUsername ? `  @${a.newioUsername}` : ''}`);
+      console.log(
+        `  ${a.id}  ${a.newio?.displayName ?? a.type} (${a.type})${a.newio?.username ? `  @${a.newio.username}` : ''}`,
+      );
     }
     console.log('\nUsage: npx tsx src/cli.ts --agent <agentId>');
   }
@@ -130,8 +127,7 @@ if (!config) {
   process.exit(1);
 }
 
-console.log(`Starting agent: ${config.name} (${config.type})`);
-
+console.log(`Starting agent: ${config.newio?.displayName ?? config.type} (${config.type})`);
 const runtime = new AgentRuntimeManager(configManager, sessionStore, {
   onStatusChanged(id: string, status: AgentRuntimeStatus, error?: string) {
     console.log(`[${id}] status: ${status}${error ? ` — ${error}` : ''}`);

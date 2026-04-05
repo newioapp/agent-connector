@@ -5,7 +5,7 @@
  * - StoreAgentConfigManager (main/) — backed by electron-store
  * - InMemoryConfigManager (cli.ts) — in-memory for CLI usage
  */
-import type { AgentConfig, AddAgentInput, UpdateAgentInput } from './types';
+import type { AgentConfig, AddAgentInput, UpdateAgentInput, NewioIdentity } from './types';
 
 export interface AgentTokens {
   readonly accessToken: string;
@@ -18,15 +18,7 @@ export interface AgentConfigManager {
   add(input: AddAgentInput): AgentConfig | Promise<AgentConfig>;
   update(agentId: string, updates: UpdateAgentInput): AgentConfig;
   remove(agentId: string): void;
-  setNewioIdentity(
-    agentId: string,
-    identity: {
-      newioAgentId: string;
-      newioUsername: string;
-      newioDisplayName?: string;
-      newioAvatarUrl?: string;
-    },
-  ): AgentConfig;
+  setNewioIdentity(agentId: string, identity: NewioIdentity): AgentConfig;
   getTokens(agentId: string): AgentTokens | undefined;
   setTokens(agentId: string, tokens: AgentTokens): void;
   clearTokens(agentId: string): void;

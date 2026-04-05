@@ -7,7 +7,7 @@
 import { randomUUID } from 'crypto';
 import type Store from 'electron-store';
 import type { StoreSchema } from './store';
-import type { AgentConfig, AddAgentInput, UpdateAgentInput } from '../shared/types';
+import type { AgentConfig, AddAgentInput, UpdateAgentInput, NewioIdentity } from '../shared/types';
 import { getShellEnv, listAvailableShells } from './shell-env';
 
 export type { AgentConfigManager, AgentTokens } from '../core/agent-config-manager';
@@ -33,9 +33,11 @@ export class StoreAgentConfigManager implements AgentConfigManager {
     const envVars = shells.length > 0 ? await getShellEnv(shells[0]) : {};
     const config: AgentConfig = {
       id: randomUUID(),
-      name: input.name,
       type: input.type,
-      ...(input.newioUsername ? { newioUsername: input.newioUsername } : {}),
+      newio: {
+        displayName: input.displayName,
+        ...(input.newioUsername ? { username: input.newioUsername } : {}),
+      },
       envVars,
       ...(input.claude ? { claude: input.claude } : {}),
       ...(input.kiroCli ? { kiroCli: input.kiroCli } : {}),
@@ -52,13 +54,18 @@ export class StoreAgentConfigManager implements AgentConfigManager {
       throw new Error(`Agent ${agentId} not found.`);
     }
     const existing = agents[index];
-    const usernameChanged = updates.newioUsername !== undefined && updates.newioUsername !== existing.newioUsername;
+    const usernameChanged = updates.newioUsername !== undefined && updates.newioUsername !== existing.newio?.username;
+    const displayName = updates.displayName ?? existing.newio?.displayName;
+    let newio = existing.newio;
+    if (usernameChanged) {
+      // Reset identity on username change — preserve displayName, will re-sync on next start
+      newio = { displayName, ...(updates.newioUsername ? { username: updates.newioUsername } : {}) };
+    } else if (updates.displayName !== undefined) {
+      newio = { ...existing.newio, displayName: updates.displayName };
+    }
     const updated: AgentConfig = {
       ...existing,
-      ...(updates.name !== undefined ? { name: updates.name } : {}),
-      ...(updates.newioUsername !== undefined ? { newioUsername: updates.newioUsername } : {}),
-      // Reset Newio profile when username changes — will be re-synced on next start
-      ...(usernameChanged ? { newioAgentId: undefined, newioDisplayName: undefined, newioAvatarUrl: undefined } : {}),
+      newio,
       ...(updates.envVars !== undefined ? { envVars: updates.envVars } : {}),
       ...(updates.claude !== undefined ? { claude: updates.claude } : {}),
       ...(updates.kiroCli !== undefined ? { kiroCli: updates.kiroCli } : {}),
@@ -87,21 +94,13 @@ export class StoreAgentConfigManager implements AgentConfigManager {
   }
 
   /** Update Newio identity on an agent config (called after registration). */
-  setNewioIdentity(
-    agentId: string,
-    identity: {
-      newioAgentId: string;
-      newioUsername: string;
-      newioDisplayName?: string;
-      newioAvatarUrl?: string;
-    },
-  ): AgentConfig {
+  setNewioIdentity(agentId: string, identity: NewioIdentity): AgentConfig {
     const agents = [...this.store.get('agents')];
     const index = agents.findIndex((a) => a.id === agentId);
     if (index === -1) {
       throw new Error(`Agent ${agentId} not found.`);
     }
-    const updated: AgentConfig = { ...agents[index], ...identity };
+    const updated: AgentConfig = { ...agents[index], newio: identity };
     agents[index] = updated;
     this.store.set('agents', agents);
     return updated;

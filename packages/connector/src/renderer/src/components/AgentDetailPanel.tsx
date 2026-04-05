@@ -71,8 +71,8 @@ export function AgentDetailPanel({
     <div className="flex flex-1 flex-col min-h-0">
       {/* Header */}
       <div className="flex items-center gap-3 px-6 py-4">
-        {config.newioAvatarUrl ? (
-          <img src={config.newioAvatarUrl} alt="" className="h-10 w-10 rounded-lg object-cover" />
+        {config.newio?.avatarUrl ? (
+          <img src={config.newio.avatarUrl} alt="" className="h-10 w-10 rounded-lg object-cover" />
         ) : (
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             {config.type === 'kiro-cli' ? <Terminal size={20} /> : <Bot size={20} />}
@@ -80,7 +80,7 @@ export function AgentDetailPanel({
         )}
         <div className="min-w-0 flex-1">
           <div className="truncate text-base font-semibold text-foreground">
-            {config.newioDisplayName ?? config.name}
+            {config.newio?.displayName ?? (config.type === 'kiro-cli' ? 'Kiro CLI' : 'Claude Code')}
           </div>
           <div className="flex items-center gap-2 text-xs">
             <span
