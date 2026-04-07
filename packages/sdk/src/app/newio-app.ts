@@ -326,6 +326,7 @@ export class NewioApp {
       this.eventHandlers['cron.triggered']?.(event);
     }, intervalMs);
     this.cronJobs.set(def.cronId, { def, timer });
+    this.eventHandlers['cron.scheduled']?.(def);
   }
 
   /** Cancel a scheduled cron job. */
@@ -335,6 +336,7 @@ export class NewioApp {
       clearInterval(entry.timer);
       this.cronJobs.delete(cronId);
       log.info(`Cron cancelled: ${cronId}`);
+      this.eventHandlers['cron.cancelled']?.(cronId);
     }
   }
 

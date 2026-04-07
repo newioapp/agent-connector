@@ -79,6 +79,8 @@ export interface AppEventHandlers {
   'contact.removed': (username: string | undefined) => void;
   'contact.event': (event: ContactEvent) => void;
   'cron.triggered': (event: CronTriggerEvent) => void;
+  'cron.scheduled': (def: CronJobDef) => void;
+  'cron.cancelled': (cronId: string) => void;
 }
 
 /** Agent-friendly contact summary (no UUIDs). */
