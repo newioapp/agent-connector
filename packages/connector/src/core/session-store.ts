@@ -90,7 +90,7 @@ export class SessionStore {
     this.db.prepare('DELETE FROM cron_jobs WHERE cronId = ?').run(cronId);
   }
 
-  /** List all persisted cron jobs for an agent. */
+  /** List all persisted cron jobs for an agent. Skips expired one-shot jobs. */
   listCrons(agentId: string): CronJobRow[] {
     const rows = this.db
       .prepare('SELECT cronId, expression, newioSessionId, label, payload FROM cron_jobs WHERE agentId = ?')
@@ -101,13 +101,26 @@ export class SessionStore {
       label: string;
       payload: string | null;
     }>;
-    return rows.map((r) => ({
-      cronId: r.cronId,
-      expression: r.expression,
-      newioSessionId: r.newioSessionId,
-      label: r.label,
-      ...(r.payload ? { payload: JSON.parse(r.payload) as unknown } : {}),
-    }));
+    const result: CronJobRow[] = [];
+    for (const r of rows) {
+      // Skip expired one-shot jobs: parse the ISO-8601 time from the expression
+      if (/^at\s+/i.test(r.expression)) {
+        const after = r.expression.replace(/^at\s+/i, '').trim();
+        const triggerTime = new Date(after).getTime();
+        if (!isNaN(triggerTime) && triggerTime <= Date.now()) {
+          this.deleteCron(r.cronId);
+          continue;
+        }
+      }
+      result.push({
+        cronId: r.cronId,
+        expression: r.expression,
+        newioSessionId: r.newioSessionId,
+        label: r.label,
+        ...(r.payload ? { payload: JSON.parse(r.payload) as unknown } : {}),
+      });
+    }
+    return result;
   }
 
   /** Close the database. */

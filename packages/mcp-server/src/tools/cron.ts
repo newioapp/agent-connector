@@ -14,10 +14,16 @@ export function registerCronTools(server: McpServer, app: NewioApp, getSessionId
     'schedule_cron',
     {
       description:
-        'Schedule a recurring task. The label is your reminder of what to do when it fires. ' +
-        'Expression format: "every <N>s|m|h" (e.g. "every 30m", "every 4h").',
+        'Schedule a task. Supports recurring intervals and one-shot fixed-time triggers.\n' +
+        'Recurring: "every <N>s|m|h" (e.g. "every 30m", "every 4h").\n' +
+        'One-shot: "at <ISO-8601>" (e.g. "at 2026-04-09T12:00:00Z", "at 2026-04-10T10:00:00-04:00").\n' +
+        'For timezone-aware scheduling, convert to ISO-8601 with offset before calling.',
       inputSchema: {
-        expression: z.string().describe('Interval expression, e.g. "every 30m", "every 4h", "every 90s"'),
+        expression: z
+          .string()
+          .describe(
+            'Schedule expression. Examples: "every 30m", "at 2026-04-09T12:00:00Z", "at 2026-04-10T10:00:00-04:00"',
+          ),
         label: z.string().describe('Human-readable description of what this cron job should do when it fires'),
         payload: z
           .unknown()

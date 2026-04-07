@@ -125,8 +125,11 @@ export class NewioApp {
   private readonly ws: NewioWebSocket;
   private readonly downloadDir: string;
   private readonly activityThrottle: ActivityThrottle;
-  /** In-memory cron jobs: cronId → { def, timer }. */
-  private readonly cronJobs = new Map<string, { readonly def: CronJobDef; timer: ReturnType<typeof setInterval> }>();
+  /** In-memory cron jobs: cronId → { def, timer, isInterval }. */
+  private readonly cronJobs = new Map<
+    string,
+    { readonly def: CronJobDef; readonly timer: ReturnType<typeof setTimeout>; readonly isInterval: boolean }
+  >();
 
   private readonly eventHandlers: Partial<AppEventHandlers> = {};
 
@@ -239,8 +242,12 @@ export class NewioApp {
   dispose(): void {
     log.info('Disposing NewioApp...');
     this.activityThrottle.dispose();
-    for (const { timer } of this.cronJobs.values()) {
-      clearInterval(timer);
+    for (const entry of this.cronJobs.values()) {
+      if (entry.isInterval) {
+        clearInterval(entry.timer);
+      } else {
+        clearTimeout(entry.timer);
+      }
     }
     this.cronJobs.clear();
     this.ws.disconnect();
@@ -306,15 +313,16 @@ export class NewioApp {
   // Cron scheduling
   // ---------------------------------------------------------------------------
 
-  /** Schedule a cron job. Fires `cron.triggered` on each tick. */
+  /** Schedule a cron job. Fires `cron.triggered` on each tick (recurring) or once (one-shot). */
   scheduleCron(def: CronJobDef): void {
     if (this.cronJobs.has(def.cronId)) {
       log.warn(`Cron job ${def.cronId} already exists — replacing.`);
       this.cancelCron(def.cronId);
     }
-    const intervalMs = parseCronToMs(def.expression);
-    log.info(`Scheduling cron ${def.cronId}: "${def.label}" every ${String(intervalMs)}ms`);
-    const timer = setInterval(() => {
+
+    const parsed = parseCronExpression(def.expression);
+
+    const fire = (): void => {
       const event: CronTriggerEvent = {
         cronId: def.cronId,
         newioSessionId: def.newioSessionId,
@@ -324,8 +332,28 @@ export class NewioApp {
       };
       log.debug(`Cron triggered: ${def.cronId} — ${def.label}`);
       this.eventHandlers['cron.triggered']?.(event);
-    }, intervalMs);
-    this.cronJobs.set(def.cronId, { def, timer });
+    };
+
+    if (parsed.type === 'once') {
+      const delayMs = parsed.triggerTime - Date.now();
+      if (delayMs <= 0) {
+        log.warn(`Cron ${def.cronId} trigger time is in the past — skipping.`);
+        return;
+      }
+      log.info(
+        `Scheduling one-shot cron ${def.cronId}: "${def.label}" at ${new Date(parsed.triggerTime).toISOString()} (${String(Math.round(delayMs / 1000))}s from now)`,
+      );
+      const timer = setTimeout(() => {
+        fire();
+        this.cancelCron(def.cronId);
+      }, delayMs);
+      this.cronJobs.set(def.cronId, { def, timer, isInterval: false });
+    } else {
+      log.info(`Scheduling recurring cron ${def.cronId}: "${def.label}" every ${String(parsed.intervalMs)}ms`);
+      const timer = setInterval(fire, parsed.intervalMs);
+      this.cronJobs.set(def.cronId, { def, timer, isInterval: true });
+    }
+
     this.eventHandlers['cron.scheduled']?.(def);
   }
 
@@ -333,7 +361,11 @@ export class NewioApp {
   cancelCron(cronId: string): void {
     const entry = this.cronJobs.get(cronId);
     if (entry) {
-      clearInterval(entry.timer);
+      if (entry.isInterval) {
+        clearInterval(entry.timer);
+      } else {
+        clearTimeout(entry.timer);
+      }
       this.cronJobs.delete(cronId);
       log.info(`Cron cancelled: ${cronId}`);
       this.eventHandlers['cron.cancelled']?.(cronId);
@@ -783,37 +815,66 @@ export class NewioApp {
 }
 
 // ---------------------------------------------------------------------------
-// Internal — cron expression parser (minimal)
+// Internal — cron expression parser
 // ---------------------------------------------------------------------------
 
+/** Parsed result from a cron expression. */
+interface ParsedCronRecurring {
+  readonly type: 'recurring';
+  readonly intervalMs: number;
+}
+
+interface ParsedCronOnce {
+  readonly type: 'once';
+  readonly triggerTime: number;
+}
+
+type ParsedCron = ParsedCronRecurring | ParsedCronOnce;
+
 /**
- * Parse a simple cron-like interval expression to milliseconds.
+ * Parse a cron expression into a typed result.
  *
- * Supports two formats:
- * - `"every <N>s|m|h"` — e.g. `"every 30m"`, `"every 4h"`, `"every 90s"`
- * - `"<N>s|m|h"` — shorthand, same as above without "every"
+ * Supported formats:
  *
- * Full cron expressions (e.g. `"0 9 * * 1-5"`) are NOT supported in this
- * minimal implementation. Use a library like `node-cron` if needed.
+ * **Recurring** — `"every <N>s|m|h"` or `"<N>s|m|h"`
+ *   e.g. `"every 30m"`, `"every 4h"`, `"90s"`
+ *
+ * **One-shot (ISO-8601)** — `"at <ISO-8601 datetime>"`
+ *   e.g. `"at 2026-04-09T12:00:00Z"`, `"at 2026-04-10T10:00:00-04:00"`
  */
-function parseCronToMs(expression: string): number {
-  const cleaned = expression.replace(/^every\s+/i, '').trim();
+function parseCronExpression(expression: string): ParsedCron {
+  const trimmed = expression.trim();
+
+  // One-shot: starts with "at "
+  if (/^at\s+/i.test(trimmed)) {
+    const after = trimmed.replace(/^at\s+/i, '').trim();
+    const date = new Date(after);
+    if (isNaN(date.getTime())) {
+      throw new NewioError(
+        `Invalid ISO-8601 datetime: "${after}". Example: "at 2026-04-09T12:00:00Z" or "at 2026-04-10T10:00:00-04:00".`,
+      );
+    }
+    return { type: 'once', triggerTime: date.getTime() };
+  }
+
+  // Recurring: "every <N>s|m|h" or "<N>s|m|h"
+  const cleaned = trimmed.replace(/^every\s+/i, '').trim();
   const match = /^(\d+)\s*(s|m|h)$/i.exec(cleaned);
   if (!match) {
-    throw new NewioError(`Invalid cron expression: "${expression}". Use format: "every <N>s|m|h" (e.g. "every 30m").`);
+    throw new NewioError(
+      `Invalid cron expression: "${expression}". ` +
+        'Use "every <N>s|m|h" for recurring, or "at <ISO-8601>" for one-shot. ' +
+        'Examples: "every 30m", "at 2026-04-09T12:00:00Z".',
+    );
   }
   const value = Number(match[1]);
   const unit = match[2]?.toLowerCase();
-  switch (unit) {
-    case 's':
-      return value * 1000;
-    case 'm':
-      return value * 60 * 1000;
-    case 'h':
-      return value * 60 * 60 * 1000;
-    default:
-      throw new NewioError(`Unknown time unit: "${String(unit)}"`);
+  const multipliers: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000 };
+  const ms = multipliers[unit ?? ''];
+  if (!ms) {
+    throw new NewioError(`Unknown time unit: "${String(unit)}"`);
   }
+  return { type: 'recurring', intervalMs: value * ms };
 }
 
 // ---------------------------------------------------------------------------
