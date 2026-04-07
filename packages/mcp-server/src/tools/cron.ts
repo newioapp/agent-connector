@@ -14,10 +14,17 @@ export function registerCronTools(server: McpServer, app: NewioApp, getSessionId
     'schedule_cron',
     {
       description:
-        'Schedule a recurring task. The label is your reminder of what to do when it fires. ' +
-        'Expression format: "every <N>s|m|h" (e.g. "every 30m", "every 4h").',
+        'Schedule a task. Supports recurring intervals and one-shot fixed-time triggers.\n' +
+        'Recurring: "every <N>s|m|h" (e.g. "every 30m", "every 4h").\n' +
+        'One-shot ISO: "at <ISO-8601>" (e.g. "at 2026-04-09T12:00:00Z").\n' +
+        'One-shot with timezone: "at <YYYY-MM-DD> <HH:MM> [AM|PM] <timezone>" ' +
+        '(e.g. "at 2026-04-10 10:00 AM America/New_York").',
       inputSchema: {
-        expression: z.string().describe('Interval expression, e.g. "every 30m", "every 4h", "every 90s"'),
+        expression: z
+          .string()
+          .describe(
+            'Schedule expression. Examples: "every 30m", "at 2026-04-09T12:00:00Z", "at 2026-04-10 10:00 AM America/New_York"',
+          ),
         label: z.string().describe('Human-readable description of what this cron job should do when it fires'),
         payload: z
           .unknown()
@@ -32,7 +39,9 @@ export function registerCronTools(server: McpServer, app: NewioApp, getSessionId
       }
       const cronId = `cron_${Date.now().toString(36)}`;
       app.scheduleCron({ cronId, expression, newioSessionId: sessionId, label, payload });
-      return text(`Cron scheduled: ${cronId} — "${label}" (${expression})`);
+      const def = app.listCrons().find((c) => c.cronId === cronId);
+      const detail = def?.triggerAt ? `fires at ${def.triggerAt}` : expression;
+      return text(`Cron scheduled: ${cronId} — "${label}" (${detail})`);
     },
   );
 
