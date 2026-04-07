@@ -6,6 +6,15 @@ import type { ActivityStatus } from './types.js';
 /** WebSocket connection state. */
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected';
 
+/** Reason codes for server-initiated connection rejection. */
+export type ConnectionRejectedReason = 'CONNECTION_LIMIT_EXCEEDED';
+
+/** Sent by the server immediately before closing a connection that was rejected post-handshake. */
+export interface ConnectionRejected {
+  readonly action: 'connection.rejected';
+  readonly reason: ConnectionRejectedReason;
+}
+
 /** Listener for connection state changes. */
 export type ConnectionStateListener = (state: ConnectionState) => void;
 
@@ -94,6 +103,7 @@ export class NewioWebSocket {
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private proactiveReconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private intentionalClose = false;
+  private rejected = false;
 
   private readonly wsUrl: string;
   private readonly tokenProvider: TokenProvider;
@@ -102,6 +112,7 @@ export class NewioWebSocket {
   private readonly eventHandlers = new Map<string, Set<(event: never) => void>>();
   private onSubscribeAckHandler: ((ack: SubscribeAck) => void) | null = null;
   private onUnsubscribeAckHandler: ((ack: UnsubscribeAck) => void) | null = null;
+  private onConnectionRejectedHandler: ((reason: ConnectionRejectedReason) => void) | null = null;
 
   constructor(opts: { url: string; tokenProvider: TokenProvider; wsFactory?: WebSocketFactory }) {
     this.wsUrl = opts.url;
@@ -116,6 +127,7 @@ export class NewioWebSocket {
   /** Open the WebSocket connection. */
   async connect(): Promise<void> {
     this.intentionalClose = false;
+    this.rejected = false;
     log.info('WebSocket connecting...');
     await this.doConnect();
   }
@@ -174,6 +186,14 @@ export class NewioWebSocket {
     this.onUnsubscribeAckHandler = handler;
   }
 
+  /**
+   * Set handler for server-initiated connection rejection.
+   * When fired, auto-reconnect is stopped. Call `connect()` to retry manually.
+   */
+  setOnConnectionRejected(handler: ((reason: ConnectionRejectedReason) => void) | null): void {
+    this.onConnectionRejectedHandler = handler;
+  }
+
   /** Subscribe to on-demand topics. */
   subscribe(topics: readonly OnDemandTopic[]): void {
     if (this.ws && this.state === 'connected') {
@@ -227,7 +247,9 @@ export class NewioWebSocket {
         if (!this.intentionalClose) {
           log.warn('WebSocket closed unexpectedly.');
           this.setState('disconnected');
-          this.scheduleReconnect();
+          if (!this.rejected) {
+            this.scheduleReconnect();
+          }
         }
         reject(new Error('WebSocket closed before open'));
       };
@@ -256,6 +278,11 @@ export class NewioWebSocket {
         } else if (parsed['action'] === 'unsubscribe_ack') {
           log.debug('Received unsubscribe_ack.');
           this.onUnsubscribeAckHandler?.(parsed as unknown as UnsubscribeAck);
+        } else if (parsed['action'] === 'connection.rejected') {
+          const reason = parsed['reason'] as ConnectionRejectedReason;
+          log.warn(`Connection rejected by server: ${reason}`);
+          this.rejected = true;
+          this.onConnectionRejectedHandler?.(reason);
         }
         return;
       }
