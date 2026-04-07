@@ -2,12 +2,16 @@
  * Base agent instance — shared auth, WebSocket, session routing, and lifecycle logic.
  *
  * Uses NewioApp for all Newio interactions. Manages multiple sessions per agent,
- * routing incoming messages by conversationId → newioSessionId → per-session queue.
- * Each session processes its own message queue concurrently.
+ * routing incoming events by type:
+ * - Messages: routed by conversationId → newioSessionId
+ * - Contact events: routed to the owner DM session
+ * - Cron triggers: routed to the session that created the cron job
+ *
+ * Each session processes its own event queue concurrently.
  * Subclasses implement session creation and greeting logic.
  */
 import { ApprovalTimeoutError, NewioApp, NEWIO_API_BASE_URL, NEWIO_WS_URL } from '@newio/sdk';
-import type { IncomingMessage } from '@newio/sdk';
+import type { IncomingMessage, ContactEvent, CronTriggerEvent } from '@newio/sdk';
 import { NewioMcpServer, startUdsServer } from '@newio/mcp-server';
 import type { Server } from 'net';
 import { tmpdir } from 'os';
@@ -18,17 +22,18 @@ import { DEFAULT_SESSION_IDLE_TIMEOUT_MS } from '../types';
 import type { AgentInstance, AgentInstanceListener } from './agent-instance';
 import type { AgentSession } from '../agent-session';
 import type { SessionStore } from '../session-store';
-import { MessageQueue } from './message-queue';
+import { EventQueue } from './event-queue';
+import type { AgentEvent } from './event-queue';
 import { PromptManager } from './prompt-manager';
 import { Logger } from '../logger';
 import WebSocket from 'ws';
 
 const log = new Logger('base-agent-instance');
 
-/** A running session with its own message queue and processing loop. */
+/** A running session with its own event queue and processing loop. */
 interface SessionRunner {
   readonly session: AgentSession;
-  readonly queue: MessageQueue;
+  readonly queue: EventQueue;
   lastActivityAt: number;
 }
 
@@ -39,7 +44,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private _app?: NewioApp;
   private _promptManager?: PromptManager;
 
-  /** newioSessionId → running session with its own message queue */
+  /** newioSessionId → running session with its own event queue */
   private readonly runners = new Map<string, SessionRunner>();
   /** newioSessionId → in-flight creation/resume promise (dedup concurrent calls) */
   private readonly pendingSessions = new Map<string, Promise<SessionRunner>>();
@@ -122,14 +127,22 @@ export abstract class BaseAgentInstance implements AgentInstance {
         }
       });
 
+      // Wire event handlers
       app.on('message.new', (msg) => {
         if (!msg.isOwnMessage) {
           void this.routeMessage(msg);
         }
       });
 
-      // Start MCP server on UDS for agent sessions
+      app.on('contact.event', (event) => {
+        void this.routeContactEvent(event);
+      });
 
+      app.on('cron.triggered', (event) => {
+        void this.routeCronEvent(event);
+      });
+
+      // Start MCP server on UDS for agent sessions
       this._promptManager = new PromptManager(app);
 
       this.udsServer = startUdsServer({
@@ -227,17 +240,44 @@ export abstract class BaseAgentInstance implements AgentInstance {
   }
 
   // ---------------------------------------------------------------------------
-  // Message routing
+  // Event routing
   // ---------------------------------------------------------------------------
 
   /** Route an incoming message to the correct session's queue. */
   private async routeMessage(msg: IncomingMessage): Promise<void> {
     try {
       const runner = await this.getOrCreateRunner(msg.conversationId);
-      runner.queue.enqueue(msg);
+      runner.queue.enqueueMessage(msg);
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';
       log.error(`Failed to route message for ${msg.conversationId}: ${errMsg}`);
+    }
+  }
+
+  /** Route a contact event to the owner DM session's queue. */
+  private async routeContactEvent(event: ContactEvent): Promise<void> {
+    try {
+      const convId = await this.app.getOwnerDmConversationId();
+      if (!convId) {
+        log.warn(`Cannot route contact event — no owner DM conversation`);
+        return;
+      }
+      const runner = await this.getOrCreateRunner(convId);
+      runner.queue.enqueueContact(event);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
+      log.error(`Failed to route contact event: ${errMsg}`);
+    }
+  }
+
+  /** Route a cron trigger to the session that created the cron job. Restarts idle sessions. */
+  private async routeCronEvent(event: CronTriggerEvent): Promise<void> {
+    try {
+      const runner = await this.getOrCreateRunnerBySessionId(event.newioSessionId);
+      runner.queue.enqueueCron(event);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
+      log.error(`Failed to route cron event ${event.cronId}: ${errMsg}`);
     }
   }
 
@@ -247,21 +287,24 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /**
    * Get or create a SessionRunner for a conversation.
-   * 1. Resolves conversationId → newioSessionId via NewioApp
-   * 2. Returns existing runner if live
-   * 3. Otherwise launches a new session (serialized) and starts its processing loop
+   * Resolves conversationId → newioSessionId, then delegates to getOrCreateRunnerBySessionId.
    */
   private async getOrCreateRunner(conversationId: string): Promise<SessionRunner> {
     const newioSessionId = await this.app.resolveSessionId(conversationId);
+    return this.getOrCreateRunnerBySessionId(newioSessionId);
+  }
 
-    // Check if already running
+  /**
+   * Get or create a SessionRunner by newioSessionId directly.
+   * Returns existing runner if live, otherwise launches a new session (serialized).
+   */
+  private async getOrCreateRunnerBySessionId(newioSessionId: string): Promise<SessionRunner> {
     const existing = this.runners.get(newioSessionId);
     if (existing) {
       existing.lastActivityAt = Date.now();
       return existing;
     }
 
-    // Deduplicate concurrent launches for the same session
     const pending = this.pendingSessions.get(newioSessionId);
     if (pending) {
       return pending;
@@ -336,7 +379,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
     const runner: SessionRunner = {
       session,
-      queue: new MessageQueue(),
+      queue: new EventQueue(),
       lastActivityAt: Date.now(),
     };
     this.runners.set(newioSessionId, runner);
@@ -384,16 +427,31 @@ export abstract class BaseAgentInstance implements AgentInstance {
   // Per-session processing loop
   // ---------------------------------------------------------------------------
 
-  /** Process messages for a single session. Runs until the queue is closed. */
+  /** Process events for a single session. Runs until the queue is closed. */
   private async runSessionLoop(newioSessionId: string, runner: SessionRunner): Promise<void> {
-    for await (const [conversationId, messages] of runner.queue.batches()) {
+    for await (const event of runner.queue.events()) {
       runner.lastActivityAt = Date.now();
-      await this.processBatch(conversationId, runner.session, messages);
+      await this.processEvent(event, runner.session);
     }
     log.debug(`Session loop ended: ${newioSessionId}`);
   }
 
-  private async processBatch(
+  /** Dispatch an event to the appropriate handler. */
+  private async processEvent(event: AgentEvent, session: AgentSession): Promise<void> {
+    switch (event.type) {
+      case 'messages':
+        await this.processMessageBatch(event.conversationId, session, event.messages);
+        break;
+      case 'contact':
+        await this.processContactBatch(session, event.events);
+        break;
+      case 'cron':
+        await this.processCronTrigger(session, event.job);
+        break;
+    }
+  }
+
+  private async processMessageBatch(
     conversationId: string,
     session: AgentSession,
     messages: readonly IncomingMessage[],
@@ -417,6 +475,40 @@ export abstract class BaseAgentInstance implements AgentInstance {
     } finally {
       this.activeConversation.delete(session.correlationId);
       this.app.setStatus('idle', conversationId);
+    }
+  }
+
+  private async processContactBatch(session: AgentSession, events: readonly ContactEvent[]): Promise<void> {
+    const userText = this.promptManager.formatContactPrompt(events);
+    log.debug(`Processing ${String(events.length)} contact event(s) in session ${session.correlationId}`);
+
+    try {
+      for await (const segment of session.prompt(userText)) {
+        const text = segment.text.trim();
+        if (segment.type === 'agent_message_chunk' && text && text.toLowerCase() !== '_skip') {
+          log.debug(`Contact event response (discarded): ${text.substring(0, 100)}`);
+        }
+      }
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
+      log.error(`Contact event processing failed: ${errMsg}`);
+    }
+  }
+
+  private async processCronTrigger(session: AgentSession, job: CronTriggerEvent): Promise<void> {
+    const userText = this.promptManager.formatCronPrompt(job);
+    log.debug(`Processing cron ${job.cronId} ("${job.label}") in session ${session.correlationId}`);
+
+    try {
+      for await (const segment of session.prompt(userText)) {
+        const text = segment.text.trim();
+        if (segment.type === 'agent_message_chunk' && text && text.toLowerCase() !== '_skip') {
+          log.debug(`Cron response (discarded): ${text.substring(0, 100)}`);
+        }
+      }
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
+      log.error(`Cron processing failed for ${job.cronId}: ${errMsg}`);
     }
   }
 

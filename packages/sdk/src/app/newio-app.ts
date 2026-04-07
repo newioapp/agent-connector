@@ -37,6 +37,8 @@ import type {
   AppEventHandlers,
   NewioIdentity,
   NewioTokens,
+  CronJobDef,
+  CronTriggerEvent,
 } from './types.js';
 
 const log = getLogger('newio-app');
@@ -54,6 +56,10 @@ export type {
   MessageHandler,
   AppEventHandlers,
   ContactEventInfo,
+  ContactEvent,
+  ContactEventType,
+  CronJobDef,
+  CronTriggerEvent,
   NewioIdentity,
   NewioTokens,
 } from './types.js';
@@ -119,6 +125,8 @@ export class NewioApp {
   private readonly ws: NewioWebSocket;
   private readonly downloadDir: string;
   private readonly activityThrottle: ActivityThrottle;
+  /** In-memory cron jobs: cronId → { def, timer }. */
+  private readonly cronJobs = new Map<string, { readonly def: CronJobDef; timer: ReturnType<typeof setInterval> }>();
 
   private readonly eventHandlers: Partial<AppEventHandlers> = {};
 
@@ -227,10 +235,14 @@ export class NewioApp {
     );
   }
 
-  /** Disconnect WebSocket and dispose auth. */
+  /** Disconnect WebSocket, cancel cron jobs, and dispose auth. */
   dispose(): void {
     log.info('Disposing NewioApp...');
     this.activityThrottle.dispose();
+    for (const { timer } of this.cronJobs.values()) {
+      clearInterval(timer);
+    }
+    this.cronJobs.clear();
     this.ws.disconnect();
     this.auth.dispose();
   }
@@ -289,6 +301,51 @@ export class NewioApp {
       this.activityThrottle.update(conversationId, status);
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // Cron scheduling
+  // ---------------------------------------------------------------------------
+
+  /** Schedule a cron job. Fires `cron.triggered` on each tick. */
+  scheduleCron(def: CronJobDef): void {
+    if (this.cronJobs.has(def.cronId)) {
+      log.warn(`Cron job ${def.cronId} already exists — replacing.`);
+      this.cancelCron(def.cronId);
+    }
+    const intervalMs = parseCronToMs(def.expression);
+    log.info(`Scheduling cron ${def.cronId}: "${def.label}" every ${String(intervalMs)}ms`);
+    const timer = setInterval(() => {
+      const event: CronTriggerEvent = {
+        cronId: def.cronId,
+        newioSessionId: def.newioSessionId,
+        label: def.label,
+        payload: def.payload,
+        triggeredAt: new Date().toISOString(),
+      };
+      log.debug(`Cron triggered: ${def.cronId} — ${def.label}`);
+      this.eventHandlers['cron.triggered']?.(event);
+    }, intervalMs);
+    this.cronJobs.set(def.cronId, { def, timer });
+  }
+
+  /** Cancel a scheduled cron job. */
+  cancelCron(cronId: string): void {
+    const entry = this.cronJobs.get(cronId);
+    if (entry) {
+      clearInterval(entry.timer);
+      this.cronJobs.delete(cronId);
+      log.info(`Cron cancelled: ${cronId}`);
+    }
+  }
+
+  /** List all active cron jobs. */
+  listCrons(): readonly CronJobDef[] {
+    return [...this.cronJobs.values()].map((e) => e.def);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Messaging
+  // ---------------------------------------------------------------------------
 
   /** Send a DM to the agent's owner. No-op if ownerId is not set. */
   async dmOwner(text: string, filePaths?: readonly string[]): Promise<void> {
@@ -720,6 +777,40 @@ export class NewioApp {
       ...(everyone ? { everyone: true } : {}),
       ...(here ? { here: true } : {}),
     };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Internal — cron expression parser (minimal)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a simple cron-like interval expression to milliseconds.
+ *
+ * Supports two formats:
+ * - `"every <N>s|m|h"` — e.g. `"every 30m"`, `"every 4h"`, `"every 90s"`
+ * - `"<N>s|m|h"` — shorthand, same as above without "every"
+ *
+ * Full cron expressions (e.g. `"0 9 * * 1-5"`) are NOT supported in this
+ * minimal implementation. Use a library like `node-cron` if needed.
+ */
+function parseCronToMs(expression: string): number {
+  const cleaned = expression.replace(/^every\s+/i, '').trim();
+  const match = /^(\d+)\s*(s|m|h)$/i.exec(cleaned);
+  if (!match) {
+    throw new NewioError(`Invalid cron expression: "${expression}". Use format: "every <N>s|m|h" (e.g. "every 30m").`);
+  }
+  const value = Number(match[1]);
+  const unit = match[2]?.toLowerCase();
+  switch (unit) {
+    case 's':
+      return value * 1000;
+    case 'm':
+      return value * 60 * 1000;
+    case 'h':
+      return value * 60 * 60 * 1000;
+    default:
+      throw new NewioError(`Unknown time unit: "${String(unit)}"`);
   }
 }
 

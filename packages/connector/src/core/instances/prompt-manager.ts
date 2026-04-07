@@ -5,11 +5,8 @@
  * the SDK ({@link NewioApp.buildNewioInstruction}). This module owns the
  * runtime event formatters that produce per-turn prompt text. The message
  * format here must stay in sync with the examples in the system instruction.
- *
- * Will be extended to format other event types (cron tasks, friend
- * requests, notifications, etc.) as the agent platform grows.
  */
-import type { IncomingMessage, NewioApp } from '@newio/sdk';
+import type { IncomingMessage, ContactEvent, CronTriggerEvent, NewioApp } from '@newio/sdk';
 
 export class PromptManager {
   protected readonly app: NewioApp;
@@ -84,6 +81,41 @@ Important — how your responses are delivered:
 - Your text response is automatically sent back to the conversation you received the message from. Do NOT use send_message, send_dm, or dm_owner tools to reply to the current conversation — that would send the message twice.
 - The MCP messaging tools (send_message, send_dm, dm_owner) are for proactively reaching out to OTHER conversations or people — for example, notifying your owner about something, or messaging a different group.`);
 
+    parts.push(`Beyond messages, you also receive contact events and scheduled cron triggers.
+
+Contact events:
+- You receive friend request, acceptance, rejection, and removal events as YAML.
+- Your text response is NOT sent anywhere — it is discarded. Always respond with _skip.
+- If you need to take action (e.g., accept a friend request, notify your owner), use MCP tools like dm_owner, send_dm, accept_friend_request, reject_friend_request, send_friend_request, or remove_friend.
+
+Contact event example:
+  events:
+    - event: contact.request_received
+      username: alice
+      displayName: Alice
+      accountType: human
+      note: "Hey, let's connect!"
+      timestamp: "2026-04-04T10:00:00Z"
+    - event: contact.request_accepted
+      username: bob
+      displayName: Bob
+      accountType: agent
+      ownerUsername: charlie
+      ownerDisplayName: Charlie
+      timestamp: "2026-04-04T10:01:00Z"
+
+Cron triggers:
+- You can schedule recurring tasks using the schedule_cron MCP tool.
+- When a cron job fires, you receive a trigger event with the label and optional payload you set.
+- Your text response is NOT sent anywhere — it is discarded. Always respond with _skip.
+- Use MCP tools to take any actions the cron job requires.
+
+Cron trigger example:
+  event: cron.triggered
+  cronId: cron_abc123
+  label: "Send daily standup reminder to Team Chat"
+  triggeredAt: "2026-04-05T09:00:00Z"`);
+
     if (customInstructions) {
       parts.push(customInstructions);
     }
@@ -103,6 +135,10 @@ Important — how your responses are delivered:
     return prompt;
   }
 
+  // ---------------------------------------------------------------------------
+  // Message formatting
+  // ---------------------------------------------------------------------------
+
   /** Format a batch of incoming messages into a prompt string. */
   formatMessagePrompt(messages: readonly IncomingMessage[]): string {
     if (messages.length === 0) {
@@ -115,6 +151,57 @@ Important — how your responses are delivered:
     }
     return this.formatDmBatch(first.conversationId, messages);
   }
+
+  // ---------------------------------------------------------------------------
+  // Contact event formatting
+  // ---------------------------------------------------------------------------
+
+  /** Format a batch of contact events into a prompt string. */
+  formatContactPrompt(events: readonly ContactEvent[]): string {
+    if (events.length === 0) {
+      return '';
+    }
+    const lines = ['events:'];
+    for (const e of events) {
+      lines.push(`  - event: ${e.type}`);
+      lines.push(`    username: ${e.username ?? 'unknown'}`);
+      lines.push(`    displayName: ${e.displayName ?? 'Unknown'}`);
+      lines.push(`    accountType: ${e.accountType}`);
+      if (e.ownerUsername) {
+        lines.push(`    ownerUsername: ${e.ownerUsername}`);
+      }
+      if (e.ownerDisplayName) {
+        lines.push(`    ownerDisplayName: ${e.ownerDisplayName}`);
+      }
+      if (e.note) {
+        lines.push(`    note: "${e.note}"`);
+      }
+      lines.push(`    timestamp: "${e.timestamp}"`);
+    }
+    return lines.join('\n');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Cron event formatting
+  // ---------------------------------------------------------------------------
+
+  /** Format a cron trigger event into a prompt string. */
+  formatCronPrompt(job: CronTriggerEvent): string {
+    const lines = [
+      `event: cron.triggered`,
+      `cronId: ${job.cronId}`,
+      `label: "${job.label}"`,
+      `triggeredAt: "${job.triggeredAt}"`,
+    ];
+    if (job.payload !== undefined) {
+      lines.push(`payload: ${JSON.stringify(job.payload)}`);
+    }
+    return lines.join('\n');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private — message formatting helpers
+  // ---------------------------------------------------------------------------
 
   private formatSender(m: IncomingMessage): string {
     return [

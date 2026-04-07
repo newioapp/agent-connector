@@ -31,6 +31,43 @@ export interface ContactEventInfo {
   readonly note?: string | undefined;
 }
 
+/** Flat, agent-friendly contact event (no UUIDs). */
+export type ContactEventType =
+  | 'contact.request_received'
+  | 'contact.request_accepted'
+  | 'contact.request_rejected'
+  | 'contact.removed';
+
+/** A contact event with resolved user info, ready for prompt formatting. */
+export interface ContactEvent {
+  readonly type: ContactEventType;
+  readonly username: string | undefined;
+  readonly displayName: string | undefined;
+  readonly accountType: AccountType;
+  readonly ownerUsername?: string;
+  readonly ownerDisplayName?: string;
+  readonly note?: string;
+  readonly timestamp: string;
+}
+
+/** A cron job definition for scheduling. */
+export interface CronJobDef {
+  readonly cronId: string;
+  readonly expression: string;
+  readonly newioSessionId: string;
+  readonly label: string;
+  readonly payload?: unknown;
+}
+
+/** Event emitted when a cron job triggers. */
+export interface CronTriggerEvent {
+  readonly cronId: string;
+  readonly newioSessionId: string;
+  readonly label: string;
+  readonly payload?: unknown;
+  readonly triggeredAt: string;
+}
+
 /** Map of app-level event names to their handler signatures. */
 export interface AppEventHandlers {
   'message.new': (message: IncomingMessage) => void;
@@ -39,6 +76,9 @@ export interface AppEventHandlers {
   'contact.request_received': (info: ContactEventInfo) => void;
   'contact.request_accepted': (info: ContactEventInfo) => void;
   'contact.request_rejected': (username: string | undefined) => void;
+  'contact.removed': (username: string | undefined) => void;
+  'contact.event': (event: ContactEvent) => void;
+  'cron.triggered': (event: CronTriggerEvent) => void;
 }
 
 /** Agent-friendly contact summary (no UUIDs). */
