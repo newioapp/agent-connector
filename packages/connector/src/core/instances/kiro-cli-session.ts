@@ -47,7 +47,7 @@ export class KiroCliSession implements AgentSession, acp.Client {
     const conn = session.getConnection();
 
     const sessionResult = await conn.newSession({
-      cwd: config.cwd ?? process.cwd(),
+      cwd: config.cwd,
       mcpServers: buildMcpServers(mcpSocketPath),
     });
 
@@ -71,7 +71,7 @@ export class KiroCliSession implements AgentSession, acp.Client {
 
     await session.getConnection().loadSession({
       sessionId: correlationId,
-      cwd: config.cwd ?? process.cwd(),
+      cwd: config.cwd,
       mcpServers: buildMcpServers(mcpSocketPath),
     });
     log.info(`[${correlationId}] ACP session resumed`);

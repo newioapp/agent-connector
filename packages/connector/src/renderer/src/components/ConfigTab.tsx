@@ -123,14 +123,14 @@ export function ConfigTab({
 
         <div className="mb-3">
           <div className="mb-0.5 text-xs font-medium text-muted-foreground">Newio Username</div>
-          {config.newioUsername ? (
-            <div className="text-sm text-foreground">@{config.newioUsername}</div>
+          {config.newio?.username ? (
+            <div className="text-sm text-foreground">@{config.newio.username}</div>
           ) : (
             <div className="text-sm text-muted-foreground italic">Set during first launch</div>
           )}
         </div>
-        {config.newioDisplayName && <Field label="Display Name" value={config.newioDisplayName} />}
-        {config.newioAgentId && <Field label="Newio Agent ID" value={config.newioAgentId} />}
+        {config.newio?.displayName && <Field label="Display Name" value={config.newio.displayName} />}
+        {config.newio?.agentId && <Field label="Newio Agent ID" value={config.newio.agentId} />}
 
         {config.claude && (
           <>

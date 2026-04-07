@@ -3,6 +3,7 @@ export type {
   AgentRuntimeStatus,
   ClaudeConfig,
   KiroCliConfig,
+  NewioIdentity,
   AgentConfig,
   AddAgentInput,
   UpdateAgentInput,

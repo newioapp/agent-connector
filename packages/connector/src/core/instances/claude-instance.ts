@@ -176,12 +176,16 @@ export class ClaudeInstance extends BaseAgentInstance {
     return resultText;
   }
 
-  private buildExecOptions(): { executable: 'node'; pathToClaudeCodeExecutable: string; model: string; cwd?: string } {
+  private buildExecOptions(): { executable: 'node'; pathToClaudeCodeExecutable: string; model: string; cwd: string } {
+    const claude = this.config.claude;
+    if (!claude) {
+      throw new Error('Claude config is required for ClaudeInstance');
+    }
     return {
-      executable: (this.config.claude?.nodePath ?? resolvedNodePath) as 'node',
-      pathToClaudeCodeExecutable: this.config.claude?.claudeCodeCliPath ?? resolveClaudeCodeCli(),
-      model: this.config.claude?.model ?? 'claude-sonnet-4-6',
-      ...(this.config.claude?.cwd ? { cwd: this.config.claude.cwd } : {}),
+      executable: (claude.nodePath ?? resolvedNodePath) as 'node',
+      pathToClaudeCodeExecutable: claude.claudeCodeCliPath ?? resolveClaudeCodeCli(),
+      model: claude.model,
+      cwd: claude.cwd,
     };
   }
 

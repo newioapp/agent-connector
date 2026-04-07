@@ -56,7 +56,7 @@ export function Dropdown<T extends string>({
               className={`flex w-full px-3 py-2 text-left text-sm transition-colors hover:bg-accent ${
                 value === o.value ? 'text-primary font-medium' : 'text-foreground'
               }`}
-              onClick={() => {
+              onMouseDown={() => {
                 onChange(o.value);
                 setOpen(false);
               }}

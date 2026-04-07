@@ -37,13 +37,15 @@ export function AgentListItem({
       }`}
       onClick={onClick}
     >
-      {agent.config.newioAvatarUrl ? (
-        <img src={agent.config.newioAvatarUrl} alt="" className="h-6 w-6 rounded-md object-cover shrink-0" />
+      {agent.config.newio?.avatarUrl ? (
+        <img src={agent.config.newio.avatarUrl} alt="" className="h-6 w-6 rounded-md object-cover shrink-0" />
       ) : (
         <AgentTypeIcon type={agent.config.type} size={16} />
       )}
       <div className="min-w-0 flex-1">
-        <div className="truncate font-medium">{agent.config.newioDisplayName ?? agent.config.name}</div>
+        <div className="truncate font-medium">
+          {agent.config.newio?.displayName ?? (agent.config.type === 'kiro-cli' ? 'Kiro CLI' : 'Claude Code')}
+        </div>
         <div className={`truncate text-xs ${selected ? 'opacity-80' : 'opacity-60'}`}>
           {agent.config.type === 'kiro-cli' ? 'Kiro CLI' : 'Claude Code'}
         </div>

@@ -5,7 +5,8 @@
  * Registered with ipcMain.handle via registerIpcHandlers().
  */
 /* eslint-disable @typescript-eslint/require-await -- IpcApi interface requires Promise returns */
-import { app, shell, nativeTheme } from 'electron';
+import { app, dialog, shell, nativeTheme } from 'electron';
+import { execFile } from 'child_process';
 import type Store from 'electron-store';
 import type { IpcApi } from '../shared/ipc-api';
 import type { ThemeSource, AgentConfig, AddAgentInput, UpdateAgentInput, AgentStatusInfo } from '../shared/types';
@@ -50,6 +51,59 @@ export class IpcHandler implements IpcApi {
 
   async openExternal(url: string): Promise<void> {
     await shell.openExternal(url);
+  }
+
+  async selectDirectory(): Promise<string | undefined> {
+    const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+    return result.canceled ? undefined : result.filePaths[0];
+  }
+
+  async listKiroAgents(kiroCliPath?: string, cwd?: string): Promise<string[]> {
+    return this.execKiroCli(kiroCliPath, ['agent'], cwd, (output) => {
+      // Lines like "* kiro_default  ..." or "  amzn-builder  ..." — name starts at column 2, followed by 2+ spaces
+      return [...output.matchAll(/^[* ] (\S+) {2,}/gm)].map((m) => m[1]);
+    });
+  }
+
+  async listKiroModels(kiroCliPath?: string, cwd?: string): Promise<string[]> {
+    return this.execKiroCli(kiroCliPath, ['chat', '--list-models'], cwd, (output) => {
+      return [...output.matchAll(/^[* ] (\S+) {2,}/gm)].map((m) => m[1]);
+    });
+  }
+
+  private async execKiroCli(
+    kiroCliPath: string | undefined,
+    args: string[],
+    cwd: string | undefined,
+    parse: (output: string) => string[],
+  ): Promise<string[]> {
+    const cmd = kiroCliPath || 'kiro-cli';
+    // When no explicit path, resolve shell env so kiro-cli is on PATH
+    const env = kiroCliPath ? undefined : await this.getShellEnvCached();
+    return new Promise((resolve) => {
+      execFile(
+        cmd,
+        args,
+        { timeout: 10_000, ...(env ? { env } : {}), ...(cwd ? { cwd } : {}) },
+        (err, stdout, stderr) => {
+          if (err) {
+            resolve([]);
+            return;
+          }
+          const result = parse(stdout);
+          resolve(result.length > 0 ? result : parse(stderr));
+        },
+      );
+    });
+  }
+
+  private shellEnvCache?: Record<string, string>;
+  private async getShellEnvCached(): Promise<Record<string, string>> {
+    if (!this.shellEnvCache) {
+      const shells = listAvailableShells();
+      this.shellEnvCache = await getShellEnv(shells[0]);
+    }
+    return this.shellEnvCache;
   }
 
   async listAgents(): Promise<AgentStatusInfo[]> {

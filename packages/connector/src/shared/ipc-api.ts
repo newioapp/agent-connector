@@ -29,6 +29,20 @@ export interface IpcApi {
   startAgent(agentId: string): Promise<void>;
   stopAgent(agentId: string): Promise<void>;
 
+  // Dialogs
+  /** Open a native directory picker dialog. Returns the selected path, or undefined if cancelled. */
+  selectDirectory(): Promise<string | undefined>;
+
+  // Dialogs
+  /** Open a native directory picker dialog. Returns the selected path, or undefined if cancelled. */
+  selectDirectory(): Promise<string | undefined>;
+
+  // Kiro CLI discovery
+  /** List available Kiro CLI agent names. Returns empty array on failure. */
+  listKiroAgents(kiroCliPath?: string, cwd?: string): Promise<string[]>;
+  /** List available Kiro CLI models. Returns empty array on failure. */
+  listKiroModels(kiroCliPath?: string, cwd?: string): Promise<string[]>;
+
   // Environment
   /** List supported shells available on the system. */
   listShells(): Promise<string[]>;
@@ -45,6 +59,9 @@ export const IPC_CHANNELS: { readonly [K in keyof IpcApi]: string } = {
   setTheme: 'set-theme',
   getNativeThemeDark: 'get-native-theme-dark',
   openExternal: 'open-external',
+  selectDirectory: 'select-directory',
+  listKiroAgents: 'list-kiro-agents',
+  listKiroModels: 'list-kiro-models',
   listAgents: 'list-agents',
   addAgent: 'add-agent',
   updateAgent: 'update-agent',
