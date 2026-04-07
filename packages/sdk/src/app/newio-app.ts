@@ -59,7 +59,6 @@ export type {
   ContactEvent,
   ContactEventType,
   CronJobDef,
-  CronJobType,
   CronTriggerEvent,
   NewioIdentity,
   NewioTokens,
@@ -320,7 +319,6 @@ export class NewioApp {
     }
 
     const parsed = parseCronExpression(def.expression);
-    const enrichedDef: CronJobDef = { ...def, type: parsed.type, triggerAt: parsed.triggerAt };
 
     const fire = (): void => {
       const event: CronTriggerEvent = {
@@ -337,28 +335,24 @@ export class NewioApp {
     if (parsed.type === 'once') {
       const delayMs = parsed.triggerTime - Date.now();
       if (delayMs <= 0) {
-        log.warn(`Cron ${def.cronId} trigger time is in the past — firing immediately.`);
-        this.cronJobs.set(def.cronId, { def: enrichedDef, timer: undefined });
-        this.eventHandlers['cron.scheduled']?.(enrichedDef);
-        fire();
-        this.cancelCron(def.cronId);
+        log.warn(`Cron ${def.cronId} trigger time is in the past — skipping.`);
         return;
       }
       log.info(
-        `Scheduling one-shot cron ${def.cronId}: "${def.label}" at ${enrichedDef.triggerAt ?? 'unknown'} (${String(Math.round(delayMs / 1000))}s from now)`,
+        `Scheduling one-shot cron ${def.cronId}: "${def.label}" at ${new Date(parsed.triggerTime).toISOString()} (${String(Math.round(delayMs / 1000))}s from now)`,
       );
       const timer = setTimeout(() => {
         fire();
         this.cancelCron(def.cronId);
       }, delayMs);
-      this.cronJobs.set(def.cronId, { def: enrichedDef, timer });
+      this.cronJobs.set(def.cronId, { def, timer });
     } else {
       log.info(`Scheduling recurring cron ${def.cronId}: "${def.label}" every ${String(parsed.intervalMs)}ms`);
       const timer = setInterval(fire, parsed.intervalMs);
-      this.cronJobs.set(def.cronId, { def: enrichedDef, timer });
+      this.cronJobs.set(def.cronId, { def, timer });
     }
 
-    this.eventHandlers['cron.scheduled']?.(enrichedDef);
+    this.eventHandlers['cron.scheduled']?.(def);
   }
 
   /** Cancel a scheduled cron job. */
@@ -824,15 +818,11 @@ export class NewioApp {
 interface ParsedCronRecurring {
   readonly type: 'recurring';
   readonly intervalMs: number;
-  readonly triggerAt?: undefined;
-  readonly triggerTime?: undefined;
 }
 
 interface ParsedCronOnce {
   readonly type: 'once';
   readonly triggerTime: number;
-  readonly triggerAt: string;
-  readonly intervalMs?: undefined;
 }
 
 type ParsedCron = ParsedCronRecurring | ParsedCronOnce;
@@ -847,10 +837,6 @@ type ParsedCron = ParsedCronRecurring | ParsedCronOnce;
  *
  * **One-shot (ISO-8601)** — `"at <ISO-8601 datetime>"`
  *   e.g. `"at 2026-04-09T12:00:00Z"`, `"at 2026-04-10T10:00:00-04:00"`
- *
- * **One-shot (date + time + timezone)** — `"at <YYYY-MM-DD> <HH:MM> <IANA timezone>"`
- *   e.g. `"at 2026-04-10 10:00 America/New_York"`, `"at 2026-04-10 14:30 Asia/Tokyo"`
- *   Also accepts 12-hour format: `"at 2026-04-10 10:00 AM America/New_York"`
  */
 function parseCronExpression(expression: string): ParsedCron {
   const trimmed = expression.trim();
@@ -858,8 +844,13 @@ function parseCronExpression(expression: string): ParsedCron {
   // One-shot: starts with "at "
   if (/^at\s+/i.test(trimmed)) {
     const after = trimmed.replace(/^at\s+/i, '').trim();
-    const triggerTime = parseAtExpression(after);
-    return { type: 'once', triggerTime, triggerAt: new Date(triggerTime).toISOString() };
+    const date = new Date(after);
+    if (isNaN(date.getTime())) {
+      throw new NewioError(
+        `Invalid ISO-8601 datetime: "${after}". Example: "at 2026-04-09T12:00:00Z" or "at 2026-04-10T10:00:00-04:00".`,
+      );
+    }
+    return { type: 'once', triggerTime: date.getTime() };
   }
 
   // Recurring: "every <N>s|m|h" or "<N>s|m|h"
@@ -868,8 +859,8 @@ function parseCronExpression(expression: string): ParsedCron {
   if (!match) {
     throw new NewioError(
       `Invalid cron expression: "${expression}". ` +
-        'Use "every <N>s|m|h" for recurring, or "at <datetime>" for one-shot. ' +
-        'Examples: "every 30m", "at 2026-04-09T12:00:00Z", "at 2026-04-10 10:00 America/New_York".',
+        'Use "every <N>s|m|h" for recurring, or "at <ISO-8601>" for one-shot. ' +
+        'Examples: "every 30m", "at 2026-04-09T12:00:00Z".',
     );
   }
   const value = Number(match[1]);
@@ -880,86 +871,6 @@ function parseCronExpression(expression: string): ParsedCron {
     throw new NewioError(`Unknown time unit: "${String(unit)}"`);
   }
   return { type: 'recurring', intervalMs: value * ms };
-}
-
-/**
- * Parse the part after "at " into a Unix timestamp (ms).
- *
- * Tries ISO-8601 first, then `YYYY-MM-DD HH:MM [AM|PM] <timezone>`.
- */
-function parseAtExpression(expr: string): number {
-  // Try ISO-8601 directly
-  const isoDate = new Date(expr);
-  if (!isNaN(isoDate.getTime())) {
-    return isoDate.getTime();
-  }
-
-  // Try: YYYY-MM-DD HH:MM [AM|PM] <timezone>
-  const tzMatch = /^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}):(\d{2})\s*([APap][Mm])?\s+(.+)$/.exec(expr);
-  if (!tzMatch) {
-    throw new NewioError(
-      `Cannot parse time: "${expr}". ` +
-        'Use ISO-8601 (e.g. "2026-04-09T12:00:00Z") or "YYYY-MM-DD HH:MM [AM|PM] <timezone>" ' +
-        '(e.g. "2026-04-10 10:00 AM America/New_York").',
-    );
-  }
-
-  const [, datePart, hourStr, minuteStr, ampm, timezone] = tzMatch;
-  let hour = Number(hourStr);
-  const minute = Number(minuteStr);
-
-  if (ampm) {
-    const upper = ampm.toUpperCase();
-    if (upper === 'PM' && hour !== 12) {
-      hour += 12;
-    }
-    if (upper === 'AM' && hour === 12) {
-      hour = 0;
-    }
-  }
-
-  // Use Intl.DateTimeFormat to resolve the IANA timezone offset
-  const hh = String(hour).padStart(2, '0');
-  const mm = String(minute).padStart(2, '0');
-  // Build a UTC date, then compute the offset for the target timezone
-  const naiveUtc = new Date(`${datePart}T${hh}:${mm}:00Z`);
-  if (isNaN(naiveUtc.getTime())) {
-    throw new NewioError(`Invalid date: "${datePart}"`);
-  }
-
-  // Resolve offset: format the naiveUtc in the target timezone and compute the difference
-  const offset = getTimezoneOffsetMs(naiveUtc, timezone ?? '');
-  return naiveUtc.getTime() - offset;
-}
-
-/**
- * Get the UTC offset in milliseconds for a given IANA timezone at a given instant.
- * Positive means the timezone is ahead of UTC (e.g., +09:00 → +32400000).
- */
-function getTimezoneOffsetMs(date: Date, timezone: string): number {
-  try {
-    // Format the date in the target timezone to extract the offset
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    }).formatToParts(date);
-
-    const get = (type: string): number => Number(parts.find((p) => p.type === type)?.value ?? '0');
-    const localStr = `${String(get('year')).padStart(4, '0')}-${String(get('month')).padStart(2, '0')}-${String(get('day')).padStart(2, '0')}T${String(get('hour')).padStart(2, '0')}:${String(get('minute')).padStart(2, '0')}:${String(get('second')).padStart(2, '0')}Z`;
-    const localAsUtc = new Date(localStr);
-    // offset = local - utc (positive means timezone is ahead of UTC)
-    return localAsUtc.getTime() - date.getTime();
-  } catch {
-    throw new NewioError(
-      `Unknown timezone: "${timezone}". Use an IANA timezone like "America/New_York" or "Asia/Tokyo".`,
-    );
-  }
 }
 
 // ---------------------------------------------------------------------------

@@ -51,19 +51,12 @@ export interface ContactEvent {
 }
 
 /** A cron job definition for scheduling. */
-/** Cron job type: `recurring` fires repeatedly, `once` fires once then auto-cancels. */
-export type CronJobType = 'recurring' | 'once';
-
 export interface CronJobDef {
   readonly cronId: string;
   readonly expression: string;
   readonly newioSessionId: string;
   readonly label: string;
   readonly payload?: unknown;
-  /** `recurring` (default) or `once`. Inferred from expression if not provided. */
-  readonly type?: CronJobType;
-  /** For `once` jobs: the absolute trigger time in ISO-8601 (computed from expression). */
-  readonly triggerAt?: string;
 }
 
 /** Event emitted when a cron job triggers. */

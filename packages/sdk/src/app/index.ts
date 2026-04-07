@@ -11,7 +11,6 @@ export type {
   ContactEvent,
   ContactEventType,
   CronJobDef,
-  CronJobType,
   CronTriggerEvent,
   MemberSummary,
   NewioIdentity,
