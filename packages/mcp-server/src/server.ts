@@ -13,6 +13,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { NewioApp } from '@newio/sdk';
 import { registerContactsTools } from './tools/contacts.js';
 import { registerConversationsTools } from './tools/conversations.js';
+import { registerCronTools } from './tools/cron.js';
 import { registerMessagingTools } from './tools/messaging.js';
 import { registerUsersTools } from './tools/users.js';
 import { registerMediaTools } from './tools/media.js';
@@ -43,6 +44,7 @@ export class NewioMcpServer {
 
     registerContactsTools(this.server, app);
     registerConversationsTools(this.server, app, () => this.sessionId);
+    registerCronTools(this.server, app, () => this.sessionId);
     registerMessagingTools(this.server, app);
     registerUsersTools(this.server, app);
     registerMediaTools(this.server, app);

@@ -30,6 +30,9 @@ function mockApp(
     rejectFriendRequestByUsername: vi.fn().mockResolvedValue(undefined),
     removeFriendByUsername: vi.fn().mockResolvedValue(undefined),
     downloadAttachment: vi.fn().mockResolvedValue('/downloads/conv-1/1711929600000-photo.jpg'),
+    scheduleCron: vi.fn(),
+    cancelCron: vi.fn(),
+    listCrons: vi.fn().mockReturnValue([]),
     client: {
       getMe: vi.fn().mockResolvedValue({ userId: 'me', username: 'myagent' }),
       getConversation: vi.fn().mockResolvedValue({ conversationId: 'conv-1', type: 'dm', members: [] }),
@@ -73,6 +76,7 @@ describe('MCP Server', () => {
     expect(names).toEqual([
       'accept_friend_request',
       'add_members',
+      'cancel_cron',
       'create_group',
       'create_work_session',
       'dm_owner',
@@ -81,12 +85,14 @@ describe('MCP Server', () => {
       'get_my_profile',
       'get_user_profile',
       'list_conversations',
+      'list_crons',
       'list_friends',
       'list_incoming_friend_requests',
       'list_messages',
       'reject_friend_request',
       'remove_friend',
       'remove_member',
+      'schedule_cron',
       'search_users',
       'send_dm',
       'send_friend_request',
@@ -216,5 +222,51 @@ describe('MCP Server', () => {
     expect(parsed[0]).toHaveProperty('username', 'bob');
     expect(parsed[0]).not.toHaveProperty('userId');
     expect(parsed[0]).not.toHaveProperty('contactId');
+  });
+
+  it('schedule_cron calls app.scheduleCron with sessionId', async () => {
+    const app = mockApp();
+    const client = await createConnectedClientWithSession(app, 'session-789');
+    const result = await client.callTool({
+      name: 'schedule_cron',
+      arguments: { expression: 'every 30m', label: 'Check deadlines' },
+    });
+    expect(app.scheduleCron).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expression: 'every 30m',
+        newioSessionId: 'session-789',
+        label: 'Check deadlines',
+      }),
+    );
+    expect((result.content[0] as { text: string }).text).toContain('Cron scheduled');
+  });
+
+  it('schedule_cron errors when no session context', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    const result = await client.callTool({
+      name: 'schedule_cron',
+      arguments: { expression: 'every 1h', label: 'Test' },
+    });
+    expect((result.content[0] as { text: string }).text).toContain('no session context');
+    expect(app.scheduleCron).not.toHaveBeenCalled();
+  });
+
+  it('cancel_cron calls app.cancelCron', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    await client.callTool({ name: 'cancel_cron', arguments: { cronId: 'cron_abc' } });
+    expect(app.cancelCron).toHaveBeenCalledWith('cron_abc');
+  });
+
+  it('list_crons returns active cron jobs', async () => {
+    const app = mockApp();
+    (app.listCrons as ReturnType<typeof vi.fn>).mockReturnValue([
+      { cronId: 'cron_1', expression: 'every 1h', newioSessionId: 's1', label: 'Hourly check' },
+    ]);
+    const client = await createConnectedClient(app);
+    const result = await client.callTool({ name: 'list_crons', arguments: {} });
+    const parsed = JSON.parse((result.content[0] as { text: string }).text) as unknown[];
+    expect(parsed).toHaveLength(1);
   });
 });
