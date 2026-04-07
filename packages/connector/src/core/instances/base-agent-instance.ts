@@ -142,6 +142,26 @@ export abstract class BaseAgentInstance implements AgentInstance {
         void this.routeCronEvent(event);
       });
 
+      app.on('cron.scheduled', (def) => {
+        this.sessionStore.saveCron(this.config.id, def);
+      });
+
+      app.on('cron.cancelled', (cronId) => {
+        this.sessionStore.deleteCron(cronId);
+      });
+
+      // Reload persisted cron jobs
+      const savedCrons = this.sessionStore.listCrons(this.config.id);
+      for (const cron of savedCrons) {
+        try {
+          app.scheduleCron(cron);
+          log.info(`Restored cron ${cron.cronId}: "${cron.label}"`);
+        } catch (err: unknown) {
+          log.warn(`Failed to restore cron ${cron.cronId}: ${err instanceof Error ? err.message : String(err)}`);
+          this.sessionStore.deleteCron(cron.cronId);
+        }
+      }
+
       // Start MCP server on UDS for agent sessions
       this._promptManager = new PromptManager(app);
 
