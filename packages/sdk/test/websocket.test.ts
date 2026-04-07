@@ -354,5 +354,36 @@ describe('NewioWebSocket', () => {
 
       client.disconnect();
     });
+
+    it('should not reconnect after connection.rejected', async () => {
+      const mockWs1 = createMockWs();
+      let connectCount = 0;
+      const rejectedHandler = vi.fn();
+
+      const client = new NewioWebSocket({
+        url: 'wss://ws.test',
+        tokenProvider: () => 'test-token',
+        wsFactory: () => {
+          connectCount++;
+          queueMicrotask(() => mockWs1.triggerOpen());
+          return mockWs1;
+        },
+      });
+
+      client.setOnConnectionRejected(rejectedHandler);
+      await client.connect();
+      expect(connectCount).toBe(1);
+
+      // Server sends rejection then closes
+      mockWs1.triggerMessage(JSON.stringify({ action: 'connection.rejected', reason: 'CONNECTION_LIMIT_EXCEEDED' }));
+      mockWs1.triggerClose();
+
+      expect(rejectedHandler).toHaveBeenCalledWith('CONNECTION_LIMIT_EXCEEDED');
+      expect(client.getState()).toBe('disconnected');
+
+      // Should NOT reconnect
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(connectCount).toBe(1);
+    });
   });
 });

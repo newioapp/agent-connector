@@ -10,6 +10,8 @@ export { NewioWebSocket } from './core/websocket.js';
 export type {
   ConnectionState,
   ConnectionStateListener,
+  ConnectionRejectedReason,
+  ConnectionRejected,
   SubscribeAck,
   UnsubscribeAck,
   SubscriptionError,
