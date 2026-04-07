@@ -125,10 +125,10 @@ export class NewioApp {
   private readonly ws: NewioWebSocket;
   private readonly downloadDir: string;
   private readonly activityThrottle: ActivityThrottle;
-  /** In-memory cron jobs: cronId → { def, timer }. */
+  /** In-memory cron jobs: cronId → { def, timer, isInterval }. */
   private readonly cronJobs = new Map<
     string,
-    { readonly def: CronJobDef; timer: ReturnType<typeof setTimeout> | undefined }
+    { readonly def: CronJobDef; readonly timer: ReturnType<typeof setTimeout>; readonly isInterval: boolean }
   >();
 
   private readonly eventHandlers: Partial<AppEventHandlers> = {};
@@ -242,9 +242,11 @@ export class NewioApp {
   dispose(): void {
     log.info('Disposing NewioApp...');
     this.activityThrottle.dispose();
-    for (const { timer } of this.cronJobs.values()) {
-      if (timer) {
-        clearTimeout(timer);
+    for (const entry of this.cronJobs.values()) {
+      if (entry.isInterval) {
+        clearInterval(entry.timer);
+      } else {
+        clearTimeout(entry.timer);
       }
     }
     this.cronJobs.clear();
@@ -345,11 +347,11 @@ export class NewioApp {
         fire();
         this.cancelCron(def.cronId);
       }, delayMs);
-      this.cronJobs.set(def.cronId, { def, timer });
+      this.cronJobs.set(def.cronId, { def, timer, isInterval: false });
     } else {
       log.info(`Scheduling recurring cron ${def.cronId}: "${def.label}" every ${String(parsed.intervalMs)}ms`);
       const timer = setInterval(fire, parsed.intervalMs);
-      this.cronJobs.set(def.cronId, { def, timer });
+      this.cronJobs.set(def.cronId, { def, timer, isInterval: true });
     }
 
     this.eventHandlers['cron.scheduled']?.(def);
@@ -359,7 +361,9 @@ export class NewioApp {
   cancelCron(cronId: string): void {
     const entry = this.cronJobs.get(cronId);
     if (entry) {
-      if (entry.timer) {
+      if (entry.isInterval) {
+        clearInterval(entry.timer);
+      } else {
         clearTimeout(entry.timer);
       }
       this.cronJobs.delete(cronId);
