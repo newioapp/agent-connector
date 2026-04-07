@@ -287,39 +287,16 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /**
    * Get or create a SessionRunner for a conversation.
-   * 1. Resolves conversationId → newioSessionId via NewioApp
-   * 2. Returns existing runner if live
-   * 3. Otherwise launches a new session (serialized) and starts its processing loop
+   * Resolves conversationId → newioSessionId, then delegates to getOrCreateRunnerBySessionId.
    */
   private async getOrCreateRunner(conversationId: string): Promise<SessionRunner> {
     const newioSessionId = await this.app.resolveSessionId(conversationId);
-
-    // Check if already running
-    const existing = this.runners.get(newioSessionId);
-    if (existing) {
-      existing.lastActivityAt = Date.now();
-      return existing;
-    }
-
-    // Deduplicate concurrent launches for the same session
-    const pending = this.pendingSessions.get(newioSessionId);
-    if (pending) {
-      return pending;
-    }
-
-    const promise = this.enqueueLaunch(newioSessionId);
-    this.pendingSessions.set(newioSessionId, promise);
-    try {
-      return await promise;
-    } finally {
-      this.pendingSessions.delete(newioSessionId);
-    }
+    return this.getOrCreateRunnerBySessionId(newioSessionId);
   }
 
   /**
    * Get or create a SessionRunner by newioSessionId directly.
-   * Used for cron events where we already know the target session.
-   * Restarts idle-killed sessions the same way getOrCreateRunner does.
+   * Returns existing runner if live, otherwise launches a new session (serialized).
    */
   private async getOrCreateRunnerBySessionId(newioSessionId: string): Promise<SessionRunner> {
     const existing = this.runners.get(newioSessionId);
