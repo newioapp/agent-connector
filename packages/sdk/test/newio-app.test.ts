@@ -191,7 +191,7 @@ describe('NewioApp', () => {
       const { app } = await createApp([contact], [conv]);
 
       const received: IncomingMessage[] = [];
-      app.onMessage((msg) => received.push(msg));
+      app.on('message.new', (msg) => received.push(msg));
 
       const handler = eventHandlers.get('message.new');
       handler?.({
@@ -218,7 +218,7 @@ describe('NewioApp', () => {
       const { app } = await createApp();
 
       const received: IncomingMessage[] = [];
-      app.onMessage((msg) => received.push(msg));
+      app.on('message.new', (msg) => received.push(msg));
 
       eventHandlers.get('message.new')?.({
         type: 'message.new',
@@ -242,7 +242,7 @@ describe('NewioApp', () => {
       const { app } = await createApp([contact]);
 
       const received: IncomingMessage[] = [];
-      app.onMessage((msg) => received.push(msg));
+      app.on('message.new', (msg) => received.push(msg));
 
       eventHandlers.get('message.new')?.({
         type: 'message.new',

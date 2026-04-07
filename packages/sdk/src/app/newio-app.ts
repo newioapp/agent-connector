@@ -33,7 +33,6 @@ import type {
   ConversationSummary,
   FriendRequestSummary,
   MemberSummary,
-  MessageHandler,
   AppEventHandlers,
   NewioIdentity,
   NewioTokens,
@@ -270,14 +269,6 @@ export class NewioApp {
   /** Register a handler for an app-level event. */
   on<K extends keyof AppEventHandlers>(event: K, handler: AppEventHandlers[K]): void {
     this.eventHandlers[event] = handler;
-  }
-
-  /**
-   * Set the handler for incoming messages.
-   * @deprecated Use `on('message.new', handler)` instead.
-   */
-  onMessage(handler: MessageHandler): void {
-    this.eventHandlers['message.new'] = handler;
   }
 
   // ---------------------------------------------------------------------------
