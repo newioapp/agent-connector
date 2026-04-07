@@ -57,8 +57,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private udsServer?: Server;
   /** Most recently created MCP server awaiting a sessionId to be wired. */
   private pendingMcpServer?: NewioMcpServer;
-  /** Cached owner DM conversation ID. */
-  private ownerDmConversationId?: string;
 
   /** Socket path for the MCP UDS server. Set after auth in start(). */
   protected mcpSocketPath?: string;
@@ -141,7 +139,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       });
 
       app.on('cron.triggered', (event) => {
-        this.routeCronEvent(event);
+        void this.routeCronEvent(event);
       });
 
       // Start MCP server on UDS for agent sessions
@@ -220,7 +218,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
 
     this.configManager.clearTokens(this.config.id);
-    this.ownerDmConversationId = undefined;
 
     await this.onStopped();
     this.setStatus('stopped');
@@ -260,7 +257,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   /** Route a contact event to the owner DM session's queue. */
   private async routeContactEvent(event: ContactEvent): Promise<void> {
     try {
-      const convId = await this.getOwnerDmConversationId();
+      const convId = await this.app.getOwnerDmConversationId();
       if (!convId) {
         log.warn(`Cannot route contact event — no owner DM conversation`);
         return;
@@ -273,15 +270,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
   }
 
-  /** Route a cron trigger to the session that created the cron job. */
-  private routeCronEvent(event: CronTriggerEvent): void {
+  /** Route a cron trigger to the session that created the cron job. Restarts idle sessions. */
+  private async routeCronEvent(event: CronTriggerEvent): Promise<void> {
     try {
-      const runner = this.runners.get(event.sessionId);
-      if (runner) {
-        runner.queue.enqueueCron(event);
-      } else {
-        log.warn(`Cron ${event.cronId} targets session ${event.sessionId} which is not running — skipping`);
-      }
+      const runner = await this.getOrCreateRunnerBySessionId(event.newioSessionId);
+      runner.queue.enqueueCron(event);
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';
       log.error(`Failed to route cron event ${event.cronId}: ${errMsg}`);
@@ -309,6 +302,32 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
 
     // Deduplicate concurrent launches for the same session
+    const pending = this.pendingSessions.get(newioSessionId);
+    if (pending) {
+      return pending;
+    }
+
+    const promise = this.enqueueLaunch(newioSessionId);
+    this.pendingSessions.set(newioSessionId, promise);
+    try {
+      return await promise;
+    } finally {
+      this.pendingSessions.delete(newioSessionId);
+    }
+  }
+
+  /**
+   * Get or create a SessionRunner by newioSessionId directly.
+   * Used for cron events where we already know the target session.
+   * Restarts idle-killed sessions the same way getOrCreateRunner does.
+   */
+  private async getOrCreateRunnerBySessionId(newioSessionId: string): Promise<SessionRunner> {
+    const existing = this.runners.get(newioSessionId);
+    if (existing) {
+      existing.lastActivityAt = Date.now();
+      return existing;
+    }
+
     const pending = this.pendingSessions.get(newioSessionId);
     if (pending) {
       return pending;
@@ -487,10 +506,10 @@ export abstract class BaseAgentInstance implements AgentInstance {
     log.debug(`Processing ${String(events.length)} contact event(s) in session ${session.correlationId}`);
 
     try {
-      // Drain the generator — response text is discarded (agent uses MCP tools to act)
       for await (const segment of session.prompt(userText)) {
-        if (segment.type === 'agent_message_chunk' && segment.text.trim()) {
-          log.debug(`Contact event response (discarded): ${segment.text.trim().substring(0, 100)}`);
+        const text = segment.text.trim();
+        if (segment.type === 'agent_message_chunk' && text && text.toLowerCase() !== '_skip') {
+          log.debug(`Contact event response (discarded): ${text.substring(0, 100)}`);
         }
       }
     } catch (err: unknown) {
@@ -504,31 +523,16 @@ export abstract class BaseAgentInstance implements AgentInstance {
     log.debug(`Processing cron ${job.cronId} ("${job.label}") in session ${session.correlationId}`);
 
     try {
-      // Drain the generator — response text is discarded (agent uses MCP tools to act)
       for await (const segment of session.prompt(userText)) {
-        if (segment.type === 'agent_message_chunk' && segment.text.trim()) {
-          log.debug(`Cron response (discarded): ${segment.text.trim().substring(0, 100)}`);
+        const text = segment.text.trim();
+        if (segment.type === 'agent_message_chunk' && text && text.toLowerCase() !== '_skip') {
+          log.debug(`Cron response (discarded): ${text.substring(0, 100)}`);
         }
       }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';
       log.error(`Cron processing failed for ${job.cronId}: ${errMsg}`);
     }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Owner DM helper
-  // ---------------------------------------------------------------------------
-
-  private async getOwnerDmConversationId(): Promise<string | undefined> {
-    if (this.ownerDmConversationId) {
-      return this.ownerDmConversationId;
-    }
-    const convId = await this.app.getOwnerDmConversationId();
-    if (convId) {
-      this.ownerDmConversationId = convId;
-    }
-    return convId;
   }
 
   // ---------------------------------------------------------------------------

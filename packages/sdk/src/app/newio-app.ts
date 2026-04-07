@@ -317,7 +317,7 @@ export class NewioApp {
     const timer = setInterval(() => {
       const event: CronTriggerEvent = {
         cronId: def.cronId,
-        sessionId: def.sessionId,
+        newioSessionId: def.newioSessionId,
         label: def.label,
         payload: def.payload,
         triggeredAt: new Date().toISOString(),

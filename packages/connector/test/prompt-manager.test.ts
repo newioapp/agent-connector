@@ -222,7 +222,7 @@ describe('PromptManager', () => {
       const pm = new PromptManager(mockApp());
       const job: CronTriggerEvent = {
         cronId: 'cron_abc123',
-        sessionId: 'session-1',
+        newioSessionId: 'session-1',
         label: 'Send daily standup reminder',
         triggeredAt: '2026-04-05T09:00:00Z',
       };
@@ -237,7 +237,7 @@ describe('PromptManager', () => {
       const pm = new PromptManager(mockApp());
       const job: CronTriggerEvent = {
         cronId: 'cron_xyz',
-        sessionId: 'session-1',
+        newioSessionId: 'session-1',
         label: 'Check deadlines',
         payload: { conversationId: 'conv-123' },
         triggeredAt: '2026-04-05T09:00:00Z',
@@ -250,7 +250,7 @@ describe('PromptManager', () => {
       const pm = new PromptManager(mockApp());
       const job: CronTriggerEvent = {
         cronId: 'cron_xyz',
-        sessionId: 'session-1',
+        newioSessionId: 'session-1',
         label: 'Simple task',
         triggeredAt: '2026-04-05T09:00:00Z',
       };
@@ -307,7 +307,7 @@ describe('PromptManager', () => {
       const result = pm.buildNewioInstruction();
       expect(result).toContain('Contact events:');
       expect(result).toContain('contact.request_received');
-      expect(result).toContain('dm_owner');
+      expect(result).toContain('Always respond with _skip');
       expect(result).toContain('accept_friend_request');
     });
 
@@ -317,6 +317,7 @@ describe('PromptManager', () => {
       expect(result).toContain('Cron triggers:');
       expect(result).toContain('schedule_cron');
       expect(result).toContain('cron.triggered');
+      expect(result).toContain('Always respond with _skip');
     });
   });
 
