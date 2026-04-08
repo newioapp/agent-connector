@@ -34,6 +34,7 @@ export interface MessageNewEvent extends WebSocketEvent {
     readonly conversationName?: string;
     readonly content: MessageContent;
     readonly sequenceNumber?: number;
+    readonly visibleTo?: ReadonlyArray<string>;
     readonly createdAt: string;
   };
 }

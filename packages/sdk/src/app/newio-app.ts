@@ -16,11 +16,14 @@ import { ActivityThrottle } from '../core/activity-throttle.js';
 import { NewioAppStore } from './store.js';
 import { wireEvents } from './events.js';
 import { uploadFiles, downloadAttachment } from './media.js';
+import { PendingActions } from './pending-actions.js';
 import type { WebSocketFactory } from '../core/websocket.js';
 import type { ApprovalHandle } from '../core/auth.js';
 import type { StorePersistence } from './store.js';
 import type {
   ActivityStatus,
+  ActionRequest,
+  ActionResponse,
   ContactRecord,
   MemberRecord,
   Mentions,
@@ -121,6 +124,7 @@ export class NewioApp {
   readonly client: NewioClient;
   readonly auth: AuthManager;
   readonly store: NewioAppStore;
+  readonly pendingActions: PendingActions;
   private readonly ws: NewioWebSocket;
   private readonly downloadDir: string;
   private readonly activityThrottle: ActivityThrottle;
@@ -145,6 +149,7 @@ export class NewioApp {
     this.client = client;
     this.ws = ws;
     this.store = store;
+    this.pendingActions = new PendingActions();
     this.downloadDir = downloadDir ?? './newio-downloads';
     this.activityThrottle = new ActivityThrottle((conversationId, status) => {
       this.ws.sendActivity(conversationId, status);
@@ -163,7 +168,7 @@ export class NewioApp {
     store?: NewioAppStore,
   ): NewioApp {
     const app = new NewioApp(identity, auth, client, ws, store ?? new NewioAppStore());
-    wireEvents(ws, app.store, client, identity, () => app.eventHandlers);
+    wireEvents(ws, app.store, client, identity, () => app.eventHandlers, app.pendingActions);
     return app;
   }
 
@@ -225,7 +230,7 @@ export class NewioApp {
 
     const store = new NewioAppStore(opts.persistence);
     const app = new NewioApp(identity, auth, client, ws, store, opts.downloadDir);
-    wireEvents(ws, store, client, identity, () => app.eventHandlers);
+    wireEvents(ws, store, client, identity, () => app.eventHandlers, app.pendingActions);
     return app;
   }
 
@@ -241,6 +246,7 @@ export class NewioApp {
   dispose(): void {
     log.info('Disposing NewioApp...');
     this.activityThrottle.dispose();
+    this.pendingActions.dispose();
     for (const entry of this.cronJobs.values()) {
       if (entry.isInterval) {
         clearInterval(entry.timer);
@@ -286,6 +292,30 @@ export class NewioApp {
       ...(mentions ? { mentions } : {}),
     };
     await this.client.sendMessage({ conversationId, content });
+  }
+
+  /**
+   * Send an action request message and wait for the recipient's response.
+   *
+   * Registers a pending promise keyed by `action.requestId`. The promise resolves
+   * when a `message.new` event arrives with a matching `content.response.requestId`,
+   * or rejects with {@link ActionTimeoutError} if `timeoutMs` elapses.
+   */
+  async sendActionRequest(
+    conversationId: string,
+    action: ActionRequest,
+    visibleTo?: readonly string[],
+    timeoutMs?: number,
+  ): Promise<ActionResponse> {
+    const timeout = timeoutMs ?? 5 * 60 * 1000;
+    log.info(`Sending action request ${action.requestId} (type=${action.type}) to ${conversationId}`);
+    const promise = this.pendingActions.create(action.requestId, timeout);
+    await this.client.sendMessage({
+      conversationId,
+      content: { action },
+      visibleTo,
+    });
+    return promise;
   }
 
   /**

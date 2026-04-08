@@ -208,6 +208,9 @@ describe('NewioApp', () => {
         },
       });
 
+      // Wait for the per-conversation message queue to process
+      await new Promise((r) => setTimeout(r, 0));
+
       expect(received).toHaveLength(1);
       expect(received[0].text).toBe('hello');
       expect(received[0].senderUsername).toBe('alice');
@@ -234,6 +237,8 @@ describe('NewioApp', () => {
         },
       });
 
+      await new Promise((r) => setTimeout(r, 0));
+
       expect(received).toHaveLength(0);
     });
 
@@ -257,6 +262,9 @@ describe('NewioApp', () => {
           conversationType: 'dm',
         },
       });
+
+      // Wait for the per-conversation message queue to process
+      await new Promise((r) => setTimeout(r, 0));
 
       expect(received).toHaveLength(1);
       expect(received[0].text).toBe('');

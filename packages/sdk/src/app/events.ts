@@ -10,6 +10,7 @@ import type { ConversationType, MessageRecord } from '../core/types.js';
 import type { MessageNewEvent } from '../core/events.js';
 import type { NewioAppStore } from './store.js';
 import type { AppEventHandlers, NewioIdentity } from './types.js';
+import type { PendingActions } from './pending-actions.js';
 
 const log = getLogger('events');
 
@@ -20,10 +21,22 @@ export function wireEvents(
   client: NewioClient,
   identity: NewioIdentity,
   getHandlers: () => Partial<AppEventHandlers>,
+  pendingActions: PendingActions,
 ): void {
+  /** Per-conversation queue to serialize message processing and prevent duplicate backfills. */
+  const messageQueue = new Map<string, Promise<void>>();
+
   ws.on('message.new', (event) => {
     log.debug(`Event message.new in ${event.payload.conversationId} from ${event.payload.senderId}`);
-    void handleIncomingMessage(store, client, identity, getHandlers, event.payload);
+    const convId = event.payload.conversationId;
+    const prev = messageQueue.get(convId) ?? Promise.resolve();
+    const next = prev.then(() => handleMessageNew(store, client, identity, getHandlers, pendingActions, event.payload));
+    messageQueue.set(
+      convId,
+      next.catch((err: unknown) => {
+        log.error(`Error processing message.new in ${convId}: ${err instanceof Error ? err.message : String(err)}`);
+      }),
+    );
   });
 
   ws.on('conversation.new', (event) => {
@@ -228,16 +241,34 @@ export function wireEvents(
 // Internal — message handling
 // ---------------------------------------------------------------------------
 
-async function handleIncomingMessage(
+/** Returns true if the message is an action message or not visible to the current user. */
+function shouldSkipMessage(
+  content: MessageRecord['content'],
+  visibleTo: ReadonlyArray<string> | undefined,
+  userId: string,
+): boolean {
+  if (content.response || content.action) {
+    return true;
+  }
+  if (visibleTo && !visibleTo.includes(userId)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Top-level handler for message.new events.
+ * Order: sequence tracking + gap detection → resolve pending actions → filter → notify.
+ */
+async function handleMessageNew(
   store: NewioAppStore,
   client: NewioClient,
   identity: NewioIdentity,
   getHandlers: () => Partial<AppEventHandlers>,
+  pendingActions: PendingActions,
   payload: MessageNewEvent['payload'],
 ): Promise<void> {
-  const message = store.toIncomingMessage(identity, payload, payload.conversationId, payload.conversationType);
-  const inserted = store.insertMessage(payload.conversationId, message);
-
+  // 1. Sequence tracking and gap detection (always, for all message types)
   const currentSeq = store.getSequenceNumber(payload.conversationId);
   const incomingSeq = payload.sequenceNumber ?? 0;
   if (incomingSeq > currentSeq) {
@@ -249,14 +280,15 @@ async function handleIncomingMessage(
       `Sequence gap in ${payload.conversationId}: expected ${currentSeq + 1}, got ${incomingSeq}. Backfilling...`,
     );
     const cached = store.getRecentMessages(payload.conversationId);
-    if (cached.length > 1) {
-      const prev = cached[cached.length - 2];
+    if (cached.length > 0) {
+      const prev = cached[cached.length - 1];
       if (prev) {
         await backfillGap(
           store,
           client,
           identity,
           getHandlers,
+          pendingActions,
           payload.conversationId,
           prev.messageId,
           payload.messageId,
@@ -265,6 +297,29 @@ async function handleIncomingMessage(
       }
     }
   }
+
+  // 2. Resolve pending action requests
+  if (payload.content.response) {
+    pendingActions.resolve(payload.content.response);
+  }
+
+  // 3. Skip action messages and visibleTo-filtered messages
+  if (shouldSkipMessage(payload.content, payload.visibleTo, identity.userId)) {
+    return;
+  }
+
+  // 4. Normal message handling
+  handleIncomingMessage(store, identity, getHandlers, payload);
+}
+
+function handleIncomingMessage(
+  store: NewioAppStore,
+  identity: NewioIdentity,
+  getHandlers: () => Partial<AppEventHandlers>,
+  payload: MessageNewEvent['payload'],
+): void {
+  const message = store.toIncomingMessage(identity, payload, payload.conversationId, payload.conversationType);
+  const inserted = store.insertMessage(payload.conversationId, message);
 
   if (inserted && !message.isOwnMessage) {
     const level = store.getNotifyLevel(payload.conversationId) ?? 'all';
@@ -287,6 +342,7 @@ async function backfillGap(
   client: NewioClient,
   identity: NewioIdentity,
   getHandlers: () => Partial<AppEventHandlers>,
+  pendingActions: PendingActions,
   conversationId: string,
   afterMessageId: string,
   beforeMessageId: string,
@@ -307,6 +363,18 @@ async function backfillGap(
         break;
       }
       for (const msg of resp.messages) {
+        // listMessages returns inclusive results — skip boundary messages
+        if (msg.messageId === afterMessageId || msg.messageId === beforeMessageId) {
+          continue;
+        }
+        // Resolve any pending action responses found during backfill
+        if (msg.content.response) {
+          pendingActions.resolve(msg.content.response);
+        }
+        if (shouldSkipMessage(msg.content, msg.visibleTo, identity.userId)) {
+          count++;
+          continue;
+        }
         const message = store.toIncomingMessage(identity, msg, conversationId);
         const inserted = store.insertMessage(conversationId, message);
         if (inserted && !message.isOwnMessage) {

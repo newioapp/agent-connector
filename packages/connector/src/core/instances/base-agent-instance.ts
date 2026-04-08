@@ -11,7 +11,7 @@
  * Subclasses implement session creation and greeting logic.
  */
 import { ApprovalTimeoutError, NewioApp, NEWIO_API_BASE_URL, NEWIO_WS_URL, NotFoundApiError } from '@newio/sdk';
-import type { IncomingMessage, ContactEvent, CronTriggerEvent } from '@newio/sdk';
+import type { IncomingMessage, ContactEvent, CronTriggerEvent, ActionOption, ActionRequest } from '@newio/sdk';
 import { NewioMcpServer, startUdsServer } from '@newio/mcp-server';
 import type { Server } from 'net';
 import { tmpdir } from 'os';
@@ -449,6 +449,51 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** Called during stop. Subclasses clean up agent-specific resources. */
   protected abstract onStopped(): Promise<void> | void;
+
+  // ---------------------------------------------------------------------------
+  // Permission handling — routes ACP permission requests to owner via Newio
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Handle an ACP permission request by sending an action message to the owner.
+   * Routes to the active conversation if the session is processing a message,
+   * otherwise falls back to the owner DM.
+   */
+  protected async handlePermissionRequest(
+    correlationId: string,
+    options: ReadonlyArray<{ readonly kind: string; readonly name: string; readonly optionId: string }>,
+    title: string,
+  ): Promise<string> {
+    const conversationId = this.activeConversation.get(correlationId) ?? (await this.app.getOwnerDmConversationId());
+    if (!conversationId) {
+      throw new Error('Cannot route permission request — no active conversation and no owner DM');
+    }
+
+    const ownerId = this.app.identity.ownerId;
+    if (!ownerId) {
+      throw new Error('Cannot route permission request — agent has no owner');
+    }
+
+    const requestId = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
+    const actionOptions: ActionOption[] = options.map((o) => ({
+      optionId: o.optionId,
+      label: o.name,
+    }));
+
+    const action: ActionRequest = {
+      requestId,
+      type: 'permission',
+      title,
+      options: actionOptions,
+      expiresAt,
+    };
+
+    log.info(`Sending permission request ${requestId} to ${conversationId}`);
+    const response = await this.app.sendActionRequest(conversationId, action, [ownerId]);
+    return response.selectedOptionId;
+  }
 
   // ---------------------------------------------------------------------------
   // Per-session processing loop

@@ -91,6 +91,8 @@ export interface MessageRecord {
   readonly senderId: string;
   readonly content: MessageContent;
   readonly sequenceNumber?: number;
+  /** When set, only these userIds see full content. Others receive content as {}. */
+  readonly visibleTo?: ReadonlyArray<string>;
   readonly createdAt: string;
   readonly updatedAt?: string;
   readonly deletedAt?: string;
@@ -106,11 +108,44 @@ export interface Mentions {
   readonly here?: boolean;
 }
 
+/** A single option in an action request (e.g. "Allow once", "Reject"). */
+export interface ActionOption {
+  readonly optionId: string;
+  readonly label: string;
+  readonly style?: 'primary' | 'danger' | 'secondary';
+}
+
+/** Interactive action request sent by an agent (e.g. permission prompt). */
+export interface ActionRequest {
+  /** Client-generated UUID for correlating request → response. */
+  readonly requestId: string;
+  /** Categorizes the action (e.g. 'permission', 'slash_command'). */
+  readonly type: string;
+  readonly title: string;
+  readonly description?: string;
+  readonly options: ReadonlyArray<ActionOption>;
+  /** ISO timestamp — UI shows countdown, agent auto-rejects on expiry. */
+  readonly expiresAt?: string;
+  /** Type-specific data (e.g. tool call details for permission requests). */
+  readonly metadata?: Readonly<Record<string, unknown>>;
+}
+
+/** Response to a prior action request. */
+export interface ActionResponse {
+  /** Matches the ActionRequest.requestId this responds to. */
+  readonly requestId: string;
+  readonly selectedOptionId: string;
+}
+
 /** Message content. */
 export interface MessageContent {
   readonly text?: string;
   readonly attachments?: readonly Attachment[];
   readonly mentions?: Mentions;
+  /** Interactive action request (e.g. permission prompt). */
+  readonly action?: ActionRequest;
+  /** Response to a prior action request. */
+  readonly response?: ActionResponse;
 }
 
 /** A file or image attachment. */
@@ -648,6 +683,8 @@ export interface UpdateNotifyLevelResponse {
 export interface SendMessageRequest {
   readonly conversationId: string;
   readonly content: MessageContent;
+  /** When set, only these userIds see full content. Others receive content as {}. */
+  readonly visibleTo?: ReadonlyArray<string>;
 }
 
 export interface SendMessageResponse {
@@ -656,6 +693,7 @@ export interface SendMessageResponse {
   readonly senderId: string;
   readonly content: MessageContent;
   readonly sequenceNumber?: number;
+  readonly visibleTo?: ReadonlyArray<string>;
   readonly createdAt: string;
   readonly updatedAt?: string;
   readonly deletedAt?: string;

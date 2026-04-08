@@ -19,12 +19,19 @@ import { Logger } from '../logger';
 
 const log = new Logger('kiro-cli-session');
 
+/** Callback for routing permission requests to the owner via Newio. */
+export type PermissionHandler = (
+  correlationId: string,
+  params: acp.RequestPermissionRequest,
+) => Promise<acp.RequestPermissionResponse>;
+
 export class KiroCliSession implements AgentSession, acp.Client {
   private _correlationId?: string;
   private childProcess?: ChildProcess;
   private connection?: ClientSideConnection;
   private stream?: SessionStream;
   private statusListener: SessionStatusListener = () => {};
+  private permissionHandler?: PermissionHandler;
 
   private constructor() {}
 
@@ -42,8 +49,10 @@ export class KiroCliSession implements AgentSession, acp.Client {
     config: KiroCliConfig,
     mcpSocketPath: string | undefined,
     envVars: Readonly<Record<string, string>>,
+    permissionHandler?: PermissionHandler,
   ): Promise<KiroCliSession> {
     const session = await KiroCliSession.spawnAndInit(config, envVars);
+    session.permissionHandler = permissionHandler;
     const conn = session.getConnection();
 
     const sessionResult = await conn.newSession({
@@ -66,8 +75,10 @@ export class KiroCliSession implements AgentSession, acp.Client {
     correlationId: string,
     mcpSocketPath: string | undefined,
     envVars: Readonly<Record<string, string>>,
+    permissionHandler?: PermissionHandler,
   ): Promise<KiroCliSession> {
     const session = await KiroCliSession.spawnAndInit(config, envVars);
+    session.permissionHandler = permissionHandler;
     session._correlationId = correlationId;
 
     await session.getConnection().loadSession({
@@ -264,11 +275,13 @@ export class KiroCliSession implements AgentSession, acp.Client {
   // ---------------------------------------------------------------------------
 
   requestPermission(params: acp.RequestPermissionRequest): Promise<acp.RequestPermissionResponse> {
-    const allowOption = params.options.find((o) => o.kind === 'allow_always' || o.kind === 'allow_once');
+    if (this.permissionHandler) {
+      return this.permissionHandler(this.correlationId, params);
+    }
+    // No handler — cancel the permission request
     return Promise.resolve({
       outcome: {
-        outcome: 'selected',
-        optionId: allowOption?.optionId ?? params.options[0].optionId,
+        outcome: 'cancelled',
       },
     });
   }

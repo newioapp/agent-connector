@@ -7,6 +7,7 @@
  */
 import { BaseAgentInstance } from './base-agent-instance';
 import { KiroCliSession } from './kiro-cli-session';
+import type { PermissionHandler } from './kiro-cli-session';
 import type { AgentSession } from '../agent-session';
 import type { SessionStreamSegment } from './session-stream';
 import { Logger } from '../logger';
@@ -31,6 +32,25 @@ export class KiroCliInstance extends BaseAgentInstance {
   }
 
   // ---------------------------------------------------------------------------
+  // Permission handler
+  // ---------------------------------------------------------------------------
+
+  private readonly permissionHandler: PermissionHandler = async (correlationId, params) => {
+    const title = params.toolCall.title ?? 'Permission request';
+    if (params.toolCall.content) {
+      log.debug(`[${correlationId}] Permission request toolCall content: ${JSON.stringify(params.toolCall.content)}`);
+    }
+
+    try {
+      const selectedOptionId = await this.handlePermissionRequest(correlationId, params.options, title);
+      return { outcome: { outcome: 'selected' as const, optionId: selectedOptionId } };
+    } catch (err: unknown) {
+      log.warn(`Permission request failed: ${err instanceof Error ? err.message : String(err)}`);
+      return { outcome: { outcome: 'cancelled' as const } };
+    }
+  };
+
+  // ---------------------------------------------------------------------------
   // Session factory
   // ---------------------------------------------------------------------------
 
@@ -40,7 +60,12 @@ export class KiroCliInstance extends BaseAgentInstance {
     }
 
     log.info('Creating new Kiro CLI session...');
-    const session = await KiroCliSession.create(this.config.kiroCli, this.mcpSocketPath, this.config.envVars);
+    const session = await KiroCliSession.create(
+      this.config.kiroCli,
+      this.mcpSocketPath,
+      this.config.envVars,
+      this.permissionHandler,
+    );
     log.info(`Session created: ${session.correlationId}`);
 
     // Send Newio instruction as the first prompt so the session has context
@@ -61,7 +86,13 @@ export class KiroCliInstance extends BaseAgentInstance {
       throw new Error('Kiro CLI config missing');
     }
     log.info(`Resuming Kiro CLI session: ${correlationId}`);
-    return KiroCliSession.resume(this.config.kiroCli, correlationId, this.mcpSocketPath, this.config.envVars);
+    return KiroCliSession.resume(
+      this.config.kiroCli,
+      correlationId,
+      this.mcpSocketPath,
+      this.config.envVars,
+      this.permissionHandler,
+    );
   }
 
   // ---------------------------------------------------------------------------
