@@ -278,12 +278,10 @@ export class KiroCliSession implements AgentSession, acp.Client {
     if (this.permissionHandler) {
       return this.permissionHandler(this.correlationId, params);
     }
-    // Fallback: auto-approve
-    const allowOption = params.options.find((o) => o.kind === 'allow_always' || o.kind === 'allow_once');
+    // No handler — cancel the permission request
     return Promise.resolve({
       outcome: {
-        outcome: 'selected',
-        optionId: allowOption?.optionId ?? params.options[0].optionId,
+        outcome: 'cancelled',
       },
     });
   }

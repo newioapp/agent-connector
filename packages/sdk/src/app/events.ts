@@ -25,13 +25,7 @@ export function wireEvents(
 ): void {
   ws.on('message.new', (event) => {
     log.debug(`Event message.new in ${event.payload.conversationId} from ${event.payload.senderId}`);
-
-    // Resolve pending action requests before normal message handling
-    if (event.payload.content.response) {
-      pendingActions.resolve(event.payload.content.response);
-    }
-
-    void handleIncomingMessage(store, client, identity, getHandlers, event.payload);
+    void handleMessageNew(store, client, identity, getHandlers, pendingActions, event.payload);
   });
 
   ws.on('conversation.new', (event) => {
@@ -236,16 +230,19 @@ export function wireEvents(
 // Internal — message handling
 // ---------------------------------------------------------------------------
 
-async function handleIncomingMessage(
+/**
+ * Top-level handler for message.new events.
+ * Order: sequence tracking + gap detection → resolve pending actions → filter → notify.
+ */
+async function handleMessageNew(
   store: NewioAppStore,
   client: NewioClient,
   identity: NewioIdentity,
   getHandlers: () => Partial<AppEventHandlers>,
+  pendingActions: PendingActions,
   payload: MessageNewEvent['payload'],
 ): Promise<void> {
-  const message = store.toIncomingMessage(identity, payload, payload.conversationId, payload.conversationType);
-  const inserted = store.insertMessage(payload.conversationId, message);
-
+  // 1. Sequence tracking and gap detection (always, for all message types)
   const currentSeq = store.getSequenceNumber(payload.conversationId);
   const incomingSeq = payload.sequenceNumber ?? 0;
   if (incomingSeq > currentSeq) {
@@ -257,14 +254,15 @@ async function handleIncomingMessage(
       `Sequence gap in ${payload.conversationId}: expected ${currentSeq + 1}, got ${incomingSeq}. Backfilling...`,
     );
     const cached = store.getRecentMessages(payload.conversationId);
-    if (cached.length > 1) {
-      const prev = cached[cached.length - 2];
+    if (cached.length > 0) {
+      const prev = cached[cached.length - 1];
       if (prev) {
         await backfillGap(
           store,
           client,
           identity,
           getHandlers,
+          pendingActions,
           payload.conversationId,
           prev.messageId,
           payload.messageId,
@@ -273,6 +271,32 @@ async function handleIncomingMessage(
       }
     }
   }
+
+  // 2. Resolve pending action requests
+  if (payload.content.response) {
+    pendingActions.resolve(payload.content.response);
+  }
+
+  // 3. Skip action responses and visibleTo-filtered messages from normal handling
+  if (payload.content.response || payload.content.action) {
+    return;
+  }
+  if (payload.visibleTo && !payload.visibleTo.includes(identity.userId)) {
+    return;
+  }
+
+  // 4. Normal message handling
+  handleIncomingMessage(store, identity, getHandlers, payload);
+}
+
+function handleIncomingMessage(
+  store: NewioAppStore,
+  identity: NewioIdentity,
+  getHandlers: () => Partial<AppEventHandlers>,
+  payload: MessageNewEvent['payload'],
+): void {
+  const message = store.toIncomingMessage(identity, payload, payload.conversationId, payload.conversationType);
+  const inserted = store.insertMessage(payload.conversationId, message);
 
   if (inserted && !message.isOwnMessage) {
     const level = store.getNotifyLevel(payload.conversationId) ?? 'all';
@@ -295,6 +319,7 @@ async function backfillGap(
   client: NewioClient,
   identity: NewioIdentity,
   getHandlers: () => Partial<AppEventHandlers>,
+  pendingActions: PendingActions,
   conversationId: string,
   afterMessageId: string,
   beforeMessageId: string,
@@ -315,6 +340,19 @@ async function backfillGap(
         break;
       }
       for (const msg of resp.messages) {
+        // Resolve any pending action responses found during backfill
+        if (msg.content.response) {
+          pendingActions.resolve(msg.content.response);
+        }
+        // Skip action messages and visibleTo-filtered messages
+        if (msg.content.response || msg.content.action) {
+          count++;
+          continue;
+        }
+        if (msg.visibleTo && !msg.visibleTo.includes(identity.userId)) {
+          count++;
+          continue;
+        }
         const message = store.toIncomingMessage(identity, msg, conversationId);
         const inserted = store.insertMessage(conversationId, message);
         if (inserted && !message.isOwnMessage) {

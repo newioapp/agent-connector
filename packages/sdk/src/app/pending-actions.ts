@@ -21,6 +21,14 @@ export class ActionTimeoutError extends Error {
   }
 }
 
+/** Error thrown when an action request is aborted (e.g. app disposed). */
+export class ActionAbortedError extends Error {
+  constructor(readonly requestId: string) {
+    super(`Action request ${requestId} aborted`);
+    this.name = 'ActionAbortedError';
+  }
+}
+
 interface PendingEntry {
   readonly resolve: (response: ActionResponse) => void;
   readonly reject: (error: Error) => void;
@@ -64,7 +72,7 @@ export class PendingActions {
   dispose(): void {
     for (const [requestId, entry] of this.pending) {
       clearTimeout(entry.timer);
-      entry.reject(new Error(`Action request ${requestId} cancelled — app disposed`));
+      entry.reject(new ActionAbortedError(requestId));
     }
     this.pending.clear();
   }

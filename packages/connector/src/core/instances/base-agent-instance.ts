@@ -463,7 +463,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
     correlationId: string,
     options: ReadonlyArray<{ readonly kind: string; readonly name: string; readonly optionId: string }>,
     title: string,
-    description?: string,
   ): Promise<string> {
     const conversationId = this.activeConversation.get(correlationId) ?? (await this.app.getOwnerDmConversationId());
     if (!conversationId) {
@@ -481,19 +480,12 @@ export abstract class BaseAgentInstance implements AgentInstance {
     const actionOptions: ActionOption[] = options.map((o) => ({
       optionId: o.optionId,
       label: o.name,
-      style:
-        o.kind === 'reject_once'
-          ? ('danger' as const)
-          : o.kind === 'allow_once'
-            ? ('primary' as const)
-            : ('secondary' as const),
     }));
 
     const action: ActionRequest = {
       requestId,
       type: 'permission',
       title,
-      description,
       options: actionOptions,
       expiresAt,
     };

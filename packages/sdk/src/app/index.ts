@@ -1,5 +1,5 @@
 export { NewioApp, NEWIO_API_BASE_URL, NEWIO_WS_URL, NewioAppStore } from './newio-app.js';
-export { ActionTimeoutError } from './pending-actions.js';
+export { ActionTimeoutError, ActionAbortedError } from './pending-actions.js';
 export type {
   NewioAppCreateOptions,
   IncomingMessage,
