@@ -23,9 +23,20 @@ export function wireEvents(
   getHandlers: () => Partial<AppEventHandlers>,
   pendingActions: PendingActions,
 ): void {
+  /** Per-conversation queue to serialize message processing and prevent duplicate backfills. */
+  const messageQueue = new Map<string, Promise<void>>();
+
   ws.on('message.new', (event) => {
     log.debug(`Event message.new in ${event.payload.conversationId} from ${event.payload.senderId}`);
-    void handleMessageNew(store, client, identity, getHandlers, pendingActions, event.payload);
+    const convId = event.payload.conversationId;
+    const prev = messageQueue.get(convId) ?? Promise.resolve();
+    const next = prev.then(() => handleMessageNew(store, client, identity, getHandlers, pendingActions, event.payload));
+    messageQueue.set(
+      convId,
+      next.catch((err: unknown) => {
+        log.error(`Error processing message.new in ${convId}: ${err instanceof Error ? err.message : String(err)}`);
+      }),
+    );
   });
 
   ws.on('conversation.new', (event) => {
@@ -230,6 +241,21 @@ export function wireEvents(
 // Internal — message handling
 // ---------------------------------------------------------------------------
 
+/** Returns true if the message is an action message or not visible to the current user. */
+function shouldSkipMessage(
+  content: MessageRecord['content'],
+  visibleTo: ReadonlyArray<string> | undefined,
+  userId: string,
+): boolean {
+  if (content.response || content.action) {
+    return true;
+  }
+  if (visibleTo && !visibleTo.includes(userId)) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * Top-level handler for message.new events.
  * Order: sequence tracking + gap detection → resolve pending actions → filter → notify.
@@ -277,11 +303,8 @@ async function handleMessageNew(
     pendingActions.resolve(payload.content.response);
   }
 
-  // 3. Skip action responses and visibleTo-filtered messages from normal handling
-  if (payload.content.response || payload.content.action) {
-    return;
-  }
-  if (payload.visibleTo && !payload.visibleTo.includes(identity.userId)) {
+  // 3. Skip action messages and visibleTo-filtered messages
+  if (shouldSkipMessage(payload.content, payload.visibleTo, identity.userId)) {
     return;
   }
 
@@ -340,16 +363,15 @@ async function backfillGap(
         break;
       }
       for (const msg of resp.messages) {
+        // listMessages returns inclusive results — skip boundary messages
+        if (msg.messageId === afterMessageId || msg.messageId === beforeMessageId) {
+          continue;
+        }
         // Resolve any pending action responses found during backfill
         if (msg.content.response) {
           pendingActions.resolve(msg.content.response);
         }
-        // Skip action messages and visibleTo-filtered messages
-        if (msg.content.response || msg.content.action) {
-          count++;
-          continue;
-        }
-        if (msg.visibleTo && !msg.visibleTo.includes(identity.userId)) {
+        if (shouldSkipMessage(msg.content, msg.visibleTo, identity.userId)) {
           count++;
           continue;
         }
