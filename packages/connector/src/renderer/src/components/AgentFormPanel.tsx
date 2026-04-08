@@ -62,6 +62,7 @@ export function AgentFormPanel({
   const [agentName, setAgentName] = useState('');
   const [kiroModel, setKiroModel] = useState('');
   const [kiroCliPath, setKiroCliPath] = useState('');
+  const [trustAllTools, setTrustAllTools] = useState(true);
   const [kiroAgents, setKiroAgents] = useState<string[]>([]);
   const [kiroModels, setKiroModels] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -107,6 +108,7 @@ export function AgentFormPanel({
       setAgentName(editAgent.kiroCli.agentName ?? '');
       setKiroModel(editAgent.kiroCli.model ?? '');
       setKiroCliPath(editAgent.kiroCli.kiroCliPath ?? '');
+      setTrustAllTools(editAgent.kiroCli.trustAllTools !== false);
     }
   }, [editAgent]);
 
@@ -134,6 +136,7 @@ export function AgentFormPanel({
         type === 'kiro-cli'
           ? {
               cwd: cwd.trim(),
+              trustAllTools,
               ...(agentName.trim() ? { agentName: agentName.trim() } : {}),
               ...(kiroModel.trim() ? { model: kiroModel.trim() } : {}),
               ...(kiroCliPath.trim() ? { kiroCliPath: kiroCliPath.trim() } : {}),
@@ -301,6 +304,16 @@ export function AgentFormPanel({
                 onChange={(e) => setKiroCliPath(e.target.value)}
               />
             </Label>
+            <label className="flex items-center gap-2 mb-4 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={trustAllTools}
+                onChange={(e) => setTrustAllTools(e.target.checked)}
+                className="h-4 w-4 rounded border-border accent-primary"
+              />
+              <span className="text-sm text-foreground">Trust all tools</span>
+              <span className="text-xs text-muted-foreground">(skip permission prompts)</span>
+            </label>
           </>
         )}
       </div>
