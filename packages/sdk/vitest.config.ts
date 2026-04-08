@@ -18,6 +18,8 @@ export default defineConfig({
         // events.ts wires WebSocket events to store updates — requires live
         // WebSocket + store integration. Core logic tested via newio-app tests.
         'src/app/events.ts',
+        // pending-actions.ts is wired into events.ts — tested via integration.
+        'src/app/pending-actions.ts',
         // media.ts does presigned URL upload/download — requires real S3.
         'src/app/media.ts',
         // logger.ts is trivial glue (global handler dispatch + console wrapper).
