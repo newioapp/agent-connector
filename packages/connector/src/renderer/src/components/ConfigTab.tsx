@@ -149,6 +149,7 @@ export function ConfigTab({
             {config.kiroCli.model && <Field label="Model" value={config.kiroCli.model} />}
             {config.kiroCli.kiroCliPath && <Field label="Kiro CLI Path" value={config.kiroCli.kiroCliPath} />}
             {config.kiroCli.cwd && <Field label="Working Directory" value={config.kiroCli.cwd} />}
+            <Field label="Trust All Tools" value={config.kiroCli.trustAllTools !== false ? 'Yes' : 'No'} />
           </>
         )}
       </div>

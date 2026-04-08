@@ -53,6 +53,7 @@ export class KiroCliSession implements AgentSession, acp.Client {
 
     session._correlationId = sessionResult.sessionId;
     log.info(`[${session.correlationId}] ACP session created`);
+
     return session;
   }
 
@@ -92,7 +93,10 @@ export class KiroCliSession implements AgentSession, acp.Client {
   ): Promise<KiroCliSession> {
     const { agentName, model, kiroCliPath, cwd } = config;
     const executable = kiroCliPath ?? 'kiro-cli';
-    const args = ['acp', '--trust-all-tools'];
+    const args = ['acp'];
+    if (config.trustAllTools !== false) {
+      args.push('--trust-all-tools');
+    }
     if (agentName) {
       args.push('--agent', agentName);
     }

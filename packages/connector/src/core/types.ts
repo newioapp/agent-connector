@@ -33,6 +33,8 @@ export interface KiroCliConfig {
   readonly model?: string;
   readonly kiroCliPath?: string;
   readonly cwd: string;
+  /** When true, passes --trust-all-tools to kiro-cli (skips permission prompts). Default: true. */
+  readonly trustAllTools?: boolean;
 }
 
 /** Newio identity — populated after first registration/login, synced on every start. */
