@@ -10,6 +10,7 @@ import type { ConversationType, MessageRecord } from '../core/types.js';
 import type { MessageNewEvent } from '../core/events.js';
 import type { NewioAppStore } from './store.js';
 import type { AppEventHandlers, NewioIdentity } from './types.js';
+import type { PendingActions } from './pending-actions.js';
 
 const log = getLogger('events');
 
@@ -20,9 +21,16 @@ export function wireEvents(
   client: NewioClient,
   identity: NewioIdentity,
   getHandlers: () => Partial<AppEventHandlers>,
+  pendingActions: PendingActions,
 ): void {
   ws.on('message.new', (event) => {
     log.debug(`Event message.new in ${event.payload.conversationId} from ${event.payload.senderId}`);
+
+    // Resolve pending action requests before normal message handling
+    if (event.payload.content.response) {
+      pendingActions.resolve(event.payload.content.response);
+    }
+
     void handleIncomingMessage(store, client, identity, getHandlers, event.payload);
   });
 
