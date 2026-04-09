@@ -1,0 +1,164 @@
+name: Connector Release
+
+on:
+  push:
+    tags:
+      - 'connector-v*'
+
+permissions:
+  id-token: write
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.parse.outputs.version }}
+      channel: ${{ steps.parse.outputs.channel }}
+      publish_url: ${{ steps.parse.outputs.publish_url }}
+    steps:
+      - name: Parse tag
+        id: parse
+        run: |
+          TAG="${GITHUB_REF#refs/tags/connector-v}"
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+          if [[ "$TAG" == *"-beta"* ]]; then
+            echo "channel=beta" >> "$GITHUB_OUTPUT"
+            echo "publish_url=https://cdn.conduit.qinnan.dev/downloads/connector/beta" >> "$GITHUB_OUTPUT"
+          else
+            echo "channel=stable" >> "$GITHUB_OUTPUT"
+            echo "publish_url=https://cdn.conduit.qinnan.dev/downloads/connector/stable" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-mac:
+    needs: prepare
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [arm64, x64]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Set version
+        run: npm version "${{ needs.prepare.outputs.version }}" --no-git-tag-version
+        working-directory: packages/connector
+
+      - name: Build Electron app
+        run: pnpm --filter @newio/connector exec electron-builder --mac --${{ matrix.arch }}
+        env:
+          PUBLISH_URL: ${{ needs.prepare.outputs.publish_url }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-${{ matrix.arch }}
+          path: |
+            packages/connector/dist/*.dmg
+            packages/connector/dist/*.zip
+            packages/connector/dist/*.yml
+
+  build-linux:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Set version
+        run: npm version "${{ needs.prepare.outputs.version }}" --no-git-tag-version
+        working-directory: packages/connector
+
+      - name: Build Electron app
+        run: pnpm --filter @newio/connector exec electron-builder --linux
+        env:
+          PUBLISH_URL: ${{ needs.prepare.outputs.publish_url }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64
+          path: |
+            packages/connector/dist/*.AppImage
+            packages/connector/dist/*.deb
+            packages/connector/dist/*.yml
+
+  build-windows:
+    needs: prepare
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Set version
+        run: npm version "${{ needs.prepare.outputs.version }}" --no-git-tag-version
+        working-directory: packages/connector
+
+      - name: Build Electron app
+        run: pnpm --filter @newio/connector exec electron-builder --win
+        env:
+          PUBLISH_URL: ${{ needs.prepare.outputs.publish_url }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win-x64
+          path: |
+            packages/connector/dist/*.exe
+            packages/connector/dist/*.yml
+
+  publish:
+    needs: [prepare, build-mac, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    env:
+      DOWNLOADS_BUCKET: dev-conduitstoragestack-downloadsbucketb54b8c20-fzniezicxjqd
+      DISTRIBUTION_ID: E1UR2X2MBYR2VK
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::637423226381:role/conduit-github-actions-deploy
+          aws-region: us-east-1
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Upload to S3
+        run: |
+          CHANNEL="${{ needs.prepare.outputs.channel }}"
+          S3_PATH="s3://${DOWNLOADS_BUCKET}/downloads/connector/${CHANNEL}/"
+
+          for dir in artifacts/*/; do
+            aws s3 cp "$dir" "$S3_PATH" --recursive --exclude "*.blockmap"
+          done
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "$DISTRIBUTION_ID" \
+            --paths "/downloads/connector/*"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true

@@ -10,6 +10,7 @@ import { SessionStore } from '../core/session-store';
 import { IpcHandler } from './ipc-handler';
 import { registerIpcHandlers } from './ipc-registry';
 import { EVENT_CHANNELS } from '../shared/ipc-events';
+import { initAutoUpdater, initForceUpdateCheck } from './auto-updater';
 
 // Route SDK logs through the connector's log format at debug level
 setLogHandler((level, name, message, args) => {
@@ -55,6 +56,10 @@ void app.whenReady().then(async () => {
   // Register IPC handlers
   const ipcHandler = new IpcHandler({ store, agentConfigManager, agentRuntimeManager });
   registerIpcHandlers(ipcHandler);
+
+  // Auto-update and force-update
+  initAutoUpdater(store);
+  initForceUpdateCheck('https://api.conduit.qinnan.dev');
 
   await mainWindowManager.create();
 

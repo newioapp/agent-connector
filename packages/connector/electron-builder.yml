@@ -8,6 +8,13 @@ files:
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
 npmRebuild: false
+
+# --- Auto-update via generic provider (S3 + CloudFront CDN) ---
+publish:
+  provider: generic
+  url: ${env.PUBLISH_URL}
+
+# --- macOS ---
 mac:
   notarize: false
   identity: null
@@ -16,14 +23,34 @@ mac:
       arch:
         - arm64
         - x64
+    - target: zip # Required for electron-updater on macOS
+      arch:
+        - arm64
+        - x64
+dmg:
+  artifactName: newio-connector-${version}-mac-${arch}.${ext}
+  writeUpdateInfo: false
+
+# --- Linux ---
 linux:
   category: Network
   target:
     - target: AppImage
       arch:
         - x64
+    - target: deb
+      arch:
+        - x64
+appImage:
+  artifactName: newio-connector-${version}-linux-${arch}.${ext}
+deb:
+  artifactName: newio-connector-${version}-linux-${arch}.${ext}
+
+# --- Windows ---
 win:
   target:
     - target: nsis
       arch:
         - x64
+nsis:
+  artifactName: newio-connector-${version}-win-${arch}.${ext}
