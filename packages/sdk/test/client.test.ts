@@ -344,4 +344,98 @@ describe('NewioClient', () => {
       expect(fetchCalls[0]?.body).toEqual({ displayName: 'Bot' });
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Media — upload helpers
+  // -------------------------------------------------------------------------
+
+  describe('upload helpers', () => {
+    it('uploadFile gets presigned URL then uploads to S3', async () => {
+      // First call: getUploadUrl, second call: S3 upload
+      let callIndex = 0;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((url: string, opts?: RequestInit) => {
+          callIndex++;
+          if (callIndex === 1) {
+            // getUploadUrl
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              json: () =>
+                Promise.resolve({ url: 'https://s3.test/upload', fields: { key: 'media/k1' }, s3Key: 'media/k1' }),
+            });
+          }
+          // S3 upload
+          return Promise.resolve({ ok: true, status: 204 });
+        }),
+      );
+
+      const result = await createClient().uploadFile({
+        fileName: 'doc.pdf',
+        contentType: 'application/pdf',
+        body: new Blob(['data']),
+      });
+      expect(result.s3Key).toBe('media/k1');
+      expect(callIndex).toBe(2);
+    });
+
+    it('uploadAvatar gets presigned URL then uploads to S3', async () => {
+      let callIndex = 0;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((url: string, opts?: RequestInit) => {
+          callIndex++;
+          if (callIndex === 1) {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              json: () =>
+                Promise.resolve({ url: 'https://s3.test/upload', fields: { key: 'avatars/k1' }, s3Key: 'avatars/k1' }),
+            });
+          }
+          return Promise.resolve({ ok: true, status: 204 });
+        }),
+      );
+
+      const result = await createClient().uploadAvatar({
+        fileName: 'avatar.png',
+        contentType: 'image/png',
+        body: new Blob(['img']),
+      });
+      expect(result.s3Key).toBe('avatars/k1');
+    });
+
+    it('uploadFile throws when S3 upload fails', async () => {
+      let callIndex = 0;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() => {
+          callIndex++;
+          if (callIndex === 1) {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              json: () => Promise.resolve({ url: 'https://s3.test/upload', fields: {}, s3Key: 'media/k1' }),
+            });
+          }
+          return Promise.resolve({ ok: false, status: 403 });
+        }),
+      );
+
+      await expect(
+        createClient().uploadFile({
+          fileName: 'doc.pdf',
+          contentType: 'application/pdf',
+          body: new Blob(['data']),
+        }),
+      ).rejects.toThrow('S3 upload failed: 403');
+    });
+
+    it('sendMessage includes visibleTo in body', async () => {
+      mockFetch([{ status: 201, body: { messageId: 'm1' } }]);
+      await createClient().sendMessage({ conversationId: 'c1', content: { text: 'hi' }, visibleTo: ['u2'] });
+      expect(fetchCalls[0]?.body).toEqual({ content: { text: 'hi' }, visibleTo: ['u2'] });
+    });
+  });
 });
