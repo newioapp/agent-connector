@@ -16,6 +16,7 @@ import { ActivityThrottle } from '../core/activity-throttle.js';
 import { NewioAppStore } from './store.js';
 import { wireEvents } from './events.js';
 import { uploadFiles, downloadAttachment } from './media.js';
+import { buildMentions } from './mentions.js';
 import { PendingActions } from './pending-actions.js';
 import type { WebSocketFactory } from '../core/websocket.js';
 import type { ApprovalHandle } from '../core/auth.js';
@@ -44,9 +45,6 @@ import type {
 } from './types.js';
 
 const log = getLogger('newio-app');
-
-/** Extract all @username tokens from a message (preceded by whitespace or start-of-line). */
-const MENTION_EXTRACT_RE = /(?:^|[\s])@([a-zA-Z][a-zA-Z0-9]*)/g;
 
 // Re-export types and helpers that are part of the public API
 export type {
@@ -801,37 +799,8 @@ export class NewioApp {
 
   /** Parse @username, @everyone, @here from text and resolve to a Mentions object. */
   private async buildMentions(conversationId: string, text: string): Promise<Mentions | undefined> {
-    const everyone = /(?:^|[\s])@everyone\b/.test(text);
-    const here = /(?:^|[\s])@here\b/.test(text);
-
     const members = await this.getMembersRaw(conversationId);
-    const usernameToUserId = new Map<string, string>();
-    for (const m of members) {
-      if (m.username) {
-        usernameToUserId.set(m.username.toLowerCase(), m.userId);
-      }
-    }
-
-    const userIds: string[] = [];
-    for (const match of text.matchAll(MENTION_EXTRACT_RE)) {
-      const name = match[1]?.toLowerCase();
-      if (!name || name === 'everyone' || name === 'here') {
-        continue;
-      }
-      const userId = usernameToUserId.get(name);
-      if (userId && !userIds.includes(userId)) {
-        userIds.push(userId);
-      }
-    }
-
-    if (!everyone && !here && userIds.length === 0) {
-      return undefined;
-    }
-    return {
-      ...(userIds.length > 0 ? { userIds } : {}),
-      ...(everyone ? { everyone: true } : {}),
-      ...(here ? { here: true } : {}),
-    };
+    return buildMentions(text, members);
   }
 }
 

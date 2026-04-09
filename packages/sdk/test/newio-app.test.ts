@@ -314,4 +314,104 @@ describe('NewioApp', () => {
       expect(app.getConversation('new-conv')?.name).toBe('New Group');
     });
   });
+
+  describe('cron scheduling', () => {
+    it('fires recurring cron job', async () => {
+      vi.useFakeTimers();
+      const { app } = await createApp();
+      const triggered: string[] = [];
+      app.on('cron.triggered', (e) => triggered.push(e.cronId));
+
+      app.scheduleCron({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'Test' });
+
+      await vi.advanceTimersByTimeAsync(3100);
+      expect(triggered.length).toBe(3);
+
+      app.cancelCron('c1');
+      vi.useRealTimers();
+    });
+
+    it('fires one-shot cron job', async () => {
+      vi.useFakeTimers();
+      const { app } = await createApp();
+      const triggered: string[] = [];
+      app.on('cron.triggered', (e) => triggered.push(e.cronId));
+
+      const future = new Date(Date.now() + 2000).toISOString();
+      app.scheduleCron({ cronId: 'c2', expression: `at ${future}`, newioSessionId: 's1', label: 'Once' });
+
+      await vi.advanceTimersByTimeAsync(2100);
+      expect(triggered).toEqual(['c2']);
+
+      // Should auto-cancel after firing
+      expect(app.listCrons()).toHaveLength(0);
+      vi.useRealTimers();
+    });
+
+    it('skips one-shot cron with past trigger time', async () => {
+      const { app } = await createApp();
+      const past = new Date(Date.now() - 1000).toISOString();
+      app.scheduleCron({ cronId: 'c3', expression: `at ${past}`, newioSessionId: 's1', label: 'Past' });
+      expect(app.listCrons()).toHaveLength(0);
+    });
+
+    it('replaces existing cron with same id', async () => {
+      vi.useFakeTimers();
+      const { app } = await createApp();
+      const triggered: string[] = [];
+      app.on('cron.triggered', (e) => triggered.push(e.label ?? ''));
+
+      app.scheduleCron({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'First' });
+      app.scheduleCron({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'Second' });
+
+      await vi.advanceTimersByTimeAsync(1100);
+      expect(triggered).toEqual(['Second']);
+
+      app.cancelCron('c1');
+      vi.useRealTimers();
+    });
+
+    it('throws on invalid cron expression', async () => {
+      const { app } = await createApp();
+      expect(() =>
+        app.scheduleCron({ cronId: 'bad', expression: 'invalid', newioSessionId: 's1', label: 'Bad' }),
+      ).toThrow();
+    });
+
+    it('throws on invalid ISO datetime', async () => {
+      const { app } = await createApp();
+      expect(() =>
+        app.scheduleCron({ cronId: 'bad', expression: 'at not-a-date', newioSessionId: 's1', label: 'Bad' }),
+      ).toThrow();
+    });
+
+    it('parses shorthand expressions (30m, 4h)', async () => {
+      vi.useFakeTimers();
+      const { app } = await createApp();
+      const triggered: string[] = [];
+      app.on('cron.triggered', (e) => triggered.push(e.cronId));
+
+      app.scheduleCron({ cronId: 'c1', expression: '60s', newioSessionId: 's1', label: 'Shorthand' });
+
+      await vi.advanceTimersByTimeAsync(60_100);
+      expect(triggered).toEqual(['c1']);
+
+      app.cancelCron('c1');
+      vi.useRealTimers();
+    });
+  });
+
+  describe('dispose', () => {
+    it('cancels cron jobs and disconnects', async () => {
+      vi.useFakeTimers();
+      const { app, ws } = await createApp();
+      app.scheduleCron({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'Test' });
+
+      app.dispose();
+
+      expect(app.listCrons()).toHaveLength(0);
+      expect(ws.disconnect).toHaveBeenCalled();
+      vi.useRealTimers();
+    });
+  });
 });
