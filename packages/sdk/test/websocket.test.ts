@@ -386,4 +386,69 @@ describe('NewioWebSocket', () => {
       expect(connectCount).toBe(1);
     });
   });
+
+  describe('proactive reconnect', () => {
+    it('should reconnect at 1h50m', async () => {
+      const mockWs1 = createMockWs();
+      let connectCount = 0;
+
+      const client = new NewioWebSocket({
+        url: 'wss://ws.test',
+        tokenProvider: () => 'test-token',
+        wsFactory: () => {
+          connectCount++;
+          queueMicrotask(() => mockWs1.triggerOpen());
+          return mockWs1;
+        },
+      });
+
+      await client.connect();
+      expect(connectCount).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(110 * 60 * 1000);
+      expect(connectCount).toBe(2);
+
+      client.disconnect();
+    });
+  });
+
+  describe('sendActivity', () => {
+    it('should send activity when connected', async () => {
+      const ws = createMockWs();
+      const client = createClient(ws);
+      await client.connect();
+
+      client.sendActivity('conv-1', 'typing');
+      const sent = JSON.parse(ws.sent[ws.sent.length - 1]!) as unknown;
+      expect(sent).toEqual({ action: 'activity', conversationId: 'conv-1', status: 'typing' });
+
+      client.disconnect();
+    });
+
+    it('should not send activity when disconnected', () => {
+      const ws = createMockWs();
+      const client = createClient(ws, false);
+      client.sendActivity('conv-1', 'typing');
+      // Only the CONNECT message should be absent since we never connected
+      expect(ws.sent).toHaveLength(0);
+    });
+  });
+
+  describe('setState no-op', () => {
+    it('should not fire listener when state is unchanged', async () => {
+      const ws = createMockWs();
+      const client = createClient(ws);
+      const states: string[] = [];
+      client.onStateChange((s) => states.push(s));
+
+      await client.connect();
+      expect(states).toEqual(['connecting', 'connected']);
+
+      // Trigger open again — state is already 'connected'
+      ws.triggerOpen();
+      expect(states).toEqual(['connecting', 'connected']); // no duplicate
+
+      client.disconnect();
+    });
+  });
 });

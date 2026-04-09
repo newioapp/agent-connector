@@ -339,4 +339,88 @@ describe('AuthManager', () => {
       expect(store.getRefreshToken()).toBeUndefined();
     });
   });
+
+  describe('forceRefresh — error handling', () => {
+    it('should clear tokens and throw TokenRefreshError when refresh fails', async () => {
+      mockFetch([{ status: 401, body: { error: 'Invalid refresh token', errorCode: 'UNAUTHENTICATED' } }]);
+
+      const exp = Math.floor(Date.now() / 1000) + 3600;
+      const store = new InMemoryTokenStore();
+      store.setTokens(fakeJwt(exp), 'refresh-1');
+
+      const auth = new AuthManager('https://api.newio.dev', store);
+      await expect(auth.forceRefresh()).rejects.toThrow(TokenRefreshError);
+
+      expect(store.getAccessToken()).toBeUndefined();
+      expect(store.getRefreshToken()).toBeUndefined();
+
+      auth.dispose();
+    });
+
+    it('should throw TokenRefreshError when no refresh token is available', async () => {
+      const auth = new AuthManager('https://api.newio.dev');
+      await expect(auth.forceRefresh()).rejects.toThrow('No refresh token available.');
+      auth.dispose();
+    });
+  });
+
+  describe('auto-refresh scheduling', () => {
+    it('should auto-refresh before token expires', async () => {
+      // Token expires in 90 seconds — refresh should fire at 30s (90 - 60 buffer)
+      const exp = Math.floor(Date.now() / 1000) + 90;
+      const oldToken = fakeJwt(exp);
+      const newToken = fakeJwt(Math.floor(Date.now() / 1000) + 3600);
+
+      mockFetch([{ status: 200, body: { accessToken: newToken, refreshToken: 'refresh-2' } }]);
+
+      const store = new InMemoryTokenStore();
+      const auth = new AuthManager('https://api.newio.dev', store);
+      auth.setTokens(oldToken, 'refresh-1');
+
+      // Advance past the scheduled refresh time (90s - 60s buffer = 30s)
+      await vi.advanceTimersByTimeAsync(31_000);
+
+      expect(store.getAccessToken()).toBe(newToken);
+
+      auth.dispose();
+    });
+  });
+
+  describe('waitForApproval — onPollAttempt callback', () => {
+    it('should call onPollAttempt on each poll', async () => {
+      const exp = Math.floor(Date.now() / 1000) + 3600;
+      const accessToken = fakeJwt(exp);
+
+      mockFetch([
+        {
+          status: 201,
+          body: {
+            agentId: 'agent-1',
+            approvalId: 'approval-1',
+            status: 'pending_approval',
+            approvalUrl: 'https://newio.dev/approve?approvalId=approval-1&token=tok',
+          },
+        },
+        { status: 200, body: { status: 'pending_approval' } },
+        { status: 200, body: { status: 'active', accessToken, refreshToken: 'refresh-1' } },
+      ]);
+
+      const auth = new AuthManager('https://api.newio.dev');
+      const handle = await auth.register({ name: 'Test Agent' });
+
+      let pollCount = 0;
+      const approvalPromise = handle.waitForApproval({
+        intervalMs: 100,
+        onPollAttempt: () => pollCount++,
+      });
+
+      await vi.advanceTimersByTimeAsync(100);
+      await vi.advanceTimersByTimeAsync(100);
+      await approvalPromise;
+
+      expect(pollCount).toBe(2);
+
+      auth.dispose();
+    });
+  });
 });
