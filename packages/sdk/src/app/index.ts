@@ -2,6 +2,7 @@ export { NewioApp, NEWIO_API_BASE_URL, NEWIO_WS_URL, NewioAppStore } from './new
 export { ActionTimeoutError, ActionAbortedError } from './pending-actions.js';
 export { MessageProcessor, shouldSkipMessage, isMentioned } from './message-processor.js';
 export { buildMentions } from './mentions.js';
+export { CronScheduler, parseCronExpression } from './cron.js';
 export type {
   NewioAppCreateOptions,
   IncomingMessage,
