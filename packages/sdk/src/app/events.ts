@@ -270,7 +270,7 @@ async function handleMessageNew(
 ): Promise<void> {
   // 1. Sequence tracking and gap detection (always, for all message types)
   const currentSeq = store.getSequenceNumber(payload.conversationId);
-  const incomingSeq = payload.sequenceNumber ?? 0;
+  const incomingSeq = payload.sequenceNumber;
   if (incomingSeq > currentSeq) {
     store.setSequenceNumber(payload.conversationId, incomingSeq);
   }
