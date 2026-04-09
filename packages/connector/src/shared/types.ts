@@ -9,4 +9,5 @@ export type {
   UpdateAgentInput,
   ThemeSource,
   AgentStatusInfo,
+  UpdateMode,
 } from '../core/types';

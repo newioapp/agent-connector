@@ -5,7 +5,7 @@
  * (ipcMain.handle / ipcRenderer.invoke). Push events from main → renderer
  * are defined in ipc-events.ts.
  */
-import type { ThemeSource, AgentConfig, AddAgentInput, UpdateAgentInput, AgentStatusInfo } from './types';
+import type { ThemeSource, AgentConfig, AddAgentInput, UpdateAgentInput, AgentStatusInfo, UpdateMode } from './types';
 
 export interface IpcApi {
   /** Get the app version. */
@@ -18,6 +18,11 @@ export interface IpcApi {
 
   // External URLs
   openExternal(url: string): Promise<void>;
+
+  // Updates
+  getUpdateMode(): Promise<UpdateMode>;
+  setUpdateMode(mode: UpdateMode): Promise<void>;
+  checkForUpdates(): Promise<void>;
 
   // Agent CRUD
   listAgents(): Promise<AgentStatusInfo[]>;
@@ -59,6 +64,9 @@ export const IPC_CHANNELS: { readonly [K in keyof IpcApi]: string } = {
   setTheme: 'set-theme',
   getNativeThemeDark: 'get-native-theme-dark',
   openExternal: 'open-external',
+  getUpdateMode: 'get-update-mode',
+  setUpdateMode: 'set-update-mode',
+  checkForUpdates: 'check-for-updates',
   selectDirectory: 'select-directory',
   listKiroAgents: 'list-kiro-agents',
   listKiroModels: 'list-kiro-models',

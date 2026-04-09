@@ -4,6 +4,8 @@
 
 export type ThemeSource = 'system' | 'light' | 'dark';
 
+export type UpdateMode = 'auto' | 'manual' | 'disabled';
+
 // ---------------------------------------------------------------------------
 // Agent types
 // ---------------------------------------------------------------------------
