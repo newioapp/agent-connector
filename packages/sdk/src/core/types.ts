@@ -90,7 +90,7 @@ export interface MessageRecord {
   readonly messageId: string;
   readonly senderId: string;
   readonly content: MessageContent;
-  readonly sequenceNumber?: number;
+  readonly sequenceNumber: number;
   /** When set, only these userIds see full content. Others receive content as {}. */
   readonly visibleTo?: ReadonlyArray<string>;
   readonly createdAt: string;
@@ -692,7 +692,7 @@ export interface SendMessageResponse {
   readonly messageId: string;
   readonly senderId: string;
   readonly content: MessageContent;
-  readonly sequenceNumber?: number;
+  readonly sequenceNumber: number;
   readonly visibleTo?: ReadonlyArray<string>;
   readonly createdAt: string;
   readonly updatedAt?: string;
@@ -722,7 +722,7 @@ export interface GetMessageResponse {
   readonly messageId: string;
   readonly senderId: string;
   readonly content: MessageContent;
-  readonly sequenceNumber?: number;
+  readonly sequenceNumber: number;
   readonly createdAt: string;
   readonly updatedAt?: string;
   readonly deletedAt?: string;
@@ -739,7 +739,7 @@ export interface EditMessageResponse {
   readonly messageId: string;
   readonly senderId: string;
   readonly content: MessageContent;
-  readonly sequenceNumber?: number;
+  readonly sequenceNumber: number;
   readonly createdAt: string;
   readonly updatedAt?: string;
   readonly deletedAt?: string;
