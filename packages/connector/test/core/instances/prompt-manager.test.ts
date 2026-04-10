@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { PromptManager } from '../src/core/instances/prompt-manager';
+import { PromptManager } from '../../../src/core/instances/prompt-manager';
 import type { IncomingMessage, ContactEvent, CronTriggerEvent, NewioApp } from '@newio/sdk';
 
 function makeMsg(overrides: Partial<IncomingMessage> = {}): IncomingMessage {

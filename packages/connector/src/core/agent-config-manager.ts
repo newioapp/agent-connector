@@ -1,9 +1,7 @@
 /**
  * Agent config manager interface — defines the contract for agent config and token persistence.
  *
- * Implementations:
- * - StoreAgentConfigManager (main/) — backed by electron-store
- * - InMemoryConfigManager (cli.ts) — in-memory for CLI usage
+ * Implementation: StoreAgentConfigManager (main/) — backed by electron-store.
  */
 import type { AgentConfig, AddAgentInput, UpdateAgentInput, NewioIdentity } from './types';
 

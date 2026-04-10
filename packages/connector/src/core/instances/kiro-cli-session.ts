@@ -37,7 +37,7 @@ export class KiroCliSession implements AgentSession, acp.Client {
 
   get correlationId() {
     if (typeof this._correlationId !== 'string') {
-      throw new Error('');
+      throw new Error('Session correlationId not set — session may not be initialized');
     }
     return this._correlationId;
   }
