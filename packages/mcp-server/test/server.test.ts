@@ -100,6 +100,15 @@ describe('MCP Server', () => {
     ]);
   });
 
+  it('list_conversations returns all conversations', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    const result = await client.callTool({ name: 'list_conversations', arguments: {} });
+    const parsed = JSON.parse((result.content[0] as { text: string }).text) as unknown[];
+    expect(parsed).toHaveLength(1);
+    expect(app.getAllConversations).toHaveBeenCalled();
+  });
+
   it('list_friends returns contacts without userIds', async () => {
     const contacts: ContactSummary[] = [
       { username: 'alice', displayName: 'Alice', accountType: 'human' },
@@ -268,5 +277,132 @@ describe('MCP Server', () => {
     const result = await client.callTool({ name: 'list_crons', arguments: {} });
     const parsed = JSON.parse((result.content[0] as { text: string }).text) as unknown[];
     expect(parsed).toHaveLength(1);
+  });
+
+  it('reject_friend_request calls app method by username', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    await client.callTool({ name: 'reject_friend_request', arguments: { username: 'bob' } });
+    expect(app.rejectFriendRequestByUsername).toHaveBeenCalledWith('bob');
+  });
+
+  it('remove_friend calls app method by username', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    await client.callTool({ name: 'remove_friend', arguments: { username: 'alice' } });
+    expect(app.removeFriendByUsername).toHaveBeenCalledWith('alice');
+  });
+
+  it('get_conversation returns conversation details', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    const result = await client.callTool({ name: 'get_conversation', arguments: { conversationId: 'conv-1' } });
+    const parsed = JSON.parse((result.content[0] as { text: string }).text) as Record<string, unknown>;
+    expect(parsed).toHaveProperty('conversationId', 'conv-1');
+    expect(app.client.getConversation).toHaveBeenCalledWith({ conversationId: 'conv-1' });
+  });
+
+  it('add_members resolves usernames and adds to conversation', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    await client.callTool({
+      name: 'add_members',
+      arguments: { conversationId: 'conv-1', usernames: ['alice', 'bob'] },
+    });
+    expect(app.resolveUsername).toHaveBeenCalledTimes(2);
+    expect(app.client.addMembers).toHaveBeenCalledWith({
+      conversationId: 'conv-1',
+      memberIds: ['resolved-id', 'resolved-id'],
+    });
+  });
+
+  it('remove_member resolves username and removes from conversation', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    await client.callTool({
+      name: 'remove_member',
+      arguments: { conversationId: 'conv-1', username: 'alice' },
+    });
+    expect(app.resolveUsername).toHaveBeenCalledWith('alice');
+    expect(app.client.removeMember).toHaveBeenCalledWith({ conversationId: 'conv-1', userId: 'resolved-id' });
+  });
+
+  it('send_dm sends direct message by username', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    await client.callTool({ name: 'send_dm', arguments: { username: 'alice', text: 'hey' } });
+    expect(app.sendDm).toHaveBeenCalledWith('alice', 'hey', undefined);
+  });
+
+  it('get_my_profile returns agent profile', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    const result = await client.callTool({ name: 'get_my_profile', arguments: {} });
+    const parsed = JSON.parse((result.content[0] as { text: string }).text) as Record<string, unknown>;
+    expect(parsed).toHaveProperty('username', 'myagent');
+    expect(app.client.getMe).toHaveBeenCalled();
+  });
+
+  it('get_user_profile looks up user by username', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    const result = await client.callTool({ name: 'get_user_profile', arguments: { username: 'alice' } });
+    const parsed = JSON.parse((result.content[0] as { text: string }).text) as Record<string, unknown>;
+    expect(parsed).toHaveProperty('username', 'alice');
+    expect(app.client.getUserByUsername).toHaveBeenCalledWith({ username: 'alice' });
+  });
+
+  it('list_messages passes pagination params', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    await client.callTool({
+      name: 'list_messages',
+      arguments: { conversationId: 'conv-1', limit: 5, beforeMessageId: 'msg-99' },
+    });
+    expect(app.client.listMessages).toHaveBeenCalledWith({
+      conversationId: 'conv-1',
+      limit: 5,
+      beforeMessageId: 'msg-99',
+    });
+  });
+
+  it('list_messages includes attachment metadata', async () => {
+    const app = mockApp();
+    (app.client.listMessages as ReturnType<typeof vi.fn>).mockResolvedValue({
+      messages: [
+        {
+          messageId: 'msg-2',
+          senderId: 'u1',
+          content: {
+            text: 'see attached',
+            attachments: [{ fileName: 'doc.pdf', contentType: 'application/pdf', size: 1024, s3Key: 'media/doc.pdf' }],
+          },
+          createdAt: '2026-01-01T00:00:00Z',
+        },
+      ],
+    });
+    const client = await createConnectedClient(app);
+    const result = await client.callTool({ name: 'list_messages', arguments: { conversationId: 'conv-1' } });
+    const parsed = JSON.parse((result.content[0] as { text: string }).text) as Record<string, unknown>[];
+    expect(parsed[0]).toHaveProperty('attachments');
+    const attachments = parsed[0].attachments as Record<string, unknown>[];
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0]).toEqual({
+      fileName: 'doc.pdf',
+      contentType: 'application/pdf',
+      size: 1024,
+      s3Key: 'media/doc.pdf',
+    });
+  });
+
+  it('getSessionId returns undefined when not set', () => {
+    const server = new NewioMcpServer(mockApp());
+    expect(server.getSessionId()).toBeUndefined();
+  });
+
+  it('getSessionId returns value after setSessionId', () => {
+    const server = new NewioMcpServer(mockApp());
+    server.setSessionId('s1');
+    expect(server.getSessionId()).toBe('s1');
   });
 });
