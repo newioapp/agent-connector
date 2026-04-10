@@ -16,6 +16,9 @@ import { ActivityThrottle } from '../core/activity-throttle.js';
 import { NewioAppStore } from './store.js';
 import { wireEvents } from './events.js';
 import { uploadFiles, downloadAttachment } from './media.js';
+import { CronScheduler } from './cron.js';
+import { buildMentions } from './mentions.js';
+import { MessageProcessor } from './message-processor.js';
 import { PendingActions } from './pending-actions.js';
 import type { WebSocketFactory } from '../core/websocket.js';
 import type { ApprovalHandle } from '../core/auth.js';
@@ -40,13 +43,9 @@ import type {
   NewioIdentity,
   NewioTokens,
   CronJobDef,
-  CronTriggerEvent,
 } from './types.js';
 
 const log = getLogger('newio-app');
-
-/** Extract all @username tokens from a message (preceded by whitespace or start-of-line). */
-const MENTION_EXTRACT_RE = /(?:^|[\s])@([a-zA-Z][a-zA-Z0-9]*)/g;
 
 // Re-export types and helpers that are part of the public API
 export type {
@@ -128,11 +127,7 @@ export class NewioApp {
   private readonly ws: NewioWebSocket;
   private readonly downloadDir: string;
   private readonly activityThrottle: ActivityThrottle;
-  /** In-memory cron jobs: cronId → { def, timer, isInterval }. */
-  private readonly cronJobs = new Map<
-    string,
-    { readonly def: CronJobDef; readonly timer: ReturnType<typeof setTimeout>; readonly isInterval: boolean }
-  >();
+  private readonly cronScheduler: CronScheduler;
 
   private readonly eventHandlers: Partial<AppEventHandlers> = {};
 
@@ -154,6 +149,11 @@ export class NewioApp {
     this.activityThrottle = new ActivityThrottle((conversationId, status) => {
       this.ws.sendActivity(conversationId, status);
     });
+    this.cronScheduler = new CronScheduler({
+      onTriggered: (event) => this.eventHandlers['cron.triggered']?.(event),
+      onScheduled: (def) => this.eventHandlers['cron.scheduled']?.(def),
+      onCancelled: (cronId) => this.eventHandlers['cron.cancelled']?.(cronId),
+    });
   }
 
   /**
@@ -168,7 +168,8 @@ export class NewioApp {
     store?: NewioAppStore,
   ): NewioApp {
     const app = new NewioApp(identity, auth, client, ws, store ?? new NewioAppStore());
-    wireEvents(ws, app.store, client, identity, () => app.eventHandlers, app.pendingActions);
+    const processor = new MessageProcessor(app.store, client, identity, () => app.eventHandlers, app.pendingActions);
+    wireEvents(ws, app.store, client, identity, () => app.eventHandlers, app.pendingActions, processor);
     return app;
   }
 
@@ -230,7 +231,8 @@ export class NewioApp {
 
     const store = new NewioAppStore(opts.persistence);
     const app = new NewioApp(identity, auth, client, ws, store, opts.downloadDir);
-    wireEvents(ws, store, client, identity, () => app.eventHandlers, app.pendingActions);
+    const processor = new MessageProcessor(store, client, identity, () => app.eventHandlers, app.pendingActions);
+    wireEvents(ws, store, client, identity, () => app.eventHandlers, app.pendingActions, processor);
     return app;
   }
 
@@ -247,14 +249,7 @@ export class NewioApp {
     log.info('Disposing NewioApp...');
     this.activityThrottle.dispose();
     this.pendingActions.dispose();
-    for (const entry of this.cronJobs.values()) {
-      if (entry.isInterval) {
-        clearInterval(entry.timer);
-      } else {
-        clearTimeout(entry.timer);
-      }
-    }
-    this.cronJobs.clear();
+    this.cronScheduler.dispose();
     this.ws.disconnect();
     this.auth.dispose();
   }
@@ -336,66 +331,17 @@ export class NewioApp {
 
   /** Schedule a cron job. Fires `cron.triggered` on each tick (recurring) or once (one-shot). */
   scheduleCron(def: CronJobDef): void {
-    if (this.cronJobs.has(def.cronId)) {
-      log.warn(`Cron job ${def.cronId} already exists — replacing.`);
-      this.cancelCron(def.cronId);
-    }
-
-    const parsed = parseCronExpression(def.expression);
-
-    const fire = (): void => {
-      const event: CronTriggerEvent = {
-        cronId: def.cronId,
-        newioSessionId: def.newioSessionId,
-        label: def.label,
-        payload: def.payload,
-        triggeredAt: new Date().toISOString(),
-      };
-      log.debug(`Cron triggered: ${def.cronId} — ${def.label}`);
-      this.eventHandlers['cron.triggered']?.(event);
-    };
-
-    if (parsed.type === 'once') {
-      const delayMs = parsed.triggerTime - Date.now();
-      if (delayMs <= 0) {
-        log.warn(`Cron ${def.cronId} trigger time is in the past — skipping.`);
-        return;
-      }
-      log.info(
-        `Scheduling one-shot cron ${def.cronId}: "${def.label}" at ${new Date(parsed.triggerTime).toISOString()} (${String(Math.round(delayMs / 1000))}s from now)`,
-      );
-      const timer = setTimeout(() => {
-        fire();
-        this.cancelCron(def.cronId);
-      }, delayMs);
-      this.cronJobs.set(def.cronId, { def, timer, isInterval: false });
-    } else {
-      log.info(`Scheduling recurring cron ${def.cronId}: "${def.label}" every ${String(parsed.intervalMs)}ms`);
-      const timer = setInterval(fire, parsed.intervalMs);
-      this.cronJobs.set(def.cronId, { def, timer, isInterval: true });
-    }
-
-    this.eventHandlers['cron.scheduled']?.(def);
+    this.cronScheduler.schedule(def);
   }
 
   /** Cancel a scheduled cron job. */
   cancelCron(cronId: string): void {
-    const entry = this.cronJobs.get(cronId);
-    if (entry) {
-      if (entry.isInterval) {
-        clearInterval(entry.timer);
-      } else {
-        clearTimeout(entry.timer);
-      }
-      this.cronJobs.delete(cronId);
-      log.info(`Cron cancelled: ${cronId}`);
-      this.eventHandlers['cron.cancelled']?.(cronId);
-    }
+    this.cronScheduler.cancel(cronId);
   }
 
   /** List all active cron jobs. */
   listCrons(): readonly CronJobDef[] {
-    return [...this.cronJobs.values()].map((e) => e.def);
+    return this.cronScheduler.list();
   }
 
   // ---------------------------------------------------------------------------
@@ -801,101 +747,9 @@ export class NewioApp {
 
   /** Parse @username, @everyone, @here from text and resolve to a Mentions object. */
   private async buildMentions(conversationId: string, text: string): Promise<Mentions | undefined> {
-    const everyone = /(?:^|[\s])@everyone\b/.test(text);
-    const here = /(?:^|[\s])@here\b/.test(text);
-
     const members = await this.getMembersRaw(conversationId);
-    const usernameToUserId = new Map<string, string>();
-    for (const m of members) {
-      if (m.username) {
-        usernameToUserId.set(m.username.toLowerCase(), m.userId);
-      }
-    }
-
-    const userIds: string[] = [];
-    for (const match of text.matchAll(MENTION_EXTRACT_RE)) {
-      const name = match[1]?.toLowerCase();
-      if (!name || name === 'everyone' || name === 'here') {
-        continue;
-      }
-      const userId = usernameToUserId.get(name);
-      if (userId && !userIds.includes(userId)) {
-        userIds.push(userId);
-      }
-    }
-
-    if (!everyone && !here && userIds.length === 0) {
-      return undefined;
-    }
-    return {
-      ...(userIds.length > 0 ? { userIds } : {}),
-      ...(everyone ? { everyone: true } : {}),
-      ...(here ? { here: true } : {}),
-    };
+    return buildMentions(text, members);
   }
-}
-
-// ---------------------------------------------------------------------------
-// Internal — cron expression parser
-// ---------------------------------------------------------------------------
-
-/** Parsed result from a cron expression. */
-interface ParsedCronRecurring {
-  readonly type: 'recurring';
-  readonly intervalMs: number;
-}
-
-interface ParsedCronOnce {
-  readonly type: 'once';
-  readonly triggerTime: number;
-}
-
-type ParsedCron = ParsedCronRecurring | ParsedCronOnce;
-
-/**
- * Parse a cron expression into a typed result.
- *
- * Supported formats:
- *
- * **Recurring** — `"every <N>s|m|h"` or `"<N>s|m|h"`
- *   e.g. `"every 30m"`, `"every 4h"`, `"90s"`
- *
- * **One-shot (ISO-8601)** — `"at <ISO-8601 datetime>"`
- *   e.g. `"at 2026-04-09T12:00:00Z"`, `"at 2026-04-10T10:00:00-04:00"`
- */
-function parseCronExpression(expression: string): ParsedCron {
-  const trimmed = expression.trim();
-
-  // One-shot: starts with "at "
-  if (/^at\s+/i.test(trimmed)) {
-    const after = trimmed.replace(/^at\s+/i, '').trim();
-    const date = new Date(after);
-    if (isNaN(date.getTime())) {
-      throw new NewioError(
-        `Invalid ISO-8601 datetime: "${after}". Example: "at 2026-04-09T12:00:00Z" or "at 2026-04-10T10:00:00-04:00".`,
-      );
-    }
-    return { type: 'once', triggerTime: date.getTime() };
-  }
-
-  // Recurring: "every <N>s|m|h" or "<N>s|m|h"
-  const cleaned = trimmed.replace(/^every\s+/i, '').trim();
-  const match = /^(\d+)\s*(s|m|h)$/i.exec(cleaned);
-  if (!match) {
-    throw new NewioError(
-      `Invalid cron expression: "${expression}". ` +
-        'Use "every <N>s|m|h" for recurring, or "at <ISO-8601>" for one-shot. ' +
-        'Examples: "every 30m", "at 2026-04-09T12:00:00Z".',
-    );
-  }
-  const value = Number(match[1]);
-  const unit = match[2]?.toLowerCase();
-  const multipliers: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000 };
-  const ms = multipliers[unit ?? ''];
-  if (!ms) {
-    throw new NewioError(`Unknown time unit: "${String(unit)}"`);
-  }
-  return { type: 'recurring', intervalMs: value * ms };
 }
 
 // ---------------------------------------------------------------------------

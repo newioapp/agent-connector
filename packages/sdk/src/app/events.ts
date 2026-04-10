@@ -2,15 +2,16 @@
  * WebSocket event wiring for NewioApp.
  *
  * Subscribes to all relevant WebSocket events and updates the store accordingly.
+ * Message processing is delegated to {@link MessageProcessor}.
  */
 import { getLogger } from '../core/logger.js';
 import type { NewioWebSocket } from '../core/websocket.js';
 import type { NewioClient } from '../core/client.js';
-import type { ConversationType, MessageRecord } from '../core/types.js';
-import type { MessageNewEvent } from '../core/events.js';
+import type { ConversationType } from '../core/types.js';
 import type { NewioAppStore } from './store.js';
 import type { AppEventHandlers, NewioIdentity } from './types.js';
 import type { PendingActions } from './pending-actions.js';
+import type { MessageProcessor } from './message-processor.js';
 
 const log = getLogger('events');
 
@@ -22,6 +23,7 @@ export function wireEvents(
   identity: NewioIdentity,
   getHandlers: () => Partial<AppEventHandlers>,
   pendingActions: PendingActions,
+  processor: MessageProcessor,
 ): void {
   /** Per-conversation queue to serialize message processing and prevent duplicate backfills. */
   const messageQueue = new Map<string, Promise<void>>();
@@ -30,7 +32,7 @@ export function wireEvents(
     log.debug(`Event message.new in ${event.payload.conversationId} from ${event.payload.senderId}`);
     const convId = event.payload.conversationId;
     const prev = messageQueue.get(convId) ?? Promise.resolve();
-    const next = prev.then(() => handleMessageNew(store, client, identity, getHandlers, pendingActions, event.payload));
+    const next = prev.then(() => processor.handleMessageNew(event.payload));
     messageQueue.set(
       convId,
       next.catch((err: unknown) => {
@@ -235,160 +237,6 @@ export function wireEvents(
   ws.on('agent.settings_updated', () => {
     log.debug('Event agent.settings_updated (no-op).');
   });
-}
-
-// ---------------------------------------------------------------------------
-// Internal — message handling
-// ---------------------------------------------------------------------------
-
-/** Returns true if the message is an action message or not visible to the current user. */
-function shouldSkipMessage(
-  content: MessageRecord['content'],
-  visibleTo: ReadonlyArray<string> | undefined,
-  userId: string,
-): boolean {
-  if (content.response || content.action) {
-    return true;
-  }
-  if (visibleTo && !visibleTo.includes(userId)) {
-    return true;
-  }
-  return false;
-}
-
-/**
- * Top-level handler for message.new events.
- * Order: sequence tracking + gap detection → resolve pending actions → filter → notify.
- */
-async function handleMessageNew(
-  store: NewioAppStore,
-  client: NewioClient,
-  identity: NewioIdentity,
-  getHandlers: () => Partial<AppEventHandlers>,
-  pendingActions: PendingActions,
-  payload: MessageNewEvent['payload'],
-): Promise<void> {
-  // 1. Sequence tracking and gap detection (always, for all message types)
-  const currentSeq = store.getSequenceNumber(payload.conversationId);
-  const incomingSeq = payload.sequenceNumber;
-  if (incomingSeq > currentSeq) {
-    store.setSequenceNumber(payload.conversationId, incomingSeq);
-  }
-
-  if (incomingSeq > currentSeq + 1 && currentSeq > 0) {
-    log.warn(
-      `Sequence gap in ${payload.conversationId}: expected ${currentSeq + 1}, got ${incomingSeq}. Backfilling...`,
-    );
-    const cached = store.getRecentMessages(payload.conversationId);
-    if (cached.length > 0) {
-      const prev = cached[cached.length - 1];
-      if (prev) {
-        await backfillGap(
-          store,
-          client,
-          identity,
-          getHandlers,
-          pendingActions,
-          payload.conversationId,
-          prev.messageId,
-          payload.messageId,
-          currentSeq,
-        );
-      }
-    }
-  }
-
-  // 2. Resolve pending action requests
-  if (payload.content.response) {
-    pendingActions.resolve(payload.content.response);
-  }
-
-  // 3. Skip action messages and visibleTo-filtered messages
-  if (shouldSkipMessage(payload.content, payload.visibleTo, identity.userId)) {
-    return;
-  }
-
-  // 4. Normal message handling
-  handleIncomingMessage(store, identity, getHandlers, payload);
-}
-
-function handleIncomingMessage(
-  store: NewioAppStore,
-  identity: NewioIdentity,
-  getHandlers: () => Partial<AppEventHandlers>,
-  payload: MessageNewEvent['payload'],
-): void {
-  const message = store.toIncomingMessage(identity, payload, payload.conversationId, payload.conversationType);
-  const inserted = store.insertMessage(payload.conversationId, message);
-
-  if (inserted && !message.isOwnMessage) {
-    const level = store.getNotifyLevel(payload.conversationId) ?? 'all';
-    const shouldNotify = level === 'all' || (level === 'mentions' && isMentioned(payload.content, identity.userId));
-    if (shouldNotify) {
-      getHandlers()['message.new']?.(message);
-    }
-  }
-}
-
-function isMentioned(content: MessageRecord['content'], userId: string): boolean {
-  if (!content.mentions) {
-    return false;
-  }
-  return !!(content.mentions.everyone || content.mentions.here || content.mentions.userIds?.includes(userId));
-}
-
-async function backfillGap(
-  store: NewioAppStore,
-  client: NewioClient,
-  identity: NewioIdentity,
-  getHandlers: () => Partial<AppEventHandlers>,
-  pendingActions: PendingActions,
-  conversationId: string,
-  afterMessageId: string,
-  beforeMessageId: string,
-  rollbackSeq: number,
-): Promise<void> {
-  try {
-    let count = 0;
-    let cursor: string | undefined;
-    do {
-      const resp = await client.listMessages({
-        conversationId,
-        afterMessageId,
-        beforeMessageId,
-        limit: 50,
-        cursor,
-      });
-      if (resp.messages.length === 0) {
-        break;
-      }
-      for (const msg of resp.messages) {
-        // listMessages returns inclusive results — skip boundary messages
-        if (msg.messageId === afterMessageId || msg.messageId === beforeMessageId) {
-          continue;
-        }
-        // Resolve any pending action responses found during backfill
-        if (msg.content.response) {
-          pendingActions.resolve(msg.content.response);
-        }
-        if (shouldSkipMessage(msg.content, msg.visibleTo, identity.userId)) {
-          count++;
-          continue;
-        }
-        const message = store.toIncomingMessage(identity, msg, conversationId);
-        const inserted = store.insertMessage(conversationId, message);
-        if (inserted && !message.isOwnMessage) {
-          getHandlers()['message.new']?.(message);
-        }
-        count++;
-      }
-      cursor = resp.cursor;
-    } while (cursor);
-    log.info(`Backfilled ${count} messages in ${conversationId}.`);
-  } catch (err) {
-    log.error(`Failed to backfill messages in ${conversationId}. Rolling back sequence number.`, err);
-    store.setSequenceNumber(conversationId, rollbackSeq);
-  }
 }
 
 // ---------------------------------------------------------------------------

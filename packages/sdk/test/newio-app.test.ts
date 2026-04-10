@@ -81,6 +81,8 @@ function mockClient(contacts: ContactRecord[] = [], conversations: ConversationL
     }),
     listMessages: vi.fn().mockResolvedValue({ messages: [] }),
     listIncomingRequests: vi.fn().mockResolvedValue({ contacts: [] }),
+    sendFriendRequest: vi.fn().mockResolvedValue({}),
+    removeFriend: vi.fn().mockResolvedValue(undefined),
   } as unknown as NewioClient;
 }
 
@@ -312,6 +314,181 @@ describe('NewioApp', () => {
 
       expect(app.getConversation('new-conv')).toBeDefined();
       expect(app.getConversation('new-conv')?.name).toBe('New Group');
+    });
+  });
+
+  describe('cron scheduling (smoke — detailed tests in cron.test.ts)', () => {
+    it('delegates to CronScheduler', async () => {
+      vi.useFakeTimers();
+      const { app } = await createApp();
+      const triggered: string[] = [];
+      app.on('cron.triggered', (e) => triggered.push(e.cronId));
+
+      app.scheduleCron({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'Test' });
+      expect(app.listCrons()).toHaveLength(1);
+
+      await vi.advanceTimersByTimeAsync(1100);
+      expect(triggered).toEqual(['c1']);
+
+      app.cancelCron('c1');
+      expect(app.listCrons()).toHaveLength(0);
+      vi.useRealTimers();
+    });
+  });
+
+  describe('sendDm', () => {
+    it('resolves username and creates DM', async () => {
+      const { app, client } = await createApp();
+
+      await app.sendDm('stranger', 'hello');
+
+      expect(client.getUserByUsername).toHaveBeenCalledWith({ username: 'stranger' });
+      expect(client.createConversation).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'dm', memberIds: ['resolved-id'] }),
+      );
+      expect(client.sendMessage).toHaveBeenCalled();
+    });
+
+    it('reuses existing DM when found in store', async () => {
+      const conv = makeConversation({ conversationId: 'dm-existing', type: 'dm' });
+      const contact = makeContact({ contactId: 'user-alice', friendUsername: 'alice' });
+      const client = mockClient([contact], [conv]);
+      // Mock getConversation to return members including alice
+      (client.getConversation as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ...conv,
+        members: [
+          { userId: 'me', role: 'member', accountType: 'agent', joinedAt: '' },
+          { userId: 'user-alice', role: 'member', accountType: 'human', joinedAt: '' },
+        ],
+      });
+      const ws = mockWs();
+      const app = NewioApp.createFromComponents(identity, mockAuth(), client, ws);
+      await app.init();
+
+      await app.sendDm('alice', 'hi');
+
+      // Should NOT create a new conversation
+      expect(client.createConversation).not.toHaveBeenCalled();
+      expect(client.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'dm-existing' }));
+    });
+  });
+
+  describe('dmOwner', () => {
+    it('sends DM to owner', async () => {
+      const { app, client } = await createApp();
+
+      await app.dmOwner('hello owner');
+
+      expect(client.createConversation).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'dm', memberIds: ['owner-1'] }),
+      );
+      expect(client.sendMessage).toHaveBeenCalled();
+    });
+
+    it('is a no-op when no ownerId', async () => {
+      const client = mockClient();
+      const ws = mockWs();
+      const noOwnerIdentity = { userId: 'me', username: 'myagent', displayName: 'My Agent' };
+      const app = NewioApp.createFromComponents(noOwnerIdentity, mockAuth(), client, ws);
+      await app.init();
+
+      await app.dmOwner('hello');
+
+      expect(client.sendMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getOwnerDmConversationId', () => {
+    it('returns undefined when no ownerId', async () => {
+      const client = mockClient();
+      const ws = mockWs();
+      const noOwnerIdentity = { userId: 'me', username: 'myagent', displayName: 'My Agent' };
+      const app = NewioApp.createFromComponents(noOwnerIdentity, mockAuth(), client, ws);
+      await app.init();
+
+      expect(await app.getOwnerDmConversationId()).toBeUndefined();
+    });
+  });
+
+  describe('contact methods', () => {
+    it('sendFriendRequestByUsername resolves username then sends', async () => {
+      const { app, client } = await createApp();
+
+      await app.sendFriendRequestByUsername('stranger', 'Hi!');
+
+      expect(client.getUserByUsername).toHaveBeenCalledWith({ username: 'stranger' });
+      expect(client.sendFriendRequest).toHaveBeenCalledWith({ contactId: 'resolved-id', note: 'Hi!' });
+    });
+
+    it('removeFriendByUsername resolves and removes', async () => {
+      const contact = makeContact({ contactId: 'user-alice', friendUsername: 'alice' });
+      const { app, client } = await createApp([contact]);
+
+      await app.removeFriendByUsername('alice');
+
+      expect(client.removeFriend).toHaveBeenCalledWith({ userId: 'user-alice' });
+    });
+  });
+
+  describe('createGroup', () => {
+    it('resolves usernames and creates group', async () => {
+      const { app, client } = await createApp();
+
+      const convId = await app.createGroup('My Group', ['stranger1', 'stranger2']);
+
+      expect(convId).toBe('new-conv');
+      expect(client.createConversation).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'group', name: 'My Group' }),
+      );
+    });
+
+    it('filters out self from member list', async () => {
+      const { app, client } = await createApp();
+
+      await app.createGroup('My Group', ['myagent', 'stranger1']);
+
+      const call = (client.createConversation as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(call.memberIds).toHaveLength(1); // myagent filtered out
+    });
+  });
+
+  describe('createWorkSession', () => {
+    it('creates temp_group conversation', async () => {
+      const { app, client } = await createApp();
+
+      await app.createWorkSession('Session', ['stranger1']);
+
+      expect(client.createConversation).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'temp_group', name: 'Session' }),
+      );
+    });
+  });
+
+  describe('getRecentMessages', () => {
+    it('returns empty array for unknown conversation', async () => {
+      const { app } = await createApp();
+      expect(app.getRecentMessages('unknown')).toEqual([]);
+    });
+  });
+
+  describe('getSessionId', () => {
+    it('returns undefined for unknown conversation', async () => {
+      const { app } = await createApp();
+      expect(app.getSessionId('unknown')).toBeUndefined();
+    });
+  });
+
+  describe('dispose', () => {
+    it('cancels cron jobs and disconnects', async () => {
+      vi.useFakeTimers();
+      const { app, ws } = await createApp();
+      app.scheduleCron({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'Test' });
+
+      app.dispose();
+
+      expect(app.listCrons()).toHaveLength(0);
+      expect(ws.disconnect).toHaveBeenCalled();
+      vi.useRealTimers();
     });
   });
 });
