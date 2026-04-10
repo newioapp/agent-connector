@@ -18,6 +18,7 @@ import { wireEvents } from './events.js';
 import { uploadFiles, downloadAttachment } from './media.js';
 import { CronScheduler } from './cron.js';
 import { buildMentions } from './mentions.js';
+import { MessageProcessor } from './message-processor.js';
 import { PendingActions } from './pending-actions.js';
 import type { WebSocketFactory } from '../core/websocket.js';
 import type { ApprovalHandle } from '../core/auth.js';
@@ -167,7 +168,8 @@ export class NewioApp {
     store?: NewioAppStore,
   ): NewioApp {
     const app = new NewioApp(identity, auth, client, ws, store ?? new NewioAppStore());
-    wireEvents(ws, app.store, client, identity, () => app.eventHandlers, app.pendingActions);
+    const processor = new MessageProcessor(app.store, client, identity, () => app.eventHandlers, app.pendingActions);
+    wireEvents(ws, app.store, client, identity, () => app.eventHandlers, app.pendingActions, processor);
     return app;
   }
 
@@ -229,7 +231,8 @@ export class NewioApp {
 
     const store = new NewioAppStore(opts.persistence);
     const app = new NewioApp(identity, auth, client, ws, store, opts.downloadDir);
-    wireEvents(ws, store, client, identity, () => app.eventHandlers, app.pendingActions);
+    const processor = new MessageProcessor(store, client, identity, () => app.eventHandlers, app.pendingActions);
+    wireEvents(ws, store, client, identity, () => app.eventHandlers, app.pendingActions, processor);
     return app;
   }
 

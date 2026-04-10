@@ -12,9 +12,9 @@ const log = getLogger('cron');
 
 /** Callbacks for cron lifecycle events. */
 export interface CronEventHandlers {
-  onTriggered?: (event: CronTriggerEvent) => void;
-  onScheduled?: (def: CronJobDef) => void;
-  onCancelled?: (cronId: string) => void;
+  readonly onTriggered: (event: CronTriggerEvent) => void;
+  readonly onScheduled: (def: CronJobDef) => void;
+  readonly onCancelled: (cronId: string) => void;
 }
 
 interface CronEntry {
@@ -27,7 +27,7 @@ export class CronScheduler {
   private readonly jobs = new Map<string, CronEntry>();
   private readonly handlers: CronEventHandlers;
 
-  constructor(handlers: CronEventHandlers = {}) {
+  constructor(handlers: CronEventHandlers) {
     this.handlers = handlers;
   }
 
@@ -49,7 +49,7 @@ export class CronScheduler {
         triggeredAt: new Date().toISOString(),
       };
       log.debug(`Cron triggered: ${def.cronId} — ${def.label}`);
-      this.handlers.onTriggered?.(event);
+      this.handlers.onTriggered(event);
     };
 
     if (parsed.type === 'once') {
@@ -72,7 +72,7 @@ export class CronScheduler {
       this.jobs.set(def.cronId, { def, timer, isInterval: true });
     }
 
-    this.handlers.onScheduled?.(def);
+    this.handlers.onScheduled(def);
   }
 
   /** Cancel a scheduled cron job. */
@@ -86,7 +86,7 @@ export class CronScheduler {
       }
       this.jobs.delete(cronId);
       log.info(`Cron cancelled: ${cronId}`);
-      this.handlers.onCancelled?.(cronId);
+      this.handlers.onCancelled(cronId);
     }
   }
 

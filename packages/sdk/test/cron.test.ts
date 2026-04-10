@@ -61,9 +61,15 @@ describe('CronScheduler', () => {
     vi.useRealTimers();
   });
 
+  const noop = () => {};
+
   it('fires recurring job on interval', async () => {
     const triggered: string[] = [];
-    const scheduler = new CronScheduler({ onTriggered: (e) => triggered.push(e.cronId) });
+    const scheduler = new CronScheduler({
+      onTriggered: (e) => triggered.push(e.cronId),
+      onScheduled: noop,
+      onCancelled: noop,
+    });
 
     scheduler.schedule({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'Test' });
 
@@ -75,7 +81,11 @@ describe('CronScheduler', () => {
 
   it('fires one-shot job and auto-cancels', async () => {
     const triggered: string[] = [];
-    const scheduler = new CronScheduler({ onTriggered: (e) => triggered.push(e.cronId) });
+    const scheduler = new CronScheduler({
+      onTriggered: (e) => triggered.push(e.cronId),
+      onScheduled: noop,
+      onCancelled: noop,
+    });
 
     const future = new Date(Date.now() + 2000).toISOString();
     scheduler.schedule({ cronId: 'c1', expression: `at ${future}`, newioSessionId: 's1', label: 'Once' });
@@ -88,7 +98,7 @@ describe('CronScheduler', () => {
   });
 
   it('skips one-shot with past trigger time', () => {
-    const scheduler = new CronScheduler();
+    const scheduler = new CronScheduler({ onTriggered: noop, onScheduled: noop, onCancelled: noop });
     const past = new Date(Date.now() - 1000).toISOString();
     scheduler.schedule({ cronId: 'c1', expression: `at ${past}`, newioSessionId: 's1', label: 'Past' });
     expect(scheduler.list()).toHaveLength(0);
@@ -97,7 +107,11 @@ describe('CronScheduler', () => {
 
   it('replaces existing job with same id', async () => {
     const triggered: string[] = [];
-    const scheduler = new CronScheduler({ onTriggered: (e) => triggered.push(e.label ?? '') });
+    const scheduler = new CronScheduler({
+      onTriggered: (e) => triggered.push(e.label ?? ''),
+      onScheduled: noop,
+      onCancelled: noop,
+    });
 
     scheduler.schedule({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'First' });
     scheduler.schedule({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'Second' });
@@ -110,7 +124,11 @@ describe('CronScheduler', () => {
 
   it('calls onScheduled callback', () => {
     const scheduled: string[] = [];
-    const scheduler = new CronScheduler({ onScheduled: (def) => scheduled.push(def.cronId) });
+    const scheduler = new CronScheduler({
+      onTriggered: noop,
+      onScheduled: (def) => scheduled.push(def.cronId),
+      onCancelled: noop,
+    });
 
     scheduler.schedule({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'Test' });
     expect(scheduled).toEqual(['c1']);
@@ -120,7 +138,11 @@ describe('CronScheduler', () => {
 
   it('calls onCancelled callback', () => {
     const cancelled: string[] = [];
-    const scheduler = new CronScheduler({ onCancelled: (id) => cancelled.push(id) });
+    const scheduler = new CronScheduler({
+      onTriggered: noop,
+      onScheduled: noop,
+      onCancelled: (id) => cancelled.push(id),
+    });
 
     scheduler.schedule({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'Test' });
     scheduler.cancel('c1');
@@ -130,14 +152,18 @@ describe('CronScheduler', () => {
   });
 
   it('cancel is a no-op for unknown cronId', () => {
-    const scheduler = new CronScheduler();
+    const scheduler = new CronScheduler({ onTriggered: noop, onScheduled: noop, onCancelled: noop });
     scheduler.cancel('nonexistent'); // should not throw
     scheduler.dispose();
   });
 
   it('dispose cancels all jobs', async () => {
     const triggered: string[] = [];
-    const scheduler = new CronScheduler({ onTriggered: (e) => triggered.push(e.cronId) });
+    const scheduler = new CronScheduler({
+      onTriggered: (e) => triggered.push(e.cronId),
+      onScheduled: noop,
+      onCancelled: noop,
+    });
 
     scheduler.schedule({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'A' });
     scheduler.schedule({ cronId: 'c2', expression: 'every 1s', newioSessionId: 's1', label: 'B' });
@@ -149,7 +175,7 @@ describe('CronScheduler', () => {
   });
 
   it('list returns all active jobs', () => {
-    const scheduler = new CronScheduler();
+    const scheduler = new CronScheduler({ onTriggered: noop, onScheduled: noop, onCancelled: noop });
     scheduler.schedule({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'A' });
     scheduler.schedule({ cronId: 'c2', expression: 'every 2s', newioSessionId: 's1', label: 'B' });
 
@@ -166,6 +192,8 @@ describe('CronScheduler', () => {
       onTriggered: (e) => {
         event = e;
       },
+      onScheduled: noop,
+      onCancelled: noop,
     });
 
     scheduler.schedule({

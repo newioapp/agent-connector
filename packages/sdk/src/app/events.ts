@@ -11,7 +11,7 @@ import type { ConversationType } from '../core/types.js';
 import type { NewioAppStore } from './store.js';
 import type { AppEventHandlers, NewioIdentity } from './types.js';
 import type { PendingActions } from './pending-actions.js';
-import { MessageProcessor } from './message-processor.js';
+import type { MessageProcessor } from './message-processor.js';
 
 const log = getLogger('events');
 
@@ -23,9 +23,8 @@ export function wireEvents(
   identity: NewioIdentity,
   getHandlers: () => Partial<AppEventHandlers>,
   pendingActions: PendingActions,
+  processor: MessageProcessor,
 ): void {
-  const processor = new MessageProcessor(store, client, identity, getHandlers, pendingActions);
-
   /** Per-conversation queue to serialize message processing and prevent duplicate backfills. */
   const messageQueue = new Map<string, Promise<void>>();
 
