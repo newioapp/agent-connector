@@ -45,12 +45,16 @@ export class SessionStream {
     const u = params.update;
     const type = u.sessionUpdate;
     let text: string | undefined;
-    if (type !== 'agent_message_chunk') {
-      console.log(JSON.stringify(params.update, null, 2));
-    }
     if ('content' in u) {
-      const content = u.content as { type: string; text?: string };
-      if (content.type === 'text') {
+      const content = u.content;
+      if (
+        typeof content === 'object' &&
+        content !== null &&
+        'type' in content &&
+        content.type === 'text' &&
+        'text' in content &&
+        typeof content.text === 'string'
+      ) {
         text = content.text;
       }
     }
