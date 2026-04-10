@@ -82,7 +82,10 @@ function mockClient(contacts: ContactRecord[] = [], conversations: ConversationL
     listMessages: vi.fn().mockResolvedValue({ messages: [] }),
     listIncomingRequests: vi.fn().mockResolvedValue({ contacts: [] }),
     sendFriendRequest: vi.fn().mockResolvedValue({}),
+    acceptFriendRequest: vi.fn().mockResolvedValue({}),
+    rejectFriendRequest: vi.fn().mockResolvedValue({}),
     removeFriend: vi.fn().mockResolvedValue(undefined),
+    getUserSummaries: vi.fn().mockResolvedValue({ users: [] }),
   } as unknown as NewioClient;
 }
 
@@ -428,6 +431,83 @@ describe('NewioApp', () => {
 
       expect(client.removeFriend).toHaveBeenCalledWith({ userId: 'user-alice' });
     });
+
+    it('listIncomingFriendRequests returns summaries from store', async () => {
+      const { app } = await createApp();
+
+      // Simulate a friend request arriving via WebSocket
+      eventHandlers.get('contact.request_received')?.({
+        type: 'contact.request_received',
+        timestamp: '2026-01-01T00:00:00Z',
+        payload: {
+          contact: makeContact({
+            contactId: 'req-1',
+            friendUsername: 'bob',
+            friendDisplayName: 'Bob',
+            status: 'pending',
+            note: 'Hey!',
+          }),
+        },
+      });
+
+      const requests = app.listIncomingFriendRequests();
+      expect(requests).toHaveLength(1);
+      expect(requests[0].username).toBe('bob');
+      expect(requests[0].note).toBe('Hey!');
+    });
+
+    it('acceptFriendRequestByUsername accepts and indexes contact', async () => {
+      const { app, client } = await createApp();
+
+      // Simulate incoming request
+      eventHandlers.get('contact.request_received')?.({
+        type: 'contact.request_received',
+        timestamp: '2026-01-01T00:00:00Z',
+        payload: {
+          contact: makeContact({ contactId: 'req-bob', friendUsername: 'bob', status: 'pending' }),
+        },
+      });
+
+      (client.acceptFriendRequest as ReturnType<typeof vi.fn>).mockResolvedValue({});
+      await app.acceptFriendRequestByUsername('bob');
+
+      expect(client.acceptFriendRequest).toHaveBeenCalledWith({ requestId: 'req-bob' });
+      expect(app.isContact('bob')).toBe(true);
+      expect(app.listIncomingFriendRequests()).toHaveLength(0);
+    });
+
+    it('rejectFriendRequestByUsername rejects and removes from store', async () => {
+      const { app, client } = await createApp();
+
+      eventHandlers.get('contact.request_received')?.({
+        type: 'contact.request_received',
+        timestamp: '2026-01-01T00:00:00Z',
+        payload: {
+          contact: makeContact({ contactId: 'req-bob', friendUsername: 'bob', status: 'pending' }),
+        },
+      });
+
+      (client.rejectFriendRequest as ReturnType<typeof vi.fn>).mockResolvedValue({});
+      await app.rejectFriendRequestByUsername('bob');
+
+      expect(client.rejectFriendRequest).toHaveBeenCalledWith({ requestId: 'req-bob' });
+      expect(app.listIncomingFriendRequests()).toHaveLength(0);
+    });
+
+    it('acceptFriendRequestByUsername backfills from API when not in cache', async () => {
+      const { app, client } = await createApp();
+
+      // No request in cache — should call listIncomingRequests
+      (client.listIncomingRequests as ReturnType<typeof vi.fn>).mockResolvedValue({
+        contacts: [makeContact({ contactId: 'req-bob', friendUsername: 'bob', status: 'pending' })],
+      });
+      (client.acceptFriendRequest as ReturnType<typeof vi.fn>).mockResolvedValue({});
+
+      await app.acceptFriendRequestByUsername('bob');
+
+      expect(client.listIncomingRequests).toHaveBeenCalled();
+      expect(client.acceptFriendRequest).toHaveBeenCalledWith({ requestId: 'req-bob' });
+    });
   });
 
   describe('createGroup', () => {
@@ -475,6 +555,157 @@ describe('NewioApp', () => {
     it('returns undefined for unknown conversation', async () => {
       const { app } = await createApp();
       expect(app.getSessionId('unknown')).toBeUndefined();
+    });
+  });
+
+  describe('resolveSessionId', () => {
+    it('returns cached sessionId', async () => {
+      const conv = makeConversation({ conversationId: 'c1', sessionId: 's1' });
+      const { app } = await createApp([], [conv]);
+
+      const sessionId = await app.resolveSessionId('c1');
+      expect(sessionId).toBe('s1');
+    });
+
+    it('fetches from API when not cached', async () => {
+      const { app, client } = await createApp();
+      (client.getConversation as ReturnType<typeof vi.fn>).mockResolvedValue({
+        conversationId: 'c2',
+        type: 'dm',
+        members: [{ userId: 'me', sessionId: 's-from-api' }],
+      });
+
+      const sessionId = await app.resolveSessionId('c2');
+      expect(sessionId).toBe('s-from-api');
+      expect(client.getConversation).toHaveBeenCalledWith({ conversationId: 'c2' });
+    });
+
+    it('throws when no sessionId exists', async () => {
+      const { app, client } = await createApp();
+      (client.getConversation as ReturnType<typeof vi.fn>).mockResolvedValue({
+        conversationId: 'c3',
+        type: 'dm',
+        members: [{ userId: 'me' }],
+      });
+
+      await expect(app.resolveSessionId('c3')).rejects.toThrow('No session ID found');
+    });
+  });
+
+  describe('getMembers', () => {
+    it('returns member summaries with contact info', async () => {
+      const contact = makeContact({ contactId: 'user-alice', friendUsername: 'alice', friendDisplayName: 'Alice' });
+      const { app, client } = await createApp([contact]);
+      (client.getConversation as ReturnType<typeof vi.fn>).mockResolvedValue({
+        conversationId: 'c1',
+        type: 'dm',
+        members: [
+          { userId: 'me', role: 'member', accountType: 'agent' },
+          { userId: 'user-alice', role: 'member', accountType: 'human' },
+        ],
+      });
+
+      const members = await app.getMembers('c1');
+      expect(members).toHaveLength(2);
+
+      const self = members.find((m) => m.username === 'myagent');
+      expect(self?.displayName).toBe('My Agent');
+
+      const alice = members.find((m) => m.username === 'alice');
+      expect(alice?.displayName).toBe('Alice');
+    });
+  });
+
+  describe('sendActionRequest', () => {
+    it('sends action message and returns response on resolve', async () => {
+      const { app, client } = await createApp();
+
+      const action = {
+        requestId: 'req-1',
+        type: 'permission',
+        title: 'Allow?',
+        options: [{ optionId: 'yes', label: 'Yes' }],
+      };
+      const promise = app.sendActionRequest('conv-1', action, ['owner-1'], 5000);
+
+      expect(client.sendMessage).toHaveBeenCalledWith({
+        conversationId: 'conv-1',
+        content: { action },
+        visibleTo: ['owner-1'],
+      });
+
+      // Simulate response arriving via WebSocket
+      eventHandlers.get('message.new')?.({
+        type: 'message.new',
+        timestamp: '2026-01-01T00:00:00Z',
+        payload: {
+          conversationId: 'conv-1',
+          messageId: 'resp-1',
+          senderId: 'owner-1',
+          content: { response: { requestId: 'req-1', selectedOptionId: 'yes' } },
+          sequenceNumber: 2,
+          createdAt: '2026-01-01T00:00:00Z',
+          conversationType: 'dm',
+        },
+      });
+
+      const response = await promise;
+      expect(response.selectedOptionId).toBe('yes');
+    });
+  });
+
+  describe('getOwnerDisplayName', () => {
+    it('returns owner display name from contacts', async () => {
+      const ownerContact = makeContact({ contactId: 'owner-1', friendUsername: 'nan', friendDisplayName: 'Nan' });
+      const { app } = await createApp([ownerContact]);
+
+      expect(app.getOwnerDisplayName()).toBe('Nan');
+    });
+
+    it('falls back to username when no displayName', async () => {
+      const ownerContact = makeContact({ contactId: 'owner-1', friendUsername: 'nan', friendDisplayName: undefined });
+      const { app } = await createApp([ownerContact]);
+
+      expect(app.getOwnerDisplayName()).toBe('nan');
+    });
+
+    it('returns undefined when owner not in contacts', async () => {
+      const { app } = await createApp();
+      expect(app.getOwnerDisplayName()).toBeUndefined();
+    });
+  });
+
+  describe('getConversation', () => {
+    it('returns conversation summary', async () => {
+      const conv = makeConversation({ conversationId: 'c1', type: 'group', name: 'Team' });
+      const { app } = await createApp([], [conv]);
+
+      const result = app.getConversation('c1');
+      expect(result?.name).toBe('Team');
+      expect(result?.type).toBe('group');
+    });
+
+    it('returns undefined for unknown conversation', async () => {
+      const { app } = await createApp();
+      expect(app.getConversation('unknown')).toBeUndefined();
+    });
+  });
+
+  describe('getAllConversations', () => {
+    it('returns all conversations as summaries', async () => {
+      const convs = [makeConversation({ conversationId: 'c1' }), makeConversation({ conversationId: 'c2' })];
+      const { app } = await createApp([], convs);
+
+      expect(app.getAllConversations()).toHaveLength(2);
+    });
+  });
+
+  describe('getAllContacts', () => {
+    it('returns all contacts as summaries', async () => {
+      const contacts = [makeContact({ contactId: 'u1' }), makeContact({ contactId: 'u2' })];
+      const { app } = await createApp(contacts);
+
+      expect(app.getAllContacts()).toHaveLength(2);
     });
   });
 

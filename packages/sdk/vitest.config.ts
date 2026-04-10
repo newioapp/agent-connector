@@ -5,25 +5,25 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       thresholds: {
-        lines: 80,
-        branches: 78,
-        functions: 80,
-        statements: 80,
+        lines: 90,
+        branches: 85,
+        functions: 95,
+        statements: 90,
       },
       exclude: [
-        // newio-app.ts has integration-heavy code (auth flows, WebSocket connect,
-        // backfill) that requires real network calls. Unit-testable portions are
-        // covered via createFromComponents() tests.
-        'src/app/newio-app.ts',
-        // events.ts wires WebSocket events to store updates — requires live
-        // WebSocket + store integration. Core logic tested via newio-app tests.
-        'src/app/events.ts',
-        // pending-actions.ts is wired into events.ts — tested via integration.
-        'src/app/pending-actions.ts',
-        // media.ts does presigned URL upload/download — requires real S3.
+        // Build config — not source code.
+        'tsup.config.ts',
+        'vitest.config.ts',
+        'dist/**',
+        // Pure type definitions — no runtime code.
+        'src/core/types.ts',
+        'src/core/events.ts',
+        'src/app/types.ts',
+        // Barrel re-exports — no logic.
+        'src/index.ts',
+        'src/app/index.ts',
+        // media.ts does presigned URL upload/download + filesystem I/O — requires real S3 + fs.
         'src/app/media.ts',
-        // logger.ts is trivial glue (global handler dispatch + console wrapper).
-        'src/core/logger.ts',
       ],
     },
   },
