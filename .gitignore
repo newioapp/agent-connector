@@ -9,3 +9,5 @@ temp.md.kiro/
 .kiro/
 temp.md
 .playwright-cli/
+.env
+.env.*

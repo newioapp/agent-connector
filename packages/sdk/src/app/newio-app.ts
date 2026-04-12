@@ -67,11 +67,34 @@ export type {
 export type { StorePersistence } from './store.js';
 export { NewioAppStore } from './store.js';
 
-/** Default Newio REST API base URL. */
-export const NEWIO_API_BASE_URL = 'https://api.conduit.qinnan.dev';
+/** Default Newio REST API base URL (production). */
+export const NEWIO_API_BASE_URL = 'https://api.newio.app';
 
-/** Default Newio WebSocket URL. */
-export const NEWIO_WS_URL = 'wss://ws.conduit.qinnan.dev';
+/** Default Newio WebSocket URL (production). */
+export const NEWIO_WS_URL = 'wss://ws.newio.app';
+
+/** Newio client configuration (API + WebSocket URLs). */
+export interface NewioClientConfig {
+  readonly apiBaseUrl: string;
+  readonly wsBaseUrl: string;
+}
+
+/**
+ * Get Newio client configuration.
+ *
+ * Returns production URLs by default. Override with explicit parameters
+ * or environment variables (`NEWIO_API_BASE_URL`, `NEWIO_WS_BASE_URL`).
+ *
+ * Priority: explicit params > env vars > prod defaults.
+ */
+export function getClientConfig(overrides?: Partial<NewioClientConfig>): NewioClientConfig {
+  const envApi = typeof process !== 'undefined' ? process.env['NEWIO_API_BASE_URL'] : undefined;
+  const envWs = typeof process !== 'undefined' ? process.env['NEWIO_WS_BASE_URL'] : undefined;
+  return {
+    apiBaseUrl: overrides?.apiBaseUrl ?? envApi ?? NEWIO_API_BASE_URL,
+    wsBaseUrl: overrides?.wsBaseUrl ?? envWs ?? NEWIO_WS_URL,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Options
