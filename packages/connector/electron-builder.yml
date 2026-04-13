@@ -32,6 +32,7 @@ dmg:
 # --- Linux ---
 linux:
   category: Network
+  maintainer: Nan Qin
   artifactName: newio-agent-connector-${version}-linux-${arch}.${ext}
   target:
     - AppImage

@@ -23,7 +23,6 @@ jobs:
       version: ${{ steps.parse.outputs.version }}
       channel: ${{ steps.parse.outputs.channel }}
       stage: ${{ steps.parse.outputs.stage }}
-      publish_url: ${{ steps.parse.outputs.publish_url }}
       app_display_name: ${{ steps.parse.outputs.app_display_name }}
     steps:
       - name: Parse tag
@@ -52,18 +51,15 @@ jobs:
           echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
           echo "stage=$STAGE" >> "$GITHUB_OUTPUT"
 
-          # Stage-specific config
+          # Stage-specific config (non-secret values only)
           case "$STAGE" in
             dev)
-              echo "publish_url=${{ secrets.DEV_PUBLISH_URL }}" >> "$GITHUB_OUTPUT"
               echo "app_display_name=Newio Agent Connector (Dev)" >> "$GITHUB_OUTPUT"
               ;;
             integ)
-              echo "publish_url=${{ secrets.INTEG_PUBLISH_URL }}" >> "$GITHUB_OUTPUT"
               echo "app_display_name=Newio Agent Connector (Integ)" >> "$GITHUB_OUTPUT"
               ;;
             prod)
-              echo "publish_url=${{ secrets.PROD_PUBLISH_URL }}" >> "$GITHUB_OUTPUT"
               echo "app_display_name=Newio Agent Connector" >> "$GITHUB_OUTPUT"
               ;;
           esac
@@ -114,7 +110,7 @@ jobs:
       - name: Build Electron app
         run: pnpm --filter @newio/connector exec electron-builder --mac --${{ matrix.arch }} -c.productName="${{ needs.prepare.outputs.app_display_name }}"
         env:
-          PUBLISH_URL: ${{ needs.prepare.outputs.publish_url }}
+          PUBLISH_URL: ${{ secrets[format('{0}_PUBLISH_URL', needs.prepare.outputs.stage == 'dev' && 'DEV' || needs.prepare.outputs.stage == 'integ' && 'INTEG' || 'PROD')] }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -165,7 +161,7 @@ jobs:
       - name: Build Electron app
         run: pnpm --filter @newio/connector exec electron-builder --linux --${{ matrix.arch }} -c.productName="${{ needs.prepare.outputs.app_display_name }}"
         env:
-          PUBLISH_URL: ${{ needs.prepare.outputs.publish_url }}
+          PUBLISH_URL: ${{ secrets[format('{0}_PUBLISH_URL', needs.prepare.outputs.stage == 'dev' && 'DEV' || needs.prepare.outputs.stage == 'integ' && 'INTEG' || 'PROD')] }}
 
       - uses: actions/upload-artifact@v6
         with:
