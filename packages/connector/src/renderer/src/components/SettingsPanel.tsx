@@ -17,11 +17,6 @@ const UPDATE_MODES: readonly { readonly value: UpdateMode; readonly label: strin
   { value: 'disabled', label: 'Disabled' },
 ];
 
-const UPDATE_CHANNELS: readonly { readonly value: UpdateChannel; readonly label: string }[] = [
-  { value: 'latest', label: 'Stable' },
-  { value: 'beta', label: 'Beta' },
-];
-
 function SettingRow({
   label,
   description,
@@ -92,7 +87,8 @@ export function SettingsPanel(): React.JSX.Element {
     setUpdateMode(mode);
   }
 
-  async function handleUpdateChannelChange(channel: UpdateChannel): Promise<void> {
+  async function handleUpdateChannelChange(checked: boolean): Promise<void> {
+    const channel: UpdateChannel = checked ? 'beta' : 'latest';
     await window.api.setUpdateChannel(channel);
     setUpdateChannel(channel);
   }
@@ -145,12 +141,17 @@ export function SettingsPanel(): React.JSX.Element {
           </div>
         </SettingRow>
 
-        <SettingRow label="Update Channel" description="Receive beta updates before they're released to everyone">
-          <Dropdown
-            value={updateChannel}
-            options={UPDATE_CHANNELS}
-            onChange={(channel) => void handleUpdateChannelChange(channel)}
-          />
+        <SettingRow label="Beta Updates" description="Get early access to new features">
+          <button
+            role="switch"
+            aria-checked={updateChannel === 'beta'}
+            onClick={() => void handleUpdateChannelChange(updateChannel !== 'beta')}
+            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors ${updateChannel === 'beta' ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${updateChannel === 'beta' ? 'translate-x-[18px]' : 'translate-x-0.5'}`}
+            />
+          </button>
         </SettingRow>
       </div>
     </div>
