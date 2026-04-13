@@ -11,9 +11,9 @@ rm -rf dist
 export APP_DISPLAY_NAME="Newio Agent Connector (Dev)"
 export PUBLISH_URL=https://cdn.nan-dev.newio.app/downloads/connector
 
-electron-vite build
+pnpm exec electron-vite build
 
-electron-builder --mac --arm64 \
+pnpm exec electron-builder --mac --arm64 \
   -c.productName="$APP_DISPLAY_NAME"
 
 echo "✓ Build complete: dist/mac-arm64/$APP_DISPLAY_NAME.app"

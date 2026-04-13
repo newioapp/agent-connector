@@ -7,9 +7,9 @@ export APP_DISPLAY_NAME="Newio Agent Connector (Dev)"
 export PUBLISH_URL=https://cdn.nan-dev.newio.app/downloads/connector
 export CSC_IDENTITY_AUTO_DISCOVERY=false
 
-electron-vite build
+pnpm exec electron-vite build
 
-electron-builder --mac --arm64 \
+pnpm exec electron-builder --mac --arm64 \
   -c.mac.notarize=false \
   -c.mac.entitlementsInherit=build/entitlements.mac.unsigned.plist \
   -c.productName="$APP_DISPLAY_NAME"
