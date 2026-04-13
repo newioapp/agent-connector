@@ -8,6 +8,7 @@
     "email": "qinnan0416@gmail.com",
     "url": "https://newio.app"
   },
+  "homepage": "https://newio.app",
   "main": "./out/main/index.js",
   "scripts": {
     "postinstall": "electron-rebuild",
