@@ -25,6 +25,8 @@ jobs:
 
       - name: Build
         run: pnpm build
+        env:
+          ENABLE_DEV_TOOLS: true
 
       - name: Lint
         run: pnpm lint

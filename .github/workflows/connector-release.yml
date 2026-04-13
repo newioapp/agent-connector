@@ -24,6 +24,7 @@ jobs:
       channel: ${{ steps.parse.outputs.channel }}
       stage: ${{ steps.parse.outputs.stage }}
       app_display_name: ${{ steps.parse.outputs.app_display_name }}
+      enable_dev_tools: ${{ steps.parse.outputs.enable_dev_tools }}
     steps:
       - name: Parse tag
         id: parse
@@ -55,12 +56,15 @@ jobs:
           case "$STAGE" in
             dev)
               echo "app_display_name=Newio Agent Connector (Dev)" >> "$GITHUB_OUTPUT"
+              echo "enable_dev_tools=true" >> "$GITHUB_OUTPUT"
               ;;
             integ)
               echo "app_display_name=Newio Agent Connector (Integ)" >> "$GITHUB_OUTPUT"
+              echo "enable_dev_tools=true" >> "$GITHUB_OUTPUT"
               ;;
             prod)
               echo "app_display_name=Newio Agent Connector" >> "$GITHUB_OUTPUT"
+              echo "enable_dev_tools=false" >> "$GITHUB_OUTPUT"
               ;;
           esac
 
@@ -87,6 +91,7 @@ jobs:
           API_BASE_URL: ${{ secrets[format('{0}_API_BASE_URL', needs.prepare.outputs.stage == 'dev' && 'DEV' || needs.prepare.outputs.stage == 'integ' && 'INTEG' || 'PROD')] }}
           WS_BASE_URL: ${{ secrets[format('{0}_WS_BASE_URL', needs.prepare.outputs.stage == 'dev' && 'DEV' || needs.prepare.outputs.stage == 'integ' && 'INTEG' || 'PROD')] }}
           APP_DISPLAY_NAME: ${{ needs.prepare.outputs.app_display_name }}
+          ENABLE_DEV_TOOLS: ${{ needs.prepare.outputs.enable_dev_tools }}
 
       - name: Set version
         run: npm version "${{ needs.prepare.outputs.version }}" --no-git-tag-version --allow-same-version
@@ -153,6 +158,7 @@ jobs:
           API_BASE_URL: ${{ secrets[format('{0}_API_BASE_URL', needs.prepare.outputs.stage == 'dev' && 'DEV' || needs.prepare.outputs.stage == 'integ' && 'INTEG' || 'PROD')] }}
           WS_BASE_URL: ${{ secrets[format('{0}_WS_BASE_URL', needs.prepare.outputs.stage == 'dev' && 'DEV' || needs.prepare.outputs.stage == 'integ' && 'INTEG' || 'PROD')] }}
           APP_DISPLAY_NAME: ${{ needs.prepare.outputs.app_display_name }}
+          ENABLE_DEV_TOOLS: ${{ needs.prepare.outputs.enable_dev_tools }}
 
       - name: Set version
         run: npm version "${{ needs.prepare.outputs.version }}" --no-git-tag-version --allow-same-version
