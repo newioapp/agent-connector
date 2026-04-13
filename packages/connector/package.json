@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "description": "Agent Connector — connect AI agents to the Newio messaging platform",
-  "author": "Nan Qin",
+  "author": "Nan Qin <qinnan0416@gmail.com>",
   "main": "./out/main/index.js",
   "scripts": {
     "postinstall": "electron-rebuild",
