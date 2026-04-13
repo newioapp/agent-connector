@@ -1,4 +1,4 @@
-import { app, BrowserWindow, nativeTheme, shell } from 'electron';
+import { app, BrowserWindow, Menu, nativeTheme, shell } from 'electron';
 import { join } from 'path';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
 import { setLogHandler } from '@newio/sdk';
@@ -25,8 +25,20 @@ app.name = __APP_DISPLAY_NAME__;
 void app.whenReady().then(async () => {
   electronApp.setAppUserModelId('dev.newio.connector');
 
+  // Hide "Toggle Developer Tools" from the View menu in production builds
+  if (!__ENABLE_DEV_TOOLS__) {
+    const menu = Menu.getApplicationMenu();
+    const viewMenu = menu?.items.find((item) => item.label === 'View');
+    const devToolsItem = viewMenu?.submenu?.items.find((item) => item.role === 'toggleDevTools');
+    if (devToolsItem) {
+      devToolsItem.visible = false;
+    }
+  }
+
   app.on('browser-window-created', (_, window) => {
-    optimizer.watchWindowShortcuts(window);
+    if (__ENABLE_DEV_TOOLS__) {
+      optimizer.watchWindowShortcuts(window);
+    }
   });
 
   const store = createStore();
