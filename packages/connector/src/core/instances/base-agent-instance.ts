@@ -10,7 +10,7 @@
  * Each session processes its own event queue concurrently.
  * Subclasses implement session creation and greeting logic.
  */
-import { ApprovalTimeoutError, NewioApp, NEWIO_API_BASE_URL, NEWIO_WS_URL, NotFoundApiError } from '@newio/sdk';
+import { ApprovalTimeoutError, NewioApp, NotFoundApiError } from '@newio/sdk';
 import type { IncomingMessage, ContactEvent, CronTriggerEvent, ActionOption, ActionRequest } from '@newio/sdk';
 import { NewioMcpServer, startUdsServer } from '@newio/mcp-server';
 import type { Server } from 'net';
@@ -82,8 +82,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
         agentId: this.config.newio?.agentId,
         username: this.config.newio?.username,
         name: this.config.newio?.displayName ?? 'Agent',
-        apiBaseUrl: NEWIO_API_BASE_URL,
-        wsUrl: NEWIO_WS_URL,
+        apiBaseUrl: __API_BASE_URL__,
+        wsUrl: __WS_BASE_URL__,
         wsFactory: (url) => new WebSocket(url) as never,
         tokens: storedTokens,
         signal: abortController.signal,

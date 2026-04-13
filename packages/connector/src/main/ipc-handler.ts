@@ -16,12 +16,13 @@ import type {
   UpdateAgentInput,
   AgentStatusInfo,
   UpdateMode,
+  UpdateChannel,
 } from '../shared/types';
 import type { StoreSchema } from './store';
 import type { AgentConfigManager } from '../core/agent-config-manager';
 import type { AgentRuntimeManager } from '../core/agent-runtime-manager';
 import { getShellEnv, listAvailableShells } from './shell-env';
-import { applyUpdateMode, manualCheckForUpdates } from './auto-updater';
+import { applyUpdateMode, applyUpdateChannel, manualCheckForUpdates } from './auto-updater';
 
 interface IpcHandlerDeps {
   readonly store: Store<StoreSchema>;
@@ -68,6 +69,15 @@ export class IpcHandler implements IpcApi {
   async setUpdateMode(mode: UpdateMode): Promise<void> {
     this.store.set('updateMode', mode);
     applyUpdateMode(mode);
+  }
+
+  async getUpdateChannel(): Promise<UpdateChannel> {
+    return this.store.get('updateChannel');
+  }
+
+  async setUpdateChannel(channel: UpdateChannel): Promise<void> {
+    this.store.set('updateChannel', channel);
+    applyUpdateChannel(channel);
   }
 
   async checkForUpdates(): Promise<void> {

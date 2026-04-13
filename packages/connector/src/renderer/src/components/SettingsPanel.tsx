@@ -1,9 +1,9 @@
 /**
- * Settings panel — theme and auto-update preferences.
+ * Settings panel — theme, auto-update, and update channel preferences.
  */
 import { useEffect, useState } from 'react';
 import { Monitor, Sun, Moon } from 'lucide-react';
-import type { ThemeSource, UpdateMode } from '../../../shared/types';
+import type { ThemeSource, UpdateMode, UpdateChannel } from '../../../shared/types';
 
 const THEMES: readonly { readonly value: ThemeSource; readonly label: string; readonly icon: typeof Monitor }[] = [
   { value: 'system', label: 'System', icon: Monitor },
@@ -64,10 +64,12 @@ function Dropdown<T extends string>({
 export function SettingsPanel(): React.JSX.Element {
   const [theme, setTheme] = useState<ThemeSource>('system');
   const [updateMode, setUpdateMode] = useState<UpdateMode>('auto');
+  const [updateChannel, setUpdateChannel] = useState<UpdateChannel>('latest');
 
   useEffect(() => {
     void window.api.getTheme().then(setTheme);
     void window.api.getUpdateMode().then(setUpdateMode);
+    void window.api.getUpdateChannel().then(setUpdateChannel);
   }, []);
 
   async function handleThemeChange(t: ThemeSource): Promise<void> {
@@ -83,6 +85,12 @@ export function SettingsPanel(): React.JSX.Element {
   async function handleUpdateModeChange(mode: UpdateMode): Promise<void> {
     await window.api.setUpdateMode(mode);
     setUpdateMode(mode);
+  }
+
+  async function handleUpdateChannelChange(checked: boolean): Promise<void> {
+    const channel: UpdateChannel = checked ? 'beta' : 'latest';
+    await window.api.setUpdateChannel(channel);
+    setUpdateChannel(channel);
   }
 
   function handleCheck(): void {
@@ -131,6 +139,19 @@ export function SettingsPanel(): React.JSX.Element {
               Check Now
             </button>
           </div>
+        </SettingRow>
+
+        <SettingRow label="Beta Updates" description="Get early access to new features">
+          <button
+            role="switch"
+            aria-checked={updateChannel === 'beta'}
+            onClick={() => void handleUpdateChannelChange(updateChannel !== 'beta')}
+            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors ${updateChannel === 'beta' ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${updateChannel === 'beta' ? 'translate-x-[18px]' : 'translate-x-0.5'}`}
+            />
+          </button>
         </SettingRow>
       </div>
     </div>

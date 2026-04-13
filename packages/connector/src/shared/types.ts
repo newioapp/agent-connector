@@ -10,4 +10,5 @@ export type {
   ThemeSource,
   AgentStatusInfo,
   UpdateMode,
+  UpdateChannel,
 } from '../core/types';

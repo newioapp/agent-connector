@@ -11,12 +11,23 @@ if (!process.stdout.clearLine) {
   process.stdout.moveCursor = (): boolean => true;
 }
 
+// Build-time environment config — injected as compile-time constants.
+// CI sets these via env vars; local dev falls back to prod defaults.
+const apiBaseUrl = process.env.API_BASE_URL ?? 'https://api.newio.app';
+const wsBaseUrl = process.env.WS_BASE_URL ?? 'wss://ws.newio.app';
+const appDisplayName = process.env.APP_DISPLAY_NAME ?? 'Newio Agent Connector';
+
 export default defineConfig({
   main: {
     build: {
       rollupOptions: {
         external: ['@anthropic-ai/claude-agent-sdk', '@newio/mcp-server', 'better-sqlite3', 'electron-store'],
       },
+    },
+    define: {
+      __API_BASE_URL__: JSON.stringify(apiBaseUrl),
+      __WS_BASE_URL__: JSON.stringify(wsBaseUrl),
+      __APP_DISPLAY_NAME__: JSON.stringify(appDisplayName),
     },
   },
   preload: {

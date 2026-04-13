@@ -229,7 +229,8 @@ export type {
 } from './core/events.js';
 
 // NewioApp — high-level agent client
-export { NewioApp, NEWIO_API_BASE_URL, NEWIO_WS_URL } from './app/index.js';
+export { NewioApp, NEWIO_API_BASE_URL, NEWIO_WS_URL, getClientConfig } from './app/index.js';
+export type { NewioClientConfig } from './app/index.js';
 export { NewioAppStore } from './app/index.js';
 export { ActionTimeoutError, ActionAbortedError } from './app/index.js';
 export type { StorePersistence } from './app/index.js';

@@ -59,7 +59,9 @@ void app.whenReady().then(async () => {
 
   // Auto-update and force-update
   initAutoUpdater(store);
-  initForceUpdateCheck('https://api.conduit.qinnan.dev');
+  initForceUpdateCheck(__API_BASE_URL__);
+
+  app.name = __APP_DISPLAY_NAME__;
 
   await mainWindowManager.create();
 

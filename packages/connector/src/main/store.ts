@@ -3,7 +3,7 @@
  */
 import Store from 'electron-store';
 import type { ThemeSource, AgentConfig } from '../shared/types';
-import type { UpdateMode } from '../shared/types';
+import type { UpdateMode, UpdateChannel } from '../shared/types';
 
 export interface AgentTokens {
   readonly accessToken: string;
@@ -13,6 +13,7 @@ export interface AgentTokens {
 export interface StoreSchema {
   readonly themeSource: ThemeSource;
   readonly updateMode: UpdateMode;
+  readonly updateChannel: UpdateChannel;
   readonly windowBounds: {
     readonly x?: number;
     readonly y?: number;
@@ -29,6 +30,7 @@ export function createStore(): Store<StoreSchema> {
     defaults: {
       themeSource: 'system',
       updateMode: 'auto',
+      updateChannel: 'latest',
       windowBounds: { width: 960, height: 640 },
       agents: [],
       agentTokens: {},
