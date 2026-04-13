@@ -8,7 +8,7 @@ import { autoUpdater } from 'electron-updater';
 import { app, BrowserWindow, dialog, shell } from 'electron';
 import type Store from 'electron-store';
 import type { StoreSchema } from './store';
-import type { UpdateMode } from '../shared/types';
+import type { UpdateMode, UpdateChannel } from '../shared/types';
 import { Logger } from '../shared/logger';
 
 const log = new Logger('auto-updater');
@@ -80,6 +80,7 @@ export function initAutoUpdater(store: Store<StoreSchema>): void {
     log.info('Update error:', err.message);
   });
 
+  applyUpdateChannel(store.get('updateChannel'));
   applyUpdateMode(store.get('updateMode'));
 }
 
@@ -108,6 +109,17 @@ export function applyUpdateMode(mode: UpdateMode): void {
       });
     }, UPDATE_CHECK_INTERVAL_MS);
   }
+}
+
+/**
+ * Apply the update channel — sets the electron-updater channel.
+ * allowDowngrade is always enabled so users can switch from beta
+ * back to stable even when the stable version is numerically lower.
+ */
+export function applyUpdateChannel(channel: UpdateChannel): void {
+  log.info(`Setting update channel: ${channel}`);
+  autoUpdater.channel = channel;
+  autoUpdater.allowDowngrade = true;
 }
 
 // ---------------------------------------------------------------------------

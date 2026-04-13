@@ -20,7 +20,7 @@ publish:
 mac:
   notarize: false
   identity: null
-  artifactName: newio-connector-${version}-mac-${arch}.${ext}
+  artifactName: newio-agent-connector-${version}-mac-${arch}.${ext}
   target:
     - dmg
     - zip
@@ -30,7 +30,7 @@ dmg:
 # --- Linux ---
 linux:
   category: Network
-  artifactName: newio-connector-${version}-linux-${arch}.${ext}
+  artifactName: newio-agent-connector-${version}-linux-${arch}.${ext}
   target:
     - AppImage
     - deb

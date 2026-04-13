@@ -1,9 +1,9 @@
 /**
- * Settings panel — theme and auto-update preferences.
+ * Settings panel — theme, auto-update, and update channel preferences.
  */
 import { useEffect, useState } from 'react';
 import { Monitor, Sun, Moon } from 'lucide-react';
-import type { ThemeSource, UpdateMode } from '../../../shared/types';
+import type { ThemeSource, UpdateMode, UpdateChannel } from '../../../shared/types';
 
 const THEMES: readonly { readonly value: ThemeSource; readonly label: string; readonly icon: typeof Monitor }[] = [
   { value: 'system', label: 'System', icon: Monitor },
@@ -15,6 +15,11 @@ const UPDATE_MODES: readonly { readonly value: UpdateMode; readonly label: strin
   { value: 'auto', label: 'Automatic' },
   { value: 'manual', label: 'Manual' },
   { value: 'disabled', label: 'Disabled' },
+];
+
+const UPDATE_CHANNELS: readonly { readonly value: UpdateChannel; readonly label: string }[] = [
+  { value: 'latest', label: 'Stable' },
+  { value: 'beta', label: 'Beta' },
 ];
 
 function SettingRow({
@@ -64,10 +69,12 @@ function Dropdown<T extends string>({
 export function SettingsPanel(): React.JSX.Element {
   const [theme, setTheme] = useState<ThemeSource>('system');
   const [updateMode, setUpdateMode] = useState<UpdateMode>('auto');
+  const [updateChannel, setUpdateChannel] = useState<UpdateChannel>('latest');
 
   useEffect(() => {
     void window.api.getTheme().then(setTheme);
     void window.api.getUpdateMode().then(setUpdateMode);
+    void window.api.getUpdateChannel().then(setUpdateChannel);
   }, []);
 
   async function handleThemeChange(t: ThemeSource): Promise<void> {
@@ -83,6 +90,11 @@ export function SettingsPanel(): React.JSX.Element {
   async function handleUpdateModeChange(mode: UpdateMode): Promise<void> {
     await window.api.setUpdateMode(mode);
     setUpdateMode(mode);
+  }
+
+  async function handleUpdateChannelChange(channel: UpdateChannel): Promise<void> {
+    await window.api.setUpdateChannel(channel);
+    setUpdateChannel(channel);
   }
 
   function handleCheck(): void {
@@ -131,6 +143,14 @@ export function SettingsPanel(): React.JSX.Element {
               Check Now
             </button>
           </div>
+        </SettingRow>
+
+        <SettingRow label="Update Channel" description="Receive beta updates before they're released to everyone">
+          <Dropdown
+            value={updateChannel}
+            options={UPDATE_CHANNELS}
+            onChange={(channel) => void handleUpdateChannelChange(channel)}
+          />
         </SettingRow>
       </div>
     </div>

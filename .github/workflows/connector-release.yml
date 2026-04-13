@@ -4,7 +4,7 @@ on:
   push:
     tags:
       - 'connector-v*'
-      - 'nan-dev-connector-v*'
+      - 'dev-connector-v*'
       - 'integ-connector-v*'
 
 permissions:
@@ -31,9 +31,9 @@ jobs:
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
 
-          if [[ "$TAG" == nan-dev-connector-v* ]]; then
-            STAGE="nan-dev"
-            VERSION="${TAG#nan-dev-connector-v}"
+          if [[ "$TAG" == dev-connector-v* ]]; then
+            STAGE="dev"
+            VERSION="${TAG#dev-connector-v}"
           elif [[ "$TAG" == integ-connector-v* ]]; then
             STAGE="integ"
             VERSION="${TAG#integ-connector-v}"
@@ -54,9 +54,9 @@ jobs:
 
           # Stage-specific config
           case "$STAGE" in
-            nan-dev)
-              echo "publish_url=${{ secrets.NAN_DEV_PUBLISH_URL }}" >> "$GITHUB_OUTPUT"
-              echo "app_display_name=Newio Agent Connector (Nan Dev)" >> "$GITHUB_OUTPUT"
+            dev)
+              echo "publish_url=${{ secrets.DEV_PUBLISH_URL }}" >> "$GITHUB_OUTPUT"
+              echo "app_display_name=Newio Agent Connector (Dev)" >> "$GITHUB_OUTPUT"
               ;;
             integ)
               echo "publish_url=${{ secrets.INTEG_PUBLISH_URL }}" >> "$GITHUB_OUTPUT"
@@ -88,8 +88,8 @@ jobs:
       - name: Build all packages
         run: pnpm build
         env:
-          API_BASE_URL: ${{ secrets[format('{0}_API_BASE_URL', needs.prepare.outputs.stage == 'nan-dev' && 'NAN_DEV' || needs.prepare.outputs.stage == 'integ' && 'INTEG' || 'PROD')] }}
-          WS_BASE_URL: ${{ secrets[format('{0}_WS_BASE_URL', needs.prepare.outputs.stage == 'nan-dev' && 'NAN_DEV' || needs.prepare.outputs.stage == 'integ' && 'INTEG' || 'PROD')] }}
+          API_BASE_URL: ${{ secrets[format('{0}_API_BASE_URL', needs.prepare.outputs.stage == 'dev' && 'DEV' || needs.prepare.outputs.stage == 'integ' && 'INTEG' || 'PROD')] }}
+          WS_BASE_URL: ${{ secrets[format('{0}_WS_BASE_URL', needs.prepare.outputs.stage == 'dev' && 'DEV' || needs.prepare.outputs.stage == 'integ' && 'INTEG' || 'PROD')] }}
           APP_DISPLAY_NAME: ${{ needs.prepare.outputs.app_display_name }}
 
       - name: Set version
@@ -101,7 +101,7 @@ jobs:
         env:
           PUBLISH_URL: ${{ needs.prepare.outputs.publish_url }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: mac-${{ matrix.arch }}
           retention-days: 1
@@ -130,8 +130,8 @@ jobs:
       - name: Build all packages
         run: pnpm build
         env:
-          API_BASE_URL: ${{ secrets[format('{0}_API_BASE_URL', needs.prepare.outputs.stage == 'nan-dev' && 'NAN_DEV' || needs.prepare.outputs.stage == 'integ' && 'INTEG' || 'PROD')] }}
-          WS_BASE_URL: ${{ secrets[format('{0}_WS_BASE_URL', needs.prepare.outputs.stage == 'nan-dev' && 'NAN_DEV' || needs.prepare.outputs.stage == 'integ' && 'INTEG' || 'PROD')] }}
+          API_BASE_URL: ${{ secrets[format('{0}_API_BASE_URL', needs.prepare.outputs.stage == 'dev' && 'DEV' || needs.prepare.outputs.stage == 'integ' && 'INTEG' || 'PROD')] }}
+          WS_BASE_URL: ${{ secrets[format('{0}_WS_BASE_URL', needs.prepare.outputs.stage == 'dev' && 'DEV' || needs.prepare.outputs.stage == 'integ' && 'INTEG' || 'PROD')] }}
           APP_DISPLAY_NAME: ${{ needs.prepare.outputs.app_display_name }}
 
       - name: Set version
@@ -143,7 +143,7 @@ jobs:
         env:
           PUBLISH_URL: ${{ needs.prepare.outputs.publish_url }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: linux-${{ matrix.arch }}
           retention-days: 1
@@ -170,10 +170,10 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: ${{ secrets[format('{0}_ROLE_ARN', needs.prepare.outputs.stage == 'nan-dev' && 'NAN_DEV' || needs.prepare.outputs.stage == 'integ' && 'INTEG' || 'PROD')] }}
+          role-to-assume: ${{ secrets[format('{0}_ROLE_ARN', needs.prepare.outputs.stage == 'dev' && 'DEV' || needs.prepare.outputs.stage == 'integ' && 'INTEG' || 'PROD')] }}
           aws-region: us-east-1
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v6
         with:
           path: artifacts
 
@@ -182,7 +182,7 @@ jobs:
 
       - name: Upload to S3
         run: |
-          BUCKET="${{ secrets[format('{0}_DOWNLOADS_BUCKET', needs.prepare.outputs.stage == 'nan-dev' && 'NAN_DEV' || needs.prepare.outputs.stage == 'integ' && 'INTEG' || 'PROD')] }}"
+          BUCKET="${{ secrets[format('{0}_DOWNLOADS_BUCKET', needs.prepare.outputs.stage == 'dev' && 'DEV' || needs.prepare.outputs.stage == 'integ' && 'INTEG' || 'PROD')] }}"
           S3_PATH="s3://${BUCKET}/downloads/connector/"
 
           for dir in artifacts/*/; do
@@ -201,7 +201,7 @@ jobs:
       - name: Invalidate CloudFront cache
         run: |
           aws cloudfront create-invalidation \
-            --distribution-id "${{ secrets[format('{0}_DISTRIBUTION_ID', needs.prepare.outputs.stage == 'nan-dev' && 'NAN_DEV' || needs.prepare.outputs.stage == 'integ' && 'INTEG' || 'PROD')] }}" \
+            --distribution-id "${{ secrets[format('{0}_DISTRIBUTION_ID', needs.prepare.outputs.stage == 'dev' && 'DEV' || needs.prepare.outputs.stage == 'integ' && 'INTEG' || 'PROD')] }}" \
             --paths "/downloads/connector/*"
 
       - name: Create GitHub Release
