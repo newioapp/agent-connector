@@ -89,7 +89,7 @@ jobs:
           APP_DISPLAY_NAME: ${{ needs.prepare.outputs.app_display_name }}
 
       - name: Set version
-        run: npm version "${{ needs.prepare.outputs.version }}" --no-git-tag-version
+        run: npm version "${{ needs.prepare.outputs.version }}" --no-git-tag-version --allow-same-version
         working-directory: packages/connector
 
       - name: Import code signing certificate
@@ -155,7 +155,7 @@ jobs:
           APP_DISPLAY_NAME: ${{ needs.prepare.outputs.app_display_name }}
 
       - name: Set version
-        run: npm version "${{ needs.prepare.outputs.version }}" --no-git-tag-version
+        run: npm version "${{ needs.prepare.outputs.version }}" --no-git-tag-version --allow-same-version
         working-directory: packages/connector
 
       - name: Build Electron app
