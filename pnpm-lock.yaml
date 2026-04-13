@@ -95,6 +95,9 @@ importers:
       lucide-react:
         specifier: ^0.577.0
         version: 0.577.0(react@19.2.4)
+      ms:
+        specifier: ^2.1.3
+        version: 2.1.3
       require-from-string:
         specifier: ^2.0.2
         version: 2.0.2

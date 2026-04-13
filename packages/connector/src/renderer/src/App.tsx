@@ -24,12 +24,6 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     void load();
-    // Apply initial theme class
-    void window.api.getTheme().then(async (t) => {
-      if (t === 'light' || (t === 'system' && !(await window.api.getNativeThemeDark()))) {
-        document.documentElement.classList.add('light');
-      }
-    });
   }, [load]);
 
   useEffect(() => {

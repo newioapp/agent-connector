@@ -19,6 +19,9 @@ setLogHandler((level, name, message, args) => {
   console[level](prefix, message, ...args);
 });
 
+// Set app name before app.whenReady() so macOS menu bar shows the correct name
+app.name = __APP_DISPLAY_NAME__;
+
 void app.whenReady().then(async () => {
   electronApp.setAppUserModelId('dev.newio.connector');
 
@@ -60,8 +63,6 @@ void app.whenReady().then(async () => {
   // Auto-update and force-update
   initAutoUpdater(store);
   initForceUpdateCheck(__API_BASE_URL__);
-
-  app.name = __APP_DISPLAY_NAME__;
 
   await mainWindowManager.create();
 
