@@ -31,7 +31,7 @@ dmg:
 
 # --- Linux ---
 linux:
-  category: Network
+  category: Network;Development
   artifactName: newio-agent-connector-${version}-linux-${arch}.${ext}
   target:
     - AppImage
