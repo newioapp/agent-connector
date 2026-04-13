@@ -18,8 +18,10 @@ publish:
 
 # --- macOS ---
 mac:
-  notarize: false
-  identity: null
+  entitlementsInherit: build/entitlements.mac.plist
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  notarize: true
   artifactName: newio-agent-connector-${version}-mac-${arch}.${ext}
   target:
     - dmg
