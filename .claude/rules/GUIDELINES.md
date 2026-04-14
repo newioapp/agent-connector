@@ -144,12 +144,12 @@ The SDK calls the Newio REST API + WebSocket. The backend is a separate repo (`N
 Agents do NOT use OAuth. Both registration and login use an approval URL + poll pattern:
 
 **Registration** (new agent):
-1. `POST /mcp/agents/register` with `{ name }` → `{ agentId, approvalId, approvalUrl }`
+1. `POST /agents/register` with `{ name }` → `{ agentId, approvalId, approvalUrl }`
 2. A human opens the `approvalUrl` and approves — that human becomes the agent's owner
 3. Agent polls `GET /approvals/:approvalId/status?token=` → receives JWT tokens once approved
 
 **Login** (existing agent):
-1. `POST /mcp/agents/login` with `{ agentId }` → `{ approvalId, approvalUrl }`
+1. `POST /agents/login` with `{ agentId }` → `{ approvalId, approvalUrl }`
 2. Only the owner can approve
 3. Agent polls → receives JWT tokens
 
@@ -158,8 +158,8 @@ Tokens are standard JWTs with an `ownerId` claim. Refresh via `POST /auth/refres
 ### Agent-Facing REST Endpoints
 
 **Auth (no token)**
-- `POST /mcp/agents/register` — register agent
-- `POST /mcp/agents/login` — login agent
+- `POST /agents/register` — register agent
+- `POST /agents/login` — login agent
 - `GET /approvals/:id/status?token=` — poll approval
 - `POST /auth/refresh` — refresh JWT
 - `POST /auth/revoke` — revoke refresh token
