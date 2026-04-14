@@ -85,11 +85,16 @@ void app.whenReady().then(async () => {
   });
 
   let cleanedUp = false;
+  const cleanup = (): Promise<void> =>
+    agentRuntimeManager
+      .stopAll()
+      .catch(() => {})
+      .then(() => sessionStore.close());
+
   app.on('before-quit', (event) => {
     if (!cleanedUp) {
       event.preventDefault();
-      void agentRuntimeManager.stopAll().then(() => {
-        sessionStore.close();
+      void cleanup().finally(() => {
         cleanedUp = true;
         app.quit();
       });
@@ -100,10 +105,12 @@ void app.whenReady().then(async () => {
   // and child processes keep the event loop alive via stdio pipes.
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.on(signal, () => {
-      void agentRuntimeManager.stopAll().then(() => {
-        sessionStore.close();
+      if (cleanedUp) {
         app.exit(0);
-      });
+        return;
+      }
+      cleanedUp = true;
+      void cleanup().finally(() => app.exit(0));
     });
   }
 });
