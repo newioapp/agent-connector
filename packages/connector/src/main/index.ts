@@ -84,11 +84,35 @@ void app.whenReady().then(async () => {
     }
   });
 
-  app.on('before-quit', () => {
-    void agentRuntimeManager.stopAll().then(() => {
-      sessionStore.close();
-    });
+  let cleanedUp = false;
+  const cleanup = (): Promise<void> =>
+    agentRuntimeManager
+      .stopAll()
+      .catch(() => {})
+      .then(() => sessionStore.close());
+
+  app.on('before-quit', (event) => {
+    if (!cleanedUp) {
+      event.preventDefault();
+      void cleanup().finally(() => {
+        cleanedUp = true;
+        app.quit();
+      });
+    }
   });
+
+  // Handle SIGINT/SIGTERM (e.g. Ctrl+C in dev mode) — Electron doesn't exit on these by default,
+  // and child processes keep the event loop alive via stdio pipes.
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.on(signal, () => {
+      if (cleanedUp) {
+        app.exit(0);
+        return;
+      }
+      cleanedUp = true;
+      void cleanup().finally(() => app.exit(0));
+    });
+  }
 });
 
 app.on('window-all-closed', () => {

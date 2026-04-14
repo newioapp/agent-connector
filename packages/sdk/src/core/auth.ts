@@ -97,7 +97,7 @@ export class AuthManager {
   /** Register a new agent. The person who approves becomes the owner. */
   async register(input: RegisterRequest): Promise<ApprovalHandle> {
     log.info(`Registering agent "${input.name}"...`);
-    const res = await this.http.request<RegisterResponse>('/mcp/agents/register', {
+    const res = await this.http.request<RegisterResponse>('/agents/register', {
       method: 'POST',
       body: JSON.stringify(input),
     });
@@ -109,7 +109,7 @@ export class AuthManager {
   async login(input: LoginRequest): Promise<ApprovalHandle> {
     const id = 'agentId' in input ? input.agentId : input.username;
     log.info(`Logging in agent "${id}"...`);
-    const res = await this.http.request<LoginResponse>('/mcp/agents/login', {
+    const res = await this.http.request<LoginResponse>('/agents/login', {
       method: 'POST',
       body: JSON.stringify(input),
     });

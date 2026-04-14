@@ -12,7 +12,7 @@
   "main": "./out/main/index.js",
   "scripts": {
     "postinstall": "electron-rebuild",
-    "dev": "electron-vite dev",
+    "dev": "dotenv -e .env -- electron-vite dev",
     "build": "electron-vite build",
     "build:mac": "bash scripts/build-signed.sh",
     "build:mac:unsigned": "bash scripts/build-unsigned.sh",
@@ -61,6 +61,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.1.1",
+    "dotenv-cli": "^11.0.0",
     "electron": "39.8.6",
     "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
