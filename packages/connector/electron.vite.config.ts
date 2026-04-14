@@ -17,10 +17,7 @@ const apiBaseUrl = process.env.API_BASE_URL ?? 'https://api.newio.app';
 const wsBaseUrl = process.env.WS_BASE_URL ?? 'wss://ws.newio.app';
 const appDisplayName = process.env.APP_DISPLAY_NAME ?? 'Newio Agent Connector';
 
-const enableDevTools = process.env.ENABLE_DEV_TOOLS;
-if (enableDevTools === undefined) {
-  throw new Error('ENABLE_DEV_TOOLS environment variable is required');
-}
+const enableDevTools = process.env.ENABLE_DEV_TOOLS ?? 'false';
 
 export default defineConfig({
   main: {
