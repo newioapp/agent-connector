@@ -36,7 +36,7 @@ export function wireEvents(
     messageQueue.set(
       convId,
       next.catch((err: unknown) => {
-        log.error(`Error processing message.new in ${convId}: ${err instanceof Error ? err.message : String(err)}`);
+        log.error(`Error processing message.new in ${convId}`, err);
       }),
     );
   });
