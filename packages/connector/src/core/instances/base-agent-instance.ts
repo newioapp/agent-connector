@@ -157,7 +157,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
           app.scheduleCron(cron);
           log.info(`Restored cron ${cron.cronId}: "${cron.label}"`);
         } catch (err: unknown) {
-          log.warn(`Failed to restore cron ${cron.cronId}: ${err instanceof Error ? err.message : String(err)}`);
+          log.warn(`Failed to restore cron ${cron.cronId}`, err);
           this.sessionStore.deleteCron(cron.cronId);
         }
       }
@@ -276,8 +276,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       const runner = await this.getOrCreateRunner(msg.conversationId);
       runner.queue.enqueueMessage(msg);
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : 'Unknown error';
-      log.error(`Failed to route message for ${msg.conversationId}: ${errMsg}`);
+      log.error(`Failed to route message for ${msg.conversationId}`, err);
     }
   }
 
@@ -292,8 +291,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       const runner = await this.getOrCreateRunner(convId);
       runner.queue.enqueueContact(event);
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : 'Unknown error';
-      log.error(`Failed to route contact event: ${errMsg}`);
+      log.error('Failed to route contact event', err);
     }
   }
 
@@ -303,8 +301,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       const runner = await this.getOrCreateRunnerBySessionId(event.newioSessionId);
       runner.queue.enqueueCron(event);
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : 'Unknown error';
-      log.error(`Failed to route cron event ${event.cronId}: ${errMsg}`);
+      log.error(`Failed to route cron event ${event.cronId}`, err);
     }
   }
 
@@ -356,7 +353,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
     this.launchQueue = launch.then(
       () => {},
       (err: unknown) => {
-        log.error(`Session launch failed for ${newioSessionId}: ${err instanceof Error ? err.message : String(err)}`);
+        log.error(`Session launch failed for ${newioSessionId}`, err);
       },
     );
     return launch;
@@ -376,9 +373,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       try {
         session = await this.resumeSession(existingCorrelationId);
       } catch (err) {
-        log.warn(
-          `Failed to resume session ${existingCorrelationId}, falling back to new session: ${err instanceof Error ? err.message : String(err)}`,
-        );
+        log.warn(`Failed to resume session ${existingCorrelationId}, falling back to new session`, err);
         session = await this.createSession();
         this.sessionStore.set(newioSessionId, session.correlationId);
       }

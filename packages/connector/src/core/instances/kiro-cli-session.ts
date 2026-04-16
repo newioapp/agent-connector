@@ -190,7 +190,7 @@ export class KiroCliSession implements AgentSession, acp.Client {
         }
       })
       .catch((err: unknown) => {
-        log.error(`[${this.correlationId}] Prompt failed: ${err instanceof Error ? err.message : String(err)}`);
+        log.error(`[${this.correlationId}] Prompt failed`, err);
         stream.finish();
         throw err;
       });
@@ -207,9 +207,7 @@ export class KiroCliSession implements AgentSession, acp.Client {
 
   dispose(): void {
     this.disposeAsync().catch((err: unknown) => {
-      log.error(
-        `[${this.correlationId}] Error during async dispose: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      log.error(`[${this.correlationId}] Error during async dispose`, err);
     });
   }
 
@@ -223,9 +221,7 @@ export class KiroCliSession implements AgentSession, acp.Client {
       try {
         await conn.cancel({ sessionId: this.correlationId });
       } catch (err) {
-        log.debug(
-          `[${this.correlationId}] Cancel notification failed (expected if already done): ${err instanceof Error ? err.message : String(err)}`,
-        );
+        log.debug(`[${this.correlationId}] Cancel notification failed (expected if already done)`, err);
       }
     }
 

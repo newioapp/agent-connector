@@ -99,13 +99,13 @@ export function applyUpdateMode(mode: UpdateMode): void {
   }
 
   autoUpdater.checkForUpdates().catch((err: unknown) => {
-    log.info('Initial update check failed:', err instanceof Error ? err.message : String(err));
+    log.info('Initial update check failed:', err);
   });
 
   if (mode === 'auto') {
     periodicTimer = setInterval(() => {
       autoUpdater.checkForUpdates().catch((err: unknown) => {
-        log.info('Periodic update check failed:', err instanceof Error ? err.message : String(err));
+        log.info('Periodic update check failed:', err);
       });
     }, UPDATE_CHECK_INTERVAL_MS);
   }
@@ -165,7 +165,7 @@ export function initForceUpdateCheck(apiBaseUrl: string): void {
       }
       app.quit();
     } catch (err) {
-      log.info('Force update check failed:', err instanceof Error ? err.message : String(err));
+      log.info('Force update check failed:', err);
     }
   };
 
@@ -195,7 +195,7 @@ export function manualCheckForUpdates(): void {
       }
     })
     .catch((err: unknown) => {
-      log.info('Manual update check failed:', err instanceof Error ? err.message : String(err));
+      log.info('Manual update check failed:', err);
       const win = getWindow();
       if (win) {
         void dialog.showMessageBox(win, {

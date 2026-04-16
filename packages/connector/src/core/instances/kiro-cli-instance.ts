@@ -45,7 +45,7 @@ export class KiroCliInstance extends BaseAgentInstance {
       const selectedOptionId = await this.handlePermissionRequest(correlationId, params.options, title);
       return { outcome: { outcome: 'selected' as const, optionId: selectedOptionId } };
     } catch (err: unknown) {
-      log.warn(`Permission request failed: ${err instanceof Error ? err.message : String(err)}`);
+      log.warn('Permission request failed', err);
       return { outcome: { outcome: 'cancelled' as const } };
     }
   };
