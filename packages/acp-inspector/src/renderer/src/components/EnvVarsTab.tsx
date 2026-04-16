@@ -31,11 +31,13 @@ export function EnvVarsTab(): React.JSX.Element {
 
   const disabled = connectionStatus === 'connected' || connectionStatus === 'connecting';
 
-  // Load available shells on mount
+  // Load available shells and persisted selection on mount
   useEffect(() => {
-    void window.api.listShells().then((available) => {
+    void Promise.all([window.api.listShells(), window.api.getLastShell()]).then(([available, lastShell]) => {
       setShells(available);
-      if (available.length > 0) {
+      if (lastShell && available.includes(lastShell)) {
+        setSelectedShell(lastShell);
+      } else if (available.length > 0) {
         setSelectedShell(available[0]);
       }
     });
@@ -43,11 +45,7 @@ export function EnvVarsTab(): React.JSX.Element {
 
   // Sync entries from store
   useEffect(() => {
-    setEntries(
-      Object.entries(envVars)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([key, value]) => ({ key, value })),
-    );
+    setEntries(Object.entries(envVars).map(([key, value]) => ({ key, value })));
   }, [envVars]);
 
   // Push entries back to store on change
@@ -67,9 +65,7 @@ export function EnvVarsTab(): React.JSX.Element {
     setImporting(true);
     try {
       const shellEnv = await window.api.getShellEnv(selectedShell);
-      const sorted = Object.entries(shellEnv)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([key, value]) => ({ key, value }));
+      const sorted = Object.entries(shellEnv).map(([key, value]) => ({ key, value }));
       setEntries(sorted);
       setEnvVars(shellEnv);
     } finally {
@@ -128,6 +124,7 @@ export function EnvVarsTab(): React.JSX.Element {
                       onClick={() => {
                         setSelectedShell(s);
                         setShellDropdownOpen(false);
+                        void window.api.setLastShell(s);
                       }}
                     >
                       {s}

@@ -10,6 +10,7 @@ import type {
   SessionUpdate,
   PermissionRequest,
   SessionSetupConfig,
+  AvailableCommand,
 } from '../../../shared/types';
 import type { InspectorStateSnapshot } from '../../../main/main-state';
 
@@ -37,6 +38,9 @@ interface InspectorState {
   readonly sessionUpdates: SessionUpdate[];
   readonly protocolMessages: ProtocolMessage[];
   readonly permissionRequests: PermissionRequest[];
+
+  // Slash commands (per session)
+  readonly availableCommands: Readonly<Record<string, readonly AvailableCommand[]>>;
 }
 
 interface InspectorActions {
@@ -68,6 +72,9 @@ interface InspectorActions {
   addPermissionRequest(req: PermissionRequest): void;
   respondPermission(requestId: string, optionId: string): Promise<void>;
   removePermissionRequest(requestId: string): void;
+  setAvailableCommands(sessionId: string, commands: readonly AvailableCommand[]): void;
+  updateSessionMode(sessionId: string, modeId: string): void;
+  updateSessionModel(sessionId: string, modelId: string): void;
 
   // Clear
   clearOutput(): void;
@@ -92,6 +99,7 @@ export const useInspectorStore = create<InspectorStore>((set, get) => ({
   sessionUpdates: [],
   protocolMessages: [],
   permissionRequests: [],
+  availableCommands: {},
 
   hydrate(snapshot: InspectorStateSnapshot): void {
     set({
@@ -146,7 +154,34 @@ export const useInspectorStore = create<InspectorStore>((set, get) => ({
       supportsCloseSession: false,
       sessionUpdates: [],
       protocolMessages: [],
+      availableCommands: {},
     });
+  },
+
+  setAvailableCommands(sessionId: string, commands: readonly AvailableCommand[]): void {
+    set((s) => ({
+      availableCommands: { ...s.availableCommands, [sessionId]: commands },
+    }));
+  },
+
+  updateSessionMode(sessionId: string, modeId: string): void {
+    set((s) => ({
+      sessions: s.sessions.map((sess) =>
+        sess.sessionId === sessionId && sess.modes
+          ? { ...sess, modes: { ...sess.modes, currentModeId: modeId } }
+          : sess,
+      ),
+    }));
+  },
+
+  updateSessionModel(sessionId: string, modelId: string): void {
+    set((s) => ({
+      sessions: s.sessions.map((sess) =>
+        sess.sessionId === sessionId && sess.models
+          ? { ...sess, models: { ...sess.models, currentModelId: modelId } }
+          : sess,
+      ),
+    }));
   },
 
   setConnectionStatus(status: ConnectionStatus, error?: string, pid?: number, errorStack?: string): void {

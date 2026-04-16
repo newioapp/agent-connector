@@ -16,6 +16,8 @@ export interface StoreSchema {
   readonly lastCommand: string;
   readonly lastArgs: string;
   readonly lastCwd: string;
+  /** Last-selected shell for environment variable sourcing. */
+  readonly lastShell: string;
 }
 
 export function createStore(): Store<StoreSchema> {
@@ -26,6 +28,7 @@ export function createStore(): Store<StoreSchema> {
       lastCommand: '',
       lastArgs: '',
       lastCwd: '',
+      lastShell: '',
     },
   });
 }

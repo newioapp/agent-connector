@@ -26,6 +26,9 @@ export function App(): React.JSX.Element {
   const addPermissionRequest = useInspectorStore((s) => s.addPermissionRequest);
   const setEnvVars = useInspectorStore((s) => s.setEnvVars);
   const setPrompting = useInspectorStore((s) => s.setPrompting);
+  const setAvailableCommands = useInspectorStore((s) => s.setAvailableCommands);
+  const updateSessionMode = useInspectorStore((s) => s.updateSessionMode);
+  const updateSessionModel = useInspectorStore((s) => s.updateSessionModel);
   const connectionStatus = useInspectorStore((s) => s.connectionStatus);
   const connectionError = useInspectorStore((s) => s.connectionError);
   const connectionPid = useInspectorStore((s) => s.connectionPid);
@@ -60,9 +63,10 @@ export function App(): React.JSX.Element {
       hydrate(snapshot);
       // First launch — no env vars yet, source from shell
       if (Object.keys(snapshot.envVars).length === 0) {
-        void window.api.listShells().then((shells) => {
-          if (shells.length > 0) {
-            void window.api.getShellEnv(shells[0]).then(setEnvVars);
+        void Promise.all([window.api.listShells(), window.api.getLastShell()]).then(([shells, lastShell]) => {
+          const shell = lastShell && shells.includes(lastShell) ? lastShell : shells[0];
+          if (shell) {
+            void window.api.getShellEnv(shell).then(setEnvVars);
           }
         });
       }
@@ -88,14 +92,35 @@ export function App(): React.JSX.Element {
     const unsub5 = window.api.onPromptDone(() => {
       setPrompting(false);
     });
+    const unsub6 = window.api.onAvailableCommands(({ sessionId, commands }) => {
+      setAvailableCommands(sessionId, commands);
+    });
+    const unsub7 = window.api.onModeChanged(({ sessionId, modeId }) => {
+      updateSessionMode(sessionId, modeId);
+    });
+    const unsub8 = window.api.onModelChanged(({ sessionId, modelId }) => {
+      updateSessionModel(sessionId, modelId);
+    });
     return () => {
       unsub1();
       unsub2();
       unsub3();
       unsub4();
       unsub5();
+      unsub6();
+      unsub7();
+      unsub8();
     };
-  }, [setConnectionStatus, addProtocolMessage, addSessionUpdate, addPermissionRequest, setPrompting]);
+  }, [
+    setConnectionStatus,
+    addProtocolMessage,
+    addSessionUpdate,
+    addPermissionRequest,
+    setPrompting,
+    setAvailableCommands,
+    updateSessionMode,
+    updateSessionModel,
+  ]);
 
   const statusColor =
     connectionStatus === 'connected'

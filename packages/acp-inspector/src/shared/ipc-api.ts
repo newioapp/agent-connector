@@ -4,7 +4,14 @@
  * Defines typed interfaces for all request/response IPC channels.
  * Push events from main → renderer are defined in ipc-events.ts.
  */
-import type { ThemeSource, ConnectionConfig, AgentCapabilities, SessionInfo, SessionSetupConfig } from './types';
+import type {
+  ThemeSource,
+  ConnectionConfig,
+  AgentCapabilities,
+  SessionInfo,
+  SessionSetupConfig,
+  AvailableCommand,
+} from './types';
 import type { InspectorStateSnapshot } from '../main/main-state';
 
 export interface IpcApi {
@@ -46,6 +53,17 @@ export interface IpcApi {
   updateEnvVars(envVars: Record<string, string>): Promise<void>;
   clearMainOutput(sessionId: string | null): Promise<void>;
   clearMainProtocolLog(sessionId: string | null): Promise<void>;
+
+  // Slash commands
+  getAvailableCommands(sessionId: string): Promise<AvailableCommand[]>;
+
+  // Shell preference
+  getLastShell(): Promise<string>;
+  setLastShell(shell: string): Promise<void>;
+
+  // Mode / model switching
+  setMode(sessionId: string, modeId: string): Promise<void>;
+  setModel(sessionId: string, modelId: string): Promise<void>;
 }
 
 /** Channel name for each IpcApi method. */
@@ -71,4 +89,9 @@ export const IPC_CHANNELS: { readonly [K in keyof IpcApi]: string } = {
   updateEnvVars: 'update-env-vars',
   clearMainOutput: 'clear-main-output',
   clearMainProtocolLog: 'clear-main-protocol-log',
+  getAvailableCommands: 'get-available-commands',
+  getLastShell: 'get-last-shell',
+  setLastShell: 'set-last-shell',
+  setMode: 'acp-set-mode',
+  setModel: 'acp-set-model',
 };

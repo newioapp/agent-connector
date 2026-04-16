@@ -41,6 +41,11 @@ const api: InspectorAPI = {
   updateEnvVars: (envVars) => ipcRenderer.invoke(IPC_CHANNELS.updateEnvVars, envVars),
   clearMainOutput: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.clearMainOutput, sessionId),
   clearMainProtocolLog: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.clearMainProtocolLog, sessionId),
+  getAvailableCommands: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.getAvailableCommands, sessionId),
+  getLastShell: () => ipcRenderer.invoke(IPC_CHANNELS.getLastShell),
+  setLastShell: (shell) => ipcRenderer.invoke(IPC_CHANNELS.setLastShell, shell),
+  setMode: (sessionId, modeId) => ipcRenderer.invoke(IPC_CHANNELS.setMode, sessionId, modeId),
+  setModel: (sessionId, modelId) => ipcRenderer.invoke(IPC_CHANNELS.setModel, sessionId, modelId),
 
   // Push events
   onConnectionStatus: (cb) => onEvent(EVENT_CHANNELS['connection-status'], cb),
@@ -48,6 +53,9 @@ const api: InspectorAPI = {
   onSessionUpdate: (cb) => onEvent(EVENT_CHANNELS['session-update'], cb),
   onPermissionRequest: (cb) => onEvent(EVENT_CHANNELS['permission-request'], cb),
   onPromptDone: (cb) => onEvent(EVENT_CHANNELS['prompt-done'], cb),
+  onAvailableCommands: (cb) => onEvent(EVENT_CHANNELS['available-commands'], cb),
+  onModeChanged: (cb) => onEvent(EVENT_CHANNELS['mode-changed'], cb),
+  onModelChanged: (cb) => onEvent(EVENT_CHANNELS['model-changed'], cb),
 };
 
 contextBridge.exposeInMainWorld('api', api);

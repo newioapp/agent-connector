@@ -158,6 +158,52 @@ Agent Process (stdio)
 
 This captures the actual protocol payloads as they cross the wire, rather than manually constructing summaries from SDK method calls.
 
+## Agent and Model Switching
+
+kiro-cli supports switching the active agent (mode) and model mid-session via standard ACP JSON-RPC methods — no need to go through the `_kiro.dev/commands/execute` slash command extension.
+
+### `session/set_mode` — Switch Agent
+
+Changes the active agent within the current session.
+
+```jsonc
+// Request
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "session/set_mode",
+  "params": {
+    "sessionId": "<active-session-id>",
+    "modeId": "<agent-name>"  // e.g. "claude", "kiro"
+  }
+}
+```
+
+This is what `/agent swap <name>` should map to. The `modeId` corresponds to the agent name from the `modes.availableModes` list returned by `session/new` or `session/load`.
+
+### `session/set_model` — Switch Model
+
+Changes the LLM model within the current session.
+
+```jsonc
+// Request
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "session/set_model",
+  "params": {
+    "sessionId": "<active-session-id>",
+    "modelId": "<model-id>"  // e.g. "claude-sonnet-4-20250514"
+  }
+}
+```
+
+This is what `/model swap <name>` should map to.
+
+### Reference
+
+These methods are used by kiroom's `AcpSessionManager` for agent/model swapping (see `acp-session-manager.js`). They are standard ACP protocol methods and bypass the `_kiro.dev/commands/execute` extension entirely.
+
 ## Tech Stack
 
 | Layer | Technology |

@@ -10,6 +10,9 @@ export interface InspectorAPI extends IpcApi {
   onSessionUpdate(callback: (data: MainToRendererEvents['session-update']) => void): () => void;
   onPermissionRequest(callback: (data: MainToRendererEvents['permission-request']) => void): () => void;
   onPromptDone(callback: (data: MainToRendererEvents['prompt-done']) => void): () => void;
+  onAvailableCommands(callback: (data: MainToRendererEvents['available-commands']) => void): () => void;
+  onModeChanged(callback: (data: MainToRendererEvents['mode-changed']) => void): () => void;
+  onModelChanged(callback: (data: MainToRendererEvents['model-changed']) => void): () => void;
 }
 
 declare global {

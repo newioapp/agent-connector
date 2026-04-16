@@ -27,6 +27,34 @@ export interface ProtocolMessage {
 export interface SessionInfo {
   readonly sessionId: string;
   readonly createdAt: number;
+  readonly modes?: SessionModeState;
+  readonly models?: SessionModelState;
+}
+
+/** ACP session mode. */
+export interface SessionMode {
+  readonly id: string;
+  readonly name: string;
+  readonly description?: string;
+}
+
+/** ACP session mode state. */
+export interface SessionModeState {
+  readonly currentModeId: string;
+  readonly availableModes: readonly SessionMode[];
+}
+
+/** ACP session model info. */
+export interface SessionModel {
+  readonly modelId: string;
+  readonly name: string;
+  readonly description?: string;
+}
+
+/** ACP session model state. */
+export interface SessionModelState {
+  readonly currentModelId: string;
+  readonly availableModels: readonly SessionModel[];
 }
 
 /** ACP agent capabilities returned from initialize. */
@@ -66,4 +94,13 @@ export interface PermissionRequest {
   readonly sessionId: string;
   readonly data: unknown;
   readonly respondedOptionId?: string;
+}
+
+/** An ACP slash command advertised by the agent (per the ACP slash-commands spec). */
+export interface AvailableCommand {
+  readonly name: string;
+  readonly description: string;
+  readonly input?: {
+    readonly hint?: string;
+  };
 }

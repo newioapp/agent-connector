@@ -6,6 +6,38 @@ import { Plug, Unplug, FolderOpen } from 'lucide-react';
 import { useInspectorStore } from '../stores/inspector-store';
 import { Button, Input, Label } from './ui';
 
+const ROTATING_PLACEHOLDERS = ['kiro-cli acp', 'cursor acp', 'gemini --acp', 'and any ACP-compatible agents'];
+
+function RotatingPlaceholder({ visible }: { readonly visible: boolean }): React.JSX.Element {
+  const [index, setIndex] = useState(0);
+  const [fading, setFading] = useState(false);
+
+  useEffect(() => {
+    if (!visible) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setFading(true);
+      setTimeout(() => {
+        setIndex((i) => (i + 1) % ROTATING_PLACEHOLDERS.length);
+        setFading(false);
+      }, 300);
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [visible]);
+
+  return (
+    <span
+      className="pointer-events-none text-sm text-muted-foreground/60 transition-opacity duration-300"
+      style={{ opacity: fading ? 0 : 1 }}
+    >
+      {ROTATING_PLACEHOLDERS[index]}
+    </span>
+  );
+}
+
 export function ConnectionBar(): React.JSX.Element {
   const connectionStatus = useInspectorStore((s) => s.connectionStatus);
   const envVars = useInspectorStore((s) => s.envVars);
@@ -14,6 +46,7 @@ export function ConnectionBar(): React.JSX.Element {
 
   const [commandLine, setCommandLine] = useState('');
   const [cwd, setCwd] = useState('');
+  const [commandFocused, setCommandFocused] = useState(false);
 
   useEffect(() => {
     void window.api.getLastConnectionConfig().then((config) => {
@@ -51,12 +84,20 @@ export function ConnectionBar(): React.JSX.Element {
     <div className="border-b border-border px-4 py-3">
       <div className="flex items-end gap-3">
         <Label text="Command" className="mb-0 flex-[2] min-w-0">
-          <Input
-            value={commandLine}
-            onChange={(e) => setCommandLine(e.target.value)}
-            placeholder="e.g. kiro-cli acp --trust-all-tools"
-            disabled={isConnected || isConnecting}
-          />
+          <div className="relative">
+            <Input
+              value={commandLine}
+              onChange={(e) => setCommandLine(e.target.value)}
+              onFocus={() => setCommandFocused(true)}
+              onBlur={() => setCommandFocused(false)}
+              disabled={isConnected || isConnecting}
+            />
+            {!commandLine && !commandFocused && !(isConnected || isConnecting) && (
+              <div className="pointer-events-none absolute inset-0 flex items-center px-3">
+                <RotatingPlaceholder visible={!commandLine && !commandFocused} />
+              </div>
+            )}
+          </div>
         </Label>
         <Label text="Working Directory" className="mb-0 flex-1 min-w-0">
           <div className="flex gap-1">

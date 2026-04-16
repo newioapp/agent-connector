@@ -11,28 +11,33 @@ import type {
   AgentCapabilities,
   SessionInfo,
   SessionSetupConfig,
+  AvailableCommand,
 } from '../shared/types';
 import type { InspectorStateSnapshot } from './main-state';
 import type { StoreSchema } from './store';
 import type { AcpConnectionManager } from './acp-connection-manager';
 import type { MainInspectorState } from './main-state';
+import type { SlashCommandStore } from './slash-command-store';
 import { getShellEnv, listAvailableShells } from './shell-env';
 
 interface IpcHandlerDeps {
   readonly store: Store<StoreSchema>;
   readonly connectionManager: AcpConnectionManager;
   readonly mainState: MainInspectorState;
+  readonly slashCommandStore: SlashCommandStore;
 }
 
 export class IpcHandler implements IpcApi {
   private readonly store: Store<StoreSchema>;
   private readonly connectionManager: AcpConnectionManager;
   private readonly mainState: MainInspectorState;
+  private readonly slashCommandStore: SlashCommandStore;
 
   constructor(deps: IpcHandlerDeps) {
     this.store = deps.store;
     this.connectionManager = deps.connectionManager;
     this.mainState = deps.mainState;
+    this.slashCommandStore = deps.slashCommandStore;
   }
 
   // Theme
@@ -156,5 +161,25 @@ export class IpcHandler implements IpcApi {
 
   async clearMainProtocolLog(sessionId: string | null): Promise<void> {
     this.mainState.clearProtocolLog(sessionId);
+  }
+
+  async getAvailableCommands(sessionId: string): Promise<AvailableCommand[]> {
+    return [...this.slashCommandStore.get(sessionId)];
+  }
+
+  async getLastShell(): Promise<string> {
+    return this.store.get('lastShell');
+  }
+
+  async setLastShell(shell: string): Promise<void> {
+    this.store.set('lastShell', shell);
+  }
+
+  async setMode(sessionId: string, modeId: string): Promise<void> {
+    await this.connectionManager.setMode(sessionId, modeId);
+  }
+
+  async setModel(sessionId: string, modelId: string): Promise<void> {
+    await this.connectionManager.setModel(sessionId, modelId);
   }
 }

@@ -11,7 +11,9 @@ import { IpcHandler } from './ipc-handler';
 import { registerIpcHandlers } from './ipc-registry';
 import { ExtensionPluginRegistry } from './plugins/extension-plugin-registry';
 import { createKiroSlashCommandsPlugin } from './plugins/kiro-slash-commands-plugin';
+import { SlashCommandStore } from './slash-command-store';
 import { EVENT_CHANNELS } from '../shared/ipc-events';
+import type { AvailableCommand } from '../shared/types';
 
 app.name = 'ACP Inspector';
 
@@ -30,6 +32,9 @@ void app.whenReady().then(async () => {
   const pluginRegistry = new ExtensionPluginRegistry();
   pluginRegistry.registerFactory('_kiro.dev/commands/available', createKiroSlashCommandsPlugin);
 
+  // Slash command store — stores ACP standard available commands per session
+  const slashCommandStore = new SlashCommandStore();
+
   let messageCounter = 0;
   /** Maps JSON-RPC request id → sessionId for correlating responses. */
   const requestSessionMap = new Map<unknown, string>();
@@ -41,6 +46,10 @@ void app.whenReady().then(async () => {
         mainState.connectionError = error;
         mainState.connectionPid = detail?.pid;
         mainState.connectionErrorStack = detail?.errorStack;
+
+        if (status === 'disconnected') {
+          slashCommandStore.clear();
+        }
 
         mainWindowManager.send(EVENT_CHANNELS['connection-status'], {
           status,
@@ -80,6 +89,24 @@ void app.whenReady().then(async () => {
         const update = { timestamp: Date.now(), sessionId, data };
         mainState.sessionUpdates.push(update);
         mainWindowManager.send(EVENT_CHANNELS['session-update'], update);
+
+        // Intercept available_commands_update → store and push to renderer
+        const inner = (data as Record<string, unknown>).update as Record<string, unknown> | undefined;
+        if (sessionId && inner?.sessionUpdate === 'available_commands_update') {
+          const commands = (inner.availableCommands as AvailableCommand[] | undefined) ?? [];
+          slashCommandStore.set(sessionId, commands);
+          mainWindowManager.send(EVENT_CHANNELS['available-commands'], { sessionId, commands });
+        }
+
+        // Intercept mode/model updates from the agent
+        if (sessionId && inner?.sessionUpdate === 'current_mode_update') {
+          const modeId = inner.modeId as string;
+          mainWindowManager.send(EVENT_CHANNELS['mode-changed'], { sessionId, modeId });
+        }
+        if (sessionId && inner?.sessionUpdate === 'current_model_update') {
+          const modelId = inner.modelId as string;
+          mainWindowManager.send(EVENT_CHANNELS['model-changed'], { sessionId, modelId });
+        }
       },
       onPermissionRequest(requestId, data) {
         const sessionId = (data as Record<string, unknown>).sessionId as string;
@@ -99,7 +126,7 @@ void app.whenReady().then(async () => {
   nativeTheme.themeSource = store.get('themeSource');
 
   // Register IPC handlers
-  const ipcHandler = new IpcHandler({ store, connectionManager, mainState });
+  const ipcHandler = new IpcHandler({ store, connectionManager, mainState, slashCommandStore });
   registerIpcHandlers(ipcHandler);
 
   await mainWindowManager.create();

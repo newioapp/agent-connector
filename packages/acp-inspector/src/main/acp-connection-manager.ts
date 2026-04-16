@@ -10,7 +10,14 @@ import { ClientSideConnection, ndJsonStream, PROTOCOL_VERSION } from '@agentclie
 import type { AnyMessage } from '@agentclientprotocol/sdk';
 import type { Stream } from '@agentclientprotocol/sdk';
 import type * as acp from '@agentclientprotocol/sdk';
-import type { ConnectionConfig, AgentCapabilities, SessionInfo, SessionSetupConfig } from '../shared/types';
+import type {
+  ConnectionConfig,
+  AgentCapabilities,
+  SessionInfo,
+  SessionSetupConfig,
+  SessionModeState,
+  SessionModelState,
+} from '../shared/types';
 import type { ExtensionPluginRegistry } from './plugins/extension-plugin-registry';
 
 export interface AcpConnectionListener {
@@ -215,13 +222,19 @@ export class AcpConnectionManager implements acp.Client {
         env: s.env?.map((e) => ({ name: e.name, value: e.value })) ?? [],
       })),
     });
-    return { sessionId: result.sessionId, createdAt: Date.now() };
+    const r = result as Record<string, unknown>;
+    return {
+      sessionId: result.sessionId,
+      createdAt: Date.now(),
+      modes: r.modes as SessionModeState | undefined,
+      models: r.models as SessionModelState | undefined,
+    };
   }
 
   /** Load an existing ACP session. */
   async loadSession(sessionId: string, config: SessionSetupConfig): Promise<SessionInfo> {
     const conn = this.getConnection();
-    await conn.loadSession({
+    const result = await conn.loadSession({
       sessionId,
       cwd: config.cwd || this.cwd,
       mcpServers: config.mcpServers.map((s) => ({
@@ -231,7 +244,13 @@ export class AcpConnectionManager implements acp.Client {
         env: s.env?.map((e) => ({ name: e.name, value: e.value })) ?? [],
       })),
     });
-    return { sessionId, createdAt: Date.now() };
+    const r = result as Record<string, unknown>;
+    return {
+      sessionId,
+      createdAt: Date.now(),
+      modes: r.modes as SessionModeState | undefined,
+      models: r.models as SessionModelState | undefined,
+    };
   }
 
   /** Close an ACP session. */
@@ -292,6 +311,18 @@ export class AcpConnectionManager implements acp.Client {
       this.pendingPermissions.delete(requestId);
       pending.resolve({ outcome: { outcome: 'selected', optionId } });
     }
+  }
+
+  /** Set the session mode. */
+  async setMode(sessionId: string, modeId: string): Promise<void> {
+    const conn = this.getConnection();
+    await conn.setSessionMode({ sessionId, modeId });
+  }
+
+  /** Set the session model. */
+  async setModel(sessionId: string, modelId: string): Promise<void> {
+    const conn = this.getConnection();
+    await conn.unstable_setSessionModel({ sessionId, modelId });
   }
 
   private getConnection(): ClientSideConnection {

@@ -25,9 +25,16 @@ export function SessionPanel(): React.JSX.Element {
       <div className="border-b border-border px-4 py-2">
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-muted-foreground">Sessions</span>
-          <Button variant="ghost" disabled={!isConnected} onClick={() => setShowSetup(true)} className="px-1.5 py-1">
-            <Plus size={12} />
-          </Button>
+          <div className="group relative">
+            <Button variant="ghost" disabled={!isConnected} onClick={() => setShowSetup(true)} className="px-1.5 py-1">
+              <Plus size={12} />
+            </Button>
+            {!isConnected && (
+              <div className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 hidden -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-2 py-1 text-xs text-background group-hover:block">
+                Connect to an agent first
+              </div>
+            )}
+          </div>
           <div className="group relative cursor-pointer">
             <Button
               variant="ghost"

@@ -17,6 +17,20 @@ interface UpdateGroup {
 
 const CHUNK_TYPES = new Set(['agent_message_chunk', 'agent_thought_chunk', 'user_message_chunk']);
 
+/** Only these session update types are shown in the output panel. Everything else (e.g. available_commands_update) is silently ignored. */
+const OUTPUT_ALLOWLIST = new Set([
+  'agent_message_chunk',
+  'agent_thought_chunk',
+  'user_message_chunk',
+  'tool_call',
+  'tool_call_update',
+  'permission_response',
+  'plan',
+  'usage_update',
+  'current_mode_update',
+  'current_model_update',
+]);
+
 function getUpdateType(update: SessionUpdate): string {
   const data = update.data as Record<string, unknown>;
   const inner = data.update as Record<string, unknown> | undefined;
@@ -86,6 +100,10 @@ export function OutputPanel(): React.JSX.Element {
   const filteredUpdates = useMemo(
     () =>
       sessionUpdates.filter((u) => {
+        const type = getUpdateType(u);
+        if (!OUTPUT_ALLOWLIST.has(type)) {
+          return false;
+        }
         if (!activeSessionId) {
           return true;
         }
