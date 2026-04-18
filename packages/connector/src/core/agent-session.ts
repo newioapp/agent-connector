@@ -4,11 +4,9 @@
  * Each session maps to one context window on the agent platform side.
  * A single agent instance manages multiple sessions.
  */
-import type { SessionStreamSegment } from './acp-session-stream';
+import type { SessionStreamSegment, SessionStatusListener } from './types';
 
-export type SessionStatus = 'thinking' | 'typing' | 'tool_calling' | 'idle';
-
-export type SessionStatusListener = (status: SessionStatus) => void;
+export type { SessionStatus, SessionStatusListener } from './types';
 
 export interface AgentSession {
   /** Agent-platform-specific session ID (e.g., ACP sessionId). */

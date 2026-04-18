@@ -18,7 +18,7 @@ import { AcpAgentSession } from './acp-agent-session';
 import type { PermissionHandler } from './acp-agent-session';
 import type { AgentSession } from './agent-session';
 import type { AgentSessionConfig, ConfigureAgentInput } from './agent-instance';
-import type { SessionStreamSegment } from './acp-session-stream';
+import type { SessionStreamSegment } from './types';
 import { Logger } from './logger';
 
 const log = new Logger('acp-agent-instance');

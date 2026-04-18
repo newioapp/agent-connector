@@ -6,16 +6,7 @@
  * The generator completes when {@link finish} is called (i.e., when `conn.prompt` resolves).
  */
 import type * as acp from '@agentclientprotocol/sdk';
-import type { SessionStatusListener } from './agent-session';
-
-/** Segment types that the stream aggregates and yields. */
-export type SegmentType = 'agent_message_chunk' | 'agent_thought_chunk' | 'tool_call' | 'tool_call_update';
-
-/** An aggregated segment yielded by the stream. */
-export interface SessionStreamSegment {
-  readonly type: SegmentType;
-  readonly text: string;
-}
+import type { SegmentType, SessionStreamSegment, SessionStatusListener } from './types';
 
 export class SessionStream {
   private currentType: SegmentType | undefined;

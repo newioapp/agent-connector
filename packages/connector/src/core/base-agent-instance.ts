@@ -55,6 +55,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private readonly activeConversation = new Map<string, string>();
   private abortController?: AbortController;
   private idleTimer?: ReturnType<typeof setInterval>;
+  private cleaningUp = false;
   private udsServer?: Server;
   /** Most recently created MCP server awaiting a sessionId to be wired. */
   private pendingMcpServer?: NewioMcpServer;
@@ -606,20 +607,30 @@ export abstract class BaseAgentInstance implements AgentInstance {
   }
 
   private async cleanupIdleSessions(): Promise<void> {
-    const timeout = this.config.sessionIdleTimeoutMs ?? DEFAULT_SESSION_IDLE_TIMEOUT_MS;
-    const now = Date.now();
+    if (this.cleaningUp) {
+      return;
+    }
+    this.cleaningUp = true;
+    try {
+      const timeout = this.config.sessionIdleTimeoutMs ?? DEFAULT_SESSION_IDLE_TIMEOUT_MS;
+      const now = Date.now();
 
-    for (const [newioSessionId, runner] of this.runners) {
-      if (!runner.session.disposable) {
-        continue;
+      for (const [newioSessionId, runner] of this.runners) {
+        if (!runner.session.disposable) {
+          continue;
+        }
+        if (now - runner.lastActivityAt > timeout) {
+          log.info(
+            `Idle session cleanup: ${newioSessionId} (idle ${Math.round((now - runner.lastActivityAt) / 1000)}s)`,
+          );
+          runner.queue.close();
+          await runner.session.dispose();
+          this.onSessionDisposed(runner.session.correlationId);
+          this.runners.delete(newioSessionId);
+        }
       }
-      if (now - runner.lastActivityAt > timeout) {
-        log.info(`Idle session cleanup: ${newioSessionId} (idle ${Math.round((now - runner.lastActivityAt) / 1000)}s)`);
-        runner.queue.close();
-        await runner.session.dispose();
-        this.onSessionDisposed(runner.session.correlationId);
-        this.runners.delete(newioSessionId);
-      }
+    } finally {
+      this.cleaningUp = false;
     }
   }
 

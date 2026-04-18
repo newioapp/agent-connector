@@ -10,7 +10,7 @@ import type { ClientSideConnection, NewSessionResponse, LoadSessionResponse } fr
 import type * as acp from '@agentclientprotocol/sdk';
 import type { AgentSession, SessionStatusListener } from './agent-session';
 import { SessionStream } from './acp-session-stream';
-import type { SessionStreamSegment } from './acp-session-stream';
+import type { SessionStreamSegment } from './types';
 import { AcpSessionConfigHandler } from './acp-session-config-handler';
 import { Logger } from './logger';
 import type { AgentSessionConfig } from './agent-instance';
