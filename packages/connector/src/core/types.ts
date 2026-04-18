@@ -96,3 +96,20 @@ export interface AgentStatusInfo {
   readonly runtimeStatus: AgentRuntimeStatus;
   readonly error?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Session stream types
+// ---------------------------------------------------------------------------
+
+/** Segment types that the stream aggregates and yields. */
+export type SegmentType = 'agent_message_chunk' | 'agent_thought_chunk' | 'tool_call' | 'tool_call_update';
+
+/** An aggregated segment yielded by the stream. */
+export interface SessionStreamSegment {
+  readonly type: SegmentType;
+  readonly text: string;
+}
+
+export type SessionStatus = 'thinking' | 'typing' | 'tool_calling' | 'idle';
+
+export type SessionStatusListener = (status: SessionStatus) => void;

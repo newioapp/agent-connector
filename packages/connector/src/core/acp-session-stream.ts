@@ -6,27 +6,7 @@
  * The generator completes when {@link finish} is called (i.e., when `conn.prompt` resolves).
  */
 import type * as acp from '@agentclientprotocol/sdk';
-import type { SessionStatusListener } from './agent-session';
-
-/** 1:1 mapping with ACP SessionUpdate types. */
-export type SegmentType =
-  | 'user_message_chunk'
-  | 'agent_message_chunk'
-  | 'agent_thought_chunk'
-  | 'tool_call'
-  | 'tool_call_update'
-  | 'plan'
-  | 'available_commands_update'
-  | 'current_mode_update'
-  | 'config_option_update'
-  | 'session_info_update'
-  | 'usage_update';
-
-/** An aggregated segment yielded by the stream. */
-export interface SessionStreamSegment {
-  readonly type: SegmentType;
-  readonly text: string;
-}
+import type { SegmentType, SessionStreamSegment, SessionStatusListener } from './types';
 
 export class SessionStream {
   private currentType: SegmentType | undefined;
@@ -40,13 +20,16 @@ export class SessionStream {
 
   constructor(private readonly statusListener: SessionStatusListener) {}
 
-  /** Process a raw ACP session update — aggregates text and emits status. */
-  handleSessionUpdate(params: acp.SessionNotification): void {
-    const u = params.update;
-    const type = u.sessionUpdate;
+  /** Process a raw ACP session update — aggregates text and emits status. Returns true if handled. */
+  handleSessionUpdate(update: acp.SessionUpdate): boolean {
+    const type = update.sessionUpdate;
+    if (!isSegmentType(type)) {
+      return false;
+    }
+
     let text: string | undefined;
-    if ('content' in u) {
-      const content = u.content;
+    if ('content' in update) {
+      const content = update.content;
       if (
         typeof content === 'object' &&
         content !== null &&
@@ -72,9 +55,8 @@ export class SessionStream {
       case 'tool_call_update':
         this.statusListener('tool_calling');
         break;
-      default:
-        break;
     }
+    return true;
   }
 
   /** Signal that the prompt has completed. Flushes any remaining segment. */
@@ -127,4 +109,10 @@ export class SessionStream {
       this.waiter?.();
     }
   }
+}
+
+const SEGMENT_TYPES = new Set<string>(['agent_message_chunk', 'agent_thought_chunk', 'tool_call', 'tool_call_update']);
+
+function isSegmentType(type: string): type is SegmentType {
+  return SEGMENT_TYPES.has(type);
 }
