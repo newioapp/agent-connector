@@ -23,22 +23,22 @@ export type AgentRuntimeStatus =
   | 'running'
   | 'error';
 
-export interface ClaudeConfig {
-  readonly apiKey: string;
-  readonly model: string;
-  readonly userPrompt?: string;
-  readonly nodePath?: string;
-  readonly claudeCodeCliPath?: string;
+export interface AcpConfig {
+  readonly defaultMode?: string;
+  readonly defaultModel?: string;
+  readonly executablePath?: string;
   readonly cwd: string;
+  /** When true, passes --trust-all-tools to the ACP agent (skips permission prompts). Default: true. */
+  readonly trustAllTools?: boolean;
 }
 
-export interface KiroCliConfig {
+/** Serializable subset of ACP InitializeResponse — discovered at runtime. */
+export interface AcpAgentInfo {
+  readonly protocolVersion: string;
   readonly agentName?: string;
-  readonly model?: string;
-  readonly kiroCliPath?: string;
-  readonly cwd: string;
-  /** When true, passes --trust-all-tools to kiro-cli (skips permission prompts). Default: true. */
-  readonly trustAllTools?: boolean;
+  readonly agentVersion?: string;
+  readonly agentTitle?: string;
+  readonly loadSession?: boolean;
 }
 
 /** Newio identity — populated after first registration/login, synced on every start. */
@@ -66,8 +66,10 @@ export interface AgentConfig {
   /** Environment variables passed to the agent process. */
   readonly envVars: Readonly<Record<string, string>>;
 
-  readonly claude?: ClaudeConfig;
-  readonly kiroCli?: KiroCliConfig;
+  readonly acp?: AcpConfig;
+
+  /** ACP agent info — discovered during initialization, persisted for display. */
+  readonly acpAgentInfo?: AcpAgentInfo;
 }
 
 /** Default session idle timeout: 1 hour. */
@@ -78,16 +80,14 @@ export interface AddAgentInput {
   readonly type: AgentType;
   /** Optional: existing Newio username to login with instead of registering a new agent. */
   readonly newioUsername?: string;
-  readonly claude?: ClaudeConfig;
-  readonly kiroCli?: KiroCliConfig;
+  readonly acp?: AcpConfig;
 }
 
 export interface UpdateAgentInput {
   readonly displayName?: string;
   readonly newioUsername?: string;
   readonly envVars?: Readonly<Record<string, string>>;
-  readonly claude?: ClaudeConfig;
-  readonly kiroCli?: KiroCliConfig;
+  readonly acp?: AcpConfig;
 }
 
 export interface AgentStatusInfo {

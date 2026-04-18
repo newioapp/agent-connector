@@ -90,27 +90,27 @@ export class IpcHandler implements IpcApi {
   }
 
   async listKiroAgents(kiroCliPath?: string, cwd?: string): Promise<string[]> {
-    return this.execKiroCli(kiroCliPath, ['agent'], cwd, (output) => {
+    return this.execAcpCli(kiroCliPath, ['agent'], cwd, (output) => {
       // Lines like "* kiro_default  ..." or "  amzn-builder  ..." — name starts at column 2, followed by 2+ spaces
       return [...output.matchAll(/^[* ] (\S+) {2,}/gm)].map((m) => m[1]);
     });
   }
 
   async listKiroModels(kiroCliPath?: string, cwd?: string): Promise<string[]> {
-    return this.execKiroCli(kiroCliPath, ['chat', '--list-models'], cwd, (output) => {
+    return this.execAcpCli(kiroCliPath, ['chat', '--list-models'], cwd, (output) => {
       return [...output.matchAll(/^[* ] (\S+) {2,}/gm)].map((m) => m[1]);
     });
   }
 
-  private async execKiroCli(
-    kiroCliPath: string | undefined,
+  private async execAcpCli(
+    executablePath: string | undefined,
     args: string[],
     cwd: string | undefined,
     parse: (output: string) => string[],
   ): Promise<string[]> {
-    const cmd = kiroCliPath || 'kiro-cli';
-    // When no explicit path, resolve shell env so kiro-cli is on PATH
-    const env = kiroCliPath ? undefined : await this.getShellEnvCached();
+    const cmd = executablePath || 'kiro-cli';
+    // When no explicit path, resolve shell env so the executable is on PATH
+    const env = executablePath ? undefined : await this.getShellEnvCached();
     return new Promise((resolve) => {
       execFile(
         cmd,
@@ -175,5 +175,17 @@ export class IpcHandler implements IpcApi {
 
   async updateAgentEnvVars(agentId: string, envVars: Record<string, string>): Promise<AgentConfig> {
     return this.agentConfigManager.update(agentId, { envVars });
+  }
+
+  async listAgentModels(agentId: string): Promise<import('../shared/types').AgentSessionConfig | undefined> {
+    return this.agentRuntimeManager.listModels(agentId);
+  }
+
+  async listAgentModes(agentId: string): Promise<import('../shared/types').AgentSessionConfig | undefined> {
+    return this.agentRuntimeManager.listModes(agentId);
+  }
+
+  async configureAgent(agentId: string, model?: string, mode?: string): Promise<void> {
+    await this.agentRuntimeManager.configureAgent(agentId, { model, mode });
   }
 }

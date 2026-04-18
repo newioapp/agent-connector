@@ -2,10 +2,10 @@
  * Configuration tab — displays agent config fields, approval banner, and edit/delete actions.
  */
 import { useEffect, useRef, useState } from 'react';
-import { Trash2, ExternalLink, RefreshCw, Pencil } from 'lucide-react';
-import type { AgentStatusInfo } from '../../../shared/types';
+import { Trash2, ExternalLink, RefreshCw, Pencil, Info, X } from 'lucide-react';
+import type { AgentStatusInfo, AcpAgentInfo, AgentSessionConfig } from '../../../shared/types';
 import { useAgentStore } from '../stores/agent-store';
-import { Button } from './ui';
+import { Button, Dropdown } from './ui';
 
 const APPROVAL_TIMEOUT_S = 600;
 
@@ -49,6 +49,38 @@ function Field({ label, value }: { readonly label: string; readonly value: strin
   );
 }
 
+function AcpInfoModal({
+  info,
+  onClose,
+}: {
+  readonly info: AcpAgentInfo;
+  readonly onClose: () => void;
+}): React.JSX.Element {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div
+        className="w-80 rounded-lg border border-border bg-background p-5 shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-foreground">ACP Agent Info</h3>
+          <button className="text-muted-foreground hover:text-foreground" onClick={onClose}>
+            <X size={14} />
+          </button>
+        </div>
+        <div className="space-y-2 text-xs">
+          {(info.agentTitle ?? info.agentName) && (
+            <Field label="Agent" value={info.agentTitle ?? info.agentName ?? ''} />
+          )}
+          {info.agentVersion && <Field label="Version" value={info.agentVersion} />}
+          <Field label="Protocol Version" value={info.protocolVersion} />
+          <Field label="Load Session" value={info.loadSession ? 'Supported' : 'Not supported'} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ConfigTab({
   agent,
   onEdit,
@@ -61,6 +93,20 @@ export function ConfigTab({
   const pollTimestamp = useAgentStore((s) => s.pollTimestamps[agent.id]);
   const [polling, setPolling] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
+  const [models, setModels] = useState<AgentSessionConfig | undefined>();
+  const [modes, setModes] = useState<AgentSessionConfig | undefined>();
+
+  // Fetch available models/modes when agent is running
+  useEffect(() => {
+    if (agent.runtimeStatus !== 'running') {
+      setModels(undefined);
+      setModes(undefined);
+      return;
+    }
+    void window.api.listAgentModels(agent.id).then(setModels);
+    void window.api.listAgentModes(agent.id).then(setModes);
+  }, [agent.id, agent.runtimeStatus]);
 
   useEffect(() => {
     if (!pollTimestamp) {
@@ -119,7 +165,25 @@ export function ConfigTab({
           </div>
         )}
 
-        <Field label="Type" value={config.type === 'kiro-cli' ? 'Kiro CLI' : 'Claude Code'} />
+        <div className="mb-3 flex items-center gap-2">
+          <div className="flex-1">
+            <div className="mb-0.5 text-xs font-medium text-muted-foreground">Type</div>
+            <div className="text-sm text-foreground">{config.type === 'kiro-cli' ? 'Kiro CLI' : 'Claude Code'}</div>
+          </div>
+          {config.acpAgentInfo && (
+            <button
+              className="text-muted-foreground hover:text-primary transition-colors"
+              title="ACP Agent Info"
+              onClick={() => setShowInfo(true)}
+            >
+              <Info size={14} />
+            </button>
+          )}
+        </div>
+
+        {showInfo && config.acpAgentInfo && (
+          <AcpInfoModal info={config.acpAgentInfo} onClose={() => setShowInfo(false)} />
+        )}
 
         <div className="mb-3">
           <div className="mb-0.5 text-xs font-medium text-muted-foreground">Newio Username</div>
@@ -132,24 +196,43 @@ export function ConfigTab({
         {config.newio?.displayName && <Field label="Display Name" value={config.newio.displayName} />}
         {config.newio?.agentId && <Field label="Newio Agent ID" value={config.newio.agentId} />}
 
-        {config.claude && (
+        {config.acp && (
           <>
-            <Field label="Model" value={config.claude.model} />
-            <Field label="API Key" value={'•'.repeat(12) + config.claude.apiKey.slice(-4)} />
-            {config.claude.userPrompt && <Field label="User Prompt" value={config.claude.userPrompt} />}
-            {config.claude.nodePath && <Field label="Node.js Path" value={config.claude.nodePath} />}
-            {config.claude.claudeCodeCliPath && <Field label="CLI Path" value={config.claude.claudeCodeCliPath} />}
-            {config.claude.cwd && <Field label="Working Directory" value={config.claude.cwd} />}
-          </>
-        )}
-
-        {config.kiroCli && (
-          <>
-            {config.kiroCli.agentName && <Field label="Kiro Agent Name" value={config.kiroCli.agentName} />}
-            {config.kiroCli.model && <Field label="Model" value={config.kiroCli.model} />}
-            {config.kiroCli.kiroCliPath && <Field label="Kiro CLI Path" value={config.kiroCli.kiroCliPath} />}
-            {config.kiroCli.cwd && <Field label="Working Directory" value={config.kiroCli.cwd} />}
-            <Field label="Trust All Tools" value={config.kiroCli.trustAllTools !== false ? 'Yes' : 'No'} />
+            {/* Model/Mode dropdowns when running */}
+            {agent.runtimeStatus === 'running' && models && models.options.length > 0 && (
+              <div className="mb-3">
+                <div className="mb-1 text-xs font-medium text-muted-foreground">Model</div>
+                <Dropdown
+                  options={models.options.map((m) => ({ value: m.id, label: m.name }))}
+                  value={config.acp.defaultModel ?? models.selectedId}
+                  onChange={(modelId) => {
+                    void window.api.configureAgent(agent.id, modelId, undefined);
+                  }}
+                />
+              </div>
+            )}
+            {agent.runtimeStatus === 'running' && modes && modes.options.length > 0 && (
+              <div className="mb-3">
+                <div className="mb-1 text-xs font-medium text-muted-foreground">Mode</div>
+                <Dropdown
+                  options={modes.options.map((m) => ({ value: m.id, label: m.name }))}
+                  value={config.acp.defaultMode ?? modes.selectedId}
+                  onChange={(modeId) => {
+                    void window.api.configureAgent(agent.id, undefined, modeId);
+                  }}
+                />
+              </div>
+            )}
+            {/* Static display when not running */}
+            {agent.runtimeStatus !== 'running' && config.acp.defaultMode && (
+              <Field label="Default Mode" value={config.acp.defaultMode} />
+            )}
+            {agent.runtimeStatus !== 'running' && config.acp.defaultModel && (
+              <Field label="Default Model" value={config.acp.defaultModel} />
+            )}
+            {config.acp.executablePath && <Field label="Executable Path" value={config.acp.executablePath} />}
+            {config.acp.cwd && <Field label="Working Directory" value={config.acp.cwd} />}
+            <Field label="Trust All Tools" value={config.acp.trustAllTools !== false ? 'Yes' : 'No'} />
           </>
         )}
       </div>

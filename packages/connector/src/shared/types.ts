@@ -1,8 +1,8 @@
 export type {
   AgentType,
   AgentRuntimeStatus,
-  ClaudeConfig,
-  KiroCliConfig,
+  AcpConfig,
+  AcpAgentInfo,
   NewioIdentity,
   AgentConfig,
   AddAgentInput,
@@ -12,3 +12,5 @@ export type {
   UpdateMode,
   UpdateChannel,
 } from '../core/types';
+
+export type { AgentSessionConfigOption, AgentSessionConfig } from '../core/agent-instance';

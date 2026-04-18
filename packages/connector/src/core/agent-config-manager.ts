@@ -3,7 +3,7 @@
  *
  * Implementation: StoreAgentConfigManager (main/) — backed by electron-store.
  */
-import type { AgentConfig, AddAgentInput, UpdateAgentInput, NewioIdentity } from './types';
+import type { AgentConfig, AddAgentInput, UpdateAgentInput, NewioIdentity, AcpAgentInfo } from './types';
 
 export interface AgentTokens {
   readonly accessToken: string;
@@ -17,6 +17,7 @@ export interface AgentConfigManager {
   update(agentId: string, updates: UpdateAgentInput): AgentConfig;
   remove(agentId: string): void;
   setNewioIdentity(agentId: string, identity: NewioIdentity): AgentConfig;
+  setAcpAgentInfo(agentId: string, info: AcpAgentInfo): AgentConfig;
   getTokens(agentId: string): AgentTokens | undefined;
   setTokens(agentId: string, tokens: AgentTokens): void;
   clearTokens(agentId: string): void;

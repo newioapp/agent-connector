@@ -16,16 +16,17 @@ import { NewioMcpServer, startUdsServer } from '@newio/mcp-server';
 import type { Server } from 'net';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import type { AgentConfigManager } from '../agent-config-manager';
-import type { AgentRuntimeStatus, AgentConfig } from '../types';
-import { DEFAULT_SESSION_IDLE_TIMEOUT_MS } from '../types';
+import type { AgentConfigManager } from './agent-config-manager';
+import type { AgentRuntimeStatus, AgentConfig } from './types';
+import { DEFAULT_SESSION_IDLE_TIMEOUT_MS } from './types';
 import type { AgentInstance, AgentInstanceListener } from './agent-instance';
-import type { AgentSession } from '../agent-session';
-import type { SessionStore } from '../session-store';
+import type { AgentSessionConfig, ConfigureAgentInput } from './agent-instance';
+import type { AgentSession } from './agent-session';
+import type { SessionStore } from './session-store';
 import { EventQueue } from './event-queue';
 import type { AgentEvent } from './event-queue';
 import { PromptManager } from './prompt-manager';
-import { Logger } from '../logger';
+import { Logger } from './logger';
 import WebSocket from 'ws';
 
 const log = new Logger('base-agent-instance');
@@ -444,6 +445,15 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** Called during stop. Subclasses clean up agent-specific resources. */
   protected abstract onStopped(): Promise<void> | void;
+
+  /** List available models from the representative session. */
+  abstract listModels(): AgentSessionConfig | undefined;
+
+  /** List available modes from the representative session. */
+  abstract listModes(): AgentSessionConfig | undefined;
+
+  /** Configure model/mode on one or all sessions. */
+  abstract configureAgent(input: ConfigureAgentInput): Promise<void>;
 
   // ---------------------------------------------------------------------------
   // Permission handling — routes ACP permission requests to owner via Newio

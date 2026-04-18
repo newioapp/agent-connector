@@ -83,7 +83,6 @@ export const useAgentStore = create<AgentStore>((set) => ({
   setAgentStatus(agentId: string, status: AgentRuntimeStatus, error?: string): void {
     set((state: AgentState) => ({
       agents: state.agents.map((a) => (a.id === agentId ? { ...a, runtimeStatus: status, error } : a)),
-      // Clear approval URL when no longer awaiting
       approvalUrls:
         status !== 'awaiting_approval'
           ? Object.fromEntries(Object.entries(state.approvalUrls).filter(([k]) => k !== agentId))
