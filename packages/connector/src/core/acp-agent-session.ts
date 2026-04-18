@@ -4,13 +4,14 @@
  * Lightweight: does not own a process or connection. Uses the shared
  * ClientSideConnection from AcpAgentInstance to send prompts and cancel.
  * Receives routed sessionUpdate/requestPermission calls from the instance.
- * Stores available models/modes discovered from the session response.
+ * Delegates model/mode config to AcpSessionConfigHandler.
  */
 import type { ClientSideConnection, NewSessionResponse, LoadSessionResponse } from '@agentclientprotocol/sdk';
 import type * as acp from '@agentclientprotocol/sdk';
 import type { AgentSession, SessionStatusListener } from './agent-session';
-import { SessionStream } from './session-stream';
-import type { SessionStreamSegment } from './session-stream';
+import { SessionStream } from './acp-session-stream';
+import type { SessionStreamSegment } from './acp-session-stream';
+import { AcpSessionConfigHandler } from './acp-session-config-handler';
 import { Logger } from './logger';
 import type { AgentSessionConfig } from './agent-instance';
 
@@ -27,14 +28,15 @@ export interface AcpAgentSessionInit {
   readonly connection: ClientSideConnection;
   readonly permissionHandler: PermissionHandler;
   readonly sessionResponse: NewSessionResponse | LoadSessionResponse;
+  readonly disposable: boolean;
 }
 
 export class AcpAgentSession implements AgentSession {
   readonly correlationId: string;
-  private readonly modelConfig: AgentSessionConfig | undefined;
-  private readonly modeConfig: AgentSessionConfig | undefined;
+  disposable: boolean;
 
   private readonly connection: ClientSideConnection;
+  private readonly configHandler: AcpSessionConfigHandler;
   private stream?: SessionStream;
   private statusListener: SessionStatusListener = () => {};
   private readonly permissionHandler: PermissionHandler;
@@ -42,37 +44,10 @@ export class AcpAgentSession implements AgentSession {
 
   constructor(init: AcpAgentSessionInit) {
     this.correlationId = init.correlationId;
+    this.disposable = init.disposable;
     this.connection = init.connection;
     this.permissionHandler = init.permissionHandler;
-
-    const { configOptions, models, modes } = init.sessionResponse;
-
-    // Prefer configOptions (newer API), fallback to legacy models/modes
-    this.modelConfig =
-      extractConfigByCategory(configOptions, 'model') ??
-      (models
-        ? {
-            options: models.availableModels.map((m) => ({
-              id: m.modelId,
-              name: m.name,
-              description: m.description ?? undefined,
-            })),
-            selectedId: models.currentModelId,
-          }
-        : undefined);
-
-    this.modeConfig =
-      extractConfigByCategory(configOptions, 'mode') ??
-      (modes
-        ? {
-            options: modes.availableModes.map((m) => ({
-              id: m.id,
-              name: m.name,
-              description: m.description ?? undefined,
-            })),
-            selectedId: modes.currentModeId,
-          }
-        : undefined);
+    this.configHandler = new AcpSessionConfigHandler(init.correlationId, init.connection, init.sessionResponse);
   }
 
   // ---------------------------------------------------------------------------
@@ -84,21 +59,19 @@ export class AcpAgentSession implements AgentSession {
   }
 
   async setModel(modelId: string): Promise<void> {
-    await this.connection.unstable_setSessionModel({ sessionId: this.correlationId, modelId });
-    log.info(`[${this.correlationId}] Model set to: ${modelId}`);
+    await this.configHandler.setModel(modelId);
   }
 
   async setMode(modeId: string): Promise<void> {
-    await this.connection.setSessionMode({ sessionId: this.correlationId, modeId });
-    log.info(`[${this.correlationId}] Mode set to: ${modeId}`);
+    await this.configHandler.setMode(modeId);
   }
 
   listModels(): AgentSessionConfig | undefined {
-    return this.modelConfig;
+    return this.configHandler.listModels();
   }
 
   listModes(): AgentSessionConfig | undefined {
-    return this.modeConfig;
+    return this.configHandler.listModes();
   }
 
   async *prompt(text: string): AsyncGenerator<SessionStreamSegment> {
@@ -134,14 +107,25 @@ export class AcpAgentSession implements AgentSession {
     }
   }
 
-  dispose(): void {
+  async dispose(): Promise<void> {
+    if (!this.disposable) {
+      log.info(`[${this.correlationId}] Session is not disposable, skipping dispose`);
+      return;
+    }
     if (this.prompting) {
       log.info(`[${this.correlationId}] Cancelling in-flight prompt...`);
-      this.connection.cancel({ sessionId: this.correlationId }).catch((err: unknown) => {
+      try {
+        await this.connection.cancel({ sessionId: this.correlationId });
+      } catch (err: unknown) {
         log.debug(`[${this.correlationId}] Cancel failed (expected if already done)`, err);
-      });
+      }
     }
     this.stream?.finish();
+    try {
+      await this.connection.unstable_closeSession({ sessionId: this.correlationId });
+    } catch (err: unknown) {
+      log.debug(`[${this.correlationId}] closeSession failed (best-effort)`, err);
+    }
     log.info(`[${this.correlationId}] Session disposed`);
   }
 
@@ -150,44 +134,11 @@ export class AcpAgentSession implements AgentSession {
   // ---------------------------------------------------------------------------
 
   handleSessionUpdate(params: acp.SessionNotification): void {
-    this.stream?.handleSessionUpdate(params);
+    this.configHandler.handleSessionUpdate(params.update);
+    this.stream?.handleSessionUpdate(params.update);
   }
 
   handleRequestPermission(params: acp.RequestPermissionRequest): Promise<acp.RequestPermissionResponse> {
     return this.permissionHandler(this.correlationId, params);
   }
-}
-
-/** Extract an AgentSessionConfig from configOptions by category, flattening grouped options. */
-function extractConfigByCategory(
-  configOptions: ReadonlyArray<acp.SessionConfigOption> | null | undefined,
-  category: string,
-): AgentSessionConfig | undefined {
-  if (!configOptions) {
-    return undefined;
-  }
-  for (const opt of configOptions) {
-    if (opt.type === 'select' && opt.category === category) {
-      return {
-        options: flattenSelectOptions(opt.options),
-        selectedId: opt.currentValue,
-      };
-    }
-  }
-  return undefined;
-}
-
-/** Flatten SessionConfigSelectOptions (may be flat options or grouped) into AgentSessionConfigOption[]. */
-function flattenSelectOptions(
-  options: acp.SessionConfigSelectOptions,
-): { readonly id: string; readonly name: string; readonly description?: string }[] {
-  const result: { readonly id: string; readonly name: string; readonly description?: string }[] = [];
-  for (const item of options) {
-    if ('value' in item) {
-      result.push({ id: item.value, name: item.name, description: item.description ?? undefined });
-    } else if ('options' in item) {
-      result.push(...flattenSelectOptions(item.options));
-    }
-  }
-  return result;
 }

@@ -224,7 +224,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
     for (const [newioSessionId, runner] of this.runners) {
       log.debug(`Disposing session runner: ${newioSessionId}`);
       runner.queue.close();
-      runner.session.dispose();
+      await runner.session.dispose();
     }
     this.runners.clear();
 
@@ -601,19 +601,22 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private startIdleCleanup(): void {
     const checkInterval = 60_000; // check every minute
     this.idleTimer = setInterval(() => {
-      this.cleanupIdleSessions();
+      void this.cleanupIdleSessions();
     }, checkInterval);
   }
 
-  private cleanupIdleSessions(): void {
+  private async cleanupIdleSessions(): Promise<void> {
     const timeout = this.config.sessionIdleTimeoutMs ?? DEFAULT_SESSION_IDLE_TIMEOUT_MS;
     const now = Date.now();
 
     for (const [newioSessionId, runner] of this.runners) {
+      if (!runner.session.disposable) {
+        continue;
+      }
       if (now - runner.lastActivityAt > timeout) {
         log.info(`Idle session cleanup: ${newioSessionId} (idle ${Math.round((now - runner.lastActivityAt) / 1000)}s)`);
         runner.queue.close();
-        runner.session.dispose();
+        await runner.session.dispose();
         this.onSessionDisposed(runner.session.correlationId);
         this.runners.delete(newioSessionId);
       }

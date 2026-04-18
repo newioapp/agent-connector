@@ -18,7 +18,7 @@ import { AcpAgentSession } from './acp-agent-session';
 import type { PermissionHandler } from './acp-agent-session';
 import type { AgentSession } from './agent-session';
 import type { AgentSessionConfig, ConfigureAgentInput } from './agent-instance';
-import type { SessionStreamSegment } from './session-stream';
+import type { SessionStreamSegment } from './acp-session-stream';
 import { Logger } from './logger';
 
 const log = new Logger('acp-agent-instance');
@@ -29,6 +29,9 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
 
   /** correlationId → live session, for routing acp.Client callbacks. */
   private readonly acpSessions = new Map<string, AcpAgentSession>();
+
+  /** Whether the ACP agent supports session/close. */
+  private supportsClose = false;
 
   /** The first session created (greeting session) — used to expose available models/modes. */
   private representativeSession?: AcpAgentSession;
@@ -125,6 +128,8 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
           'The Newio Agent Connector requires loadSession capability to route conversations.',
       );
     }
+
+    this.supportsClose = initResult.agentCapabilities.sessionCapabilities?.close != null;
 
     // Persist agent info for UI display
     this.configManager.setAcpAgentInfo(this.config.id, {
@@ -260,6 +265,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       connection: conn,
       permissionHandler: this.permissionHandler,
       sessionResponse: result,
+      disposable: this.supportsClose,
     });
     this.acpSessions.set(result.sessionId, session);
     log.info(`Session created: ${result.sessionId}`);
@@ -298,6 +304,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       connection: conn,
       permissionHandler: this.permissionHandler,
       sessionResponse: loadResult,
+      disposable: this.supportsClose,
     });
     this.acpSessions.set(correlationId, session);
     log.info(`Session resumed: ${correlationId}`);
@@ -358,7 +365,9 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     if (!this.app.identity.ownerId) {
       log.warn('No ownerId set, skipping greeting');
       // Still need a representative session — create one for the owner DM
-      return this.getOrCreateSession(await this.getOwnerDmOrThrow()) as Promise<AcpAgentSession>;
+      const session = (await this.getOrCreateSession(await this.getOwnerDmOrThrow())) as AcpAgentSession;
+      session.disposable = false;
+      return session;
     }
 
     const ownerDmConversationId = await this.getOwnerDmOrThrow();
@@ -366,6 +375,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
 
     this.setStatus('greeting');
     const session = (await this.getOrCreateSession(ownerDmConversationId)) as AcpAgentSession;
+    session.disposable = false;
     log.debug(`[${session.correlationId}] Generating greeting for owner...`);
 
     let greeting: string | undefined;

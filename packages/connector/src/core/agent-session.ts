@@ -4,7 +4,7 @@
  * Each session maps to one context window on the agent platform side.
  * A single agent instance manages multiple sessions.
  */
-import type { SessionStreamSegment } from './session-stream';
+import type { SessionStreamSegment } from './acp-session-stream';
 
 export type SessionStatus = 'thinking' | 'typing' | 'tool_calling' | 'idle';
 
@@ -13,6 +13,9 @@ export type SessionStatusListener = (status: SessionStatus) => void;
 export interface AgentSession {
   /** Agent-platform-specific session ID (e.g., ACP sessionId). */
   readonly correlationId: string;
+
+  /** Whether this session can be disposed (e.g., via idle cleanup). */
+  readonly disposable: boolean;
 
   /** Send a prompt and yield aggregated response segments as they arrive. */
   prompt(text: string): AsyncGenerator<SessionStreamSegment>;
@@ -27,5 +30,5 @@ export interface AgentSession {
   onStatus(listener: SessionStatusListener): void;
 
   /** Dispose the session (kill process, free resources). */
-  dispose(): void;
+  dispose(): Promise<void>;
 }
