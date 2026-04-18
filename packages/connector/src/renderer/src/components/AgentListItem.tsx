@@ -3,6 +3,7 @@
  */
 import { Bot, Terminal } from 'lucide-react';
 import type { AgentStatusInfo, AgentRuntimeStatus } from '../../../shared/types';
+import { agentTypeLabel } from '../lib/agent-type-label';
 
 const STATUS_COLORS: Record<AgentRuntimeStatus, string> = {
   stopped: 'bg-muted-foreground',
@@ -19,16 +20,6 @@ function AgentTypeIcon({ type, size }: { readonly type: string; readonly size: n
     return <Terminal size={size} />;
   }
   return <Bot size={size} />;
-}
-
-function agentTypeLabel(type: string): string {
-  if (type === 'kiro-cli') {
-    return 'Kiro CLI';
-  }
-  if (type === 'claude-code') {
-    return 'Claude Code';
-  }
-  return 'Custom ACP';
 }
 
 export function AgentListItem({

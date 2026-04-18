@@ -31,6 +31,10 @@ import WebSocket from 'ws';
 
 const log = new Logger('base-agent-instance');
 
+function isErrnoException(err: unknown): err is NodeJS.ErrnoException {
+  return err instanceof Error && 'code' in err;
+}
+
 /** A running session with its own event queue and processing loop. */
 interface SessionRunner {
   readonly session: AgentSession;
@@ -204,7 +208,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       } else if (err instanceof Error && err.message.includes('WebSocket closed before open')) {
         log.warn('WebSocket connection rejected — likely a duplicate session');
         this.setStatus('error', 'Connection rejected. This agent may already be running in another instance.');
-      } else if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+      } else if (isErrnoException(err) && err.code === 'ENOENT') {
         const executable = resolveExecutable(this.config.type, this.config.acp?.executablePath);
         log.warn(`Executable not found: ${executable}`);
         this.setStatus(

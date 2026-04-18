@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Trash2, ExternalLink, RefreshCw, Pencil, Info, X } from 'lucide-react';
 import type { AgentStatusInfo, AcpAgentInfo, AgentSessionConfig } from '../../../shared/types';
 import { useAgentStore } from '../stores/agent-store';
+import { agentTypeLabel } from '../lib/agent-type-label';
 import { Button, Dropdown } from './ui';
 
 const APPROVAL_TIMEOUT_S = 600;
@@ -168,9 +169,7 @@ export function ConfigTab({
         <div className="mb-3 flex items-center gap-2">
           <div className="flex-1">
             <div className="mb-0.5 text-xs font-medium text-muted-foreground">Type</div>
-            <div className="text-sm text-foreground">
-              {config.type === 'kiro-cli' ? 'Kiro CLI' : config.type === 'claude-code' ? 'Claude Code' : 'Custom ACP'}
-            </div>
+            <div className="text-sm text-foreground">{agentTypeLabel(config.type)}</div>
           </div>
           {config.acpAgentInfo && (
             <button

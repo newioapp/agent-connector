@@ -19,9 +19,16 @@ const DEFAULT_EXECUTABLES: Partial<Readonly<Record<AgentType, string>>> = {
   'kiro-cli': 'kiro-cli',
 };
 
-/** Resolve the executable for an agent, using the explicit path, a known default, or the type as fallback. */
+/** Resolve the executable for an agent, using the explicit path, a known default, or throwing for unknown types. */
 export function resolveExecutable(type: AgentType, executablePath?: string): string {
-  return executablePath ?? DEFAULT_EXECUTABLES[type] ?? type;
+  if (executablePath) {
+    return executablePath;
+  }
+  const defaultExe = DEFAULT_EXECUTABLES[type];
+  if (!defaultExe) {
+    throw new Error(`No executable path configured for agent type "${type}"`);
+  }
+  return defaultExe;
 }
 
 export type AgentRuntimeStatus =

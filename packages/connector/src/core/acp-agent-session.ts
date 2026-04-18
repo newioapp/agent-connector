@@ -60,7 +60,7 @@ export class AcpAgentSession implements AgentSession {
 
   /** Set a callback for when model/mode config changes. */
   onConfigChanged(listener: () => void): void {
-    this.configHandler.onConfigChanged = listener;
+    this.configHandler.setOnConfigChanged(listener);
   }
 
   async setModel(modelId: string): Promise<void> {
