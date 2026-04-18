@@ -18,7 +18,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import type { AgentConfigManager } from './agent-config-manager';
 import type { AgentRuntimeStatus, AgentConfig } from './types';
-import { DEFAULT_SESSION_IDLE_TIMEOUT_MS, resolveExecutable } from './types';
+import { DEFAULT_SESSION_IDLE_TIMEOUT_MS, resolveCommand } from './types';
 import type { AgentInstance, AgentInstanceListener } from './agent-instance';
 import type { AgentSessionConfig, ConfigureAgentInput } from './agent-instance';
 import type { AgentSession } from './agent-session';
@@ -209,7 +209,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         log.warn('WebSocket connection rejected — likely a duplicate session');
         this.setStatus('error', 'Connection rejected. This agent may already be running in another instance.');
       } else if (isErrnoException(err) && err.code === 'ENOENT') {
-        const executable = resolveExecutable(this.config.type, this.config.acp?.executablePath);
+        const executable = this.config.acp ? resolveCommand(this.config.type, this.config.acp).command : 'unknown';
         log.warn(`Executable not found: ${executable}`);
         this.setStatus(
           'error',

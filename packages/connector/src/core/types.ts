@@ -14,21 +14,31 @@ export type UpdateChannel = 'latest' | 'beta';
 
 export type AgentType = 'claude-code' | 'kiro-cli' | 'custom';
 
-const DEFAULT_EXECUTABLES: Partial<Readonly<Record<AgentType, string>>> = {
-  'claude-code': 'claude-agent-acp',
-  'kiro-cli': 'kiro-cli',
-};
+/** Resolve the command and arguments to spawn an ACP agent process. */
+export function resolveCommand(
+  type: AgentType,
+  config: AcpConfig,
+): { readonly command: string; readonly args: readonly string[] } {
+  if (type === 'kiro-cli') {
+    const command = config.executablePath ?? 'kiro-cli';
+    const args = config.kiroCliTrustAllTools !== false ? ['acp', '--trust-all-tools'] : ['acp'];
+    return { command, args };
+  }
 
-/** Resolve the executable for an agent, using the explicit path, a known default, or throwing for unknown types. */
-export function resolveExecutable(type: AgentType, executablePath?: string): string {
-  if (executablePath) {
-    return executablePath;
+  if (type === 'claude-code') {
+    return { command: config.executablePath ?? 'claude-agent-acp', args: [] };
   }
-  const defaultExe = DEFAULT_EXECUTABLES[type];
-  if (!defaultExe) {
-    throw new Error(`No executable path configured for agent type "${type}"`);
+
+  // custom: user provides the full command string, possibly with args baked in
+  if (!config.executablePath) {
+    throw new Error('No executable path configured for custom agent type');
   }
-  return defaultExe;
+  const parts = config.executablePath.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    throw new Error('No executable path configured for custom agent type');
+  }
+  const [command, ...rest] = parts;
+  return { command, args: rest };
 }
 
 export type AgentRuntimeStatus =
@@ -41,12 +51,10 @@ export type AgentRuntimeStatus =
   | 'error';
 
 export interface AcpConfig {
-  readonly defaultMode?: string;
-  readonly defaultModel?: string;
   readonly executablePath?: string;
   readonly cwd: string;
-  /** When true, passes --trust-all-tools to the ACP agent (skips permission prompts). Default: true. */
-  readonly trustAllTools?: boolean;
+  /** When true, passes --trust-all-tools to the ACP agent (kiro-cli only — skips permission prompts). Default: true. */
+  readonly kiroCliTrustAllTools?: boolean;
 }
 
 /** Serializable subset of ACP InitializeResponse — discovered at runtime. */

@@ -15,6 +15,12 @@ export interface StatusListener {
   onApprovalUrl(agentId: string, approvalUrl: string): void;
   onPollAttempt(agentId: string): void;
   onConfigUpdated(agentId: string): void;
+  onAgentSessionConfigUpdated(
+    agentId: string,
+    sessionId: string,
+    models?: AgentSessionConfig,
+    modes?: AgentSessionConfig,
+  ): void;
 }
 
 export class AgentRuntimeManager {
@@ -58,6 +64,9 @@ export class AgentRuntimeManager {
       onConfigUpdated: () => {
         this.listener.onConfigUpdated(agentId);
       },
+      onAgentSessionConfigUpdated: (sessionId: string, models?: AgentSessionConfig, modes?: AgentSessionConfig) => {
+        this.listener.onAgentSessionConfigUpdated(agentId, sessionId, models, modes);
+      },
     };
 
     const instance = new AcpAgentInstance(config, this.configManager, this.sessionStore, instanceListener);
@@ -88,23 +97,11 @@ export class AgentRuntimeManager {
     return this.instances.get(agentId)?.listModes();
   }
 
-  /** Configure model/mode on one or all sessions, and persist to config. */
+  /** Configure model/mode on one or all sessions. */
   async configureAgent(agentId: string, input: ConfigureAgentInput): Promise<void> {
     const instance = this.instances.get(agentId);
     if (instance) {
       await instance.configureAgent(input);
-    }
-    // Persist to config
-    const existing = this.configManager.get(agentId);
-    if (existing?.acp) {
-      this.configManager.update(agentId, {
-        acp: {
-          ...existing.acp,
-          ...(input.model !== undefined ? { defaultModel: input.model } : {}),
-          ...(input.mode !== undefined ? { defaultMode: input.mode } : {}),
-        },
-      });
-      this.listener.onConfigUpdated(agentId);
     }
   }
 }

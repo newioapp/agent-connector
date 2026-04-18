@@ -11,6 +11,7 @@ export interface AgentInstanceListener {
   onApprovalUrl(approvalUrl: string): void;
   onPollAttempt(): void;
   onConfigUpdated(): void;
+  onAgentSessionConfigUpdated(sessionId: string, models?: AgentSessionConfig, modes?: AgentSessionConfig): void;
 }
 
 export interface ConfigureAgentInput {
