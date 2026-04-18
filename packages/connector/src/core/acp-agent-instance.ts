@@ -55,6 +55,13 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     await this.killProcess();
   }
 
+  protected onSessionDisposed(correlationId: string): void {
+    this.acpSessions.delete(correlationId);
+    if (this.representativeSession?.correlationId === correlationId) {
+      this.representativeSession = undefined;
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Process management
   // ---------------------------------------------------------------------------

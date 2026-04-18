@@ -446,6 +446,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
   /** Called during stop. Subclasses clean up agent-specific resources. */
   protected abstract onStopped(): Promise<void> | void;
 
+  /** Called when a session is disposed (idle cleanup). Subclasses clean up session-specific resources. */
+  protected onSessionDisposed(_correlationId: string): void {
+    // Default no-op — subclasses override as needed
+  }
+
   /** List available models from the representative session. */
   abstract listModels(): AgentSessionConfig | undefined;
 
@@ -609,6 +614,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         log.info(`Idle session cleanup: ${newioSessionId} (idle ${Math.round((now - runner.lastActivityAt) / 1000)}s)`);
         runner.queue.close();
         runner.session.dispose();
+        this.onSessionDisposed(runner.session.correlationId);
         this.runners.delete(newioSessionId);
       }
     }

@@ -58,30 +58,7 @@ export function AgentFormPanel({
   const [model, setModel] = useState('');
   const [executablePath, setExecutablePath] = useState('');
   const [trustAllTools, setTrustAllTools] = useState(true);
-  const [kiroAgents, setKiroAgents] = useState<string[]>([]);
-  const [kiroModels, setKiroModels] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
-
-  // Fetch available agents and models when type is kiro-cli
-  useEffect(() => {
-    if (type !== 'kiro-cli') {
-      return;
-    }
-    const path = executablePath.trim() || undefined;
-    const dir = cwd.trim() || undefined;
-    void window.api.listKiroAgents(path, dir).then((agents) => {
-      setKiroAgents(agents);
-      if (agents.length > 0 && !agentName) {
-        setAgentName(agents[0]);
-      }
-    });
-    void window.api.listKiroModels(path, dir).then((models) => {
-      setKiroModels(models);
-      if (models.length > 0 && !model) {
-        setModel(models[0]);
-      }
-    });
-  }, [type, executablePath, cwd]);
 
   // Populate fields when editing
   useEffect(() => {
@@ -193,34 +170,15 @@ export function AgentFormPanel({
         </Label>
 
         {/* ACP config — shared by all agent types */}
-        {type === 'kiro-cli' && (
-          <Label
-            text="Default Mode (optional)"
-            hint="The ACP session mode to use. Available modes are advertised by the agent on session creation."
-          >
-            {kiroAgents.length > 0 ? (
-              <Dropdown
-                options={kiroAgents.map((a) => ({ value: a, label: a }))}
-                value={agentName}
-                onChange={setAgentName}
-              />
-            ) : (
-              <Input placeholder="e.g. kiro_default" value={agentName} onChange={(e) => setAgentName(e.target.value)} />
-            )}
-          </Label>
-        )}
-        {type === 'claude-code' && (
-          <Label text="Default Mode (optional)" hint="The ACP session mode to use.">
-            <Input placeholder="e.g. code" value={agentName} onChange={(e) => setAgentName(e.target.value)} />
-          </Label>
-        )}
+        <Label
+          text="Default Mode (optional)"
+          hint="The ACP session mode to use. Available modes are advertised by the agent when running."
+        >
+          <Input placeholder="e.g. default" value={agentName} onChange={(e) => setAgentName(e.target.value)} />
+        </Label>
 
         <Label text="Default Model (optional)" hint="The model to use for ACP sessions.">
-          {type === 'kiro-cli' && kiroModels.length > 0 ? (
-            <Dropdown options={kiroModels.map((m) => ({ value: m, label: m }))} value={model} onChange={setModel} />
-          ) : (
-            <Input placeholder="auto" value={model} onChange={(e) => setModel(e.target.value)} />
-          )}
+          <Input placeholder="auto" value={model} onChange={(e) => setModel(e.target.value)} />
         </Label>
 
         <Label text="Executable Path (optional)" hint="Override if the agent CLI is not on your PATH.">
