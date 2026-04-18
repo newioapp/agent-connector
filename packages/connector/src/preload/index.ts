@@ -49,6 +49,7 @@ const api: ConnectorAPI = {
   onAgentApprovalUrl: (callback) => onEvent(EVENT_CHANNELS['agent-approval-url'], callback),
   onAgentPollAttempt: (callback) => onEvent(EVENT_CHANNELS['agent-poll-attempt'], callback),
   onAgentConfigUpdated: (callback) => onEvent(EVENT_CHANNELS['agent-config-updated'], callback),
+  onAgentSessionConfigUpdated: (callback) => onEvent(EVENT_CHANNELS['agent-session-config-updated'], callback),
 };
 
 contextBridge.exposeInMainWorld('api', api);

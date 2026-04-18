@@ -96,6 +96,7 @@ export function ConfigTab({
   const removeAgent = useAgentStore((s) => s.removeAgent);
   const approvalUrl = useAgentStore((s) => s.approvalUrls[agent.id]);
   const pollTimestamp = useAgentStore((s) => s.pollTimestamps[agent.id]);
+  const sessionConfigs = useAgentStore((s) => s.sessionConfigs);
   const [polling, setPolling] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
@@ -113,6 +114,20 @@ export function ConfigTab({
     void window.api.listAgentModels(agent.id).then(setModels);
     void window.api.listAgentModes(agent.id).then(setModes);
   }, [agent.id, agent.runtimeStatus]);
+
+  // Sync from store when push events arrive
+  useEffect(() => {
+    const entry = Object.entries(sessionConfigs).find(([key]) => key.startsWith(`${agent.id}:`));
+    if (entry) {
+      const [, config] = entry;
+      if (config.models) {
+        setModels(config.models);
+      }
+      if (config.modes) {
+        setModes(config.modes);
+      }
+    }
+  }, [agent.id, sessionConfigs]);
 
   useEffect(() => {
     if (!pollTimestamp) {

@@ -8,13 +8,21 @@ import type {
   AddAgentInput,
   UpdateAgentInput,
   AgentRuntimeStatus,
+  AgentSessionConfig,
 } from '../../../shared/types';
+
+interface SessionConfigEntry {
+  readonly models?: AgentSessionConfig;
+  readonly modes?: AgentSessionConfig;
+}
 
 interface AgentState {
   readonly agents: AgentStatusInfo[];
   readonly selectedAgentId: string | null;
   readonly approvalUrls: Record<string, string>;
   readonly pollTimestamps: Record<string, number>;
+  /** Session configs keyed by `agentId:sessionId`. */
+  readonly sessionConfigs: Record<string, SessionConfigEntry>;
 }
 
 interface AgentActions {
@@ -29,6 +37,7 @@ interface AgentActions {
   setApprovalUrl(agentId: string, url: string): void;
   setPollTimestamp(agentId: string): void;
   updateConfig(agentId: string, config: AgentConfig): void;
+  setSessionConfig(agentId: string, sessionId: string, models?: AgentSessionConfig, modes?: AgentSessionConfig): void;
 }
 
 type AgentStore = AgentState & AgentActions;
@@ -38,6 +47,7 @@ export const useAgentStore = create<AgentStore>((set) => ({
   selectedAgentId: null,
   approvalUrls: {},
   pollTimestamps: {},
+  sessionConfigs: {},
 
   async load(): Promise<void> {
     const agents = await window.api.listAgents();
@@ -105,6 +115,13 @@ export const useAgentStore = create<AgentStore>((set) => ({
   updateConfig(agentId: string, config: AgentConfig): void {
     set((state: AgentState) => ({
       agents: state.agents.map((a) => (a.id === agentId ? { ...a, config } : a)),
+    }));
+  },
+
+  setSessionConfig(agentId: string, sessionId: string, models?: AgentSessionConfig, modes?: AgentSessionConfig): void {
+    const key = `${agentId}:${sessionId}`;
+    set((state: AgentState) => ({
+      sessionConfigs: { ...state.sessionConfigs, [key]: { models, modes } },
     }));
   },
 }));

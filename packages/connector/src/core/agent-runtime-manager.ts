@@ -15,6 +15,12 @@ export interface StatusListener {
   onApprovalUrl(agentId: string, approvalUrl: string): void;
   onPollAttempt(agentId: string): void;
   onConfigUpdated(agentId: string): void;
+  onAgentSessionConfigUpdated(
+    agentId: string,
+    sessionId: string,
+    models?: AgentSessionConfig,
+    modes?: AgentSessionConfig,
+  ): void;
 }
 
 export class AgentRuntimeManager {
@@ -57,6 +63,9 @@ export class AgentRuntimeManager {
       },
       onConfigUpdated: () => {
         this.listener.onConfigUpdated(agentId);
+      },
+      onAgentSessionConfigUpdated: (sessionId: string, models?: AgentSessionConfig, modes?: AgentSessionConfig) => {
+        this.listener.onAgentSessionConfigUpdated(agentId, sessionId, models, modes);
       },
     };
 

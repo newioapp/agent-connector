@@ -63,6 +63,9 @@ void app.whenReady().then(async () => {
         mainWindowManager.send(EVENT_CHANNELS['agent-config-updated'], { agentId, config });
       }
     },
+    onAgentSessionConfigUpdated(agentId, sessionId, models, modes) {
+      mainWindowManager.send(EVENT_CHANNELS['agent-session-config-updated'], { agentId, sessionId, models, modes });
+    },
   });
 
   // Apply persisted theme
