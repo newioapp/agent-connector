@@ -22,18 +22,19 @@ function DirectoryPicker({
     }
   }
   return (
-    <div className="flex gap-2">
-      <Input className="flex-1" value={value} readOnly placeholder="No directory selected" />
-      <Button variant="outline" onClick={() => void handleBrowse()}>
+    <div className="flex items-center gap-2">
+      <Button variant="outline" className="px-8" onClick={() => void handleBrowse()}>
         <FolderOpen size={16} />
       </Button>
+      <span className="text-sm text-muted-foreground truncate select-text">{value || 'No directory selected'}</span>
     </div>
   );
 }
 
 const AGENT_TYPE_OPTIONS: readonly { value: AgentType; label: string }[] = [
-  { value: 'claude-code', label: 'Claude Code' },
+  { value: 'claude-code', label: "Claude Code (via Zed's adapter)" },
   { value: 'kiro-cli', label: 'Kiro CLI' },
+  { value: 'custom', label: 'Custom ACP Agent' },
 ];
 
 export function AgentFormPanel({
@@ -77,7 +78,8 @@ export function AgentFormPanel({
     }
   }, [editAgent]);
 
-  const canSubmit = name.trim().length > 0 && cwd.trim().length > 0;
+  const canSubmit =
+    name.trim().length > 0 && cwd.trim().length > 0 && (type !== 'custom' || executablePath.trim().length > 0);
 
   async function handleSubmit(): Promise<void> {
     if (!canSubmit || submitting) {
@@ -129,23 +131,99 @@ export function AgentFormPanel({
 
         {/* Type description */}
         <Hint className="mb-4">
-          Connects an{' '}
-          <button
-            className="text-primary hover:underline"
-            onClick={() => void window.api.openExternal('https://agentclientprotocol.com/get-started/introduction')}
-          >
-            ACP (Agent Client Protocol)
-          </button>{' '}
-          compatible agent to Newio.
-          {type === 'claude-code' && ' Claude Code is supported via the @agentclientprotocol/claude-agent-acp wrapper.'}
+          {type === 'claude-code' && (
+            <>
+              Claude Code is supported via{' '}
+              <button
+                className="text-primary hover:underline"
+                onClick={() =>
+                  void window.api.openExternal('https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp')
+                }
+              >
+                @agentclientprotocol/claude-agent-acp
+              </button>
+              . Install with{' '}
+              <code className="text-xs bg-muted px-1 py-0.5 rounded">
+                npm i -g @agentclientprotocol/claude-agent-acp
+              </code>{' '}
+              and login with Claude subscription{' '}
+              <code className="text-xs bg-muted px-1 py-0.5 rounded">claude-agent-acp --cli auth login --claudeai</code>{' '}
+              or Anthropic Console (API usage billing){' '}
+              <code className="text-xs bg-muted px-1 py-0.5 rounded">claude-agent-acp --cli auth login --console</code>.
+            </>
+          )}
           {type === 'kiro-cli' && (
             <>
-              {' '}
-              Requires <span className="font-medium text-foreground">kiro-cli</span> installed and configured on your
-              system.
+              Requires{' '}
+              <button
+                className="text-primary hover:underline"
+                onClick={() => void window.api.openExternal('https://kiro.dev/cli/')}
+              >
+                kiro-cli
+              </button>{' '}
+              installed and logged in on your system.
+            </>
+          )}
+          {type === 'custom' && (
+            <>
+              Connect any{' '}
+              <button
+                className="text-primary hover:underline"
+                onClick={() => void window.api.openExternal('https://agentclientprotocol.com/get-started/introduction')}
+              >
+                ACP-compatible
+              </button>{' '}
+              agent by providing its CLI executable below. Ensure the agent is authenticated and logged in before
+              starting.
             </>
           )}
         </Hint>
+
+        <Label
+          text={type === 'custom' ? 'Executable Path' : 'Executable Path (optional)'}
+          hint={
+            type === 'custom' ? (
+              <>
+                Command to start the agent in ACP mode.{' '}
+                <button
+                  className="text-primary hover:underline"
+                  onClick={() => void window.api.openExternal('https://agentclientprotocol.com/get-started/agents')}
+                >
+                  See supported agents
+                </button>
+                .
+              </>
+            ) : (
+              'Override if the agent CLI is not on your PATH.'
+            )
+          }
+        >
+          <Input
+            placeholder={type === 'custom' ? 'e.g. /usr/local/bin/my-agent' : 'e.g. /usr/local/bin/agent-cli'}
+            value={executablePath}
+            onChange={(e) => setExecutablePath(e.target.value)}
+          />
+        </Label>
+
+        {type === 'kiro-cli' && (
+          <label className="flex items-center gap-2.5 mb-4 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={trustAllTools}
+              onChange={(e) => setTrustAllTools(e.target.checked)}
+              className="custom-check"
+            />
+            <div>
+              <span className="text-sm text-foreground">Trust all tools</span>
+              <p className="text-xs text-muted-foreground">Skip permission prompts</p>
+            </div>
+          </label>
+        )}
+
+        {/* Working Directory */}
+        <Label text="Working Directory" hint="Working directory for agent sessions.">
+          <DirectoryPicker value={cwd} onChange={setCwd} />
+        </Label>
 
         {/* Display Name */}
         <Label text="Display Name">
@@ -163,42 +241,6 @@ export function AgentFormPanel({
         >
           <Input placeholder="myagent" value={newioUsername} onChange={(e) => setNewioUsername(e.target.value)} />
         </Label>
-
-        {/* Working Directory */}
-        <Label text="Working Directory" hint="Working directory for agent sessions.">
-          <DirectoryPicker value={cwd} onChange={setCwd} />
-        </Label>
-
-        {/* ACP config — shared by all agent types */}
-        <Label
-          text="Default Mode (optional)"
-          hint="The ACP session mode to use. Available modes are advertised by the agent when running."
-        >
-          <Input placeholder="e.g. default" value={agentName} onChange={(e) => setAgentName(e.target.value)} />
-        </Label>
-
-        <Label text="Default Model (optional)" hint="The model to use for ACP sessions.">
-          <Input placeholder="auto" value={model} onChange={(e) => setModel(e.target.value)} />
-        </Label>
-
-        <Label text="Executable Path (optional)" hint="Override if the agent CLI is not on your PATH.">
-          <Input
-            placeholder={type === 'kiro-cli' ? 'e.g. /Users/me/.local/bin/kiro-cli' : 'e.g. /path/to/agent-cli'}
-            value={executablePath}
-            onChange={(e) => setExecutablePath(e.target.value)}
-          />
-        </Label>
-
-        <label className="flex items-center gap-2 mb-4 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={trustAllTools}
-            onChange={(e) => setTrustAllTools(e.target.checked)}
-            className="h-4 w-4 rounded border-border accent-primary"
-          />
-          <span className="text-sm text-foreground">Trust all tools</span>
-          <span className="text-xs text-muted-foreground">(skip permission prompts)</span>
-        </label>
       </div>
 
       {/* Footer */}

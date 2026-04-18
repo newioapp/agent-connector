@@ -11,7 +11,9 @@ export function Hint({
   readonly className?: string;
 }): React.JSX.Element {
   return (
-    <div className={`rounded-md bg-muted px-3 py-2.5 text-xs leading-relaxed text-muted-foreground ${className}`}>
+    <div
+      className={`rounded-md bg-muted px-3 py-2.5 text-xs leading-relaxed text-muted-foreground select-text ${className}`}
+    >
       {children}
     </div>
   );

@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Trash2, ExternalLink, RefreshCw, Pencil, Info, X } from 'lucide-react';
 import type { AgentStatusInfo, AcpAgentInfo, AgentSessionConfig } from '../../../shared/types';
 import { useAgentStore } from '../stores/agent-store';
+import { agentTypeLabel } from '../lib/agent-type-label';
 import { Button, Dropdown } from './ui';
 
 const APPROVAL_TIMEOUT_S = 600;
@@ -168,7 +169,7 @@ export function ConfigTab({
         <div className="mb-3 flex items-center gap-2">
           <div className="flex-1">
             <div className="mb-0.5 text-xs font-medium text-muted-foreground">Type</div>
-            <div className="text-sm text-foreground">{config.type === 'kiro-cli' ? 'Kiro CLI' : 'Claude Code'}</div>
+            <div className="text-sm text-foreground">{agentTypeLabel(config.type)}</div>
           </div>
           {config.acpAgentInfo && (
             <button
@@ -199,6 +200,9 @@ export function ConfigTab({
         {config.acp && (
           <>
             {/* Model/Mode dropdowns when running */}
+            {config.acp.executablePath && <Field label="Executable Path" value={config.acp.executablePath} />}
+            {config.acp.cwd && <Field label="Working Directory" value={config.acp.cwd} />}
+            <Field label="Trust All Tools" value={config.acp.trustAllTools !== false ? 'Yes' : 'No'} />
             {agent.runtimeStatus === 'running' && models && models.options.length > 0 && (
               <div className="mb-3">
                 <div className="mb-1 text-xs font-medium text-muted-foreground">Model</div>
@@ -213,7 +217,9 @@ export function ConfigTab({
             )}
             {agent.runtimeStatus === 'running' && modes && modes.options.length > 0 && (
               <div className="mb-3">
-                <div className="mb-1 text-xs font-medium text-muted-foreground">Mode</div>
+                <div className="mb-1 text-xs font-medium text-muted-foreground">
+                  {config.type === 'kiro-cli' ? 'Custom Agent (ACP Mode)' : 'Mode'}
+                </div>
                 <Dropdown
                   options={modes.options.map((m) => ({ value: m.id, label: m.name }))}
                   value={config.acp.defaultMode ?? modes.selectedId}
@@ -225,14 +231,14 @@ export function ConfigTab({
             )}
             {/* Static display when not running */}
             {agent.runtimeStatus !== 'running' && config.acp.defaultMode && (
-              <Field label="Default Mode" value={config.acp.defaultMode} />
+              <Field
+                label={config.type === 'kiro-cli' ? 'Custom Agent (ACP Mode)' : 'Default Mode'}
+                value={config.acp.defaultMode}
+              />
             )}
             {agent.runtimeStatus !== 'running' && config.acp.defaultModel && (
               <Field label="Default Model" value={config.acp.defaultModel} />
             )}
-            {config.acp.executablePath && <Field label="Executable Path" value={config.acp.executablePath} />}
-            {config.acp.cwd && <Field label="Working Directory" value={config.acp.cwd} />}
-            <Field label="Trust All Tools" value={config.acp.trustAllTools !== false ? 'Yes' : 'No'} />
           </>
         )}
       </div>

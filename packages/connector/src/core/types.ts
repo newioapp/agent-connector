@@ -12,7 +12,24 @@ export type UpdateChannel = 'latest' | 'beta';
 // Agent types
 // ---------------------------------------------------------------------------
 
-export type AgentType = 'claude-code' | 'kiro-cli';
+export type AgentType = 'claude-code' | 'kiro-cli' | 'custom';
+
+const DEFAULT_EXECUTABLES: Partial<Readonly<Record<AgentType, string>>> = {
+  'claude-code': 'claude-agent-acp',
+  'kiro-cli': 'kiro-cli',
+};
+
+/** Resolve the executable for an agent, using the explicit path, a known default, or throwing for unknown types. */
+export function resolveExecutable(type: AgentType, executablePath?: string): string {
+  if (executablePath) {
+    return executablePath;
+  }
+  const defaultExe = DEFAULT_EXECUTABLES[type];
+  if (!defaultExe) {
+    throw new Error(`No executable path configured for agent type "${type}"`);
+  }
+  return defaultExe;
+}
 
 export type AgentRuntimeStatus =
   | 'stopped'

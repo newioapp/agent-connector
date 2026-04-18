@@ -104,6 +104,7 @@ export class AgentRuntimeManager {
           ...(input.mode !== undefined ? { defaultMode: input.mode } : {}),
         },
       });
+      this.listener.onConfigUpdated(agentId);
     }
   }
 }

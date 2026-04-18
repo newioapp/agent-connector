@@ -3,6 +3,7 @@
  */
 import { Bot, Terminal } from 'lucide-react';
 import type { AgentStatusInfo, AgentRuntimeStatus } from '../../../shared/types';
+import { agentTypeLabel } from '../lib/agent-type-label';
 
 const STATUS_COLORS: Record<AgentRuntimeStatus, string> = {
   stopped: 'bg-muted-foreground',
@@ -44,10 +45,10 @@ export function AgentListItem({
       )}
       <div className="min-w-0 flex-1">
         <div className="truncate font-medium">
-          {agent.config.newio?.displayName ?? (agent.config.type === 'kiro-cli' ? 'Kiro CLI' : 'Claude Code')}
+          {agent.config.newio?.displayName ?? agentTypeLabel(agent.config.type)}
         </div>
         <div className={`truncate text-xs ${selected ? 'opacity-80' : 'opacity-60'}`}>
-          {agent.config.type === 'kiro-cli' ? 'Kiro CLI' : 'Claude Code'}
+          {agentTypeLabel(agent.config.type)}
         </div>
       </div>
       <div

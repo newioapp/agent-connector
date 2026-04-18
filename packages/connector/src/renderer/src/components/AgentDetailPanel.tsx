@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { Bot, Terminal, Play, Square, Loader2 } from 'lucide-react';
 import type { AgentStatusInfo } from '../../../shared/types';
 import { useAgentStore } from '../stores/agent-store';
+import { agentTypeLabel } from '../lib/agent-type-label';
 import { ConfigTab } from './ConfigTab';
 import { EnvVarsTab } from './EnvVarsTab';
 import { Button } from './ui';
@@ -80,7 +81,7 @@ export function AgentDetailPanel({
         )}
         <div className="min-w-0 flex-1">
           <div className="truncate text-base font-semibold text-foreground">
-            {config.newio?.displayName ?? (config.type === 'kiro-cli' ? 'Kiro CLI' : 'Claude Code')}
+            {config.newio?.displayName ?? agentTypeLabel(config.type)}
           </div>
           <div className="flex items-center gap-2 text-xs">
             <span
