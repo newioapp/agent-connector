@@ -21,7 +21,7 @@ export function resolveCommand(
 ): { readonly command: string; readonly args: readonly string[] } {
   if (type === 'kiro-cli') {
     const command = config.executablePath ?? 'kiro-cli';
-    const args = config.trustAllTools !== false ? ['acp', '--trust-all-tools'] : ['acp'];
+    const args = config.kiroCliTrustAllTools !== false ? ['acp', '--trust-all-tools'] : ['acp'];
     return { command, args };
   }
 
@@ -33,7 +33,10 @@ export function resolveCommand(
   if (!config.executablePath) {
     throw new Error('No executable path configured for custom agent type');
   }
-  const parts = config.executablePath.trim().split(/\s+/);
+  const parts = config.executablePath.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    throw new Error('No executable path configured for custom agent type');
+  }
   return { command: parts[0], args: parts.slice(1) };
 }
 
@@ -50,7 +53,7 @@ export interface AcpConfig {
   readonly executablePath?: string;
   readonly cwd: string;
   /** When true, passes --trust-all-tools to the ACP agent (kiro-cli only — skips permission prompts). Default: true. */
-  readonly trustAllTools?: boolean;
+  readonly kiroCliTrustAllTools?: boolean;
 }
 
 /** Serializable subset of ACP InitializeResponse — discovered at runtime. */

@@ -84,6 +84,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       if (modes?.selectedId) {
         this.selectedMode = modes.selectedId;
       }
+      this.listener.onConfigUpdated();
     });
   }
 

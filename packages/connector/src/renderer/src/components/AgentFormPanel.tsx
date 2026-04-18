@@ -70,7 +70,7 @@ export function AgentFormPanel({
     setCwd(editAgent.acp?.cwd ?? '');
     if (editAgent.acp) {
       setExecutablePath(editAgent.acp.executablePath ?? '');
-      setTrustAllTools(editAgent.acp.trustAllTools !== false);
+      setTrustAllTools(editAgent.acp.kiroCliTrustAllTools !== false);
     }
   }, [editAgent]);
 
@@ -85,7 +85,7 @@ export function AgentFormPanel({
     try {
       const acpConfig = {
         cwd: cwd.trim(),
-        ...(type === 'kiro-cli' ? { trustAllTools } : {}),
+        ...(type === 'kiro-cli' ? { kiroCliTrustAllTools: trustAllTools } : {}),
         ...(executablePath.trim() ? { executablePath: executablePath.trim() } : {}),
       };
 

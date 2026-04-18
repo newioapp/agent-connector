@@ -208,7 +208,7 @@ export function ConfigTab({
             {config.acp.executablePath && <Field label="Executable Path" value={config.acp.executablePath} />}
             {config.acp.cwd && <Field label="Working Directory" value={config.acp.cwd} />}
             {config.type === 'kiro-cli' && (
-              <Field label="Trust All Tools" value={config.acp.trustAllTools !== false ? 'Yes' : 'No'} />
+              <Field label="Trust All Tools" value={config.acp.kiroCliTrustAllTools !== false ? 'Yes' : 'No'} />
             )}
             {agent.runtimeStatus === 'running' && models && models.options.length > 0 && (
               <div className="mb-3">
