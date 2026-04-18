@@ -16,6 +16,9 @@ export class AcpSessionConfigHandler {
   private modelConfig: AgentSessionConfig | undefined;
   private modeConfig: AgentSessionConfig | undefined;
 
+  /** Called when model or mode config changes (user action or agent-initiated). */
+  onConfigChanged?: () => void;
+
   constructor(
     private readonly sessionId: string,
     private readonly connection: ClientSideConnection,
@@ -56,6 +59,7 @@ export class AcpSessionConfigHandler {
       this.modelConfig = { ...this.modelConfig, selectedId: modelId };
     }
     log.info(`[${this.sessionId}] Model set to: ${modelId}`);
+    this.onConfigChanged?.();
   }
 
   async setMode(modeId: string): Promise<void> {
@@ -64,6 +68,7 @@ export class AcpSessionConfigHandler {
       this.modeConfig = { ...this.modeConfig, selectedId: modeId };
     }
     log.info(`[${this.sessionId}] Mode set to: ${modeId}`);
+    this.onConfigChanged?.();
   }
 
   listModels(): AgentSessionConfig | undefined {
@@ -81,6 +86,7 @@ export class AcpSessionConfigHandler {
         if (this.modeConfig) {
           this.modeConfig = { ...this.modeConfig, selectedId: update.currentModeId };
           log.info(`[${this.sessionId}] Mode updated to: ${update.currentModeId}`);
+          this.onConfigChanged?.();
         }
         return true;
       }
@@ -103,6 +109,7 @@ export class AcpSessionConfigHandler {
             log.info(`[${this.sessionId}] Mode config updated via config_option_update`);
           }
         }
+        this.onConfigChanged?.();
         return true;
       }
       default:

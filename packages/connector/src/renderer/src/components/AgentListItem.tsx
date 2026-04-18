@@ -21,6 +21,16 @@ function AgentTypeIcon({ type, size }: { readonly type: string; readonly size: n
   return <Bot size={size} />;
 }
 
+function agentTypeLabel(type: string): string {
+  if (type === 'kiro-cli') {
+    return 'Kiro CLI';
+  }
+  if (type === 'claude-code') {
+    return 'Claude Code';
+  }
+  return 'Custom ACP';
+}
+
 export function AgentListItem({
   agent,
   selected,
@@ -44,10 +54,10 @@ export function AgentListItem({
       )}
       <div className="min-w-0 flex-1">
         <div className="truncate font-medium">
-          {agent.config.newio?.displayName ?? (agent.config.type === 'kiro-cli' ? 'Kiro CLI' : 'Claude Code')}
+          {agent.config.newio?.displayName ?? agentTypeLabel(agent.config.type)}
         </div>
         <div className={`truncate text-xs ${selected ? 'opacity-80' : 'opacity-60'}`}>
-          {agent.config.type === 'kiro-cli' ? 'Kiro CLI' : 'Claude Code'}
+          {agentTypeLabel(agent.config.type)}
         </div>
       </div>
       <div

@@ -6,8 +6,6 @@
  */
 import type { SessionStreamSegment, SessionStatusListener } from './types';
 
-export type { SessionStatus, SessionStatusListener } from './types';
-
 export interface AgentSession {
   /** Agent-platform-specific session ID (e.g., ACP sessionId). */
   readonly correlationId: string;

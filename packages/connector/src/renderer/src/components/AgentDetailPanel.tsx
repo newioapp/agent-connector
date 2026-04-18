@@ -80,7 +80,8 @@ export function AgentDetailPanel({
         )}
         <div className="min-w-0 flex-1">
           <div className="truncate text-base font-semibold text-foreground">
-            {config.newio?.displayName ?? (config.type === 'kiro-cli' ? 'Kiro CLI' : 'Claude Code')}
+            {config.newio?.displayName ??
+              (config.type === 'kiro-cli' ? 'Kiro CLI' : config.type === 'claude-code' ? 'Claude Code' : 'Custom ACP')}
           </div>
           <div className="flex items-center gap-2 text-xs">
             <span

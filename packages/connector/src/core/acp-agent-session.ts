@@ -8,9 +8,9 @@
  */
 import type { ClientSideConnection, NewSessionResponse, LoadSessionResponse } from '@agentclientprotocol/sdk';
 import type * as acp from '@agentclientprotocol/sdk';
-import type { AgentSession, SessionStatusListener } from './agent-session';
+import type { AgentSession } from './agent-session';
 import { SessionStream } from './acp-session-stream';
-import type { SessionStreamSegment } from './types';
+import type { SessionStatusListener, SessionStreamSegment } from './types';
 import { AcpSessionConfigHandler } from './acp-session-config-handler';
 import { Logger } from './logger';
 import type { AgentSessionConfig } from './agent-instance';
@@ -56,6 +56,11 @@ export class AcpAgentSession implements AgentSession {
 
   onStatus(listener: SessionStatusListener): void {
     this.statusListener = listener;
+  }
+
+  /** Set a callback for when model/mode config changes. */
+  onConfigChanged(listener: () => void): void {
+    this.configHandler.onConfigChanged = listener;
   }
 
   async setModel(modelId: string): Promise<void> {

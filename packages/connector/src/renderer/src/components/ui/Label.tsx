@@ -10,7 +10,7 @@ export function Label({
   className = '',
 }: {
   readonly text: string;
-  readonly hint?: string;
+  readonly hint?: ReactNode;
   readonly children: ReactNode;
   readonly className?: string;
 }): React.JSX.Element {

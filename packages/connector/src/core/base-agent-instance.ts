@@ -18,7 +18,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import type { AgentConfigManager } from './agent-config-manager';
 import type { AgentRuntimeStatus, AgentConfig } from './types';
-import { DEFAULT_SESSION_IDLE_TIMEOUT_MS } from './types';
+import { DEFAULT_SESSION_IDLE_TIMEOUT_MS, resolveExecutable } from './types';
 import type { AgentInstance, AgentInstanceListener } from './agent-instance';
 import type { AgentSessionConfig, ConfigureAgentInput } from './agent-instance';
 import type { AgentSession } from './agent-session';
@@ -204,6 +204,13 @@ export abstract class BaseAgentInstance implements AgentInstance {
       } else if (err instanceof Error && err.message.includes('WebSocket closed before open')) {
         log.warn('WebSocket connection rejected — likely a duplicate session');
         this.setStatus('error', 'Connection rejected. This agent may already be running in another instance.');
+      } else if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+        const executable = resolveExecutable(this.config.type, this.config.acp?.executablePath);
+        log.warn(`Executable not found: ${executable}`);
+        this.setStatus(
+          'error',
+          `"${executable}" not found. Make sure it is installed and available on your system PATH, or set the executable path in the agent config.\n\n${err.stack ?? err.message}`,
+        );
       } else {
         const message = err instanceof Error ? (err.stack ?? err.message) : 'Unknown error';
         log.error('Failed to start', message);

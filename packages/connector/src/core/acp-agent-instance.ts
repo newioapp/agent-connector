@@ -7,7 +7,7 @@
  * connection and don't own their own process.
  */
 import { spawn } from 'child_process';
-import type { ChildProcess } from 'child_process';
+import type { ChildProcess, SpawnOptions } from 'child_process';
 import { Writable, Readable } from 'stream';
 import * as fs from 'fs/promises';
 import { ClientSideConnection, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk';
@@ -19,9 +19,30 @@ import type { PermissionHandler } from './acp-agent-session';
 import type { AgentSession } from './agent-session';
 import type { AgentSessionConfig, ConfigureAgentInput } from './agent-instance';
 import type { SessionStreamSegment } from './types';
+import { resolveExecutable } from './types';
 import { Logger } from './logger';
 
 const log = new Logger('acp-agent-instance');
+
+/**
+ * Awaitable spawn — resolves with the child process once the OS has successfully
+ * created it (`spawn` event), or rejects if the process fails to start (e.g. ENOENT).
+ */
+function spawnAsync(command: string, args: readonly string[], options: SpawnOptions): Promise<ChildProcess> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, options);
+    const onError = (err: Error): void => {
+      child.removeListener('spawn', onSpawn);
+      reject(err);
+    };
+    const onSpawn = (): void => {
+      child.removeListener('error', onError);
+      resolve(child);
+    };
+    child.once('error', onError);
+    child.once('spawn', onSpawn);
+  });
+}
 
 export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
   private childProcess?: ChildProcess;
@@ -48,6 +69,21 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
 
     await this.spawnAndInit();
     this.representativeSession = await this.sendGreeting();
+    this.representativeSession.onConfigChanged(() => {
+      const currentConfig = this.configManager.get(this.config.id);
+      if (currentConfig?.acp) {
+        const models = this.representativeSession?.listModels();
+        const modes = this.representativeSession?.listModes();
+        this.configManager.update(this.config.id, {
+          acp: {
+            ...currentConfig.acp,
+            ...(models?.selectedId ? { defaultModel: models.selectedId } : {}),
+            ...(modes?.selectedId ? { defaultMode: modes.selectedId } : {}),
+          },
+        });
+      }
+      this.listener.onConfigUpdated();
+    });
   }
 
   protected async onStopped(): Promise<void> {
@@ -76,7 +112,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     }
 
     const { executablePath, cwd } = config;
-    const executable = executablePath ?? 'kiro-cli';
+    const executable = resolveExecutable(this.config.type, executablePath);
     const args = ['acp'];
     if (config.trustAllTools !== false) {
       args.push('--trust-all-tools');
@@ -84,13 +120,13 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
 
     log.info(`Spawning: ${executable} ${args.join(' ')}`);
 
-    const child = spawn(executable, args, {
+    const child = await spawnAsync(executable, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...this.config.envVars, TERM: 'dumb' },
       ...(cwd ? { cwd } : {}),
     });
 
-    child.stderr.on('data', (data: Buffer) => {
+    child.stderr?.on('data', (data: Buffer) => {
       log.debug(`[acp stderr] ${data.toString().trimEnd()}`);
     });
 
@@ -104,6 +140,9 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
 
     this.childProcess = child;
 
+    if (!child.stdin || !child.stdout) {
+      throw new Error('ACP child process missing stdio streams');
+    }
     const output = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>;
     const input = Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>;
     const stream = ndJsonStream(output, input);
