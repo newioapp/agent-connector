@@ -55,8 +55,6 @@ export function AgentFormPanel({
   const [type, setType] = useState<AgentType>('claude-code');
   const [newioUsername, setNewioUsername] = useState('');
   const [cwd, setCwd] = useState('');
-  const [agentName, setAgentName] = useState('');
-  const [model, setModel] = useState('');
   const [executablePath, setExecutablePath] = useState('');
   const [trustAllTools, setTrustAllTools] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -71,8 +69,6 @@ export function AgentFormPanel({
     setNewioUsername(editAgent.newio?.username ?? '');
     setCwd(editAgent.acp?.cwd ?? '');
     if (editAgent.acp) {
-      setAgentName(editAgent.acp.defaultMode ?? '');
-      setModel(editAgent.acp.defaultModel ?? '');
       setExecutablePath(editAgent.acp.executablePath ?? '');
       setTrustAllTools(editAgent.acp.trustAllTools !== false);
     }
@@ -89,9 +85,7 @@ export function AgentFormPanel({
     try {
       const acpConfig = {
         cwd: cwd.trim(),
-        trustAllTools,
-        ...(agentName.trim() ? { defaultMode: agentName.trim() } : {}),
-        ...(model.trim() ? { defaultModel: model.trim() } : {}),
+        ...(type === 'kiro-cli' ? { trustAllTools } : {}),
         ...(executablePath.trim() ? { executablePath: executablePath.trim() } : {}),
       };
 

@@ -10,6 +10,10 @@ import { Button, Dropdown } from './ui';
 
 const APPROVAL_TIMEOUT_S = 600;
 
+function extractErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 function useCountdown(active: boolean): number {
   const [remaining, setRemaining] = useState(APPROVAL_TIMEOUT_S);
   const startRef = useRef(0);
@@ -97,6 +101,7 @@ export function ConfigTab({
   const [showInfo, setShowInfo] = useState(false);
   const [models, setModels] = useState<AgentSessionConfig | undefined>();
   const [modes, setModes] = useState<AgentSessionConfig | undefined>();
+  const [configError, setConfigError] = useState<string | undefined>();
 
   // Fetch available models/modes when agent is running
   useEffect(() => {
@@ -202,15 +207,23 @@ export function ConfigTab({
             {/* Model/Mode dropdowns when running */}
             {config.acp.executablePath && <Field label="Executable Path" value={config.acp.executablePath} />}
             {config.acp.cwd && <Field label="Working Directory" value={config.acp.cwd} />}
-            <Field label="Trust All Tools" value={config.acp.trustAllTools !== false ? 'Yes' : 'No'} />
+            {config.type === 'kiro-cli' && (
+              <Field label="Trust All Tools" value={config.acp.trustAllTools !== false ? 'Yes' : 'No'} />
+            )}
             {agent.runtimeStatus === 'running' && models && models.options.length > 0 && (
               <div className="mb-3">
                 <div className="mb-1 text-xs font-medium text-muted-foreground">Model</div>
                 <Dropdown
                   options={models.options.map((m) => ({ value: m.id, label: m.name }))}
-                  value={config.acp.defaultModel ?? models.selectedId}
+                  value={models.selectedId}
                   onChange={(modelId) => {
-                    void window.api.configureAgent(agent.id, modelId, undefined);
+                    const prev = models.selectedId;
+                    setModels((p) => (p ? { ...p, selectedId: modelId } : p));
+                    setConfigError(undefined);
+                    window.api.configureAgent(agent.id, modelId, undefined).catch((err: unknown) => {
+                      setModels((p) => (p ? { ...p, selectedId: prev } : p));
+                      setConfigError(extractErrorMessage(err));
+                    });
                   }}
                 />
               </div>
@@ -222,23 +235,20 @@ export function ConfigTab({
                 </div>
                 <Dropdown
                   options={modes.options.map((m) => ({ value: m.id, label: m.name }))}
-                  value={config.acp.defaultMode ?? modes.selectedId}
+                  value={modes.selectedId}
                   onChange={(modeId) => {
-                    void window.api.configureAgent(agent.id, undefined, modeId);
+                    const prev = modes.selectedId;
+                    setModes((p) => (p ? { ...p, selectedId: modeId } : p));
+                    setConfigError(undefined);
+                    window.api.configureAgent(agent.id, undefined, modeId).catch((err: unknown) => {
+                      setModes((p) => (p ? { ...p, selectedId: prev } : p));
+                      setConfigError(extractErrorMessage(err));
+                    });
                   }}
                 />
               </div>
             )}
-            {/* Static display when not running */}
-            {agent.runtimeStatus !== 'running' && config.acp.defaultMode && (
-              <Field
-                label={config.type === 'kiro-cli' ? 'Custom Agent (ACP Mode)' : 'Default Mode'}
-                value={config.acp.defaultMode}
-              />
-            )}
-            {agent.runtimeStatus !== 'running' && config.acp.defaultModel && (
-              <Field label="Default Model" value={config.acp.defaultModel} />
-            )}
+            {configError && <div className="mb-3 select-text cursor-text text-xs text-destructive">{configError}</div>}
           </>
         )}
       </div>

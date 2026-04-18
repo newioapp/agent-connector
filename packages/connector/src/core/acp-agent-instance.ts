@@ -19,7 +19,7 @@ import type { PermissionHandler } from './acp-agent-session';
 import type { AgentSession } from './agent-session';
 import type { AgentSessionConfig, ConfigureAgentInput } from './agent-instance';
 import type { SessionStreamSegment } from './types';
-import { resolveExecutable } from './types';
+import { resolveCommand } from './types';
 import { Logger } from './logger';
 
 const log = new Logger('acp-agent-instance');
@@ -57,6 +57,12 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
   /** The first session created (greeting session) — used to expose available models/modes. */
   private representativeSession?: AcpAgentSession;
 
+  /** Runtime-selected model — applied to new sessions. */
+  private selectedModel?: string;
+
+  /** Runtime-selected mode — applied to new sessions. */
+  private selectedMode?: string;
+
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
@@ -70,25 +76,22 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     await this.spawnAndInit();
     this.representativeSession = await this.sendGreeting();
     this.representativeSession.onConfigChanged(() => {
-      const currentConfig = this.configManager.get(this.config.id);
-      if (currentConfig?.acp) {
-        const models = this.representativeSession?.listModels();
-        const modes = this.representativeSession?.listModes();
-        this.configManager.update(this.config.id, {
-          acp: {
-            ...currentConfig.acp,
-            ...(models?.selectedId ? { defaultModel: models.selectedId } : {}),
-            ...(modes?.selectedId ? { defaultMode: modes.selectedId } : {}),
-          },
-        });
+      const models = this.representativeSession?.listModels();
+      const modes = this.representativeSession?.listModes();
+      if (models?.selectedId) {
+        this.selectedModel = models.selectedId;
       }
-      this.listener.onConfigUpdated();
+      if (modes?.selectedId) {
+        this.selectedMode = modes.selectedId;
+      }
     });
   }
 
   protected async onStopped(): Promise<void> {
     log.info('ACP agent instance stopping...');
     this.representativeSession = undefined;
+    this.selectedModel = undefined;
+    this.selectedMode = undefined;
     this.acpSessions.clear();
     this.connection = undefined;
     await this.killProcess();
@@ -111,16 +114,12 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       throw new Error('ACP config missing');
     }
 
-    const { executablePath, cwd } = config;
-    const executable = resolveExecutable(this.config.type, executablePath);
-    const args = ['acp'];
-    if (config.trustAllTools !== false) {
-      args.push('--trust-all-tools');
-    }
+    const { cwd } = config;
+    const { command, args } = resolveCommand(this.config.type, config);
 
-    log.info(`Spawning: ${executable} ${args.join(' ')}`);
+    log.info(`Spawning: ${command} ${args.join(' ')}`);
 
-    const child = await spawnAsync(executable, args, {
+    const child = await spawnAsync(command, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...this.config.envVars, TERM: 'dumb' },
       ...(cwd ? { cwd } : {}),
@@ -237,23 +236,22 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
   };
 
   // ---------------------------------------------------------------------------
-  // Session configuration
-  // ---------------------------------------------------------------------------
-
-  /** Apply defaultModel and defaultMode from config to a newly created/resumed session. */
-  private async configureSession(session: AcpAgentSession): Promise<void> {
-    const config = this.configManager.get(this.config.id)?.acp;
-    if (config?.defaultModel) {
-      await session.setModel(config.defaultModel);
-    }
-    if (config?.defaultMode) {
-      await session.setMode(config.defaultMode);
-    }
-  }
-
-  // ---------------------------------------------------------------------------
   // Public — model/mode queries and configuration
   // ---------------------------------------------------------------------------
+
+  /** Apply the runtime-selected model/mode to a session. Best-effort — errors are logged, not thrown. */
+  private async applySessionConfig(session: AcpAgentSession): Promise<void> {
+    try {
+      if (this.selectedModel) {
+        await session.setModel(this.selectedModel);
+      }
+      if (this.selectedMode) {
+        await session.setMode(this.selectedMode);
+      }
+    } catch (err: unknown) {
+      log.warn(`Failed to apply session config: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 
   listModels(): AgentSessionConfig | undefined {
     return this.representativeSession?.listModels();
@@ -278,6 +276,13 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       }
     }
     await Promise.all(promises);
+
+    if (input.model) {
+      this.selectedModel = input.model;
+    }
+    if (input.mode) {
+      this.selectedMode = input.mode;
+    }
     log.info(`Configured ${String(targets.length)} session(s): model=${input.model ?? '-'}, mode=${input.mode ?? '-'}`);
   }
 
@@ -309,7 +314,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     this.acpSessions.set(result.sessionId, session);
     log.info(`Session created: ${result.sessionId}`);
 
-    await this.configureSession(session);
+    await this.applySessionConfig(session);
 
     // Send Newio instruction as the first prompt so the session has context
     log.debug(`[${result.sessionId}] Sending Newio instruction to new session`);
@@ -348,7 +353,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     this.acpSessions.set(correlationId, session);
     log.info(`Session resumed: ${correlationId}`);
 
-    await this.configureSession(session);
+    await this.applySessionConfig(session);
 
     return session;
   }

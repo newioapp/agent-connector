@@ -59,7 +59,11 @@ export class AcpSessionConfigHandler {
   }
 
   async setModel(modelId: string): Promise<void> {
-    await this.connection.unstable_setSessionModel({ sessionId: this.sessionId, modelId });
+    try {
+      await this.connection.unstable_setSessionModel({ sessionId: this.sessionId, modelId });
+    } catch (err: unknown) {
+      throw new Error(extractAcpErrorMessage(err, `Failed to set model to "${modelId}"`));
+    }
     if (this.modelConfig) {
       this.modelConfig = { ...this.modelConfig, selectedId: modelId };
     }
@@ -68,7 +72,11 @@ export class AcpSessionConfigHandler {
   }
 
   async setMode(modeId: string): Promise<void> {
-    await this.connection.setSessionMode({ sessionId: this.sessionId, modeId });
+    try {
+      await this.connection.setSessionMode({ sessionId: this.sessionId, modeId });
+    } catch (err: unknown) {
+      throw new Error(extractAcpErrorMessage(err, `Failed to set mode to "${modeId}"`));
+    }
     if (this.modeConfig) {
       this.modeConfig = { ...this.modeConfig, selectedId: modeId };
     }
@@ -155,4 +163,24 @@ function flattenSelectOptions(
     }
   }
   return result;
+}
+
+/** Extract a human-readable message from an ACP JSON-RPC error. */
+function extractAcpErrorMessage(err: unknown, fallback: string): string {
+  if (typeof err === 'object' && err !== null) {
+    const obj = err as Record<string, unknown>;
+    if (typeof obj.data === 'object' && obj.data !== null) {
+      const details = (obj.data as Record<string, unknown>).details;
+      if (typeof details === 'string') {
+        return details;
+      }
+    }
+    if (typeof obj.message === 'string') {
+      return obj.message;
+    }
+  }
+  if (err instanceof Error) {
+    return err.message;
+  }
+  return fallback;
 }
