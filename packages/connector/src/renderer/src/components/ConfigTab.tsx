@@ -117,15 +117,12 @@ export function ConfigTab({
 
   // Sync from store when push events arrive
   useEffect(() => {
-    const entry = Object.entries(sessionConfigs).find(([key]) => key.startsWith(`${agent.id}:`));
-    if (entry) {
-      const [, config] = entry;
-      if (config.models) {
-        setModels(config.models);
-      }
-      if (config.modes) {
-        setModes(config.modes);
-      }
+    const entry = sessionConfigs[agent.id] as { models?: AgentSessionConfig; modes?: AgentSessionConfig } | undefined;
+    if (entry?.models) {
+      setModels(entry.models);
+    }
+    if (entry?.modes) {
+      setModes(entry.modes);
     }
   }, [agent.id, sessionConfigs]);
 
