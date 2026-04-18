@@ -19,6 +19,10 @@ const appDisplayName = process.env.APP_DISPLAY_NAME ?? 'Newio Agent Connector';
 
 const enableDevTools = process.env.ENABLE_DEV_TOOLS ?? 'false';
 
+// Read version from package.json for build-time injection.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const appVersion: string = (require('./package.json') as { version: string }).version;
+
 export default defineConfig({
   main: {
     build: {
@@ -36,6 +40,7 @@ export default defineConfig({
       __API_BASE_URL__: JSON.stringify(apiBaseUrl),
       __WS_BASE_URL__: JSON.stringify(wsBaseUrl),
       __APP_DISPLAY_NAME__: JSON.stringify(appDisplayName),
+      __APP_VERSION__: JSON.stringify(appVersion),
       __ENABLE_DEV_TOOLS__: JSON.stringify(enableDevTools === 'true'),
     },
   },

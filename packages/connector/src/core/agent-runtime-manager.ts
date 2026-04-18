@@ -7,9 +7,8 @@
 import type { AgentConfigManager } from './agent-config-manager';
 import type { SessionStore } from './session-store';
 import type { AgentRuntimeStatus } from './types';
-import type { AgentInstance } from './instances/agent-instance';
-import { ClaudeInstance } from './instances/claude-instance';
-import { KiroCliInstance } from './instances/kiro-cli-instance';
+import type { AgentInstance, AgentSessionConfig, ConfigureAgentInput } from './agent-instance';
+import { AcpAgentInstance } from './acp-agent-instance';
 
 export interface StatusListener {
   onStatusChanged(agentId: string, status: AgentRuntimeStatus, error?: string): void;
@@ -61,15 +60,7 @@ export class AgentRuntimeManager {
       },
     };
 
-    let instance: AgentInstance;
-    switch (config.type) {
-      case 'claude-code':
-        instance = new ClaudeInstance(config, this.configManager, this.sessionStore, instanceListener);
-        break;
-      case 'kiro-cli':
-        instance = new KiroCliInstance(config, this.configManager, this.sessionStore, instanceListener);
-        break;
-    }
+    const instance = new AcpAgentInstance(config, this.configManager, this.sessionStore, instanceListener);
 
     this.instances.set(agentId, instance);
     void instance.start();
@@ -87,5 +78,32 @@ export class AgentRuntimeManager {
   async stopAll(): Promise<void> {
     const ids = [...this.instances.keys()];
     await Promise.all(ids.map((id) => this.stop(id)));
+  }
+
+  listModels(agentId: string): AgentSessionConfig | undefined {
+    return this.instances.get(agentId)?.listModels();
+  }
+
+  listModes(agentId: string): AgentSessionConfig | undefined {
+    return this.instances.get(agentId)?.listModes();
+  }
+
+  /** Configure model/mode on one or all sessions, and persist to config. */
+  async configureAgent(agentId: string, input: ConfigureAgentInput): Promise<void> {
+    const instance = this.instances.get(agentId);
+    if (instance) {
+      await instance.configureAgent(input);
+    }
+    // Persist to config
+    const existing = this.configManager.get(agentId);
+    if (existing?.acp) {
+      this.configManager.update(agentId, {
+        acp: {
+          ...existing.acp,
+          ...(input.model !== undefined ? { defaultModel: input.model } : {}),
+          ...(input.mode !== undefined ? { defaultMode: input.mode } : {}),
+        },
+      });
+    }
   }
 }

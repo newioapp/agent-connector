@@ -11,6 +11,7 @@ import type {
   AddAgentInput,
   UpdateAgentInput,
   AgentStatusInfo,
+  AgentSessionConfig,
   UpdateMode,
   UpdateChannel,
 } from './types';
@@ -52,12 +53,6 @@ export interface IpcApi {
   /** Open a native directory picker dialog. Returns the selected path, or undefined if cancelled. */
   selectDirectory(): Promise<string | undefined>;
 
-  // Kiro CLI discovery
-  /** List available Kiro CLI agent names. Returns empty array on failure. */
-  listKiroAgents(kiroCliPath?: string, cwd?: string): Promise<string[]>;
-  /** List available Kiro CLI models. Returns empty array on failure. */
-  listKiroModels(kiroCliPath?: string, cwd?: string): Promise<string[]>;
-
   // Environment
   /** List supported shells available on the system. */
   listShells(): Promise<string[]>;
@@ -65,6 +60,13 @@ export interface IpcApi {
   getShellEnv(shell: string): Promise<Record<string, string>>;
   /** Update only the envVars on an agent config (no restart required). */
   updateAgentEnvVars(agentId: string, envVars: Record<string, string>): Promise<AgentConfig>;
+
+  /** List available models for a running agent. */
+  listAgentModels(agentId: string): Promise<AgentSessionConfig | undefined>;
+  /** List available modes for a running agent. */
+  listAgentModes(agentId: string): Promise<AgentSessionConfig | undefined>;
+  /** Configure model/mode on one or all sessions. */
+  configureAgent(agentId: string, model?: string, mode?: string): Promise<void>;
 }
 
 /** Channel name for each IpcApi method. */
@@ -80,8 +82,6 @@ export const IPC_CHANNELS: { readonly [K in keyof IpcApi]: string } = {
   setUpdateChannel: 'set-update-channel',
   checkForUpdates: 'check-for-updates',
   selectDirectory: 'select-directory',
-  listKiroAgents: 'list-kiro-agents',
-  listKiroModels: 'list-kiro-models',
   listAgents: 'list-agents',
   addAgent: 'add-agent',
   updateAgent: 'update-agent',
@@ -91,4 +91,7 @@ export const IPC_CHANNELS: { readonly [K in keyof IpcApi]: string } = {
   listShells: 'list-shells',
   getShellEnv: 'get-shell-env',
   updateAgentEnvVars: 'update-agent-env-vars',
+  listAgentModels: 'list-agent-models',
+  listAgentModes: 'list-agent-modes',
+  configureAgent: 'configure-agent',
 };

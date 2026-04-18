@@ -6,7 +6,7 @@
  * The generator completes when {@link finish} is called (i.e., when `conn.prompt` resolves).
  */
 import type * as acp from '@agentclientprotocol/sdk';
-import type { SessionStatusListener } from '../agent-session';
+import type { SessionStatusListener } from './agent-session';
 
 /** 1:1 mapping with ACP SessionUpdate types. */
 export type SegmentType =

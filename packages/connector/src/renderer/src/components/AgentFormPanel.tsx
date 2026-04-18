@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import type { AgentType, AgentConfig } from '../../../shared/types';
 import { useAgentStore } from '../stores/agent-store';
-import { Button, Input, Textarea, Dropdown, Label, Hint } from './ui';
+import { Button, Input, Dropdown, Label, Hint } from './ui';
 import { FolderOpen } from 'lucide-react';
 
 function DirectoryPicker({
@@ -53,40 +53,12 @@ export function AgentFormPanel({
   const [name, setName] = useState('');
   const [type, setType] = useState<AgentType>('claude-code');
   const [newioUsername, setNewioUsername] = useState('');
-  const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('claude-sonnet-4-6');
-  const [userPrompt, setUserPrompt] = useState('');
-  const [nodePath, setNodePath] = useState('');
-  const [claudeCodeCliPath, setClaudeCodeCliPath] = useState('');
   const [cwd, setCwd] = useState('');
   const [agentName, setAgentName] = useState('');
-  const [kiroModel, setKiroModel] = useState('');
-  const [kiroCliPath, setKiroCliPath] = useState('');
+  const [model, setModel] = useState('');
+  const [executablePath, setExecutablePath] = useState('');
   const [trustAllTools, setTrustAllTools] = useState(true);
-  const [kiroAgents, setKiroAgents] = useState<string[]>([]);
-  const [kiroModels, setKiroModels] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
-
-  // Fetch available Kiro CLI agents and models when type is kiro-cli
-  useEffect(() => {
-    if (type !== 'kiro-cli') {
-      return;
-    }
-    const path = kiroCliPath.trim() || undefined;
-    const dir = cwd.trim() || undefined;
-    void window.api.listKiroAgents(path, dir).then((agents) => {
-      setKiroAgents(agents);
-      if (agents.length > 0 && !agentName) {
-        setAgentName(agents[0]);
-      }
-    });
-    void window.api.listKiroModels(path, dir).then((models) => {
-      setKiroModels(models);
-      if (models.length > 0 && !kiroModel) {
-        setKiroModel(models[0]);
-      }
-    });
-  }, [type, kiroCliPath, cwd]);
 
   // Populate fields when editing
   useEffect(() => {
@@ -96,24 +68,16 @@ export function AgentFormPanel({
     setName(editAgent.newio?.displayName ?? '');
     setType(editAgent.type);
     setNewioUsername(editAgent.newio?.username ?? '');
-    if (editAgent.claude) {
-      setApiKey(editAgent.claude.apiKey);
-      setModel(editAgent.claude.model);
-      setUserPrompt(editAgent.claude.userPrompt ?? '');
-      setNodePath(editAgent.claude.nodePath ?? '');
-      setClaudeCodeCliPath(editAgent.claude.claudeCodeCliPath ?? '');
-    }
-    setCwd(editAgent.claude?.cwd ?? editAgent.kiroCli?.cwd ?? '');
-    if (editAgent.kiroCli) {
-      setAgentName(editAgent.kiroCli.agentName ?? '');
-      setKiroModel(editAgent.kiroCli.model ?? '');
-      setKiroCliPath(editAgent.kiroCli.kiroCliPath ?? '');
-      setTrustAllTools(editAgent.kiroCli.trustAllTools !== false);
+    setCwd(editAgent.acp?.cwd ?? '');
+    if (editAgent.acp) {
+      setAgentName(editAgent.acp.defaultMode ?? '');
+      setModel(editAgent.acp.defaultModel ?? '');
+      setExecutablePath(editAgent.acp.executablePath ?? '');
+      setTrustAllTools(editAgent.acp.trustAllTools !== false);
     }
   }, [editAgent]);
 
-  const canSubmit =
-    name.trim().length > 0 && cwd.trim().length > 0 && (type === 'claude-code' ? apiKey.trim().length > 0 : true);
+  const canSubmit = name.trim().length > 0 && cwd.trim().length > 0;
 
   async function handleSubmit(): Promise<void> {
     if (!canSubmit || submitting) {
@@ -121,42 +85,26 @@ export function AgentFormPanel({
     }
     setSubmitting(true);
     try {
-      const claudeConfig =
-        type === 'claude-code'
-          ? {
-              apiKey: apiKey.trim(),
-              model: model.trim(),
-              cwd: cwd.trim(),
-              ...(userPrompt.trim() ? { userPrompt: userPrompt.trim() } : {}),
-              ...(nodePath.trim() ? { nodePath: nodePath.trim() } : {}),
-              ...(claudeCodeCliPath.trim() ? { claudeCodeCliPath: claudeCodeCliPath.trim() } : {}),
-            }
-          : undefined;
-      const kiroCliConfig =
-        type === 'kiro-cli'
-          ? {
-              cwd: cwd.trim(),
-              trustAllTools,
-              ...(agentName.trim() ? { agentName: agentName.trim() } : {}),
-              ...(kiroModel.trim() ? { model: kiroModel.trim() } : {}),
-              ...(kiroCliPath.trim() ? { kiroCliPath: kiroCliPath.trim() } : {}),
-            }
-          : undefined;
+      const acpConfig = {
+        cwd: cwd.trim(),
+        trustAllTools,
+        ...(agentName.trim() ? { defaultMode: agentName.trim() } : {}),
+        ...(model.trim() ? { defaultModel: model.trim() } : {}),
+        ...(executablePath.trim() ? { executablePath: executablePath.trim() } : {}),
+      };
 
       if (isEdit) {
         await updateAgent(editAgent.id, {
           displayName: name.trim(),
           newioUsername: newioUsername.trim(),
-          ...(claudeConfig ? { claude: claudeConfig } : {}),
-          ...(kiroCliConfig ? { kiroCli: kiroCliConfig } : {}),
+          acp: acpConfig,
         });
       } else {
         await addAgent({
           displayName: name.trim(),
           type,
           ...(newioUsername.trim() ? { newioUsername: newioUsername.trim() } : {}),
-          ...(claudeConfig ? { claude: claudeConfig } : {}),
-          ...(kiroCliConfig ? { kiroCli: kiroCliConfig } : {}),
+          acp: acpConfig,
         });
       }
       onDone?.();
@@ -180,32 +128,24 @@ export function AgentFormPanel({
         </Label>
 
         {/* Type description */}
-        {type === 'claude-code' && (
-          <Hint className="mb-4">
-            Powered by the Claude Agent SDK — the same agent that runs Claude Code CLI. Requires an Anthropic API key
-            (pay-per-use). Get one at{' '}
-            <button
-              className="text-primary hover:underline"
-              onClick={() => void window.api.openExternal('https://console.anthropic.com/')}
-            >
-              console.anthropic.com
-            </button>
-            .
-          </Hint>
-        )}
-        {type === 'kiro-cli' && (
-          <Hint className="mb-4">
-            Runs a Kiro CLI agent as a child process via{' '}
-            <button
-              className="text-primary hover:underline"
-              onClick={() => void window.api.openExternal('https://agentclientprotocol.com/get-started/introduction')}
-            >
-              ACP (Agent Client Protocol)
-            </button>
-            . Requires <span className="font-medium text-foreground">kiro-cli</span> installed and configured on your
-            system.
-          </Hint>
-        )}
+        <Hint className="mb-4">
+          Connects an{' '}
+          <button
+            className="text-primary hover:underline"
+            onClick={() => void window.api.openExternal('https://agentclientprotocol.com/get-started/introduction')}
+          >
+            ACP (Agent Client Protocol)
+          </button>{' '}
+          compatible agent to Newio.
+          {type === 'claude-code' && ' Claude Code is supported via the @agentclientprotocol/claude-agent-acp wrapper.'}
+          {type === 'kiro-cli' && (
+            <>
+              {' '}
+              Requires <span className="font-medium text-foreground">kiro-cli</span> installed and configured on your
+              system.
+            </>
+          )}
+        </Hint>
 
         {/* Display Name */}
         <Label text="Display Name">
@@ -229,93 +169,36 @@ export function AgentFormPanel({
           <DirectoryPicker value={cwd} onChange={setCwd} />
         </Label>
 
-        {/* Claude config */}
-        {type === 'claude-code' && (
-          <>
-            <Label text="API Key">
-              <Input type="text" placeholder="sk-ant-..." value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
-            </Label>
-            <Label text="Model">
-              <Input value={model} onChange={(e) => setModel(e.target.value)} />
-            </Label>
-            <Label text="Custom Instructions (optional)">
-              <Textarea
-                rows={3}
-                placeholder="Additional instructions for the agent..."
-                value={userPrompt}
-                onChange={(e) => setUserPrompt(e.target.value)}
-              />
-            </Label>
-            <Label
-              text="Node.js Path (optional)"
-              hint="Defaults to the Electron runtime. Override if Claude Code needs a specific Node.js."
-            >
-              <Input
-                placeholder="e.g. /usr/local/bin/node"
-                value={nodePath}
-                onChange={(e) => setNodePath(e.target.value)}
-              />
-            </Label>
-            <Label
-              text="Claude Code CLI Path (optional)"
-              hint="Defaults to the CLI bundled with @anthropic-ai/claude-agent-sdk."
-            >
-              <Input
-                placeholder="e.g. /path/to/cli.js"
-                value={claudeCodeCliPath}
-                onChange={(e) => setClaudeCodeCliPath(e.target.value)}
-              />
-            </Label>
-          </>
-        )}
+        {/* ACP config — shared by all agent types */}
+        <Label
+          text="Default Mode (optional)"
+          hint="The ACP session mode to use. Available modes are advertised by the agent when running."
+        >
+          <Input placeholder="e.g. default" value={agentName} onChange={(e) => setAgentName(e.target.value)} />
+        </Label>
 
-        {/* Kiro CLI config */}
-        {type === 'kiro-cli' && (
-          <>
-            <Label
-              text="Kiro Agent Name (optional)"
-              hint={`Runs: kiro-cli acp --agent ${agentName || '<name>'}${kiroModel ? ` --model ${kiroModel}` : ''}`}
-            >
-              {kiroAgents.length > 0 ? (
-                <Dropdown
-                  options={kiroAgents.map((a) => ({ value: a, label: a }))}
-                  value={agentName}
-                  onChange={setAgentName}
-                />
-              ) : (
-                <Input placeholder="my-agent" value={agentName} onChange={(e) => setAgentName(e.target.value)} />
-              )}
-            </Label>
-            <Label text="Model (optional)">
-              {kiroModels.length > 0 ? (
-                <Dropdown
-                  options={kiroModels.map((m) => ({ value: m, label: m }))}
-                  value={kiroModel}
-                  onChange={setKiroModel}
-                />
-              ) : (
-                <Input placeholder="auto" value={kiroModel} onChange={(e) => setKiroModel(e.target.value)} />
-              )}
-            </Label>
-            <Label text="Kiro CLI Path (optional)" hint="Override if kiro-cli is not on your PATH.">
-              <Input
-                placeholder="e.g. /Users/me/.local/bin/kiro-cli"
-                value={kiroCliPath}
-                onChange={(e) => setKiroCliPath(e.target.value)}
-              />
-            </Label>
-            <label className="flex items-center gap-2 mb-4 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={trustAllTools}
-                onChange={(e) => setTrustAllTools(e.target.checked)}
-                className="h-4 w-4 rounded border-border accent-primary"
-              />
-              <span className="text-sm text-foreground">Trust all tools</span>
-              <span className="text-xs text-muted-foreground">(skip permission prompts)</span>
-            </label>
-          </>
-        )}
+        <Label text="Default Model (optional)" hint="The model to use for ACP sessions.">
+          <Input placeholder="auto" value={model} onChange={(e) => setModel(e.target.value)} />
+        </Label>
+
+        <Label text="Executable Path (optional)" hint="Override if the agent CLI is not on your PATH.">
+          <Input
+            placeholder={type === 'kiro-cli' ? 'e.g. /Users/me/.local/bin/kiro-cli' : 'e.g. /path/to/agent-cli'}
+            value={executablePath}
+            onChange={(e) => setExecutablePath(e.target.value)}
+          />
+        </Label>
+
+        <label className="flex items-center gap-2 mb-4 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={trustAllTools}
+            onChange={(e) => setTrustAllTools(e.target.checked)}
+            className="h-4 w-4 rounded border-border accent-primary"
+          />
+          <span className="text-sm text-foreground">Trust all tools</span>
+          <span className="text-xs text-muted-foreground">(skip permission prompts)</span>
+        </label>
       </div>
 
       {/* Footer */}
