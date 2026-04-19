@@ -248,7 +248,19 @@ describe('wireEvents', () => {
   });
 
   it('handles contact.request_accepted', () => {
-    const contact: ContactRecord = {
+    // Incoming request: userId = sender, contactId = me (recipient)
+    store.addIncomingRequest({
+      userId: 'u2',
+      contactId: 'me',
+      friendUsername: 'alice',
+      friendDisplayName: 'Alice',
+      friendAccountType: 'human',
+      status: 'pending',
+      createdAt: ts,
+    });
+    // Accepted contact: agent's own view — userId = me, contactId = other party
+    const acceptedContact: ContactRecord = {
+      userId: 'me',
       contactId: 'u2',
       friendUsername: 'alice',
       friendDisplayName: 'Alice',
@@ -256,11 +268,14 @@ describe('wireEvents', () => {
       status: 'accepted',
       createdAt: ts,
     };
-    store.addIncomingRequest(contact);
     const handler = vi.fn();
     handlers['contact.request_accepted'] = handler;
 
-    ws.fire('contact.request_accepted', { type: 'contact.request_accepted', timestamp: ts, payload: { contact } });
+    ws.fire('contact.request_accepted', {
+      type: 'contact.request_accepted',
+      timestamp: ts,
+      payload: { contact: acceptedContact },
+    });
 
     expect(store.getIncomingRequests()).toHaveLength(0);
     expect(store.isContact('u2')).toBe(true);
@@ -269,7 +284,8 @@ describe('wireEvents', () => {
 
   it('handles contact.request_rejected', () => {
     store.addIncomingRequest({
-      contactId: 'u2',
+      userId: 'u2',
+      contactId: 'me',
       friendUsername: 'alice',
       friendDisplayName: 'Alice',
       friendAccountType: 'human',
@@ -291,7 +307,8 @@ describe('wireEvents', () => {
 
   it('handles contact.request_revoked', () => {
     store.addIncomingRequest({
-      contactId: 'u2',
+      userId: 'u2',
+      contactId: 'me',
       friendUsername: 'alice',
       friendDisplayName: 'Alice',
       friendAccountType: 'human',
@@ -302,7 +319,7 @@ describe('wireEvents', () => {
     ws.fire('contact.request_revoked', {
       type: 'contact.request_revoked',
       timestamp: ts,
-      payload: { userId: 'u2', contactId: 'u2' },
+      payload: { userId: 'u2', contactId: 'me' },
     });
 
     expect(store.getIncomingRequests()).toHaveLength(0);

@@ -190,18 +190,18 @@ describe('NewioAppStore', () => {
 
   describe('incoming requests', () => {
     it('adds, retrieves, and removes requests', () => {
-      const req = makeContact({ contactId: 'r1', friendUsername: 'bob', status: 'pending' });
+      const req = makeContact({ userId: 'sender1', contactId: 'me', friendUsername: 'bob', status: 'pending' });
       store.addIncomingRequest(req);
       expect(store.getIncomingRequests()).toHaveLength(1);
 
-      store.removeIncomingRequest('r1');
+      store.removeIncomingRequest('sender1');
       expect(store.getIncomingRequests()).toHaveLength(0);
     });
 
     it('findIncomingRequestByUsername is case-insensitive', () => {
-      store.addIncomingRequest(makeContact({ contactId: 'r1', friendUsername: 'Bob' }));
-      expect(store.findIncomingRequestByUsername('bob')?.contactId).toBe('r1');
-      expect(store.findIncomingRequestByUsername('BOB')?.contactId).toBe('r1');
+      store.addIncomingRequest(makeContact({ userId: 'sender1', contactId: 'me', friendUsername: 'Bob' }));
+      expect(store.findIncomingRequestByUsername('bob')?.userId).toBe('sender1');
+      expect(store.findIncomingRequestByUsername('BOB')?.userId).toBe('sender1');
       expect(store.findIncomingRequestByUsername('unknown')).toBeUndefined();
     });
   });

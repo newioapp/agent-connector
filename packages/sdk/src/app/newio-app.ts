@@ -300,8 +300,10 @@ export class NewioApp {
   // ---------------------------------------------------------------------------
 
   /** Send a message to a conversation, with optional file attachments. */
-  async sendMessage(conversationId: string, text: string, filePaths?: readonly string[]): Promise<void> {
-    log.debug(`Sending message to ${conversationId} (${text.length} chars, ${filePaths?.length ?? 0} attachments)`);
+  async sendMessage(conversationId: string, text?: string, filePaths?: readonly string[]): Promise<void> {
+    log.debug(
+      `Sending message to ${conversationId} (${text?.length ?? 0} chars, ${filePaths?.length ?? 0} attachments)`,
+    );
     const attachments = filePaths ? await uploadFiles(this.client, filePaths) : undefined;
     const mentions = text ? await this.buildMentions(conversationId, text) : undefined;
     const content: MessageContent = {
@@ -424,8 +426,8 @@ export class NewioApp {
   async acceptFriendRequestByUsername(username: string): Promise<void> {
     log.info(`Accepting friend request from @${username}`);
     const request = await this.findIncomingRequestByUsername(username);
-    await this.client.acceptFriendRequest({ requestId: request.contactId });
-    this.store.removeIncomingRequest(request.contactId);
+    await this.client.acceptFriendRequest({ requestId: request.userId });
+    this.store.removeIncomingRequest(request.userId);
     this.store.indexContact(request);
   }
 
@@ -433,8 +435,8 @@ export class NewioApp {
   async rejectFriendRequestByUsername(username: string): Promise<void> {
     log.info(`Rejecting friend request from @${username}`);
     const request = await this.findIncomingRequestByUsername(username);
-    await this.client.rejectFriendRequest({ requestId: request.contactId });
-    this.store.removeIncomingRequest(request.contactId);
+    await this.client.rejectFriendRequest({ requestId: request.userId });
+    this.store.removeIncomingRequest(request.userId);
   }
 
   /** Remove a friend by username. */

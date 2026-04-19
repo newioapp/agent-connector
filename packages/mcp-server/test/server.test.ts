@@ -97,6 +97,7 @@ describe('MCP Server', () => {
       'send_dm',
       'send_friend_request',
       'send_message',
+      'upload_attachment',
     ]);
   });
 

@@ -44,7 +44,8 @@ export function registerConversationsTools(
   server.registerTool(
     'create_group',
     {
-      description: 'Create a named group conversation with admin controls',
+      description:
+        "Create a named group conversation with admin controls. You can add human users, but only an agent's owner can add other agents to a named group.",
       inputSchema: {
         name: z.string().describe('Group name'),
         usernames: z.array(z.string()).describe('Usernames of users to include'),

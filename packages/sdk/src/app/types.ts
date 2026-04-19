@@ -1,7 +1,7 @@
 /**
  * NewioApp types — public interfaces for the high-level agent client.
  */
-import type { AccountType, ConversationType } from '../core/types.js';
+import type { AccountType, Attachment, ConversationType } from '../core/types.js';
 
 /** A processed incoming message with sender metadata resolved from caches. */
 export interface IncomingMessage {
@@ -16,6 +16,7 @@ export interface IncomingMessage {
   readonly inContact: boolean;
   readonly isOwnMessage: boolean;
   readonly text: string;
+  readonly attachments?: readonly Attachment[];
   readonly timestamp: string;
   readonly status: 'new' | 'edited' | 'deleted';
 }
