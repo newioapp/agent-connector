@@ -4,7 +4,7 @@
  * These are one-way events sent via webContents.send / ipcRenderer.on.
  * Separate from the request/response IPC API in ipc-api.ts.
  */
-import type { AgentRuntimeStatus, AgentConfig, AgentSessionConfig } from './types';
+import type { AgentRuntimeStatus, AgentConfig, AgentSessionConfig, AgentInfo } from './types';
 
 export interface MainToRendererEvents {
   readonly 'agent-status-changed': {
@@ -29,6 +29,10 @@ export interface MainToRendererEvents {
     readonly models?: AgentSessionConfig;
     readonly modes?: AgentSessionConfig;
   };
+  readonly 'agent-acp-info': {
+    readonly agentId: string;
+    readonly info: AgentInfo;
+  };
 }
 
 /** All push event channel names. */
@@ -38,4 +42,5 @@ export const EVENT_CHANNELS: { readonly [K in keyof MainToRendererEvents]: K } =
   'agent-poll-attempt': 'agent-poll-attempt',
   'agent-config-updated': 'agent-config-updated',
   'agent-session-config-updated': 'agent-session-config-updated',
+  'agent-acp-info': 'agent-acp-info',
 };

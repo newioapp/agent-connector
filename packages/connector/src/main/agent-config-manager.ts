@@ -7,7 +7,7 @@
 import { randomUUID } from 'crypto';
 import type Store from 'electron-store';
 import type { StoreSchema } from './store';
-import type { AgentConfig, AddAgentInput, UpdateAgentInput, NewioIdentity, AcpAgentInfo } from '../shared/types';
+import type { AgentConfig, AddAgentInput, UpdateAgentInput, NewioIdentity } from '../shared/types';
 import { getShellEnv, listAvailableShells } from './shell-env';
 
 export type { AgentConfigManager, AgentTokens } from '../core/agent-config-manager';
@@ -100,19 +100,6 @@ export class StoreAgentConfigManager implements AgentConfigManager {
       throw new Error(`Agent ${agentId} not found.`);
     }
     const updated: AgentConfig = { ...agents[index], newio: identity };
-    agents[index] = updated;
-    this.store.set('agents', agents);
-    return updated;
-  }
-
-  /** Persist ACP agent info discovered during initialization. */
-  setAcpAgentInfo(agentId: string, info: AcpAgentInfo): AgentConfig {
-    const agents = [...this.store.get('agents')];
-    const index = agents.findIndex((a) => a.id === agentId);
-    if (index === -1) {
-      throw new Error(`Agent ${agentId} not found.`);
-    }
-    const updated: AgentConfig = { ...agents[index], acpAgentInfo: info };
     agents[index] = updated;
     this.store.set('agents', agents);
     return updated;

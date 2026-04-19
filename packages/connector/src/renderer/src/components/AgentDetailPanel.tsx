@@ -53,10 +53,12 @@ export function AgentDetailPanel({
   const startAgent = useAgentStore((s) => s.startAgent);
   const stopAgent = useAgentStore((s) => s.stopAgent);
   const [activeTab, setActiveTab] = useState<Tab>('config');
+  const [startError, setStartError] = useState<string | null>(null);
 
   // Reset tab when switching agents
   useEffect(() => {
     setActiveTab('config');
+    setStartError(null);
   }, [agent.id]);
 
   const { config } = agent;
@@ -98,7 +100,15 @@ export function AgentDetailPanel({
         {/* Start / Stop button */}
         <div className="flex gap-2">
           {isStopped && (
-            <Button variant="success" onClick={() => void startAgent(agent.id)}>
+            <Button
+              variant="success"
+              onClick={() => {
+                setStartError(null);
+                startAgent(agent.id).catch((err: unknown) => {
+                  setStartError(err instanceof Error ? err.message : String(err));
+                });
+              }}
+            >
               <Play size={12} />
               Start
             </Button>
@@ -117,6 +127,13 @@ export function AgentDetailPanel({
           )}
         </div>
       </div>
+
+      {/* Start error banner */}
+      {startError && isStopped && (
+        <div className="mx-6 mb-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          {startError}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex border-b border-border px-6">

@@ -40,9 +40,49 @@ export function AgentTypeHint({
             className="text-primary hover:underline"
             onClick={() => void window.api.openExternal('https://kiro.dev/cli/')}
           >
-            kiro-cli
+            Kiro CLI
           </button>{' '}
-          installed and logged in on your system.
+          installed and authenticated.
+        </>
+      )}
+      {type === 'codex' && (
+        <>
+          Requires{' '}
+          <button
+            className="text-primary hover:underline"
+            onClick={() => void window.api.openExternal('https://www.npmjs.com/package/@zed-industries/codex-acp')}
+          >
+            @zed-industries/codex-acp
+          </button>
+          . Install with{' '}
+          <code className="text-xs bg-muted px-1 py-0.5 rounded">npm i -g @zed-industries/codex-acp</code> and
+          authenticate with a ChatGPT subscription,{' '}
+          <code className="text-xs bg-muted px-1 py-0.5 rounded">CODEX_API_KEY</code>, or{' '}
+          <code className="text-xs bg-muted px-1 py-0.5 rounded">OPENAI_API_KEY</code>.
+        </>
+      )}
+      {type === 'cursor' && (
+        <>
+          Requires{' '}
+          <button
+            className="text-primary hover:underline"
+            onClick={() => void window.api.openExternal('https://cursor.com/cli')}
+          >
+            Cursor CLI
+          </button>{' '}
+          installed and authenticated.
+        </>
+      )}
+      {type === 'gemini' && (
+        <>
+          Requires{' '}
+          <button
+            className="text-primary hover:underline"
+            onClick={() => void window.api.openExternal('https://www.npmjs.com/package/@google/gemini-cli')}
+          >
+            Gemini CLI
+          </button>{' '}
+          installed and authenticated.
         </>
       )}
       {type === 'custom' && (

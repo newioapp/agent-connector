@@ -19,6 +19,7 @@ import { join } from 'path';
 import type { AgentConfigManager } from './agent-config-manager';
 import type { AgentRuntimeStatus, AgentConfig } from './types';
 import { DEFAULT_SESSION_IDLE_TIMEOUT_MS, resolveCommand, extractErrorMessage } from './types';
+import type { AgentInfo } from './types';
 import type { AgentInstance, AgentInstanceListener } from './agent-instance';
 import type { AgentSessionConfig, ConfigureAgentInput } from './agent-instance';
 import type { AgentSession } from './agent-session';
@@ -473,6 +474,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** Resume a previously idle-killed session by its correlation ID. */
   protected abstract resumeSession(correlationId: string): Promise<AgentSession>;
+
+  /** Runtime agent info — available after initialization. */
+  abstract getAgentInfo(): AgentInfo | undefined;
 
   /** Called after NewioApp is ready. Subclasses add agent-specific behavior (e.g., greeting). */
   protected abstract onConnected(): Promise<void> | void;
