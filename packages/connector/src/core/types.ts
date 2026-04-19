@@ -138,3 +138,24 @@ export interface SessionStreamSegment {
 export type SessionStatus = 'thinking' | 'typing' | 'tool_calling' | 'idle';
 
 export type SessionStatusListener = (status: SessionStatus) => void;
+
+/** Extract a human-readable message from an unknown error (handles Error instances and plain objects). */
+export function extractErrorMessage(err: unknown): string {
+  if (typeof err === 'object' && err !== null) {
+    const obj = err as Record<string, unknown>;
+    // ACP errors may have a more detailed message in data.message
+    if (typeof obj.data === 'object' && obj.data !== null) {
+      const data = obj.data as Record<string, unknown>;
+      if (typeof data.message === 'string') {
+        return data.message;
+      }
+    }
+    if (err instanceof Error) {
+      return err.message;
+    }
+    if (typeof obj.message === 'string') {
+      return obj.message;
+    }
+  }
+  return String(err);
+}

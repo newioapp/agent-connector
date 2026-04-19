@@ -5,7 +5,8 @@
 import { useEffect, useState } from 'react';
 import type { AgentType, AgentConfig } from '../../../shared/types';
 import { useAgentStore } from '../stores/agent-store';
-import { Button, Input, Dropdown, Label, Hint } from './ui';
+import { Button, Input, Dropdown, Label } from './ui';
+import { AgentTypeHint } from './AgentTypeHint';
 import { FolderOpen } from 'lucide-react';
 
 function DirectoryPicker({
@@ -124,54 +125,7 @@ export function AgentFormPanel({
         </Label>
 
         {/* Type description */}
-        <Hint className="mb-4">
-          {type === 'claude-code' && (
-            <>
-              Claude Code is supported via{' '}
-              <button
-                className="text-primary hover:underline"
-                onClick={() =>
-                  void window.api.openExternal('https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp')
-                }
-              >
-                @agentclientprotocol/claude-agent-acp
-              </button>
-              . Install with{' '}
-              <code className="text-xs bg-muted px-1 py-0.5 rounded">
-                npm i -g @agentclientprotocol/claude-agent-acp
-              </code>{' '}
-              and login with Claude subscription{' '}
-              <code className="text-xs bg-muted px-1 py-0.5 rounded">claude-agent-acp --cli auth login --claudeai</code>{' '}
-              or Anthropic Console (API usage billing){' '}
-              <code className="text-xs bg-muted px-1 py-0.5 rounded">claude-agent-acp --cli auth login --console</code>.
-            </>
-          )}
-          {type === 'kiro-cli' && (
-            <>
-              Requires{' '}
-              <button
-                className="text-primary hover:underline"
-                onClick={() => void window.api.openExternal('https://kiro.dev/cli/')}
-              >
-                kiro-cli
-              </button>{' '}
-              installed and logged in on your system.
-            </>
-          )}
-          {type === 'custom' && (
-            <>
-              Connect any{' '}
-              <button
-                className="text-primary hover:underline"
-                onClick={() => void window.api.openExternal('https://agentclientprotocol.com/get-started/introduction')}
-              >
-                ACP-compatible
-              </button>{' '}
-              agent by providing its CLI executable below. Ensure the agent is authenticated and logged in before
-              starting.
-            </>
-          )}
-        </Hint>
+        <AgentTypeHint type={type} className="mb-4" />
 
         <Label
           text={type === 'custom' ? 'Executable Path' : 'Executable Path (optional)'}

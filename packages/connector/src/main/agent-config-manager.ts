@@ -89,6 +89,7 @@ export class StoreAgentConfigManager implements AgentConfigManager {
       throw new Error(`Agent ${agentId} not found.`);
     }
     this.store.set('agents', filtered);
+    this.clearTokens(agentId);
   }
 
   /** Update Newio identity on an agent config (called after registration). */

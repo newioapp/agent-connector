@@ -18,7 +18,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import type { AgentConfigManager } from './agent-config-manager';
 import type { AgentRuntimeStatus, AgentConfig } from './types';
-import { DEFAULT_SESSION_IDLE_TIMEOUT_MS, resolveCommand } from './types';
+import { DEFAULT_SESSION_IDLE_TIMEOUT_MS, resolveCommand, extractErrorMessage } from './types';
 import type { AgentInstance, AgentInstanceListener } from './agent-instance';
 import type { AgentSessionConfig, ConfigureAgentInput } from './agent-instance';
 import type { AgentSession } from './agent-session';
@@ -60,6 +60,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private abortController?: AbortController;
   private idleTimer?: ReturnType<typeof setInterval>;
   private cleaningUp = false;
+  protected pendingCleanup?: Promise<void>;
   private udsServer?: Server;
   /** Most recently created MCP server awaiting a sessionId to be wired. */
   private pendingMcpServer?: NewioMcpServer;
@@ -75,6 +76,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
   ) {}
 
   async start(): Promise<void> {
+    // Wait for any in-flight cleanup (e.g. from an unexpected process exit) before starting
+    if (this.pendingCleanup) {
+      await this.pendingCleanup;
+    }
+
     const abortController = new AbortController();
     this.abortController = abortController;
     this.setStatus('starting');
@@ -190,10 +196,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
       log.info('Agent running');
       this.setStatus('running');
     } catch (err: unknown) {
-      this._app?.dispose();
-      this._app = undefined;
+      const wasAborted = abortController.signal.aborted;
+      await this.cleanup();
+      await this.onStopped();
 
-      if (abortController.signal.aborted) {
+      if (wasAborted) {
         log.info('Start aborted');
         return;
       }
@@ -216,8 +223,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
           `"${executable}" not found. Make sure it is installed and available on your system PATH, or set the executable path in the agent config.\n\n${err.stack ?? err.message}`,
         );
       } else {
-        const message = err instanceof Error ? (err.stack ?? err.message) : 'Unknown error';
-        log.error('Failed to start', message);
+        const message = extractErrorMessage(err);
+        log.error('Failed to start', err instanceof Error ? (err.stack ?? message) : message);
         this.setStatus('error', message);
       }
     }
@@ -225,6 +232,14 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   async stop(): Promise<void> {
     log.info('Stopping agent');
+    await this.cleanup();
+    await this.onStopped();
+    this.setStatus('stopped');
+    log.info('Agent stopped');
+  }
+
+  /** Shared cleanup — tears down sessions, MCP server, WebSocket, and timers. */
+  protected async cleanup(): Promise<void> {
     this.abortController?.abort();
 
     if (this.idleTimer) {
@@ -247,21 +262,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
 
     if (this._app) {
-      try {
-        await this._app.auth.revoke();
-        log.debug('Tokens revoked');
-      } catch {
-        log.warn('Token revocation failed (best-effort)');
-      }
       this._app.dispose();
       this._app = undefined;
     }
-
-    this.configManager.clearTokens(this.config.id);
-
-    await this.onStopped();
-    this.setStatus('stopped');
-    log.info('Agent stopped');
   }
 
   /** Get the NewioApp instance. Throws if not connected. */
@@ -379,21 +382,10 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
 
     const existingCorrelationId = this.sessionStore.get(newioSessionId);
-    let session: AgentSession;
 
-    if (existingCorrelationId) {
-      log.info(`Resuming session: correlation=${existingCorrelationId}`);
-      try {
-        session = await this.resumeSession(existingCorrelationId);
-      } catch (err) {
-        log.warn(`Failed to resume session ${existingCorrelationId}, falling back to new session`, err);
-        session = await this.createSession();
-        this.sessionStore.set(newioSessionId, session.correlationId);
-      }
-    } else {
-      session = await this.createSession();
-      this.sessionStore.set(newioSessionId, session.correlationId);
-    }
+    const session = existingCorrelationId
+      ? await this.resumeOrCreateSession(newioSessionId, existingCorrelationId)
+      : await this.createAndStoreSession(newioSessionId);
 
     // Wire MCP sessionId
     if (this.pendingMcpServer) {
@@ -424,6 +416,36 @@ export abstract class BaseAgentInstance implements AgentInstance {
     void this.runSessionLoop(newioSessionId, runner);
 
     return runner;
+  }
+
+  /** Resume an existing session, falling back to a new session on failure. */
+  private async resumeOrCreateSession(newioSessionId: string, correlationId: string): Promise<AgentSession> {
+    log.info(`Resuming session: correlation=${correlationId}`);
+    try {
+      return await this.resumeSession(correlationId);
+    } catch (err) {
+      log.warn(`Failed to resume session ${correlationId}, falling back to new session`, err);
+      if (this.pendingMcpServer) {
+        log.debug('Clearing pending MCP server after session resume failure');
+        this.pendingMcpServer = undefined;
+      }
+      return this.createAndStoreSession(newioSessionId);
+    }
+  }
+
+  /** Create a new session and persist its correlation ID. */
+  private async createAndStoreSession(newioSessionId: string): Promise<AgentSession> {
+    try {
+      const session = await this.createSession();
+      this.sessionStore.set(newioSessionId, session.correlationId);
+      return session;
+    } catch (err) {
+      if (this.pendingMcpServer) {
+        log.debug('Clearing pending MCP server after session creation failure');
+        this.pendingMcpServer = undefined;
+      }
+      throw err;
+    }
   }
 
   /** Get a live session by its correlation ID, if running. */

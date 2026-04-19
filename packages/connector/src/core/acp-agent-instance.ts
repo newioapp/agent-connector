@@ -19,7 +19,7 @@ import type { PermissionHandler } from './acp-agent-session';
 import type { AgentSession } from './agent-session';
 import type { AgentSessionConfig, ConfigureAgentInput } from './agent-instance';
 import type { SessionStreamSegment } from './types';
-import { resolveCommand } from './types';
+import { resolveCommand, extractErrorMessage } from './types';
 import { Logger } from './logger';
 
 const log = new Logger('acp-agent-instance');
@@ -53,6 +53,9 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
 
   /** Whether the ACP agent supports session/close. */
   private supportsClose = false;
+
+  /** Set to true when stop/kill is intentional — prevents the exit handler from treating it as unexpected. */
+  private stopping = false;
 
   /** The first session created (greeting session) — used to expose available models/modes. */
   private representativeSession?: AcpAgentSession;
@@ -117,6 +120,8 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       throw new Error('ACP config missing');
     }
 
+    this.stopping = false;
+
     const { cwd } = config;
     const { command, args } = resolveCommand(this.config.type, config);
 
@@ -128,8 +133,15 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       ...(cwd ? { cwd } : {}),
     });
 
+    const stderrChunks: string[] = [];
     child.stderr?.on('data', (data: Buffer) => {
-      log.debug(`[acp stderr] ${data.toString().trimEnd()}`);
+      const text = data.toString().trimEnd();
+      log.debug(`[acp stderr] ${text}`);
+      stderrChunks.push(text);
+      // Keep only the last 20 lines to bound memory
+      if (stderrChunks.length > 20) {
+        stderrChunks.shift();
+      }
     });
 
     child.on('error', (err) => {
@@ -138,6 +150,20 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
 
     child.on('exit', (code, signal) => {
       log.info(`ACP agent exited (code=${String(code)}, signal=${String(signal)})`);
+      if (!this.stopping) {
+        this.childProcess = undefined;
+        this.connection = undefined;
+        const stderr = stderrChunks.join('\n').trim();
+        const detail = stderr || `code=${String(code)}, signal=${String(signal)}`;
+        this.pendingCleanup = this.cleanup()
+          .then(() => this.onStopped())
+          .then(() => {
+            this.setStatus('error', `Agent process exited unexpectedly.\n\n${detail}`);
+          })
+          .finally(() => {
+            this.pendingCleanup = undefined;
+          });
+      }
     });
 
     this.childProcess = child;
@@ -189,6 +215,9 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       return;
     }
 
+    this.stopping = true;
+    this.childProcess = undefined;
+
     if (child.stdin && !child.stdin.destroyed) {
       child.stdin.end();
     }
@@ -208,7 +237,6 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       child.kill('SIGKILL');
     }
 
-    this.childProcess = undefined;
     log.info('ACP process terminated');
   }
 
@@ -429,7 +457,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     try {
       greeting = await collectAgentMessage(session.prompt(this.promptManager.buildGreetingPrompt()));
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
+      const message = extractErrorMessage(err);
       log.error(`[${session.correlationId}] Greeting prompt failed: ${message}`);
       throw new Error(`ACP agent connection test failed: ${message}`);
     }
