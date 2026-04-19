@@ -15,7 +15,6 @@ import type * as acp from '@agentclientprotocol/sdk';
 import type { McpServer as AcpMcpServer } from '@agentclientprotocol/sdk';
 import { BaseAgentInstance } from './base-agent-instance';
 import { AcpAgentSession } from './acp-agent-session';
-import type { PermissionHandler } from './acp-agent-session';
 import type { AgentSession } from './agent-session';
 import type { AgentSessionConfig, ConfigureAgentInput } from './agent-instance';
 import type { SessionStreamSegment } from './types';
@@ -74,14 +73,14 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
   // Lifecycle
   // ---------------------------------------------------------------------------
 
-  protected async onConnected(): Promise<void> {
+  protected async onConnected(ownerDmConversationId: string): Promise<void> {
     log.info('ACP agent instance connected, spawning ACP process...');
     if (!this.config.acp) {
       throw new Error('ACP config missing');
     }
 
     await this.spawnAndInit();
-    this.representativeSession = await this.sendGreeting();
+    this.representativeSession = await this.sendGreeting(ownerDmConversationId);
     this.representativeSession.onConfigChanged(() => {
       const models = this.representativeSession?.listModels();
       const modes = this.representativeSession?.listModes();
@@ -245,25 +244,6 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
   }
 
   // ---------------------------------------------------------------------------
-  // Permission handler
-  // ---------------------------------------------------------------------------
-
-  private readonly permissionHandler: PermissionHandler = async (correlationId, params) => {
-    const title = params.toolCall.title ?? 'Permission request';
-    if (params.toolCall.content) {
-      log.debug(`[${correlationId}] Permission request toolCall content: ${JSON.stringify(params.toolCall.content)}`);
-    }
-
-    try {
-      const selectedOptionId = await this.handlePermissionRequest(correlationId, params.options, title);
-      return { outcome: { outcome: 'selected' as const, optionId: selectedOptionId } };
-    } catch (err: unknown) {
-      log.warn('Permission request failed', err);
-      return { outcome: { outcome: 'cancelled' as const } };
-    }
-  };
-
-  // ---------------------------------------------------------------------------
   // Public — model/mode queries and configuration
   // ---------------------------------------------------------------------------
 
@@ -322,7 +302,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
   // Session factory
   // ---------------------------------------------------------------------------
 
-  protected async createSession(): Promise<AgentSession> {
+  protected async createSession(newioSessionId: string): Promise<AgentSession> {
     const config = this.config.acp;
     if (!config) {
       throw new Error('ACP config missing');
@@ -337,9 +317,9 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     });
 
     const session = new AcpAgentSession({
+      sessionId: newioSessionId,
       correlationId: result.sessionId,
       connection: conn,
-      permissionHandler: this.permissionHandler,
       sessionResponse: result,
       disposable: this.supportsClose,
     });
@@ -360,7 +340,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     return session;
   }
 
-  protected async resumeSession(correlationId: string): Promise<AgentSession> {
+  protected async resumeSession(newioSessionId: string, correlationId: string): Promise<AgentSession> {
     const config = this.config.acp;
     if (!config) {
       throw new Error('ACP config missing');
@@ -376,9 +356,9 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     });
 
     const session = new AcpAgentSession({
+      sessionId: newioSessionId,
       correlationId,
       connection: conn,
-      permissionHandler: this.permissionHandler,
       sessionResponse: loadResult,
       disposable: this.supportsClose,
     });
@@ -437,16 +417,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
   // Greeting
   // ---------------------------------------------------------------------------
 
-  private async sendGreeting(): Promise<AcpAgentSession> {
-    if (!this.app.identity.ownerId) {
-      log.warn('No ownerId set, skipping greeting');
-      // Still need a representative session — create one for the owner DM
-      const session = (await this.getOrCreateSession(await this.getOwnerDmOrThrow())) as AcpAgentSession;
-      session.disposable = false;
-      return session;
-    }
-
-    const ownerDmConversationId = await this.getOwnerDmOrThrow();
+  private async sendGreeting(ownerDmConversationId: string): Promise<AcpAgentSession> {
     log.debug(`Owner DM conversation: ${ownerDmConversationId}`);
 
     this.setStatus('greeting');
@@ -456,7 +427,9 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
 
     let greeting: string | undefined;
     try {
-      greeting = await collectAgentMessage(session.prompt(this.promptManager.buildGreetingPrompt()));
+      greeting = await collectAgentMessage(
+        session.prompt(this.promptManager.buildGreetingPrompt(), ownerDmConversationId),
+      );
     } catch (err: unknown) {
       const message = extractErrorMessage(err);
       log.error(`[${session.correlationId}] Greeting prompt failed: ${message}`);
@@ -472,14 +445,6 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     log.info(`[${session.correlationId}] Greeting sent to owner`);
 
     return session;
-  }
-
-  private async getOwnerDmOrThrow(): Promise<string> {
-    const convId = await this.app.getOwnerDmConversationId();
-    if (!convId) {
-      throw new Error('Could not get owner DM conversation');
-    }
-    return convId;
   }
 }
 

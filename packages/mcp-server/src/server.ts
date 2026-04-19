@@ -17,6 +17,7 @@ import { registerCronTools } from './tools/cron.js';
 import { registerMessagingTools } from './tools/messaging.js';
 import { registerUsersTools } from './tools/users.js';
 import { registerMediaTools } from './tools/media.js';
+import { IdGetter } from './types.js';
 
 /**
  * MCP server that exposes Newio tools to agent sessions.
@@ -32,9 +33,11 @@ import { registerMediaTools } from './tools/media.js';
  * mcpServer.setSessionId('session-abc');
  * ```
  */
+
 export class NewioMcpServer {
   private readonly server: McpServer;
-  private sessionId: string | undefined;
+  private getSessionId: IdGetter;
+  private getCurrentConversationId: IdGetter;
 
   constructor(app: NewioApp) {
     this.server = new McpServer({
@@ -42,22 +45,23 @@ export class NewioMcpServer {
       version: '0.1.0',
     });
 
+    this.getCurrentConversationId = () => undefined;
+    this.getSessionId = () => undefined;
+
     registerContactsTools(this.server, app);
-    registerConversationsTools(this.server, app, () => this.sessionId);
-    registerCronTools(this.server, app, () => this.sessionId);
+    registerConversationsTools(this.server, app, () => this.getSessionId());
+    registerCronTools(this.server, app, () => this.getSessionId());
     registerMessagingTools(this.server, app);
     registerUsersTools(this.server, app);
-    registerMediaTools(this.server, app);
+    registerMediaTools(this.server, app, () => this.getCurrentConversationId());
   }
 
   /** Set the Newio session ID for this MCP connection. */
-  setSessionId(id: string): void {
-    this.sessionId = id;
+  setSessionIdGetter(idGetter: IdGetter): void {
+    this.getSessionId = idGetter;
   }
-
-  /** Get the current Newio session ID, if set. */
-  getSessionId(): string | undefined {
-    return this.sessionId;
+  setCurrentConversationIdGetter(idGetter: IdGetter): void {
+    this.getCurrentConversationId = idGetter;
   }
 
   /** Connect to a transport. */

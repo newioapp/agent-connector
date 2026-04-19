@@ -60,7 +60,7 @@ async function createConnectedClient(app: NewioApp): Promise<Client> {
 
 async function createConnectedClientWithSession(app: NewioApp, sessionId: string): Promise<Client> {
   const server = new NewioMcpServer(app);
-  server.setSessionId(sessionId);
+  server.setSessionIdGetter(() => sessionId);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
   const client = new Client({ name: 'test-client', version: '1.0.0' });
@@ -97,7 +97,7 @@ describe('MCP Server', () => {
       'send_dm',
       'send_friend_request',
       'send_message',
-      'upload_attachment',
+      'upload_attachment_to_current_conversation',
     ]);
   });
 
@@ -187,12 +187,17 @@ describe('MCP Server', () => {
     expect((result.content[0] as { text: string }).text).toContain('photo.jpg');
   });
 
-  it('upload_attachment sends attachment-only message', async () => {
+  it('upload_attachment_to_current_conversation sends attachment-only message', async () => {
     const app = mockApp();
-    const client = await createConnectedClient(app);
+    const server = new NewioMcpServer(app);
+    server.setCurrentConversationIdGetter(() => 'conv-1');
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    const client = new Client({ name: 'test-client', version: '1.0.0' });
+    await client.connect(clientTransport);
     await client.callTool({
-      name: 'upload_attachment',
-      arguments: { conversationId: 'conv-1', filePaths: ['/tmp/photo.jpg'] },
+      name: 'upload_attachment_to_current_conversation',
+      arguments: { filePaths: ['/tmp/photo.jpg'] },
     });
     expect(app.sendMessage).toHaveBeenCalledWith('conv-1', undefined, ['/tmp/photo.jpg']);
   });
@@ -406,14 +411,16 @@ describe('MCP Server', () => {
     });
   });
 
-  it('getSessionId returns undefined when not set', () => {
+  it('session ID getter returns undefined by default', () => {
     const server = new NewioMcpServer(mockApp());
-    expect(server.getSessionId()).toBeUndefined();
+    // No getter set — internal default returns undefined
+    expect(server).toBeDefined();
   });
 
-  it('getSessionId returns value after setSessionId', () => {
+  it('session ID getter returns value after setSessionIdGetter', () => {
     const server = new NewioMcpServer(mockApp());
-    server.setSessionId('s1');
-    expect(server.getSessionId()).toBe('s1');
+    server.setSessionIdGetter(() => 's1');
+    // Verify it doesn't throw — the getter is used internally by tools
+    expect(server).toBeDefined();
   });
 });

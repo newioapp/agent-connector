@@ -49,6 +49,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   private _app?: NewioApp;
   private _promptManager?: PromptManager;
+  private _ownerDmConversationId?: string;
 
   /** newioSessionId → running session with its own event queue */
   private readonly runners = new Map<string, SessionRunner>();
@@ -56,8 +57,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private readonly pendingSessions = new Map<string, Promise<SessionRunner>>();
   /** Serializes session launches so only one runs at a time (protects latestMcpServer wiring). */
   private launchQueue: Promise<void> = Promise.resolve();
-  /** correlationId → conversationId currently being processed */
-  private readonly activeConversation = new Map<string, string>();
   private abortController?: AbortController;
   private idleTimer?: ReturnType<typeof setInterval>;
   private cleaningUp = false;
@@ -193,7 +192,10 @@ export abstract class BaseAgentInstance implements AgentInstance {
       log.info(`MCP UDS server listening on ${mcpSocketPath}`);
 
       this.startIdleCleanup();
-      await this.onConnected();
+
+      const ownerDmConversationId = await this.getOwnerDmOrThrow();
+      this._ownerDmConversationId = ownerDmConversationId;
+      await this.onConnected(ownerDmConversationId);
       log.info('Agent running');
       this.setStatus('running');
     } catch (err: unknown) {
@@ -281,6 +283,13 @@ export abstract class BaseAgentInstance implements AgentInstance {
       throw new Error('PromptManager is not created.');
     }
     return this._promptManager;
+  }
+
+  get ownerDmConversationId(): string {
+    if (typeof this._ownerDmConversationId !== 'string') {
+      throw new Error('Missing dmOwnerConversationId.');
+    }
+    return this._ownerDmConversationId;
   }
 
   // ---------------------------------------------------------------------------
@@ -390,20 +399,24 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
     // Wire MCP sessionId
     if (this.pendingMcpServer) {
-      this.pendingMcpServer.setSessionId(newioSessionId);
+      this.pendingMcpServer.setSessionIdGetter(() => session.sessionId);
+      this.pendingMcpServer.setCurrentConversationIdGetter(() => session.currentConversationId);
       this.pendingMcpServer = undefined;
       log.debug(`Wired sessionId ${newioSessionId} to pending MCP server`);
     }
 
     // Wire status listener
-    session.onStatus((status) => {
-      const convId = this.activeConversation.get(session.correlationId);
-      if (convId) {
-        this.app.setStatus(status, convId);
+    session.onStatus((status, conversationId) => {
+      if (conversationId) {
+        this.app.setStatus(status, conversationId);
       } else {
         log.warn(`Status '${status}' from session ${session.correlationId} dropped — no active conversation mapped.`);
       }
     });
+
+    session.onPermissionRequest((title, options, conversationId) =>
+      this.handlePermissionRequest(title, options, conversationId),
+    );
 
     const runner: SessionRunner = {
       session,
@@ -423,7 +436,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private async resumeOrCreateSession(newioSessionId: string, correlationId: string): Promise<AgentSession> {
     log.info(`Resuming session: correlation=${correlationId}`);
     try {
-      return await this.resumeSession(correlationId);
+      return await this.resumeSession(newioSessionId, correlationId);
     } catch (err) {
       log.warn(`Failed to resume session ${correlationId}, falling back to new session`, err);
       if (this.pendingMcpServer) {
@@ -437,7 +450,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   /** Create a new session and persist its correlation ID. */
   private async createAndStoreSession(newioSessionId: string): Promise<AgentSession> {
     try {
-      const session = await this.createSession();
+      const session = await this.createSession(newioSessionId);
       this.sessionStore.set(newioSessionId, session.correlationId);
       return session;
     } catch (err) {
@@ -470,16 +483,16 @@ export abstract class BaseAgentInstance implements AgentInstance {
   // ---------------------------------------------------------------------------
 
   /** Create a new agent-type-specific session. */
-  protected abstract createSession(): Promise<AgentSession>;
+  protected abstract createSession(newioSessionId: string): Promise<AgentSession>;
 
   /** Resume a previously idle-killed session by its correlation ID. */
-  protected abstract resumeSession(correlationId: string): Promise<AgentSession>;
+  protected abstract resumeSession(newioSessionId: string, correlationId: string): Promise<AgentSession>;
 
   /** Runtime agent info — available after initialization. */
   abstract getAgentInfo(): AgentInfo | undefined;
 
   /** Called after NewioApp is ready. Subclasses add agent-specific behavior (e.g., greeting). */
-  protected abstract onConnected(): Promise<void> | void;
+  protected abstract onConnected(ownerDmConversationId: string): Promise<void> | void;
 
   /** Called during stop. Subclasses clean up agent-specific resources. */
   protected abstract onStopped(): Promise<void> | void;
@@ -507,21 +520,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
    * Routes to the active conversation if the session is processing a message,
    * otherwise falls back to the owner DM.
    */
-  protected async handlePermissionRequest(
-    correlationId: string,
-    options: ReadonlyArray<{ readonly kind: string; readonly name: string; readonly optionId: string }>,
+  private async handlePermissionRequest(
     title: string,
+    options: ReadonlyArray<{ readonly kind: string; readonly name: string; readonly optionId: string }>,
+    conversationId?: string,
   ): Promise<string> {
-    const conversationId = this.activeConversation.get(correlationId) ?? (await this.app.getOwnerDmConversationId());
-    if (!conversationId) {
-      throw new Error('Cannot route permission request — no active conversation and no owner DM');
-    }
-
-    const ownerId = this.app.identity.ownerId;
-    if (!ownerId) {
-      throw new Error('Cannot route permission request — agent has no owner');
-    }
-
     const requestId = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
 
@@ -537,10 +540,22 @@ export abstract class BaseAgentInstance implements AgentInstance {
       options: actionOptions,
       expiresAt,
     };
-
+    const ownerId = this.app.identity.ownerId;
+    if (!ownerId) {
+      throw new Error('Cannot route permission request — agent has no owner');
+    }
+    const convId = conversationId ?? this.ownerDmConversationId;
     log.info(`Sending permission request ${requestId} to ${conversationId}`);
-    const response = await this.app.sendActionRequest(conversationId, action, [ownerId]);
+    const response = await this.app.sendActionRequest(convId, action, [ownerId]);
     return response.selectedOptionId;
+  }
+
+  private async getOwnerDmOrThrow(): Promise<string> {
+    const convId = await this.app.getOwnerDmConversationId();
+    if (!convId) {
+      throw new Error('Could not get owner DM conversation');
+    }
+    return convId;
   }
 
   // ---------------------------------------------------------------------------
@@ -577,10 +592,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
     messages: readonly IncomingMessage[],
   ): Promise<void> {
     const userText = this.promptManager.formatMessagePrompt(messages);
-    this.activeConversation.set(session.correlationId, conversationId);
-
     try {
-      for await (const segment of session.prompt(userText)) {
+      for await (const segment of session.prompt(userText, conversationId)) {
         if (
           segment.type === 'agent_message_chunk' &&
           segment.text.trim() &&
@@ -593,7 +606,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';
       log.error(`Prompt/send failed for ${conversationId}: ${errMsg}`);
     } finally {
-      this.activeConversation.delete(session.correlationId);
       this.app.setStatus('idle', conversationId);
     }
   }
