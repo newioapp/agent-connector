@@ -7,6 +7,7 @@ import type { AgentStatusInfo, AcpAgentInfo, AgentSessionConfig } from '../../..
 import { useAgentStore } from '../stores/agent-store';
 import { agentTypeLabel } from '../lib/agent-type-label';
 import { Button, Dropdown } from './ui';
+import { AgentTypeHint } from './AgentTypeHint';
 
 const APPROVAL_TIMEOUT_S = 600;
 
@@ -183,6 +184,8 @@ export function ConfigTab({
           </div>
         )}
 
+        <AgentTypeHint type={config.type} className="mb-3" />
+
         <div className="mb-3 flex items-center gap-2">
           <div className="flex-1">
             <div className="mb-0.5 text-xs font-medium text-muted-foreground">Type</div>
@@ -203,6 +206,8 @@ export function ConfigTab({
           <AcpInfoModal info={config.acpAgentInfo} onClose={() => setShowInfo(false)} />
         )}
 
+        {config.acp?.cwd && <Field label="Working Directory" value={config.acp.cwd} />}
+        {config.newio?.displayName && <Field label="Display Name" value={config.newio.displayName} />}
         <div className="mb-3">
           <div className="mb-0.5 text-xs font-medium text-muted-foreground">Newio Username</div>
           {config.newio?.username ? (
@@ -211,14 +216,12 @@ export function ConfigTab({
             <div className="text-sm text-muted-foreground italic">Set during first launch</div>
           )}
         </div>
-        {config.newio?.displayName && <Field label="Display Name" value={config.newio.displayName} />}
         {config.newio?.agentId && <Field label="Newio Agent ID" value={config.newio.agentId} />}
 
         {config.acp && (
           <>
             {/* Model/Mode dropdowns when running */}
             {config.acp.executablePath && <Field label="Executable Path" value={config.acp.executablePath} />}
-            {config.acp.cwd && <Field label="Working Directory" value={config.acp.cwd} />}
             {config.type === 'kiro-cli' && (
               <Field label="Trust All Tools" value={config.acp.kiroCliTrustAllTools !== false ? 'Yes' : 'No'} />
             )}
