@@ -249,12 +249,12 @@ export class NewioAppStore {
 
   /** Cache an incoming friend request. */
   addIncomingRequest(request: ContactRecord): void {
-    this.incomingRequests.set(request.contactId, request);
+    this.incomingRequests.set(request.userId, request);
   }
 
   /** Remove an incoming friend request (accepted/rejected/revoked). */
-  removeIncomingRequest(contactId: string): void {
-    this.incomingRequests.delete(contactId);
+  removeIncomingRequest(userId: string): void {
+    this.incomingRequests.delete(userId);
   }
 
   /** Get all cached incoming friend requests. */
@@ -392,6 +392,7 @@ export class NewioAppStore {
       inContact: isOwnMessage || this.contacts.has(msg.senderId),
       isOwnMessage,
       text: msg.content.text ?? '',
+      attachments: msg.content.attachments,
       timestamp: msg.createdAt,
       status: 'new',
     };

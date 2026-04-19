@@ -459,12 +459,12 @@ describe('NewioApp', () => {
     it('acceptFriendRequestByUsername accepts and indexes contact', async () => {
       const { app, client } = await createApp();
 
-      // Simulate incoming request
+      // Simulate incoming request (userId = sender, contactId = me)
       eventHandlers.get('contact.request_received')?.({
         type: 'contact.request_received',
         timestamp: '2026-01-01T00:00:00Z',
         payload: {
-          contact: makeContact({ contactId: 'req-bob', friendUsername: 'bob', status: 'pending' }),
+          contact: makeContact({ userId: 'req-bob', contactId: 'me', friendUsername: 'bob', status: 'pending' }),
         },
       });
 
@@ -483,7 +483,7 @@ describe('NewioApp', () => {
         type: 'contact.request_received',
         timestamp: '2026-01-01T00:00:00Z',
         payload: {
-          contact: makeContact({ contactId: 'req-bob', friendUsername: 'bob', status: 'pending' }),
+          contact: makeContact({ userId: 'req-bob', contactId: 'me', friendUsername: 'bob', status: 'pending' }),
         },
       });
 
@@ -499,7 +499,7 @@ describe('NewioApp', () => {
 
       // No request in cache — should call listIncomingRequests
       (client.listIncomingRequests as ReturnType<typeof vi.fn>).mockResolvedValue({
-        contacts: [makeContact({ contactId: 'req-bob', friendUsername: 'bob', status: 'pending' })],
+        contacts: [makeContact({ userId: 'req-bob', contactId: 'me', friendUsername: 'bob', status: 'pending' })],
       });
       (client.acceptFriendRequest as ReturnType<typeof vi.fn>).mockResolvedValue({});
 

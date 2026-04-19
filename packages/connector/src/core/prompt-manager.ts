@@ -39,8 +39,13 @@ DM example:
     accountType: human
     inContact: true
   messages:
-    - message: Hey, how are you?
+    - message: Hey, check this out!
       timestamp: "2026-03-17T22:55:41Z"
+      attachments:
+        - fileName: photo.jpg
+          contentType: image/jpeg
+          size: 245000
+          s3Key: media/abc-123/01ARZ3N.jpg
 
 Group example:
   conversationId: def-456
@@ -218,6 +223,7 @@ Cron trigger example:
     for (const m of messages) {
       lines.push(`  - message: ${m.text}`);
       lines.push(`    timestamp: "${m.timestamp}"`);
+      this.formatAttachments(m, lines);
     }
     return lines.join('\n');
   }
@@ -238,7 +244,20 @@ Cron trigger example:
       lines.push(this.formatSender(m));
       lines.push(`    message: ${m.text}`);
       lines.push(`    timestamp: "${m.timestamp}"`);
+      this.formatAttachments(m, lines);
     }
     return lines.join('\n');
+  }
+
+  private formatAttachments(m: IncomingMessage, lines: string[]): void {
+    if (m.attachments && m.attachments.length > 0) {
+      lines.push(`    attachments:`);
+      for (const a of m.attachments) {
+        lines.push(`      - fileName: ${a.fileName}`);
+        lines.push(`        contentType: ${a.contentType}`);
+        lines.push(`        size: ${a.size}`);
+        lines.push(`        s3Key: ${a.s3Key}`);
+      }
+    }
   }
 }

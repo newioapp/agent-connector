@@ -17,8 +17,9 @@ export function registerUsersTools(server: McpServer, app: NewioApp): void {
   server.registerTool(
     'search_users',
     {
-      description: 'Search for users by name or username',
-      inputSchema: { query: z.string().describe('Search query (name or username)') },
+      description:
+        'Search for users by display name or username (partial match). For exact lookup by username, use get_user_profile instead.',
+      inputSchema: { query: z.string().describe('Search query — matches against display name and username') },
     },
     async ({ query }) => {
       const resp = await app.client.searchUsers({ query });
@@ -29,8 +30,9 @@ export function registerUsersTools(server: McpServer, app: NewioApp): void {
   server.registerTool(
     'get_user_profile',
     {
-      description: "Get a user's public profile by username",
-      inputSchema: { username: z.string().describe('Username to look up') },
+      description:
+        "Get a user's public profile by exact username. Use this for looking up a specific user when you know their username.",
+      inputSchema: { username: z.string().describe('Exact username to look up') },
     },
     async ({ username }) => {
       const user = await app.client.getUserByUsername({ username });

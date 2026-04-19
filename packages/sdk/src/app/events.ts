@@ -173,8 +173,8 @@ export function wireEvents(
   });
 
   ws.on('contact.request_revoked', (event) => {
-    log.debug(`Event contact.request_revoked: ${event.payload.contactId}`);
-    store.removeIncomingRequest(event.payload.contactId);
+    log.debug(`Event contact.request_revoked: ${event.payload.userId}`);
+    store.removeIncomingRequest(event.payload.userId);
   });
 
   ws.on('contact.removed', (event) => {

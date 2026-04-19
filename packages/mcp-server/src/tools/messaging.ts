@@ -18,7 +18,11 @@ export function registerMessagingTools(server: McpServer, app: NewioApp): void {
       inputSchema: {
         conversationId: z.string().describe('Conversation ID to send the message to'),
         text: z.string().describe('Message text (supports markdown)'),
-        filePaths: z.array(z.string()).max(5).optional().describe('Optional local file paths to attach (max 5)'),
+        filePaths: z
+          .array(z.string())
+          .max(5)
+          .optional()
+          .describe('Optional local file paths to attach (max 5, absolute or relative)'),
       },
     },
     async ({ conversationId, text: msgText, filePaths }) => {
@@ -35,7 +39,11 @@ export function registerMessagingTools(server: McpServer, app: NewioApp): void {
       inputSchema: {
         username: z.string().describe('Username of the recipient'),
         text: z.string().describe('Message text (supports markdown)'),
-        filePaths: z.array(z.string()).max(5).optional().describe('Optional local file paths to attach (max 5)'),
+        filePaths: z
+          .array(z.string())
+          .max(5)
+          .optional()
+          .describe('Optional local file paths to attach (max 5, absolute or relative)'),
       },
     },
     async ({ username, text: msgText, filePaths }) => {
@@ -51,7 +59,11 @@ export function registerMessagingTools(server: McpServer, app: NewioApp): void {
         "Send a direct message to this agent's owner, optionally with attachments. ⚠️ Only use this to INITIATE a message to your owner. If you are already responding to a DM from your owner, your reply is delivered automatically — do NOT use this tool or the message will be sent twice.",
       inputSchema: {
         text: z.string().describe('Message text (supports markdown)'),
-        filePaths: z.array(z.string()).max(5).optional().describe('Optional local file paths to attach (max 5)'),
+        filePaths: z
+          .array(z.string())
+          .max(5)
+          .optional()
+          .describe('Optional local file paths to attach (max 5, absolute or relative)'),
       },
     },
     async ({ text: msgText, filePaths }) => {
