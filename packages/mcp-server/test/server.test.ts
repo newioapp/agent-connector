@@ -187,6 +187,16 @@ describe('MCP Server', () => {
     expect((result.content[0] as { text: string }).text).toContain('photo.jpg');
   });
 
+  it('upload_attachment sends attachment-only message', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    await client.callTool({
+      name: 'upload_attachment',
+      arguments: { conversationId: 'conv-1', filePaths: ['/tmp/photo.jpg'] },
+    });
+    expect(app.sendMessage).toHaveBeenCalledWith('conv-1', undefined, ['/tmp/photo.jpg']);
+  });
+
   it('list_messages returns formatted messages', async () => {
     const app = mockApp();
     const client = await createConnectedClient(app);

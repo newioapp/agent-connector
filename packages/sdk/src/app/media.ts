@@ -55,8 +55,8 @@ function isImageBuffer(buffer: Buffer): boolean {
 }
 
 /**
- * Extract image dimensions and blurhash using sharp.
- * Returns null if the buffer is not a decodable image.
+ * Extract image dimensions and blurhash using sharp (optional peer dependency).
+ * Returns null if sharp/blurhash are not installed or the buffer is not a decodable image.
  */
 async function getImageMetadata(data: Buffer): Promise<ImageMetadata | null> {
   try {

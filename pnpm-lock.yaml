@@ -65,6 +65,9 @@ importers:
       better-sqlite3:
         specifier: ^12.8.0
         version: 12.8.0
+      blurhash:
+        specifier: ^2.0.5
+        version: 2.0.5
       debounce-fn:
         specifier: ^6.0.0
         version: 6.0.0
@@ -104,6 +107,9 @@ importers:
       semver:
         specifier: ^7.7.4
         version: 7.7.4
+      sharp:
+        specifier: ^0.34.5
+        version: 0.34.5
       uint8array-extras:
         specifier: ^1.5.0
         version: 1.5.0
@@ -201,13 +207,6 @@ importers:
         version: 3.2.4(@types/debug@4.1.13)(@types/node@25.5.2)(jiti@2.6.1)(lightningcss@1.32.0)(yaml@2.8.3)
 
   packages/sdk:
-    dependencies:
-      blurhash:
-        specifier: ^2.0.5
-        version: 2.0.5
-      sharp:
-        specifier: ^0.34.5
-        version: 0.34.5
     devDependencies:
       '@types/node':
         specifier: ^22.19.15
@@ -215,6 +214,12 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^3.2.3
         version: 3.2.4(vitest@3.2.4(@types/debug@4.1.13)(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.32.0)(yaml@2.8.3))
+      blurhash:
+        specifier: ^2.0.5
+        version: 2.0.5
+      sharp:
+        specifier: ^0.34.5
+        version: 0.34.5
       tsup:
         specifier: ^8.5.0
         version: 8.5.1(jiti@2.6.1)(postcss@8.5.8)(typescript@5.9.3)(yaml@2.8.3)

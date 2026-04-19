@@ -301,6 +301,9 @@ export class NewioApp {
 
   /** Send a message to a conversation, with optional file attachments. */
   async sendMessage(conversationId: string, text?: string, filePaths?: readonly string[]): Promise<void> {
+    if (!text && (!filePaths || filePaths.length === 0)) {
+      throw new Error('Message must have text or attachments');
+    }
     log.debug(
       `Sending message to ${conversationId} (${text?.length ?? 0} chars, ${filePaths?.length ?? 0} attachments)`,
     );
