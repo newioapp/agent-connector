@@ -12,7 +12,7 @@ export type UpdateChannel = 'latest' | 'beta';
 // Agent types
 // ---------------------------------------------------------------------------
 
-export type AgentType = 'claude-code' | 'kiro-cli' | 'custom';
+export type AgentType = 'claude-code' | 'kiro-cli' | 'codex' | 'cursor' | 'gemini' | 'custom';
 
 /** Resolve the command and arguments to spawn an ACP agent process. */
 export function resolveCommand(
@@ -27,6 +27,18 @@ export function resolveCommand(
 
   if (type === 'claude-code') {
     return { command: config.executablePath ?? 'claude-agent-acp', args: [] };
+  }
+
+  if (type === 'codex') {
+    return { command: config.executablePath ?? 'codex-acp', args: [] };
+  }
+
+  if (type === 'cursor') {
+    return { command: config.executablePath ?? 'agent', args: ['acp'] };
+  }
+
+  if (type === 'gemini') {
+    return { command: config.executablePath ?? 'gemini', args: ['--acp'] };
   }
 
   // custom: user provides the full command string, possibly with args baked in
@@ -57,13 +69,29 @@ export interface AcpConfig {
   readonly kiroCliTrustAllTools?: boolean;
 }
 
-/** Serializable subset of ACP InitializeResponse — discovered at runtime. */
-export interface AcpAgentInfo {
+/** Runtime agent info — discovered during initialization, protocol-agnostic. */
+export interface AgentInfo {
+  readonly protocol: 'acp';
   readonly protocolVersion: string;
   readonly agentName?: string;
   readonly agentVersion?: string;
   readonly agentTitle?: string;
-  readonly loadSession?: boolean;
+  readonly capabilities: readonly Capability[];
+  readonly authMethods?: readonly AgentAuthMethod[];
+}
+
+/** A single capability with its enabled state. */
+export interface Capability {
+  readonly name: string;
+  readonly enabled: boolean;
+}
+
+/** Authentication method advertised by the agent. */
+export interface AgentAuthMethod {
+  readonly id: string;
+  readonly name: string;
+  readonly type?: string;
+  readonly description?: string;
 }
 
 /** Newio identity — populated after first registration/login, synced on every start. */
@@ -92,9 +120,6 @@ export interface AgentConfig {
   readonly envVars: Readonly<Record<string, string>>;
 
   readonly acp?: AcpConfig;
-
-  /** ACP agent info — discovered during initialization, persisted for display. */
-  readonly acpAgentInfo?: AcpAgentInfo;
 }
 
 /** Default session idle timeout: 1 hour. */

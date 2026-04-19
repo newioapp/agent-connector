@@ -20,6 +20,7 @@ import type { AgentSession } from './agent-session';
 import type { AgentSessionConfig, ConfigureAgentInput } from './agent-instance';
 import type { SessionStreamSegment } from './types';
 import { resolveCommand, extractErrorMessage } from './types';
+import type { AgentInfo } from './types';
 import { Logger } from './logger';
 
 const log = new Logger('acp-agent-instance');
@@ -53,6 +54,9 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
 
   /** Whether the ACP agent supports session/close. */
   private supportsClose = false;
+
+  /** Runtime agent info — populated after ACP initialization. */
+  private agentInfo?: AgentInfo;
 
   /** Set to true when stop/kill is intentional — prevents the exit handler from treating it as unexpected. */
   private stopping = false;
@@ -198,15 +202,8 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
 
     this.supportsClose = initResult.agentCapabilities.sessionCapabilities?.close != null;
 
-    // Persist agent info for UI display
-    this.configManager.setAcpAgentInfo(this.config.id, {
-      protocolVersion: String(initResult.protocolVersion),
-      agentName: initResult.agentInfo?.name,
-      agentVersion: initResult.agentInfo?.version,
-      agentTitle: initResult.agentInfo?.title ?? undefined,
-      loadSession: initResult.agentCapabilities.loadSession,
-    });
-    this.listener.onConfigUpdated();
+    this.agentInfo = buildAgentInfo(initResult);
+    this.listener.onAgentInfo(this.agentInfo);
   }
 
   private async killProcess(): Promise<void> {
@@ -282,6 +279,10 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     } catch (err: unknown) {
       log.warn(`Failed to apply session config: ${err instanceof Error ? err.message : String(err)}`);
     }
+  }
+
+  getAgentInfo(): AgentInfo | undefined {
+    return this.agentInfo;
   }
 
   listModels(): AgentSessionConfig | undefined {
@@ -509,4 +510,32 @@ function buildMcpServers(mcpSocketPath?: string): AcpMcpServer[] {
 
 function resolveBridgePath(): string {
   return require.resolve('@newio/mcp-server/bridge');
+}
+
+/** Build a protocol-agnostic AgentInfo from an ACP InitializeResponse. */
+function buildAgentInfo(res: acp.InitializeResponse): AgentInfo {
+  const caps = res.agentCapabilities;
+  return {
+    protocol: 'acp',
+    protocolVersion: String(res.protocolVersion),
+    agentName: res.agentInfo?.name,
+    agentVersion: res.agentInfo?.version,
+    agentTitle: res.agentInfo?.title ?? undefined,
+    capabilities: [
+      { name: 'loadSession', enabled: caps?.loadSession === true },
+      { name: 'listSessions', enabled: caps?.sessionCapabilities?.list !== undefined },
+      { name: 'closeSessions', enabled: caps?.sessionCapabilities?.close !== undefined },
+      { name: 'audio', enabled: caps?.promptCapabilities?.audio === true },
+      { name: 'image', enabled: caps?.promptCapabilities?.image === true },
+      { name: 'embeddedContext', enabled: caps?.promptCapabilities?.embeddedContext === true },
+      { name: 'mcp:http', enabled: caps?.mcpCapabilities?.http === true },
+      { name: 'mcp:sse', enabled: caps?.mcpCapabilities?.sse === true },
+    ],
+    authMethods: res.authMethods?.map((m) => ({
+      id: m.id,
+      name: m.name,
+      type: 'type' in m ? (m.type as string) : 'agent',
+      description: m.description ?? undefined,
+    })),
+  };
 }

@@ -34,6 +34,9 @@ function DirectoryPicker({
 
 const AGENT_TYPE_OPTIONS: readonly { value: AgentType; label: string }[] = [
   { value: 'claude-code', label: "Claude Code (via Zed's adapter)" },
+  { value: 'codex', label: "Codex (via Zed's adapter)" },
+  { value: 'cursor', label: 'Cursor' },
+  { value: 'gemini', label: 'Gemini CLI' },
   { value: 'kiro-cli', label: 'Kiro CLI' },
   { value: 'custom', label: 'Custom ACP Agent' },
 ];

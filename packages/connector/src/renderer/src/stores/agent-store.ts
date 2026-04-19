@@ -9,6 +9,7 @@ import type {
   UpdateAgentInput,
   AgentRuntimeStatus,
   AgentSessionConfig,
+  AgentInfo,
 } from '../../../shared/types';
 
 interface SessionConfigEntry {
@@ -23,6 +24,8 @@ interface AgentState {
   readonly pollTimestamps: Record<string, number>;
   /** Session configs keyed by agentId. Currently tracks the representative session's config. */
   readonly sessionConfigs: Record<string, SessionConfigEntry>;
+  /** ACP agent info keyed by agentId — runtime only, cleared on stop. */
+  readonly agentInfos: Partial<Record<string, AgentInfo>>;
 }
 
 interface AgentActions {
@@ -38,6 +41,7 @@ interface AgentActions {
   setPollTimestamp(agentId: string): void;
   updateConfig(agentId: string, config: AgentConfig): void;
   setSessionConfig(agentId: string, sessionId: string, models?: AgentSessionConfig, modes?: AgentSessionConfig): void;
+  setAgentInfo(agentId: string, info: AgentInfo): void;
 }
 
 type AgentStore = AgentState & AgentActions;
@@ -48,12 +52,27 @@ export const useAgentStore = create<AgentStore>((set) => ({
   approvalUrls: {},
   pollTimestamps: {},
   sessionConfigs: {},
+  agentInfos: {},
 
   async load(): Promise<void> {
     const agents = await window.api.listAgents();
+    const infos: Record<string, AgentInfo> = {};
+    await Promise.all(
+      agents
+        .filter(
+          (a) => a.runtimeStatus === 'running' || a.runtimeStatus === 'initializing' || a.runtimeStatus === 'greeting',
+        )
+        .map(async (a) => {
+          const info = await window.api.getAgentInfo(a.id);
+          if (info) {
+            infos[a.id] = info;
+          }
+        }),
+    );
     set((state: AgentState) => ({
       agents,
       selectedAgentId: state.selectedAgentId ?? (agents.length > 0 ? agents[0].id : null),
+      agentInfos: { ...state.agentInfos, ...infos },
     }));
   },
 
@@ -100,13 +119,15 @@ export const useAgentStore = create<AgentStore>((set) => ({
       const isStopped = status === 'stopped' || status === 'error';
       // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure to omit key
       const { [agentId]: _removed, ...restConfigs } = state.sessionConfigs;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure to omit key
+      const { [agentId]: _removedInfo, ...restInfos } = state.agentInfos;
       return {
         agents: state.agents.map((a) => (a.id === agentId ? { ...a, runtimeStatus: status, error } : a)),
         approvalUrls:
           status !== 'awaiting_approval'
             ? Object.fromEntries(Object.entries(state.approvalUrls).filter(([k]) => k !== agentId))
             : state.approvalUrls,
-        ...(isStopped ? { sessionConfigs: restConfigs } : {}),
+        ...(isStopped ? { sessionConfigs: restConfigs, agentInfos: restInfos } : {}),
       };
     });
   },
@@ -132,6 +153,12 @@ export const useAgentStore = create<AgentStore>((set) => ({
   setSessionConfig(agentId: string, _sessionId: string, models?: AgentSessionConfig, modes?: AgentSessionConfig): void {
     set((state: AgentState) => ({
       sessionConfigs: { ...state.sessionConfigs, [agentId]: { models, modes } },
+    }));
+  },
+
+  setAgentInfo(agentId: string, info: AgentInfo): void {
+    set((state: AgentState) => ({
+      agentInfos: { ...state.agentInfos, [agentId]: info },
     }));
   },
 }));

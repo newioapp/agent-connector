@@ -5,6 +5,12 @@ export function agentTypeLabel(type: string): string {
       return 'Kiro CLI';
     case 'claude-code':
       return 'Claude Code';
+    case 'codex':
+      return 'Codex';
+    case 'cursor':
+      return 'Cursor';
+    case 'gemini':
+      return 'Gemini CLI';
     default:
       return 'Custom ACP';
   }

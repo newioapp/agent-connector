@@ -12,6 +12,7 @@ import type {
   UpdateAgentInput,
   AgentStatusInfo,
   AgentSessionConfig,
+  AgentInfo,
   UpdateMode,
   UpdateChannel,
 } from './types';
@@ -67,6 +68,9 @@ export interface IpcApi {
   listAgentModes(agentId: string): Promise<AgentSessionConfig | undefined>;
   /** Configure model/mode on one or all sessions. */
   configureAgent(agentId: string, model?: string, mode?: string): Promise<void>;
+
+  /** Get runtime agent info (capabilities, auth methods) for a running agent. */
+  getAgentInfo(agentId: string): Promise<AgentInfo | undefined>;
 }
 
 /** Channel name for each IpcApi method. */
@@ -94,4 +98,5 @@ export const IPC_CHANNELS: { readonly [K in keyof IpcApi]: string } = {
   listAgentModels: 'list-agent-models',
   listAgentModes: 'list-agent-modes',
   configureAgent: 'configure-agent',
+  getAgentInfo: 'get-agent-info',
 };

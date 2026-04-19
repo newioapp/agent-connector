@@ -43,6 +43,7 @@ const api: ConnectorAPI = {
   listAgentModels: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.listAgentModels, agentId),
   listAgentModes: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.listAgentModes, agentId),
   configureAgent: (agentId, model, mode) => ipcRenderer.invoke(IPC_CHANNELS.configureAgent, agentId, model, mode),
+  getAgentInfo: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.getAgentInfo, agentId),
 
   // Push events
   onAgentStatusChanged: (callback) => onEvent(EVENT_CHANNELS['agent-status-changed'], callback),
@@ -50,6 +51,7 @@ const api: ConnectorAPI = {
   onAgentPollAttempt: (callback) => onEvent(EVENT_CHANNELS['agent-poll-attempt'], callback),
   onAgentConfigUpdated: (callback) => onEvent(EVENT_CHANNELS['agent-config-updated'], callback),
   onAgentSessionConfigUpdated: (callback) => onEvent(EVENT_CHANNELS['agent-session-config-updated'], callback),
+  onAgentAcpInfo: (callback) => onEvent(EVENT_CHANNELS['agent-acp-info'], callback),
 };
 
 contextBridge.exposeInMainWorld('api', api);

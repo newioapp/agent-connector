@@ -12,6 +12,7 @@ export interface ConnectorAPI extends IpcApi {
   onAgentSessionConfigUpdated(
     callback: (data: MainToRendererEvents['agent-session-config-updated']) => void,
   ): () => void;
+  onAgentAcpInfo(callback: (data: MainToRendererEvents['agent-acp-info']) => void): () => void;
 }
 
 declare global {

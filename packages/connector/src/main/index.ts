@@ -63,6 +63,9 @@ void app.whenReady().then(async () => {
         mainWindowManager.send(EVENT_CHANNELS['agent-config-updated'], { agentId, config });
       }
     },
+    onAgentInfo(agentId, info) {
+      mainWindowManager.send(EVENT_CHANNELS['agent-acp-info'], { agentId, info });
+    },
     onAgentSessionConfigUpdated(agentId, sessionId, models, modes) {
       mainWindowManager.send(EVENT_CHANNELS['agent-session-config-updated'], { agentId, sessionId, models, modes });
     },

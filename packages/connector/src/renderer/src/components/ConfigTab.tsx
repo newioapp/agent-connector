@@ -2,8 +2,8 @@
  * Configuration tab — displays agent config fields, approval banner, and edit/delete actions.
  */
 import { useEffect, useRef, useState } from 'react';
-import { Trash2, ExternalLink, RefreshCw, Pencil, Info, X } from 'lucide-react';
-import type { AgentStatusInfo, AcpAgentInfo, AgentSessionConfig } from '../../../shared/types';
+import { Trash2, ExternalLink, RefreshCw, Pencil, Info, X, Check, Minus } from 'lucide-react';
+import type { AgentStatusInfo, AgentInfo, AgentSessionConfig } from '../../../shared/types';
 import { useAgentStore } from '../stores/agent-store';
 import { agentTypeLabel } from '../lib/agent-type-label';
 import { Button, Dropdown } from './ui';
@@ -55,33 +55,93 @@ function Field({ label, value }: { readonly label: string; readonly value: strin
   );
 }
 
-function AcpInfoModal({
+function CapBadge({ label, enabled }: { readonly label: string; readonly enabled: boolean }): React.JSX.Element {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${
+        enabled ? 'bg-success/15 text-success' : 'bg-muted text-muted-foreground'
+      }`}
+    >
+      {enabled ? <Check size={10} /> : <Minus size={10} />}
+      {label}
+    </span>
+  );
+}
+
+const AUTH_TYPE_LABELS: Record<string, string> = {
+  env_var: 'env var',
+  terminal: 'terminal',
+  agent: 'agent',
+};
+
+function AgentInfoModal({
   info,
   onClose,
 }: {
-  readonly info: AcpAgentInfo;
+  readonly info: AgentInfo;
   readonly onClose: () => void;
 }): React.JSX.Element {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
       <div
-        className="w-80 rounded-lg border border-border bg-background p-5 shadow-lg"
+        className="max-h-[80vh] w-[400px] overflow-y-auto rounded-lg border border-border bg-background p-5 shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-foreground">ACP Agent Info</h3>
+          <h3 className="text-sm font-semibold text-foreground">Agent Information</h3>
           <button className="text-muted-foreground hover:text-foreground" onClick={onClose}>
             <X size={14} />
           </button>
         </div>
-        <div className="space-y-2 text-xs">
-          {(info.agentTitle ?? info.agentName) && (
-            <Field label="Agent" value={info.agentTitle ?? info.agentName ?? ''} />
-          )}
-          {info.agentVersion && <Field label="Version" value={info.agentVersion} />}
-          <Field label="Protocol Version" value={info.protocolVersion} />
-          <Field label="Load Session" value={info.loadSession ? 'Supported' : 'Not supported'} />
-        </div>
+
+        {/* Agent info */}
+        {(info.agentTitle ?? info.agentName) && (
+          <div className="mb-4">
+            <div className="mb-2 text-xs font-medium text-muted-foreground">Agent</div>
+            <div className="rounded-md bg-muted p-3 text-sm">
+              <div className="font-medium">{info.agentTitle ?? info.agentName}</div>
+              {info.agentVersion && <div className="mt-0.5 text-xs text-muted-foreground">v{info.agentVersion}</div>}
+            </div>
+          </div>
+        )}
+
+        <Field label="Protocol" value={`${info.protocol.toUpperCase()} ${info.protocolVersion}`} />
+
+        {/* Capabilities */}
+        {info.capabilities.length > 0 && (
+          <div className="mb-4">
+            <div className="mb-2 text-xs font-medium text-muted-foreground">Capabilities</div>
+            <div className="flex flex-wrap gap-1.5">
+              {info.capabilities.map((cap) => (
+                <CapBadge key={cap.name} label={cap.name} enabled={cap.enabled} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Auth Methods */}
+        {info.authMethods && info.authMethods.length > 0 && (
+          <div className="mb-4">
+            <div className="mb-2 text-xs font-medium text-muted-foreground">Authentication Methods</div>
+            <div className="space-y-2">
+              {info.authMethods.map((method) => (
+                <div key={method.id} className="rounded-md bg-muted p-3">
+                  <div className="flex items-center gap-2">
+                    <div className="text-sm font-medium">{method.name}</div>
+                    {method.type && (
+                      <span className="rounded bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                        {AUTH_TYPE_LABELS[method.type] ?? method.type}
+                      </span>
+                    )}
+                  </div>
+                  {method.description && (
+                    <div className="mt-0.5 text-xs text-muted-foreground">{method.description}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -98,6 +158,7 @@ export function ConfigTab({
   const approvalUrl = useAgentStore((s) => s.approvalUrls[agent.id]);
   const pollTimestamp = useAgentStore((s) => s.pollTimestamps[agent.id]);
   const sessionConfigs = useAgentStore((s) => s.sessionConfigs);
+  const agentInfo = useAgentStore((s) => s.agentInfos[agent.id]);
   const [polling, setPolling] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
@@ -191,7 +252,7 @@ export function ConfigTab({
             <div className="mb-0.5 text-xs font-medium text-muted-foreground">Type</div>
             <div className="text-sm text-foreground">{agentTypeLabel(config.type)}</div>
           </div>
-          {config.acpAgentInfo && (
+          {agentInfo && (
             <button
               className="text-muted-foreground hover:text-primary transition-colors"
               title="ACP Agent Info"
@@ -202,9 +263,7 @@ export function ConfigTab({
           )}
         </div>
 
-        {showInfo && config.acpAgentInfo && (
-          <AcpInfoModal info={config.acpAgentInfo} onClose={() => setShowInfo(false)} />
-        )}
+        {showInfo && agentInfo && <AgentInfoModal info={agentInfo} onClose={() => setShowInfo(false)} />}
 
         {config.acp?.cwd && <Field label="Working Directory" value={config.acp.cwd} />}
         {config.newio?.displayName && <Field label="Display Name" value={config.newio.displayName} />}

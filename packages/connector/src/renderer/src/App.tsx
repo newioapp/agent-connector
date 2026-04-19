@@ -21,6 +21,7 @@ export function App(): React.JSX.Element {
   const setPollTimestamp = useAgentStore((s) => s.setPollTimestamp);
   const updateConfig = useAgentStore((s) => s.updateConfig);
   const setSessionConfig = useAgentStore((s) => s.setSessionConfig);
+  const setAgentInfo = useAgentStore((s) => s.setAgentInfo);
   const [panelMode, setPanelMode] = useState<PanelMode>({ kind: 'view' });
 
   useEffect(() => {
@@ -43,14 +44,18 @@ export function App(): React.JSX.Element {
     const unsub4 = window.api.onAgentSessionConfigUpdated(({ agentId, sessionId, models, modes }) => {
       setSessionConfig(agentId, sessionId, models, modes);
     });
+    const unsub5 = window.api.onAgentAcpInfo(({ agentId, info }) => {
+      setAgentInfo(agentId, info);
+    });
     return () => {
       unsub1();
       unsub2();
       unsub2b();
       unsub3();
       unsub4();
+      unsub5();
     };
-  }, [setAgentStatus, setApprovalUrl, setPollTimestamp, updateConfig, setSessionConfig]);
+  }, [setAgentStatus, setApprovalUrl, setPollTimestamp, updateConfig, setSessionConfig, setAgentInfo]);
 
   const selectedAgent = agents.find((a) => a.id === selectedAgentId) ?? null;
 
