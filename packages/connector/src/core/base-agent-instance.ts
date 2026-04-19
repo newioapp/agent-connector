@@ -60,6 +60,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private abortController?: AbortController;
   private idleTimer?: ReturnType<typeof setInterval>;
   private cleaningUp = false;
+  protected pendingCleanup?: Promise<void>;
   private udsServer?: Server;
   /** Most recently created MCP server awaiting a sessionId to be wired. */
   private pendingMcpServer?: NewioMcpServer;
@@ -75,6 +76,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
   ) {}
 
   async start(): Promise<void> {
+    // Wait for any in-flight cleanup (e.g. from an unexpected process exit) before starting
+    if (this.pendingCleanup) {
+      await this.pendingCleanup;
+    }
+
     const abortController = new AbortController();
     this.abortController = abortController;
     this.setStatus('starting');
@@ -376,19 +382,10 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
 
     const existingCorrelationId = this.sessionStore.get(newioSessionId);
-    let session: AgentSession;
 
-    try {
-      session = existingCorrelationId
-        ? await this.resumeOrCreateSession(newioSessionId, existingCorrelationId)
-        : await this.createAndStoreSession(newioSessionId);
-    } catch (err) {
-      if (this.pendingMcpServer) {
-        log.debug('Clearing pending MCP server after session creation failure');
-        this.pendingMcpServer = undefined;
-      }
-      throw err;
-    }
+    const session = existingCorrelationId
+      ? await this.resumeOrCreateSession(newioSessionId, existingCorrelationId)
+      : await this.createAndStoreSession(newioSessionId);
 
     // Wire MCP sessionId
     if (this.pendingMcpServer) {
@@ -438,9 +435,17 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** Create a new session and persist its correlation ID. */
   private async createAndStoreSession(newioSessionId: string): Promise<AgentSession> {
-    const session = await this.createSession();
-    this.sessionStore.set(newioSessionId, session.correlationId);
-    return session;
+    try {
+      const session = await this.createSession();
+      this.sessionStore.set(newioSessionId, session.correlationId);
+      return session;
+    } catch (err) {
+      if (this.pendingMcpServer) {
+        log.debug('Clearing pending MCP server after session creation failure');
+        this.pendingMcpServer = undefined;
+      }
+      throw err;
+    }
   }
 
   /** Get a live session by its correlation ID, if running. */

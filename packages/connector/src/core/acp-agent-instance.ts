@@ -155,10 +155,14 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
         this.connection = undefined;
         const stderr = stderrChunks.join('\n').trim();
         const detail = stderr || `code=${String(code)}, signal=${String(signal)}`;
-        void this.cleanup().then(() => {
-          void this.onStopped();
-          this.setStatus('error', `Agent process exited unexpectedly.\n\n${detail}`);
-        });
+        this.pendingCleanup = this.cleanup()
+          .then(() => this.onStopped())
+          .then(() => {
+            this.setStatus('error', `Agent process exited unexpectedly.\n\n${detail}`);
+          })
+          .finally(() => {
+            this.pendingCleanup = undefined;
+          });
       }
     });
 
