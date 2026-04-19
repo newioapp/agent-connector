@@ -52,6 +52,21 @@ export class AgentRuntimeManager {
       throw new Error(`Agent ${agentId} not found.`);
     }
 
+    // Prevent two agents with the same Newio username from running simultaneously
+    const username = config.newio?.username;
+    if (username) {
+      for (const [id, instance] of this.instances) {
+        if (id !== agentId && instance.status !== 'stopped' && instance.status !== 'error') {
+          const otherConfig = this.configManager.get(id);
+          if (otherConfig?.newio?.username === username) {
+            throw new Error(
+              `Another agent "${otherConfig.newio.displayName ?? id}" is already running with username @${username}`,
+            );
+          }
+        }
+      }
+    }
+
     const instanceListener = {
       onStatusChanged: (status: AgentRuntimeStatus, error?: string) => {
         this.listener.onStatusChanged(agentId, status, error);

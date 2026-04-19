@@ -103,25 +103,6 @@ export const useAgentStore = create<AgentStore>((set) => ({
   },
 
   async startAgent(agentId: string): Promise<void> {
-    const state = useAgentStore.getState();
-    const agent = state.agents.find((a) => a.id === agentId);
-    if (agent) {
-      const username = agent.config.newio?.username;
-      if (username) {
-        const conflict = state.agents.find(
-          (a) =>
-            a.id !== agentId &&
-            a.config.newio?.username === username &&
-            a.runtimeStatus !== 'stopped' &&
-            a.runtimeStatus !== 'error',
-        );
-        if (conflict) {
-          throw new Error(
-            `Another agent "${conflict.config.newio?.displayName ?? conflict.id}" is already running with username @${username}`,
-          );
-        }
-      }
-    }
     await window.api.startAgent(agentId);
   },
 
