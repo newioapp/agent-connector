@@ -11,12 +11,20 @@ import { IpcHandler } from './ipc-handler';
 import { registerIpcHandlers } from './ipc-registry';
 import { EVENT_CHANNELS } from '../shared/ipc-events';
 import { initAutoUpdater, initForceUpdateCheck } from './auto-updater';
+import { setLogLevel, Logger } from '../shared/logger';
 
-// Route SDK logs through the connector's log format at debug level
+// Set log level from build-time config (default: info)
+setLogLevel(__LOG_LEVEL__);
+
+// Route SDK logs through the connector's Logger (respects global log level)
+const sdkLoggers = new Map<string, Logger>();
 setLogHandler((level, name, message, args) => {
-  const timestamp = new Date().toISOString();
-  const prefix = `${timestamp} [${level.toUpperCase()}] [sdk:${name}]`;
-  console[level](prefix, message, ...args);
+  let logger = sdkLoggers.get(name);
+  if (!logger) {
+    logger = new Logger(`sdk:${name}`);
+    sdkLoggers.set(name, logger);
+  }
+  logger[level](message, ...args);
 });
 
 // Set app name before app.whenReady() so macOS menu bar shows the correct name
