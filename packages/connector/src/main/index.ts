@@ -14,7 +14,7 @@ import { initAutoUpdater, initForceUpdateCheck } from './auto-updater';
 import { setLogLevel, Logger } from '../shared/logger';
 
 // Set log level from build-time config (default: info)
-setLogLevel(__LOG_LEVEL__ as 'debug' | 'info' | 'warn' | 'error');
+setLogLevel(__LOG_LEVEL__);
 
 // Route SDK logs through the connector's Logger (respects global log level)
 const sdkLoggers = new Map<string, Logger>();
