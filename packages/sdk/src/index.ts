@@ -236,6 +236,8 @@ export { ActionTimeoutError, ActionAbortedError } from './app/index.js';
 export type { StorePersistence } from './app/index.js';
 export type {
   IncomingMessage,
+  SenderRelationship,
+  OwnerInfo,
   MessageHandler,
   AppEventHandlers,
   ContactEventInfo,

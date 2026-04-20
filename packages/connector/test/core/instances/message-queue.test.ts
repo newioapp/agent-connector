@@ -8,7 +8,7 @@ function makeMsg(conversationId: string, text = 'hello'): IncomingMessage {
     conversationId,
     conversationType: 'dm',
     senderUserId: 'user-1',
-    inContact: true,
+    relationship: 'in-contact' as const,
     isOwnMessage: false,
     text,
     timestamp: new Date().toISOString(),

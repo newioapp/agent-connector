@@ -7,6 +7,8 @@ export { CronScheduler, parseCronExpression } from './cron.js';
 export type {
   NewioAppCreateOptions,
   IncomingMessage,
+  SenderRelationship,
+  OwnerInfo,
   ContactSummary,
   ConversationSummary,
   FriendRequestSummary,

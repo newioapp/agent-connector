@@ -37,6 +37,7 @@ import type {
 } from '../core/types.js';
 import type {
   IncomingMessage,
+  OwnerInfo,
   ContactSummary,
   ConversationSummary,
   FriendRequestSummary,
@@ -52,6 +53,8 @@ const log = getLogger('newio-app');
 // Re-export types and helpers that are part of the public API
 export type {
   IncomingMessage,
+  SenderRelationship,
+  OwnerInfo,
   ContactSummary,
   ConversationSummary,
   FriendRequestSummary,
@@ -669,10 +672,19 @@ export class NewioApp {
     return resp.conversationId;
   }
 
-  /** Get the owner's display name, if the owner is in contacts. */
-  getOwnerDisplayName(): string | undefined {
+  /** Get the owner's username and display name. Throws if owner is not in contacts. */
+  getOwnerInfo(): OwnerInfo {
     const owner = this.identity.ownerId ? this.store.getContact(this.identity.ownerId) : undefined;
-    return owner?.friendDisplayName ?? owner?.friendUsername;
+    if (!owner) {
+      throw new Error('Owner not found in contacts');
+    }
+    if (!owner.friendUsername || !owner.friendDisplayName) {
+      throw new Error('Owner is missing username or display name');
+    }
+    return {
+      username: owner.friendUsername,
+      displayName: owner.friendDisplayName,
+    };
   }
 
   // ---------------------------------------------------------------------------

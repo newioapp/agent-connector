@@ -15,7 +15,7 @@ import type {
   MessageRecord,
   NotifyLevel,
 } from '../core/types.js';
-import type { IncomingMessage, NewioIdentity } from './types.js';
+import type { IncomingMessage, NewioIdentity, SenderRelationship } from './types.js';
 
 /** How long received messages are kept in the cache (ms). */
 const MESSAGE_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -389,13 +389,35 @@ export class NewioAppStore {
       senderUsername: isOwnMessage ? identity.username : contact?.friendUsername,
       senderDisplayName: isOwnMessage ? identity.displayName : contact?.friendDisplayName,
       senderAccountType: isOwnMessage ? ('agent' as AccountType) : contact?.friendAccountType,
-      inContact: isOwnMessage || this.contacts.has(msg.senderId),
+      relationship: this.resolveRelationship(identity, msg.senderId, isOwnMessage, contact),
       isOwnMessage,
       text: msg.content.text ?? '',
       attachments: msg.content.attachments,
       timestamp: msg.createdAt,
       status: 'new',
     };
+  }
+
+  private resolveRelationship(
+    identity: NewioIdentity,
+    senderId: string,
+    isOwnMessage: boolean,
+    contact: ContactRecord | undefined,
+  ): SenderRelationship {
+    if (isOwnMessage) {
+      return 'peer';
+    }
+    if (identity.ownerId && senderId === identity.ownerId) {
+      return 'owner';
+    }
+    if (contact) {
+      // Sibling agent: same owner
+      if (identity.ownerId && contact.ownerId === identity.ownerId) {
+        return 'peer';
+      }
+      return 'in-contact';
+    }
+    return 'stranger';
   }
 
   // ---------------------------------------------------------------------------
