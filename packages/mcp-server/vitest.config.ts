@@ -10,7 +10,7 @@ export default defineConfig({
         functions: 100,
         statements: 95,
       },
-      exclude: ['src/index.ts', 'src/bridge.ts', 'src/uds.ts', '*.config.ts', 'dist/**'],
+      exclude: ['src/index.ts', 'src/bridge.ts', 'src/uds.ts', 'src/types.ts', '*.config.ts', 'dist/**'],
     },
   },
 });

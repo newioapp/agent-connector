@@ -187,6 +187,15 @@ describe('MCP Server', () => {
     expect((result.content[0] as { text: string }).text).toContain('photo.jpg');
   });
 
+  it('upload_attachment_to_current_conversation returns error when no conversation getter is set', async () => {
+    const client = await createConnectedClient(mockApp());
+    const result = await client.callTool({
+      name: 'upload_attachment_to_current_conversation',
+      arguments: { filePaths: ['/tmp/photo.jpg'] },
+    });
+    expect(result.isError).toBe(true);
+  });
+
   it('upload_attachment_to_current_conversation sends attachment-only message', async () => {
     const app = mockApp();
     const server = new NewioMcpServer(app);
