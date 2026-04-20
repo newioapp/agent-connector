@@ -328,13 +328,13 @@ describe('NewioApp', () => {
       app.on('cron.triggered', (e) => triggered.push(e.cronId));
 
       app.scheduleCron({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'Test' });
-      expect(app.listCrons()).toHaveLength(1);
+      expect(app.listCrons('s1')).toHaveLength(1);
 
       await vi.advanceTimersByTimeAsync(1100);
       expect(triggered).toEqual(['c1']);
 
-      app.cancelCron('c1');
-      expect(app.listCrons()).toHaveLength(0);
+      app.cancelCron('c1', 's1');
+      expect(app.listCrons('s1')).toHaveLength(0);
       vi.useRealTimers();
     });
   });

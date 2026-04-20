@@ -7,6 +7,8 @@
  *
  * Used by the Agent Connector, MCP server, and standalone agent implementations.
  */
+import { homedir } from 'os';
+import { join } from 'path';
 import { AuthManager } from '../core/auth.js';
 import { NewioClient } from '../core/client.js';
 import { NewioWebSocket } from '../core/websocket.js';
@@ -168,7 +170,7 @@ export class NewioApp {
     this.ws = ws;
     this.store = store;
     this.pendingActions = new PendingActions();
-    this.downloadDir = downloadDir ?? './newio-downloads';
+    this.downloadDir = downloadDir ?? join(homedir(), 'newio-downloads');
     this.activityThrottle = new ActivityThrottle((conversationId, status) => {
       this.ws.sendActivity(conversationId, status);
     });
@@ -362,14 +364,14 @@ export class NewioApp {
     this.cronScheduler.schedule(def);
   }
 
-  /** Cancel a scheduled cron job. */
-  cancelCron(cronId: string): void {
-    this.cronScheduler.cancel(cronId);
+  /** Cancel a scheduled cron job within a session. Returns 'success' | 'not_found'. */
+  cancelCron(cronId: string, sessionId: string): 'success' | 'not_found' {
+    return this.cronScheduler.cancel(cronId, sessionId);
   }
 
-  /** List all active cron jobs. */
-  listCrons(): readonly CronJobDef[] {
-    return this.cronScheduler.list();
+  /** List active cron jobs for a session. */
+  listCrons(sessionId: string): readonly CronJobDef[] {
+    return this.cronScheduler.list(sessionId);
   }
 
   // ---------------------------------------------------------------------------
@@ -460,7 +462,7 @@ export class NewioApp {
    */
   async downloadAttachment(conversationId: string, s3Key: string, fileName: string): Promise<string> {
     log.debug(`Downloading attachment ${fileName} from ${conversationId}`);
-    return downloadAttachment(this.client, this.downloadDir, conversationId, s3Key, fileName);
+    return downloadAttachment(this.client, this.downloadDir, this.identity.username, conversationId, s3Key, fileName);
   }
 
   // ---------------------------------------------------------------------------

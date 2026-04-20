@@ -135,7 +135,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
       app.onDisconnect(() => {
         if (!abortController.signal.aborted) {
           log.warn('WebSocket disconnected unexpectedly');
-          this.setStatus('error', 'WebSocket disconnected');
         }
       });
 
@@ -410,7 +409,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       if (conversationId) {
         this.app.setStatus(status, conversationId);
       } else {
-        log.warn(`Status '${status}' from session ${session.correlationId} dropped — no active conversation mapped.`);
+        log.info(`Status '${status}' from session ${session.correlationId} dropped — no active conversation mapped.`);
       }
     });
 
@@ -612,7 +611,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   private async processContactBatch(session: AgentSession, events: readonly ContactEvent[]): Promise<void> {
     const userText = this.promptManager.formatContactPrompt(events);
-    log.debug(`Processing ${String(events.length)} contact event(s) in session ${session.correlationId}`);
+    log.debug(`Processing ${String(events.length)} contact event(s) in session ${session.sessionId}`);
 
     try {
       for await (const segment of session.prompt(userText)) {
@@ -629,7 +628,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   private async processCronTrigger(session: AgentSession, job: CronTriggerEvent): Promise<void> {
     const userText = this.promptManager.formatCronPrompt(job);
-    log.debug(`Processing cron ${job.cronId} ("${job.label}") in session ${session.correlationId}`);
+    log.debug(`Processing cron ${job.cronId} ("${job.label}") in session ${session.sessionId}`);
 
     try {
       for await (const segment of session.prompt(userText)) {

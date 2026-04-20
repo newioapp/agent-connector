@@ -31,7 +31,7 @@ function mockApp(
     removeFriendByUsername: vi.fn().mockResolvedValue(undefined),
     downloadAttachment: vi.fn().mockResolvedValue('/downloads/conv-1/1711929600000-photo.jpg'),
     scheduleCron: vi.fn(),
-    cancelCron: vi.fn(),
+    cancelCron: vi.fn().mockReturnValue('success'),
     listCrons: vi.fn().mockReturnValue([]),
     client: {
       getMe: vi.fn().mockResolvedValue({ userId: 'me', username: 'myagent' }),
@@ -288,9 +288,9 @@ describe('MCP Server', () => {
 
   it('cancel_cron calls app.cancelCron', async () => {
     const app = mockApp();
-    const client = await createConnectedClient(app);
+    const client = await createConnectedClientWithSession(app, 'session-1');
     await client.callTool({ name: 'cancel_cron', arguments: { cronId: 'cron_abc' } });
-    expect(app.cancelCron).toHaveBeenCalledWith('cron_abc');
+    expect(app.cancelCron).toHaveBeenCalledWith('cron_abc', 'session-1');
   });
 
   it('list_crons returns active cron jobs', async () => {
@@ -298,7 +298,7 @@ describe('MCP Server', () => {
     (app.listCrons as ReturnType<typeof vi.fn>).mockReturnValue([
       { cronId: 'cron_1', expression: 'every 1h', newioSessionId: 's1', label: 'Hourly check' },
     ]);
-    const client = await createConnectedClient(app);
+    const client = await createConnectedClientWithSession(app, 's1');
     const result = await client.callTool({ name: 'list_crons', arguments: {} });
     const parsed = JSON.parse((result.content[0] as { text: string }).text) as unknown[];
     expect(parsed).toHaveLength(1);

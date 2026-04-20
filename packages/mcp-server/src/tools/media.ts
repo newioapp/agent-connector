@@ -38,7 +38,7 @@ export function registerMediaTools(server: McpServer, app: NewioApp, getCurrentC
   server.registerTool(
     'download_attachment',
     {
-      description: 'Download a message attachment to a local file and return the file path',
+      description: 'Download a message attachment to a local file and return the absolute file path',
       inputSchema: {
         conversationId: z.string().describe('Conversation ID the attachment belongs to'),
         s3Key: z.string().describe('The s3Key from the message attachment'),

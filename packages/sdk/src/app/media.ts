@@ -177,12 +177,13 @@ export async function uploadFiles(client: NewioClient, filePaths: readonly strin
 
 /**
  * Download a message attachment to a local directory.
- * Files are organized as: `<downloadDir>/<conversationId>/<timestamp>-<fileName>`
- * Returns the local file path.
+ * Files are organized as: `<downloadDir>/<username>/<conversationId>/<timestamp>-<fileName>`
+ * Returns the absolute local file path.
  */
 export async function downloadAttachment(
   client: NewioClient,
   downloadDir: string,
+  username: string,
   conversationId: string,
   s3Key: string,
   fileName: string,
@@ -190,7 +191,7 @@ export async function downloadAttachment(
   const fsPromises = await import('fs/promises');
   const pathMod = await import('path');
 
-  const dir = pathMod.join(downloadDir, conversationId);
+  const dir = pathMod.resolve(downloadDir, username, conversationId);
   await fsPromises.mkdir(dir, { recursive: true });
 
   const { url } = await client.getDownloadUrl({ conversationId, s3Key });
