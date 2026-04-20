@@ -89,7 +89,6 @@ export class AcpAgentSession implements AgentSession {
     const stream = new AcpSessionStream(this.statusListener, conversationId);
     this.stream = stream;
 
-    console.log(conversationId, text);
     const promptDone = this.connection
       .prompt({
         sessionId: this.correlationId,
