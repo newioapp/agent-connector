@@ -18,6 +18,7 @@ const wsBaseUrl = process.env.WS_BASE_URL ?? 'wss://ws.newio.app';
 const appDisplayName = process.env.APP_DISPLAY_NAME ?? 'Newio Agent Connector';
 
 const enableDevTools = process.env.ENABLE_DEV_TOOLS ?? 'false';
+const logLevel = process.env.LOG_LEVEL ?? 'info';
 
 // Read version from package.json for build-time injection.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -42,6 +43,7 @@ export default defineConfig({
       __APP_DISPLAY_NAME__: JSON.stringify(appDisplayName),
       __APP_VERSION__: JSON.stringify(appVersion),
       __ENABLE_DEV_TOOLS__: JSON.stringify(enableDevTools === 'true'),
+      __LOG_LEVEL__: JSON.stringify(logLevel),
     },
   },
   preload: {

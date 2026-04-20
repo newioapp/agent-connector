@@ -7,7 +7,7 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
   error: 3,
 };
 
-let globalLevel: LogLevel = 'debug';
+let globalLevel: LogLevel = 'info';
 
 export function setLogLevel(level: LogLevel): void {
   globalLevel = level;
