@@ -411,16 +411,19 @@ describe('MCP Server', () => {
     });
   });
 
-  it('session ID getter returns undefined by default', () => {
-    const server = new NewioMcpServer(mockApp());
-    // No getter set — internal default returns undefined
-    expect(server).toBeDefined();
+  it('create_work_session returns error when no session ID getter is set', async () => {
+    const client = await createConnectedClient(mockApp());
+    const result = await client.callTool({
+      name: 'create_work_session',
+      arguments: { name: 'test', usernames: ['bot'] },
+    });
+    expect(result.isError).toBe(true);
   });
 
-  it('session ID getter returns value after setSessionIdGetter', () => {
-    const server = new NewioMcpServer(mockApp());
-    server.setSessionIdGetter(() => 's1');
-    // Verify it doesn't throw — the getter is used internally by tools
-    expect(server).toBeDefined();
+  it('create_work_session succeeds when session ID getter is wired', async () => {
+    const app = mockApp();
+    const client = await createConnectedClientWithSession(app, 'session-1');
+    await client.callTool({ name: 'create_work_session', arguments: { name: 'test', usernames: ['bot'] } });
+    expect(app.createWorkSession).toHaveBeenCalled();
   });
 });

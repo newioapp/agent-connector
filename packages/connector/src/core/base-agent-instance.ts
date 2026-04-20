@@ -19,7 +19,7 @@ import { join } from 'path';
 import type { AgentConfigManager } from './agent-config-manager';
 import type { AgentRuntimeStatus, AgentConfig } from './types';
 import { DEFAULT_SESSION_IDLE_TIMEOUT_MS, resolveCommand, extractErrorMessage } from './types';
-import type { AgentInfo } from './types';
+import type { AgentInfo, PermissionRequestOption } from './types';
 import type { AgentInstance, AgentInstanceListener } from './agent-instance';
 import type { AgentSessionConfig, ConfigureAgentInput } from './agent-instance';
 import type { AgentSession } from './agent-session';
@@ -522,7 +522,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
    */
   private async handlePermissionRequest(
     title: string,
-    options: ReadonlyArray<{ readonly kind: string; readonly name: string; readonly optionId: string }>,
+    options: ReadonlyArray<PermissionRequestOption>,
     conversationId?: string,
   ): Promise<string> {
     const requestId = crypto.randomUUID();
@@ -545,7 +545,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       throw new Error('Cannot route permission request — agent has no owner');
     }
     const convId = conversationId ?? this.ownerDmConversationId;
-    log.info(`Sending permission request ${requestId} to ${conversationId}`);
+    log.info(`Sending permission request ${requestId} to ${convId}`);
     const response = await this.app.sendActionRequest(convId, action, [ownerId]);
     return response.selectedOptionId;
   }
