@@ -664,12 +664,11 @@ describe('NewioApp', () => {
       expect(info.displayName).toBe('Nan');
     });
 
-    it('falls back to username when no displayName', async () => {
+    it('throws when owner missing displayName', async () => {
       const ownerContact = makeContact({ contactId: 'owner-1', friendUsername: 'nan', friendDisplayName: undefined });
       const { app } = await createApp([ownerContact]);
 
-      const info = app.getOwnerInfo();
-      expect(info.displayName).toBe('nan');
+      expect(() => app.getOwnerInfo()).toThrow('Owner is missing username or display name');
     });
 
     it('throws when owner not in contacts', async () => {

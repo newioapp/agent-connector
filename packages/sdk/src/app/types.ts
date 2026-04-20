@@ -130,8 +130,8 @@ export interface NewioIdentity {
 
 /** The agent's owner info (resolved from contacts). */
 export interface OwnerInfo {
-  readonly username: string | undefined;
-  readonly displayName: string | undefined;
+  readonly username: string;
+  readonly displayName: string;
 }
 
 /** Tokens returned after auth. */

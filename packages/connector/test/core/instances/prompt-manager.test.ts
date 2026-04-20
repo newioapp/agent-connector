@@ -334,13 +334,14 @@ describe('PromptManager', () => {
       expect(result).toContain('greeting');
     });
 
-    it('falls back to "your owner" when no display name', () => {
+    it('throws when owner info unavailable', () => {
       const app = mockApp({
-        getOwnerInfo: vi.fn().mockReturnValue({ username: 'nan', displayName: undefined }),
+        getOwnerInfo: vi.fn().mockImplementation(() => {
+          throw new Error('Owner not found in contacts');
+        }),
       } as unknown as Partial<NewioApp>);
       const pm = new PromptManager(app);
-      const result = pm.buildGreetingPrompt();
-      expect(result).toContain('your owner');
+      expect(() => pm.buildGreetingPrompt()).toThrow('Owner not found in contacts');
     });
   });
 });

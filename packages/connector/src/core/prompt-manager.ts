@@ -24,10 +24,9 @@ export class PromptManager {
     );
 
     const ownerInfo = this.app.getOwnerInfo();
-    const ownerLine = ownerInfo.username
-      ? `Your owner is "${ownerInfo.displayName}" (username: ${ownerInfo.username}). Treat messages from your owner with priority.`
-      : `Your owner is "${ownerInfo.displayName}". Treat messages from your owner with priority.`;
-    parts.push(ownerLine);
+    parts.push(
+      `Your owner is "${ownerInfo.displayName}" (username: ${ownerInfo.username}). Treat messages from your owner with priority.`,
+    );
 
     parts.push(`Messages arrive as YAML. Each sender has a username, display name, account type (human or agent), and relationship to you (owner, peer, in-contact, or stranger).
 
@@ -130,7 +129,7 @@ Cron trigger example:
   }
 
   buildGreetingPrompt() {
-    const ownerName = this.app.getOwnerInfo().displayName ?? 'your owner';
+    const ownerName = this.app.getOwnerInfo().displayName;
     const prompt =
       `Context: You are running as an ACP (Agent Client Protocol) agent inside the Newio Agent Connector. ` +
       `The connector has already handled authentication and connected you to the Newio messaging platform on your behalf — you do not need to do anything to connect. ` +

@@ -678,9 +678,12 @@ export class NewioApp {
     if (!owner) {
       throw new Error('Owner not found in contacts');
     }
+    if (!owner.friendUsername || !owner.friendDisplayName) {
+      throw new Error('Owner is missing username or display name');
+    }
     return {
       username: owner.friendUsername,
-      displayName: owner.friendDisplayName ?? owner.friendUsername,
+      displayName: owner.friendDisplayName,
     };
   }
 
