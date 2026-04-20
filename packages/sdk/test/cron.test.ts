@@ -101,7 +101,7 @@ describe('CronScheduler', () => {
     const scheduler = new CronScheduler({ onTriggered: noop, onScheduled: noop, onCancelled: noop });
     const past = new Date(Date.now() - 1000).toISOString();
     scheduler.schedule({ cronId: 'c1', expression: `at ${past}`, newioSessionId: 's1', label: 'Past' });
-    expect(scheduler.list()).toHaveLength(0);
+    expect(scheduler.list('s1')).toHaveLength(0);
     scheduler.dispose();
   });
 
@@ -145,7 +145,7 @@ describe('CronScheduler', () => {
     });
 
     scheduler.schedule({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'Test' });
-    scheduler.cancel('c1');
+    scheduler.cancel('c1', 's1');
     expect(cancelled).toEqual(['c1']);
 
     scheduler.dispose();
@@ -153,7 +153,7 @@ describe('CronScheduler', () => {
 
   it('cancel is a no-op for unknown cronId', () => {
     const scheduler = new CronScheduler({ onTriggered: noop, onScheduled: noop, onCancelled: noop });
-    scheduler.cancel('nonexistent'); // should not throw
+    expect(scheduler.cancel('nonexistent', 's1')).toBe('not_found');
     scheduler.dispose();
   });
 
@@ -171,7 +171,7 @@ describe('CronScheduler', () => {
     scheduler.dispose();
     await vi.advanceTimersByTimeAsync(2000);
     expect(triggered).toHaveLength(0);
-    expect(scheduler.list()).toHaveLength(0);
+    expect(scheduler.list('s1')).toHaveLength(0);
   });
 
   it('list returns all active jobs', () => {
@@ -179,7 +179,7 @@ describe('CronScheduler', () => {
     scheduler.schedule({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'A' });
     scheduler.schedule({ cronId: 'c2', expression: 'every 2s', newioSessionId: 's1', label: 'B' });
 
-    const jobs = scheduler.list();
+    const jobs = scheduler.list('s1');
     expect(jobs).toHaveLength(2);
     expect(jobs.map((j) => j.cronId).sort()).toEqual(['c1', 'c2']);
 

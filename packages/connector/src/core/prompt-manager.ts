@@ -25,7 +25,7 @@ export class PromptManager {
 
     const ownerName = this.app.getOwnerDisplayName();
     if (ownerName) {
-      parts.push(`Your owner is "${ownerName}". Treat messages from your owner with priority.`);
+      parts.push(`Your owner is "${ownerName}".`);
     }
 
     parts.push(`Messages arrive as YAML. Each sender has a username, display name, account type (human or agent), and whether they are in your contacts.

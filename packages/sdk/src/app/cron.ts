@@ -34,8 +34,9 @@ export class CronScheduler {
   /** Schedule a cron job. Replaces any existing job with the same cronId. */
   schedule(def: CronJobDef): void {
     if (this.jobs.has(def.cronId)) {
+      const existing = this.jobs.get(def.cronId);
       log.warn(`Cron job ${def.cronId} already exists — replacing.`);
-      this.cancel(def.cronId);
+      this.cancel(def.cronId, existing?.def.newioSessionId ?? def.newioSessionId);
     }
 
     const parsed = parseCronExpression(def.expression);
@@ -63,7 +64,7 @@ export class CronScheduler {
       );
       const timer = setTimeout(() => {
         fire();
-        this.cancel(def.cronId);
+        this.cancel(def.cronId, def.newioSessionId);
       }, delayMs);
       this.jobs.set(def.cronId, { def, timer, isInterval: false });
     } else {
@@ -75,24 +76,26 @@ export class CronScheduler {
     this.handlers.onScheduled(def);
   }
 
-  /** Cancel a scheduled cron job. */
-  cancel(cronId: string): void {
+  /** Cancel a scheduled cron job within a session. Returns 'success' | 'not_found'. */
+  cancel(cronId: string, sessionId: string): 'success' | 'not_found' {
     const entry = this.jobs.get(cronId);
-    if (entry) {
-      if (entry.isInterval) {
-        clearInterval(entry.timer);
-      } else {
-        clearTimeout(entry.timer);
-      }
-      this.jobs.delete(cronId);
-      log.info(`Cron cancelled: ${cronId}`);
-      this.handlers.onCancelled(cronId);
+    if (!entry || entry.def.newioSessionId !== sessionId) {
+      return 'not_found';
     }
+    if (entry.isInterval) {
+      clearInterval(entry.timer);
+    } else {
+      clearTimeout(entry.timer);
+    }
+    this.jobs.delete(cronId);
+    log.info(`Cron cancelled: ${cronId}`);
+    this.handlers.onCancelled(cronId);
+    return 'success';
   }
 
-  /** List all active cron jobs. */
-  list(): readonly CronJobDef[] {
-    return [...this.jobs.values()].map((e) => e.def);
+  /** List active cron jobs for a session. */
+  list(sessionId: string): readonly CronJobDef[] {
+    return [...this.jobs.values()].filter((e) => e.def.newioSessionId === sessionId).map((e) => e.def);
   }
 
   /** Cancel all jobs. Call on shutdown. */

@@ -16,14 +16,14 @@ export function registerCronTools(server: McpServer, app: NewioApp, getSessionId
     {
       description:
         'Schedule a task. Supports recurring intervals and one-shot fixed-time triggers.\n' +
-        'Recurring: "every <N>s|m|h" (e.g. "every 30m", "every 4h").\n' +
+        'Recurring: "every <N>s|m|h" (e.g. "every 23s", "every 45m", "every 4h").\n' +
         'One-shot: "at <ISO-8601>" (e.g. "at 2026-04-09T12:00:00Z", "at 2026-04-10T10:00:00-04:00").\n' +
         'For timezone-aware scheduling, convert to ISO-8601 with offset before calling.',
       inputSchema: {
         expression: z
           .string()
           .describe(
-            'Schedule expression. Examples: "every 30m", "at 2026-04-09T12:00:00Z", "at 2026-04-10T10:00:00-04:00"',
+            'Schedule expression. Examples: "every 23s", "every 45m", "at 2026-04-09T12:00:00Z", "at 2026-04-10T10:00:00-04:00"',
           ),
         label: z.string().describe('Human-readable description of what this cron job should do when it fires'),
         payload: z
@@ -52,12 +52,23 @@ export function registerCronTools(server: McpServer, app: NewioApp, getSessionId
       },
     },
     ({ cronId }) => {
-      app.cancelCron(cronId);
+      const sessionId = getSessionId();
+      if (!sessionId) {
+        return text('Error: no session context — cannot cancel cron');
+      }
+      const status = app.cancelCron(cronId, sessionId);
+      if (status === 'not_found') {
+        return text(`Cron not found: ${cronId}`);
+      }
       return text(`Cron cancelled: ${cronId}`);
     },
   );
 
   server.registerTool('list_crons', { description: 'List all active cron jobs for this agent' }, () => {
-    return json(app.listCrons());
+    const sessionId = getSessionId();
+    if (!sessionId) {
+      return text('Error: no session context — cannot list crons');
+    }
+    return json(app.listCrons(sessionId));
   });
 }

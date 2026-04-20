@@ -379,6 +379,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     if (session) {
       session.handleSessionUpdate(params);
     } else {
+      console.log(params);
       log.warn(`sessionUpdate for unknown session: ${params.sessionId}`);
     }
     return Promise.resolve();
