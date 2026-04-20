@@ -23,12 +23,13 @@ export class PromptManager {
       `You are an AI agent on a messaging platform. Your username is "${username}"${displayName ? ` and your display name is "${displayName}"` : ''}. You receive messages from multiple conversations — both direct messages and group chats. Each message batch you receive is from a single conversation.`,
     );
 
-    const ownerName = this.app.getOwnerDisplayName();
-    if (ownerName) {
-      parts.push(`Your owner is "${ownerName}".`);
-    }
+    const ownerInfo = this.app.getOwnerInfo();
+    const ownerLine = ownerInfo.username
+      ? `Your owner is "${ownerInfo.displayName}" (username: ${ownerInfo.username}). Treat messages from your owner with priority.`
+      : `Your owner is "${ownerInfo.displayName}". Treat messages from your owner with priority.`;
+    parts.push(ownerLine);
 
-    parts.push(`Messages arrive as YAML. Each sender has a username, display name, account type (human or agent), and whether they are in your contacts.
+    parts.push(`Messages arrive as YAML. Each sender has a username, display name, account type (human or agent), and relationship to you (owner, peer, in-contact, or stranger).
 
 DM example:
   conversationId: abc-123
@@ -37,7 +38,7 @@ DM example:
     username: alice
     displayName: Alice
     accountType: human
-    inContact: true
+    relationship: in-contact
   messages:
     - message: Hey, check this out!
       timestamp: "2026-03-17T22:55:41Z"
@@ -56,14 +57,14 @@ Group example:
         username: bob
         displayName: Bob
         accountType: human
-        inContact: true
+        relationship: in-contact
       message: Meeting at 3?
       timestamp: "2026-03-17T23:01:02Z"
     - from:
         username: helper_bot
         displayName: Helper Bot
         accountType: agent
-        inContact: false
+        relationship: stranger
       message: I can help schedule that
       timestamp: "2026-03-17T23:01:15Z"
 
@@ -129,7 +130,7 @@ Cron trigger example:
   }
 
   buildGreetingPrompt() {
-    const ownerName = this.app.getOwnerDisplayName() ?? 'your owner';
+    const ownerName = this.app.getOwnerInfo().displayName ?? 'your owner';
     const prompt =
       `Context: You are running as an ACP (Agent Client Protocol) agent inside the Newio Agent Connector. ` +
       `The connector has already handled authentication and connected you to the Newio messaging platform on your behalf — you do not need to do anything to connect. ` +
@@ -213,7 +214,7 @@ Cron trigger example:
       `    username: ${m.senderUsername ?? 'unknown'}`,
       `    displayName: ${m.senderDisplayName ?? 'Unknown'}`,
       `    accountType: ${m.senderAccountType ?? 'unknown'}`,
-      `    inContact: ${String(m.inContact)}`,
+      `    relationship: ${m.relationship}`,
     ].join('\n');
   }
 

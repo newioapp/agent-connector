@@ -11,7 +11,7 @@ function makeMsg(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
     senderUsername: 'alice',
     senderDisplayName: 'Alice',
     senderAccountType: 'human',
-    inContact: true,
+    relationship: 'in-contact',
     isOwnMessage: false,
     text: 'hello',
     timestamp: '2026-03-17T22:55:41Z',
@@ -23,7 +23,7 @@ function makeMsg(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
 function mockApp(overrides: Partial<NewioApp> = {}): NewioApp {
   return {
     identity: { userId: 'agent-1', username: 'myagent', displayName: 'My Agent', ownerId: 'owner-1' },
-    getOwnerDisplayName: vi.fn().mockReturnValue('Nan'),
+    getOwnerInfo: vi.fn().mockReturnValue({ username: 'nan', displayName: 'Nan' }),
     getContact: vi.fn().mockReturnValue(undefined),
     ...overrides,
   } as unknown as NewioApp;
@@ -48,7 +48,7 @@ describe('PromptManager', () => {
       expect(result).toContain('username: alice');
       expect(result).toContain('displayName: Alice');
       expect(result).toContain('accountType: human');
-      expect(result).toContain('inContact: true');
+      expect(result).toContain('relationship: in-contact');
       expect(result).toContain('message: hello');
       expect(result).toContain('timestamp: "2026-03-17T22:55:41Z"');
     });
@@ -274,17 +274,18 @@ describe('PromptManager', () => {
     it('includes owner info when available', () => {
       const pm = new PromptManager(mockApp());
       const result = pm.buildNewioInstruction();
-      expect(result).toContain('Your owner is "Nan"');
+      expect(result).toContain('Your owner is "Nan" (username: nan)');
     });
 
-    it('omits owner info when no owner', () => {
+    it('throws when owner not in contacts', () => {
       const app = mockApp({
         identity: { userId: 'a', username: 'bot', displayName: 'Bot' },
-        getOwnerDisplayName: vi.fn().mockReturnValue(undefined),
+        getOwnerInfo: vi.fn().mockImplementation(() => {
+          throw new Error('Owner not found in contacts');
+        }),
       } as unknown as Partial<NewioApp>);
       const pm = new PromptManager(app);
-      const result = pm.buildNewioInstruction();
-      expect(result).not.toContain('Your owner');
+      expect(() => pm.buildNewioInstruction()).toThrow('Owner not found in contacts');
     });
 
     it('appends custom instructions', () => {
@@ -333,8 +334,10 @@ describe('PromptManager', () => {
       expect(result).toContain('greeting');
     });
 
-    it('falls back to "your owner" when no owner name', () => {
-      const app = mockApp({ getOwnerDisplayName: vi.fn().mockReturnValue(undefined) } as unknown as Partial<NewioApp>);
+    it('falls back to "your owner" when no display name', () => {
+      const app = mockApp({
+        getOwnerInfo: vi.fn().mockReturnValue({ username: 'nan', displayName: undefined }),
+      } as unknown as Partial<NewioApp>);
       const pm = new PromptManager(app);
       const result = pm.buildGreetingPrompt();
       expect(result).toContain('your owner');

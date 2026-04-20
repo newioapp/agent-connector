@@ -375,7 +375,7 @@ describe('wireEvents', () => {
       text: 'old',
       timestamp: new Date().toISOString(),
       isOwnMessage: false,
-      inContact: true,
+      relationship: 'in-contact' as const,
       status: 'new',
     });
     const handler = vi.fn();
@@ -399,7 +399,7 @@ describe('wireEvents', () => {
       text: 'hi',
       timestamp: new Date().toISOString(),
       isOwnMessage: false,
-      inContact: true,
+      relationship: 'in-contact' as const,
       status: 'new',
     });
     const handler = vi.fn();

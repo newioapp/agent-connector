@@ -4,6 +4,8 @@
 import type { AccountType, Attachment, ConversationType } from '../core/types.js';
 
 /** A processed incoming message with sender metadata resolved from caches. */
+export type SenderRelationship = 'owner' | 'peer' | 'in-contact' | 'stranger';
+
 export interface IncomingMessage {
   readonly messageId: string;
   readonly conversationId: string;
@@ -13,7 +15,7 @@ export interface IncomingMessage {
   readonly senderUsername?: string;
   readonly senderDisplayName?: string;
   readonly senderAccountType?: AccountType;
-  readonly inContact: boolean;
+  readonly relationship: SenderRelationship;
   readonly isOwnMessage: boolean;
   readonly text: string;
   readonly attachments?: readonly Attachment[];
@@ -124,6 +126,12 @@ export interface NewioIdentity {
   readonly displayName?: string;
   readonly avatarUrl?: string;
   readonly ownerId?: string;
+}
+
+/** The agent's owner info (resolved from contacts). */
+export interface OwnerInfo {
+  readonly username: string | undefined;
+  readonly displayName: string | undefined;
 }
 
 /** Tokens returned after auth. */

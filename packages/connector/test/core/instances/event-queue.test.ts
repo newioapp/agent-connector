@@ -12,7 +12,7 @@ function makeMsg(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
     senderUsername: 'alice',
     senderDisplayName: 'Alice',
     senderAccountType: 'human',
-    inContact: true,
+    relationship: 'in-contact' as const,
     isOwnMessage: false,
     text: 'hello',
     timestamp: '2026-03-17T22:55:41Z',

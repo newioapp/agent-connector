@@ -219,7 +219,7 @@ describe('NewioAppStore', () => {
       text: `msg-${id}`,
       timestamp: ts ?? new Date().toISOString(),
       isOwnMessage: false,
-      inContact: true,
+      relationship: 'in-contact' as const,
       status: 'new' as const,
     });
 
@@ -314,7 +314,7 @@ describe('NewioAppStore', () => {
       expect(result.senderUsername).toBe('alice');
       expect(result.senderDisplayName).toBe('Alice');
       expect(result.isOwnMessage).toBe(false);
-      expect(result.inContact).toBe(true);
+      expect(result.relationship).toBe('in-contact');
       expect(result.groupName).toBe('Team');
       expect(result.conversationType).toBe('group');
     });

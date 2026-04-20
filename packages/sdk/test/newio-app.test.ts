@@ -219,7 +219,7 @@ describe('NewioApp', () => {
       expect(received).toHaveLength(1);
       expect(received[0].text).toBe('hello');
       expect(received[0].senderUsername).toBe('alice');
-      expect(received[0].inContact).toBe(true);
+      expect(received[0].relationship).toBe('in-contact');
     });
 
     it('ignores own messages', async () => {
@@ -654,24 +654,27 @@ describe('NewioApp', () => {
     });
   });
 
-  describe('getOwnerDisplayName', () => {
-    it('returns owner display name from contacts', async () => {
+  describe('getOwnerInfo', () => {
+    it('returns owner info from contacts', async () => {
       const ownerContact = makeContact({ contactId: 'owner-1', friendUsername: 'nan', friendDisplayName: 'Nan' });
       const { app } = await createApp([ownerContact]);
 
-      expect(app.getOwnerDisplayName()).toBe('Nan');
+      const info = app.getOwnerInfo();
+      expect(info.username).toBe('nan');
+      expect(info.displayName).toBe('Nan');
     });
 
     it('falls back to username when no displayName', async () => {
       const ownerContact = makeContact({ contactId: 'owner-1', friendUsername: 'nan', friendDisplayName: undefined });
       const { app } = await createApp([ownerContact]);
 
-      expect(app.getOwnerDisplayName()).toBe('nan');
+      const info = app.getOwnerInfo();
+      expect(info.displayName).toBe('nan');
     });
 
-    it('returns undefined when owner not in contacts', async () => {
+    it('throws when owner not in contacts', async () => {
       const { app } = await createApp();
-      expect(app.getOwnerDisplayName()).toBeUndefined();
+      expect(() => app.getOwnerInfo()).toThrow('Owner not found in contacts');
     });
   });
 
