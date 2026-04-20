@@ -9,53 +9,57 @@
 import type { ClientSideConnection, NewSessionResponse, LoadSessionResponse } from '@agentclientprotocol/sdk';
 import type * as acp from '@agentclientprotocol/sdk';
 import type { AgentSession } from './agent-session';
-import { SessionStream } from './acp-session-stream';
-import type { SessionStatusListener, SessionStreamSegment } from './types';
+import { AcpSessionStream } from './acp-session-stream';
+import type { PermissionHandler, SessionStatusListener, SessionStreamSegment } from './types';
 import { AcpSessionConfigHandler } from './acp-session-config-handler';
 import { Logger } from './logger';
 import type { AgentSessionConfig } from './agent-instance';
 
 const log = new Logger('acp-agent-session');
 
-/** Callback for routing permission requests to the owner via Newio. */
-export type PermissionHandler = (
-  correlationId: string,
-  params: acp.RequestPermissionRequest,
-) => Promise<acp.RequestPermissionResponse>;
-
 export interface AcpAgentSessionInit {
+  readonly sessionId: string;
   readonly correlationId: string;
   readonly connection: ClientSideConnection;
-  readonly permissionHandler: PermissionHandler;
   readonly sessionResponse: NewSessionResponse | LoadSessionResponse;
   readonly disposable: boolean;
 }
 
 export class AcpAgentSession implements AgentSession {
+  readonly sessionId: string;
   readonly correlationId: string;
+
   disposable: boolean;
 
   private readonly connection: ClientSideConnection;
   private readonly configHandler: AcpSessionConfigHandler;
-  private stream?: SessionStream;
+  private stream?: AcpSessionStream;
   private statusListener: SessionStatusListener = () => {};
-  private readonly permissionHandler: PermissionHandler;
+  private permissionHandler: PermissionHandler = () => Promise.reject(new Error('Permission request is unsupported'));
   private prompting = false;
+  private _currentConversationId: string | undefined = undefined;
 
   constructor(init: AcpAgentSessionInit) {
+    this.sessionId = init.sessionId;
     this.correlationId = init.correlationId;
     this.disposable = init.disposable;
     this.connection = init.connection;
-    this.permissionHandler = init.permissionHandler;
     this.configHandler = new AcpSessionConfigHandler(init.correlationId, init.connection, init.sessionResponse);
   }
 
   // ---------------------------------------------------------------------------
   // AgentSession
   // ---------------------------------------------------------------------------
+  get currentConversationId(): string | undefined {
+    return this._currentConversationId;
+  }
 
   onStatus(listener: SessionStatusListener): void {
     this.statusListener = listener;
+  }
+
+  onPermissionRequest(handler: PermissionHandler): void {
+    this.permissionHandler = handler;
   }
 
   /** Set a callback for when model/mode config changes. */
@@ -79,10 +83,10 @@ export class AcpAgentSession implements AgentSession {
     return this.configHandler.listModes();
   }
 
-  async *prompt(text: string): AsyncGenerator<SessionStreamSegment> {
+  async *prompt(text: string, conversationId?: string): AsyncGenerator<SessionStreamSegment> {
     this.prompting = true;
-    this.statusListener('thinking');
-    const stream = new SessionStream(this.statusListener);
+    this._currentConversationId = conversationId;
+    const stream = new AcpSessionStream(this.statusListener, conversationId);
     this.stream = stream;
 
     const promptDone = this.connection
@@ -108,7 +112,9 @@ export class AcpAgentSession implements AgentSession {
     } finally {
       this.stream = undefined;
       this.prompting = false;
-      this.statusListener('idle');
+      const convId = this._currentConversationId;
+      this._currentConversationId = undefined;
+      this.statusListener('idle', convId);
     }
   }
 
@@ -143,7 +149,20 @@ export class AcpAgentSession implements AgentSession {
     this.stream?.handleSessionUpdate(params.update);
   }
 
-  handleRequestPermission(params: acp.RequestPermissionRequest): Promise<acp.RequestPermissionResponse> {
-    return this.permissionHandler(this.correlationId, params);
+  async handleRequestPermission(params: acp.RequestPermissionRequest): Promise<acp.RequestPermissionResponse> {
+    const title = params.toolCall.title ?? 'Permission request';
+    if (params.toolCall.content) {
+      log.debug(
+        `[${this.correlationId}] Permission request toolCall content: ${JSON.stringify(params.toolCall.content)}`,
+      );
+    }
+
+    try {
+      const selectedOptionId = await this.permissionHandler(title, params.options, this._currentConversationId);
+      return { outcome: { outcome: 'selected' as const, optionId: selectedOptionId } };
+    } catch (err: unknown) {
+      log.warn('Permission request failed', err);
+      return { outcome: { outcome: 'cancelled' as const } };
+    }
   }
 }

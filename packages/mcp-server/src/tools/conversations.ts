@@ -4,11 +4,12 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NewioApp } from '@newio/sdk';
+import { IdGetter } from '../types';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
 
-function requireSessionId(getSessionId: () => string | undefined): string {
+function requireSessionId(getSessionId: IdGetter): string {
   const id = getSessionId();
   if (!id) {
     throw new Error('MCP server has no session ID wired — cannot create conversation without a session context.');
@@ -17,11 +18,7 @@ function requireSessionId(getSessionId: () => string | undefined): string {
 }
 
 /** Register conversations tools on the MCP server. */
-export function registerConversationsTools(
-  server: McpServer,
-  app: NewioApp,
-  getSessionId: () => string | undefined,
-): void {
+export function registerConversationsTools(server: McpServer, app: NewioApp, getSessionId: IdGetter): void {
   server.registerTool('list_conversations', { description: 'List all conversations this agent is part of' }, () => {
     return json(app.getAllConversations());
   });

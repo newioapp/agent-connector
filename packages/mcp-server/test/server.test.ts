@@ -60,7 +60,7 @@ async function createConnectedClient(app: NewioApp): Promise<Client> {
 
 async function createConnectedClientWithSession(app: NewioApp, sessionId: string): Promise<Client> {
   const server = new NewioMcpServer(app);
-  server.setSessionId(sessionId);
+  server.setSessionIdGetter(() => sessionId);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
   const client = new Client({ name: 'test-client', version: '1.0.0' });
@@ -97,7 +97,7 @@ describe('MCP Server', () => {
       'send_dm',
       'send_friend_request',
       'send_message',
-      'upload_attachment',
+      'upload_attachment_to_current_conversation',
     ]);
   });
 
@@ -187,12 +187,26 @@ describe('MCP Server', () => {
     expect((result.content[0] as { text: string }).text).toContain('photo.jpg');
   });
 
-  it('upload_attachment sends attachment-only message', async () => {
+  it('upload_attachment_to_current_conversation returns error when no conversation getter is set', async () => {
+    const client = await createConnectedClient(mockApp());
+    const result = await client.callTool({
+      name: 'upload_attachment_to_current_conversation',
+      arguments: { filePaths: ['/tmp/photo.jpg'] },
+    });
+    expect(result.isError).toBe(true);
+  });
+
+  it('upload_attachment_to_current_conversation sends attachment-only message', async () => {
     const app = mockApp();
-    const client = await createConnectedClient(app);
+    const server = new NewioMcpServer(app);
+    server.setCurrentConversationIdGetter(() => 'conv-1');
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    const client = new Client({ name: 'test-client', version: '1.0.0' });
+    await client.connect(clientTransport);
     await client.callTool({
-      name: 'upload_attachment',
-      arguments: { conversationId: 'conv-1', filePaths: ['/tmp/photo.jpg'] },
+      name: 'upload_attachment_to_current_conversation',
+      arguments: { filePaths: ['/tmp/photo.jpg'] },
     });
     expect(app.sendMessage).toHaveBeenCalledWith('conv-1', undefined, ['/tmp/photo.jpg']);
   });
@@ -406,14 +420,19 @@ describe('MCP Server', () => {
     });
   });
 
-  it('getSessionId returns undefined when not set', () => {
-    const server = new NewioMcpServer(mockApp());
-    expect(server.getSessionId()).toBeUndefined();
+  it('create_work_session returns error when no session ID getter is set', async () => {
+    const client = await createConnectedClient(mockApp());
+    const result = await client.callTool({
+      name: 'create_work_session',
+      arguments: { name: 'test', usernames: ['bot'] },
+    });
+    expect(result.isError).toBe(true);
   });
 
-  it('getSessionId returns value after setSessionId', () => {
-    const server = new NewioMcpServer(mockApp());
-    server.setSessionId('s1');
-    expect(server.getSessionId()).toBe('s1');
+  it('create_work_session succeeds when session ID getter is wired', async () => {
+    const app = mockApp();
+    const client = await createConnectedClientWithSession(app, 'session-1');
+    await client.callTool({ name: 'create_work_session', arguments: { name: 'test', usernames: ['bot'] } });
+    expect(app.createWorkSession).toHaveBeenCalled();
   });
 });

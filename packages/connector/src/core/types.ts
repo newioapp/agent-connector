@@ -161,8 +161,19 @@ export interface SessionStreamSegment {
 }
 
 export type SessionStatus = 'thinking' | 'typing' | 'tool_calling' | 'idle';
+export type SessionStatusListener = (status: SessionStatus, conversationId?: string) => void;
 
-export type SessionStatusListener = (status: SessionStatus) => void;
+export interface PermissionRequestOption {
+  readonly kind: string;
+  readonly name: string;
+  readonly optionId: string;
+}
+
+export type PermissionHandler = (
+  title: string,
+  options: ReadonlyArray<PermissionRequestOption>,
+  conversationId?: string,
+) => Promise<string>;
 
 /** Extract a human-readable message from an unknown error (handles Error instances and plain objects). */
 export function extractErrorMessage(err: unknown): string {

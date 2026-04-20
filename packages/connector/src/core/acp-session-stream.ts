@@ -8,7 +8,7 @@
 import type * as acp from '@agentclientprotocol/sdk';
 import type { SegmentType, SessionStreamSegment, SessionStatusListener } from './types';
 
-export class SessionStream {
+export class AcpSessionStream {
   private currentType: SegmentType | undefined;
   private currentText = '';
   private done = false;
@@ -18,7 +18,10 @@ export class SessionStream {
   /** Resolves when a new segment is queued or the stream finishes. */
   private waiter: (() => void) | undefined;
 
-  constructor(private readonly statusListener: SessionStatusListener) {}
+  constructor(
+    private readonly statusListener: SessionStatusListener,
+    private readonly conversationId?: string,
+  ) {}
 
   /** Process a raw ACP session update — aggregates text and emits status. Returns true if handled. */
   handleSessionUpdate(update: acp.SessionUpdate): boolean {
@@ -46,14 +49,14 @@ export class SessionStream {
 
     switch (type) {
       case 'agent_message_chunk':
-        this.statusListener('typing');
+        this.statusListener('typing', this.conversationId);
         break;
       case 'agent_thought_chunk':
-        this.statusListener('thinking');
+        this.statusListener('thinking', this.conversationId);
         break;
       case 'tool_call':
       case 'tool_call_update':
-        this.statusListener('tool_calling');
+        this.statusListener('tool_calling', this.conversationId);
         break;
     }
     return true;

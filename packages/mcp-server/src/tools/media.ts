@@ -4,25 +4,34 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NewioApp } from '@newio/sdk';
+import { IdGetter } from '../types';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
 
+function requireCurrentConversationId(getCurrentConversationId: IdGetter): string {
+  const id = getCurrentConversationId();
+  if (!id) {
+    throw new Error('MCP server has no active conversation — cannot determine target conversation.');
+  }
+  return id;
+}
+
 /** Register media tools on the MCP server. */
-export function registerMediaTools(server: McpServer, app: NewioApp): void {
+export function registerMediaTools(server: McpServer, app: NewioApp, getCurrentConversationId: IdGetter): void {
   server.registerTool(
-    'upload_attachment',
+    'upload_attachment_to_current_conversation',
     {
       description:
-        'Upload files to a conversation as a message with no text. For sending files with a text message, use send_message with filePaths instead.',
+        'Upload files to the current active conversation as a message with no text. Only works during an active conversation prompt. To send files to a specific conversation, use send_message with filePaths instead.',
       inputSchema: {
-        conversationId: z.string().describe('Conversation ID to send the attachments to'),
         filePaths: z.array(z.string()).min(1).max(5).describe('Local file paths to upload (1–5, absolute or relative)'),
       },
     },
-    async ({ conversationId, filePaths }) => {
-      await app.sendMessage(conversationId, undefined, filePaths);
-      return json({ sent: filePaths.length, conversationId });
+    async ({ filePaths }) => {
+      const convId = requireCurrentConversationId(getCurrentConversationId);
+      await app.sendMessage(convId, undefined, filePaths);
+      return json({ sent: filePaths.length, convId });
     },
   );
 
