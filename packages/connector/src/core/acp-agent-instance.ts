@@ -82,6 +82,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       throw new Error('ACP config missing');
     }
 
+    await assertNodeAvailable();
     await this.spawnAndInit();
     this.representativeSession = await this.sendGreeting(ownerDmConversationId);
     this.representativeSession.onConfigChanged(() => {
@@ -409,7 +410,8 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
         buffered = [];
         this.pendingUpdates.set(params.sessionId, buffered);
       }
-      buffered.push(params);
+      console.log(JSON.stringify(params, null, 2));
+      // buffered.push(params);
       log.debug(`${this.logTag} Buffered sessionUpdate for pending session: ${params.sessionId}`);
     }
     return Promise.resolve();
@@ -441,6 +443,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
 
   extNotification(method: string, _params: Record<string, unknown>): Promise<void> {
     log.debug(`${this.logTag} ext notification: ${method}`);
+    console.log(JSON.stringify(_params, null, 2));
     return Promise.resolve();
   }
 
@@ -506,6 +509,25 @@ function buildMcpServers(mcpSocketPath?: string): AcpMcpServer[] {
 
 function resolveBridgePath(): string {
   return require.resolve('@newio/mcp-server/bridge');
+}
+
+/** Verify that `node` is available on the system PATH (required for the Newio MCP bridge). */
+async function assertNodeAvailable(): Promise<void> {
+  const { execFile } = await import('child_process');
+  await new Promise<void>((resolve, reject) => {
+    execFile('node', ['--version'], (err) => {
+      if (err) {
+        reject(
+          new Error(
+            '"node" is not available on your system PATH. Node.js is required to run the Newio MCP server.\n\n' +
+              'Ensure Node.js is installed and available on your system PATH.',
+          ),
+        );
+      } else {
+        resolve();
+      }
+    });
+  });
 }
 
 /** Build a protocol-agnostic AgentInfo from an ACP InitializeResponse. */
