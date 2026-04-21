@@ -73,7 +73,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private launchQueue: Promise<void> = Promise.resolve();
   private abortController = new AbortController();
   private idleTimer?: ReturnType<typeof setInterval>;
-  private cleaningUp = false;
+  private cleaningUpIdleSessions = false;
   protected pendingCleanup?: Promise<void>;
   private udsServer?: Server;
   /** Most recently created MCP server awaiting a sessionId to be wired. */
@@ -710,10 +710,10 @@ export abstract class BaseAgentInstance implements AgentInstance {
   }
 
   private async cleanupIdleSessions(): Promise<void> {
-    if (this.cleaningUp) {
+    if (this.cleaningUpIdleSessions) {
       return;
     }
-    this.cleaningUp = true;
+    this.cleaningUpIdleSessions = true;
     try {
       const timeout = this.config.sessionIdleTimeoutMs ?? DEFAULT_SESSION_IDLE_TIMEOUT_MS;
       const now = Date.now();
@@ -733,7 +733,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         }
       }
     } finally {
-      this.cleaningUp = false;
+      this.cleaningUpIdleSessions = false;
     }
   }
 
