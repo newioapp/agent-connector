@@ -54,6 +54,9 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
   /** Whether the ACP agent supports session/close. */
   private supportsClose = false;
 
+  /** Buffered session updates received before the session was registered. */
+  private readonly pendingUpdates = new Map<string, acp.SessionNotification[]>();
+
   /** Runtime agent info — populated after ACP initialization. */
   private agentInfo?: AgentInfo;
 
@@ -98,10 +101,12 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
 
   protected async onStopped(): Promise<void> {
     log.info(`${this.logTag} ACP agent instance stopping...`);
+    this.stopping = true;
     this.representativeSession = undefined;
     this.selectedModel = undefined;
     this.selectedMode = undefined;
     this.acpSessions.clear();
+    this.pendingUpdates.clear();
     this.connection = undefined;
     await this.killProcess();
   }
@@ -328,7 +333,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       disposable: this.supportsClose,
       username: this.config.newio?.username,
     });
-    this.acpSessions.set(result.sessionId, session);
+    this.registerSession(result.sessionId, session);
     log.info(`${this.logTag} Session created: ${result.sessionId}`);
 
     await this.applySessionConfig(session);
@@ -368,12 +373,25 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       disposable: this.supportsClose,
       username: this.config.newio?.username,
     });
-    this.acpSessions.set(correlationId, session);
+    this.registerSession(correlationId, session);
     log.info(`${this.logTag} Session resumed: ${correlationId}`);
 
     await this.applySessionConfig(session);
 
     return session;
+  }
+
+  /** Register a session and replay any buffered updates received during initialization. */
+  private registerSession(correlationId: string, session: AcpAgentSession): void {
+    this.acpSessions.set(correlationId, session);
+    const buffered = this.pendingUpdates.get(correlationId);
+    if (buffered) {
+      this.pendingUpdates.delete(correlationId);
+      for (const update of buffered) {
+        session.handleSessionUpdate(update);
+      }
+      log.debug(`${this.logTag} Replayed ${String(buffered.length)} buffered update(s) for ${correlationId}`);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -385,7 +403,14 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     if (session) {
       session.handleSessionUpdate(params);
     } else {
-      log.warn(`${this.logTag} sessionUpdate for unknown session: ${params.sessionId}`);
+      // Session still initializing — buffer for replay after registration
+      let buffered = this.pendingUpdates.get(params.sessionId);
+      if (!buffered) {
+        buffered = [];
+        this.pendingUpdates.set(params.sessionId, buffered);
+      }
+      buffered.push(params);
+      log.debug(`${this.logTag} Buffered sessionUpdate for pending session: ${params.sessionId}`);
     }
     return Promise.resolve();
   }
