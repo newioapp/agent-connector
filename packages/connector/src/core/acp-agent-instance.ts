@@ -200,6 +200,8 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     }
 
     this.supportsClose = initResult.agentCapabilities.sessionCapabilities?.close != null;
+    log.info(`${this.logTag} ACP session/close supported: ${String(this.supportsClose)}`);
+    log.debug(`${this.logTag} ACP init result`, JSON.stringify(initResult));
 
     this.agentInfo = buildAgentInfo(initResult);
     this.listener.onAgentInfo(this.agentInfo);
