@@ -59,11 +59,14 @@ export function EnvVarsTab({ agent }: { readonly agent: AgentStatusInfo }): Reac
   useEffect(() => {
     void window.api.listShells().then((available) => {
       setShells(available);
-      if (available.length > 0) {
+      const saved = agent.config.envVarsShell;
+      if (saved && available.includes(saved)) {
+        setSelectedShell(saved);
+      } else if (available.length > 0) {
         setSelectedShell(available[0]);
       }
     });
-  }, []);
+  }, [agent.id]);
 
   // Load from config on agent change only (not on config updates from our own saves)
   useEffect(() => {
@@ -107,11 +110,14 @@ export function EnvVarsTab({ agent }: { readonly agent: AgentStatusInfo }): Reac
     setImporting(true);
     try {
       const shellEnv = await window.api.getShellEnv(selectedShell);
-      setEntries(
-        Object.entries(shellEnv)
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([key, value]) => ({ key, value })),
-      );
+      const sorted = Object.entries(shellEnv)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, value]) => ({ key, value }));
+      setEntries(sorted);
+      // Persist the shell source alongside the env vars
+      const envVars = entriesToRecord(sorted);
+      const updated = await window.api.updateAgentEnvVars(agentIdRef.current, envVars, selectedShell);
+      updateConfigRef.current(agentIdRef.current, updated);
     } finally {
       setImporting(false);
     }

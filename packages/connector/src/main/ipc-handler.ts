@@ -126,8 +126,8 @@ export class IpcHandler implements IpcApi {
     return getShellEnv(shell);
   }
 
-  async updateAgentEnvVars(agentId: string, envVars: Record<string, string>): Promise<AgentConfig> {
-    return this.agentConfigManager.update(agentId, { envVars });
+  async updateAgentEnvVars(agentId: string, envVars: Record<string, string>, shell?: string): Promise<AgentConfig> {
+    return this.agentConfigManager.update(agentId, { envVars, ...(shell ? { envVarsShell: shell } : {}) });
   }
 
   async listAgentModels(agentId: string): Promise<AgentSessionConfig | undefined> {

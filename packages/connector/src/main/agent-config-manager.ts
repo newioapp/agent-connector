@@ -30,7 +30,8 @@ export class StoreAgentConfigManager implements AgentConfigManager {
 
   async add(input: AddAgentInput): Promise<AgentConfig> {
     const shells = listAvailableShells();
-    const envVars = shells.length > 0 ? await getShellEnv(shells[0]) : {};
+    const shell = shells.length > 0 ? shells[0] : undefined;
+    const envVars = shell ? await getShellEnv(shell) : {};
     const config: AgentConfig = {
       id: randomUUID(),
       type: input.type,
@@ -39,6 +40,7 @@ export class StoreAgentConfigManager implements AgentConfigManager {
         ...(input.newioUsername ? { username: input.newioUsername } : {}),
       },
       envVars,
+      ...(shell ? { envVarsShell: shell } : {}),
       ...(input.acp ? { acp: input.acp } : {}),
     };
     const agents = this.store.get('agents');
@@ -66,6 +68,7 @@ export class StoreAgentConfigManager implements AgentConfigManager {
       ...existing,
       newio,
       ...(updates.envVars !== undefined ? { envVars: updates.envVars } : {}),
+      ...(updates.envVarsShell !== undefined ? { envVarsShell: updates.envVarsShell } : {}),
       ...(updates.acp !== undefined ? { acp: updates.acp } : {}),
     };
     agents[index] = updated;

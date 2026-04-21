@@ -60,7 +60,7 @@ export interface IpcApi {
   /** Resolve environment variables from a specific shell. */
   getShellEnv(shell: string): Promise<Record<string, string>>;
   /** Update only the envVars on an agent config (no restart required). */
-  updateAgentEnvVars(agentId: string, envVars: Record<string, string>): Promise<AgentConfig>;
+  updateAgentEnvVars(agentId: string, envVars: Record<string, string>, shell?: string): Promise<AgentConfig>;
 
   /** List available models for a running agent. */
   listAgentModels(agentId: string): Promise<AgentSessionConfig | undefined>;
