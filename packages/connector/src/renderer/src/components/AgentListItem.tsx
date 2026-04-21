@@ -7,6 +7,7 @@ import { agentTypeLabel } from '../lib/agent-type-label';
 
 const STATUS_COLORS: Record<AgentRuntimeStatus, string> = {
   stopped: 'bg-muted-foreground',
+  stopping: 'bg-warning',
   starting: 'bg-warning',
   awaiting_approval: 'bg-warning',
   initializing: 'bg-warning',
