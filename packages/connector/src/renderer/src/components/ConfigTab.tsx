@@ -300,6 +300,7 @@ export function ConfigTab({
                     });
                   }}
                 />
+                <div className="mt-1 text-[10px] text-muted-foreground/70">Applies to all running sessions.</div>
               </div>
             )}
             {agent.runtimeStatus === 'running' && modes && modes.options.length > 0 && (
@@ -318,6 +319,7 @@ export function ConfigTab({
                     });
                   }}
                 />
+                <div className="mt-1 text-[10px] text-muted-foreground/70">Applies to all running sessions.</div>
               </div>
             )}
             {configError && <div className="mb-3 select-text cursor-text text-xs text-destructive">{configError}</div>}

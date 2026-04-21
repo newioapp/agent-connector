@@ -63,8 +63,9 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
   /** Set to true when stop/kill is intentional — prevents the exit handler from treating it as unexpected. */
   private stopping = false;
 
-  /** The first session created (greeting session) — used to expose available models/modes. */
-  private representativeSession?: AcpAgentSession;
+  /** Cached model/mode config — copied from the greeting session, updated on config changes. */
+  private cachedModels?: AgentSessionConfig;
+  private cachedModes?: AgentSessionConfig;
 
   /** Runtime-selected model — applied to new sessions. */
   private selectedModel?: string;
@@ -82,28 +83,16 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       throw new Error('ACP config missing');
     }
 
-    await assertNodeAvailable();
+    await assertNodeAvailable(this.config.envVars);
     await this.spawnAndInit();
-    this.representativeSession = await this.sendGreeting(ownerDmConversationId);
-    this.representativeSession.onConfigChanged(() => {
-      const models = this.representativeSession?.listModels();
-      const modes = this.representativeSession?.listModes();
-      if (models?.selectedId) {
-        this.selectedModel = models.selectedId;
-      }
-      if (modes?.selectedId) {
-        this.selectedMode = modes.selectedId;
-      }
-      if (this.representativeSession) {
-        this.listener.onAgentSessionConfigUpdated(this.representativeSession.correlationId, models, modes);
-      }
-    });
+    await this.sendGreeting(ownerDmConversationId);
   }
 
   protected async onStopped(): Promise<void> {
     log.info(`${this.logTag} ACP agent instance stopping...`);
     this.stopping = true;
-    this.representativeSession = undefined;
+    this.cachedModels = undefined;
+    this.cachedModes = undefined;
     this.selectedModel = undefined;
     this.selectedMode = undefined;
     this.acpSessions.clear();
@@ -114,9 +103,6 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
 
   protected onSessionDisposed(correlationId: string): void {
     this.acpSessions.delete(correlationId);
-    if (this.representativeSession?.correlationId === correlationId) {
-      this.representativeSession = undefined;
-    }
   }
 
   // ---------------------------------------------------------------------------
@@ -226,6 +212,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       child.stdin.end();
     }
 
+    // Wait for graceful exit via stdin EOF, then force kill
     const exited = await Promise.race([
       new Promise<boolean>((resolve) => {
         child.once('exit', () => resolve(true));
@@ -274,11 +261,11 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
   }
 
   listModels(): AgentSessionConfig | undefined {
-    return this.representativeSession?.listModels();
+    return this.cachedModels;
   }
 
   listModes(): AgentSessionConfig | undefined {
-    return this.representativeSession?.listModes();
+    return this.cachedModes;
   }
 
   async configureAgent(input: ConfigureAgentInput): Promise<void> {
@@ -388,9 +375,9 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     const buffered = this.pendingUpdates.get(correlationId);
     if (buffered) {
       this.pendingUpdates.delete(correlationId);
-      for (const update of buffered) {
-        session.handleSessionUpdate(update);
-      }
+      // for (const update of buffered) {
+      //   session.handleSessionUpdate(update);
+      // }
       log.debug(`${this.logTag} Replayed ${String(buffered.length)} buffered update(s) for ${correlationId}`);
     }
   }
@@ -410,8 +397,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
         buffered = [];
         this.pendingUpdates.set(params.sessionId, buffered);
       }
-      console.log(JSON.stringify(params, null, 2));
-      // buffered.push(params);
+      buffered.push(params);
       log.debug(`${this.logTag} Buffered sessionUpdate for pending session: ${params.sessionId}`);
     }
     return Promise.resolve();
@@ -451,12 +437,11 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
   // Greeting
   // ---------------------------------------------------------------------------
 
-  private async sendGreeting(ownerDmConversationId: string): Promise<AcpAgentSession> {
+  private async sendGreeting(ownerDmConversationId: string): Promise<void> {
     log.debug(`${this.logTag} Owner DM conversation: ${ownerDmConversationId}`);
 
     this.setStatus('greeting');
-    const session = (await this.getOrCreateSession(ownerDmConversationId)) as AcpAgentSession;
-    session.disposable = false;
+    const session = await this.getOrCreateSession(ownerDmConversationId);
     log.debug(`${this.logTag} [${session.correlationId}] Generating greeting for owner...`);
 
     let greeting: string | undefined;
@@ -478,7 +463,20 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     await this.app.sendMessage(ownerDmConversationId, greeting.trim());
     log.info(`${this.logTag} [${session.correlationId}] Greeting sent to owner`);
 
-    return session;
+    // Cache initial models/modes and listen for config changes from the ACP agent
+    this.cachedModels = session.listModels();
+    this.cachedModes = session.listModes();
+    session.onConfigChanged(() => {
+      this.cachedModels = session.listModels();
+      this.cachedModes = session.listModes();
+      if (this.cachedModels?.selectedId) {
+        this.selectedModel = this.cachedModels.selectedId;
+      }
+      if (this.cachedModes?.selectedId) {
+        this.selectedMode = this.cachedModes.selectedId;
+      }
+      this.listener.onAgentSessionConfigUpdated(session.correlationId, this.cachedModels, this.cachedModes);
+    });
   }
 }
 
@@ -497,27 +495,28 @@ function buildMcpServers(mcpSocketPath?: string): AcpMcpServer[] {
   if (!mcpSocketPath) {
     return [];
   }
+  const bridgePath = require.resolve('@newio/mcp-server/bridge');
+  log.debug(`MCP bridge path: ${bridgePath}`);
   return [
     {
       name: 'newio',
       command: 'node',
-      args: [require.resolve('@newio/mcp-server/bridge'), mcpSocketPath],
+      args: [bridgePath, mcpSocketPath],
       env: [],
     },
   ];
 }
 
 /** Verify that `node` is available on the system PATH (required for the Newio MCP bridge). */
-async function assertNodeAvailable(): Promise<void> {
+async function assertNodeAvailable(env?: Record<string, string>): Promise<void> {
   const { execFile } = await import('child_process');
   await new Promise<void>((resolve, reject) => {
-    execFile('node', ['--version'], (err) => {
+    execFile('node', ['--version'], { env: { ...env, TERM: 'dumb' } }, (err) => {
       if (err) {
         reject(
           new Error(
             '"node" is not available on your system PATH. Node.js is required to run the Newio MCP server.\n\n' +
-              'Ensure Node.js is installed and available on your system PATH. ' +
-              'You can also set the PATH in the Environment Variables tab.',
+              'Ensure Node.js is installed and available on your system PATH. (Check the Environment Variables tab.)',
           ),
         );
       } else {

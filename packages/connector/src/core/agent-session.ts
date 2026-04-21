@@ -5,6 +5,7 @@
  * A single agent instance manages multiple sessions.
  */
 import type { SessionStreamSegment, SessionStatusListener, PermissionHandler } from './types';
+import type { AgentSessionConfig } from './agent-instance';
 
 export interface AgentSession {
   /** Newio platform assigned session ID. */
@@ -32,6 +33,15 @@ export interface AgentSession {
   onStatus(listener: SessionStatusListener): void;
 
   onPermissionRequest(handler: PermissionHandler): void;
+
+  /** List available models for this session. */
+  listModels(): AgentSessionConfig | undefined;
+
+  /** List available modes for this session. */
+  listModes(): AgentSessionConfig | undefined;
+
+  /** Register a listener for model/mode config changes. */
+  onConfigChanged(listener: () => void): void;
 
   /** Dispose the session (kill process, free resources). */
   dispose(): Promise<void>;

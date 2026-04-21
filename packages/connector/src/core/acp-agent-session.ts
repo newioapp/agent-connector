@@ -30,7 +30,7 @@ export class AcpAgentSession implements AgentSession {
   readonly sessionId: string;
   readonly correlationId: string;
 
-  disposable: boolean;
+  readonly disposable: boolean;
 
   private readonly connection: ClientSideConnection;
   private readonly configHandler: AcpSessionConfigHandler;
@@ -38,7 +38,6 @@ export class AcpAgentSession implements AgentSession {
   private stream?: AcpSessionStream;
   private statusListener: SessionStatusListener = () => {};
   private permissionHandler: PermissionHandler = () => Promise.reject(new Error('Permission request is unsupported'));
-  private prompting = false;
   private _currentConversationId: string | undefined = undefined;
 
   constructor(init: AcpAgentSessionInit) {
@@ -87,7 +86,6 @@ export class AcpAgentSession implements AgentSession {
   }
 
   async *prompt(text: string, conversationId?: string): AsyncGenerator<SessionStreamSegment> {
-    this.prompting = true;
     this._currentConversationId = conversationId;
     const stream = new AcpSessionStream(this.statusListener, conversationId);
     this.stream = stream;
@@ -114,7 +112,6 @@ export class AcpAgentSession implements AgentSession {
       await promptDone;
     } finally {
       this.stream = undefined;
-      this.prompting = false;
       const convId = this._currentConversationId;
       this._currentConversationId = undefined;
       this.statusListener('idle', convId);
@@ -125,14 +122,6 @@ export class AcpAgentSession implements AgentSession {
     if (!this.disposable) {
       log.info(`${this.logTag} [${this.correlationId}] Session is not disposable, skipping dispose`);
       return;
-    }
-    if (this.prompting) {
-      log.info(`${this.logTag} [${this.correlationId}] Cancelling in-flight prompt...`);
-      try {
-        await this.connection.cancel({ sessionId: this.correlationId });
-      } catch (err: unknown) {
-        log.debug(`${this.logTag} [${this.correlationId}] Cancel failed (expected if already done)`, err);
-      }
     }
     this.stream?.finish();
     try {
