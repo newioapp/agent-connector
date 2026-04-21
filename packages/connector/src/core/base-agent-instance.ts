@@ -71,7 +71,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private draining = false;
   /** Serializes session launches so only one runs at a time (protects latestMcpServer wiring). */
   private launchQueue: Promise<void> = Promise.resolve();
-  private abortController?: AbortController;
+  private abortController = new AbortController();
   private idleTimer?: ReturnType<typeof setInterval>;
   private cleaningUp = false;
   protected pendingCleanup?: Promise<void>;
@@ -158,20 +158,24 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
       // Wire event handlers — capture synchronously into inbound queue
       app.on('message.new', (msg) => {
-        if (!msg.isOwnMessage) {
+        if (!msg.isOwnMessage && !abortController.signal.aborted) {
           this.inbound.push({ type: 'message', msg });
           void this.drainInbound();
         }
       });
 
       app.on('contact.event', (event) => {
-        this.inbound.push({ type: 'contact', event });
-        void this.drainInbound();
+        if (!abortController.signal.aborted) {
+          this.inbound.push({ type: 'contact', event });
+          void this.drainInbound();
+        }
       });
 
       app.on('cron.triggered', (event) => {
-        this.inbound.push({ type: 'cron', event });
-        void this.drainInbound();
+        if (!abortController.signal.aborted) {
+          this.inbound.push({ type: 'cron', event });
+          void this.drainInbound();
+        }
       });
 
       app.on('cron.scheduled', (def) => {
@@ -264,7 +268,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** Shared cleanup — tears down sessions, MCP server, WebSocket, and timers. */
   protected async cleanup(): Promise<void> {
-    this.abortController?.abort();
+    this.abortController.abort();
 
     if (this.idleTimer) {
       clearInterval(this.idleTimer);
@@ -329,7 +333,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
     this.draining = true;
     try {
-      while (this.inbound.length > 0) {
+      while (this.inbound.length > 0 && !this.abortController.signal.aborted) {
         const event = this.inbound.shift();
         if (!event) {
           break;
@@ -440,7 +444,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** Launch a session — create or resume, wire MCP and status hooks. */
   private async launchSession(newioSessionId: string): Promise<AgentSession> {
-    if (this.abortController?.signal.aborted) {
+    if (this.abortController.signal.aborted) {
       throw new Error('Agent is stopping — session launch aborted');
     }
 
