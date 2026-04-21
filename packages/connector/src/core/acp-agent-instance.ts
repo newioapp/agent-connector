@@ -501,14 +501,10 @@ function buildMcpServers(mcpSocketPath?: string): AcpMcpServer[] {
     {
       name: 'newio',
       command: 'node',
-      args: [resolveBridgePath(), mcpSocketPath],
+      args: [require.resolve('@newio/mcp-server/bridge'), mcpSocketPath],
       env: [],
     },
   ];
-}
-
-function resolveBridgePath(): string {
-  return require.resolve('@newio/mcp-server/bridge');
 }
 
 /** Verify that `node` is available on the system PATH (required for the Newio MCP bridge). */
@@ -520,7 +516,8 @@ async function assertNodeAvailable(): Promise<void> {
         reject(
           new Error(
             '"node" is not available on your system PATH. Node.js is required to run the Newio MCP server.\n\n' +
-              'Ensure Node.js is installed and available on your system PATH.',
+              'Ensure Node.js is installed and available on your system PATH. ' +
+              'You can also set the PATH in the Environment Variables tab.',
           ),
         );
       } else {
