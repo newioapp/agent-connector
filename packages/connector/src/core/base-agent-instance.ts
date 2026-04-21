@@ -36,10 +36,17 @@ function isErrnoException(err: unknown): err is NodeJS.ErrnoException {
   return err instanceof Error && 'code' in err;
 }
 
-/** A running session with its own event queue and processing loop. */
-interface SessionRunner {
-  readonly session: AgentSession;
+/** Raw inbound event before routing. */
+type InboundEvent =
+  | { readonly type: 'message'; readonly msg: IncomingMessage }
+  | { readonly type: 'contact'; readonly event: ContactEvent }
+  | { readonly type: 'cron'; readonly event: CronTriggerEvent };
+
+/** A session slot — queue is created eagerly, session is attached once ready. */
+interface SessionSlot {
   readonly queue: EventQueue;
+  session: AgentSession | undefined;
+  readonly sessionPromise: Promise<AgentSession>;
   lastActivityAt: number;
 }
 
@@ -51,10 +58,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private _promptManager?: PromptManager;
   private _ownerDmConversationId?: string;
 
-  /** newioSessionId → running session with its own event queue */
-  private readonly runners = new Map<string, SessionRunner>();
-  /** newioSessionId → in-flight creation/resume promise (dedup concurrent calls) */
-  private readonly pendingSessions = new Map<string, Promise<SessionRunner>>();
+  /** newioSessionId → session slot (queue created eagerly, session attached lazily) */
+  private readonly slots = new Map<string, SessionSlot>();
+  /** Inbound event buffer — events captured synchronously, routed serially. */
+  private readonly inbound: InboundEvent[] = [];
+  private draining = false;
   /** Serializes session launches so only one runs at a time (protects latestMcpServer wiring). */
   private launchQueue: Promise<void> = Promise.resolve();
   private abortController?: AbortController;
@@ -138,19 +146,22 @@ export abstract class BaseAgentInstance implements AgentInstance {
         }
       });
 
-      // Wire event handlers
+      // Wire event handlers — capture synchronously into inbound queue
       app.on('message.new', (msg) => {
         if (!msg.isOwnMessage) {
-          void this.routeMessage(msg);
+          this.inbound.push({ type: 'message', msg });
+          void this.drainInbound();
         }
       });
 
       app.on('contact.event', (event) => {
-        void this.routeContactEvent(event);
+        this.inbound.push({ type: 'contact', event });
+        void this.drainInbound();
       });
 
       app.on('cron.triggered', (event) => {
-        void this.routeCronEvent(event);
+        this.inbound.push({ type: 'cron', event });
+        void this.drainInbound();
       });
 
       app.on('cron.scheduled', (def) => {
@@ -234,6 +245,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   async stop(): Promise<void> {
     log.info('Stopping agent');
+    this.setStatus('stopping');
     await this.cleanup();
     await this.onStopped();
     this.setStatus('stopped');
@@ -249,13 +261,18 @@ export abstract class BaseAgentInstance implements AgentInstance {
       this.idleTimer = undefined;
     }
 
-    // Close all session runners
-    for (const [newioSessionId, runner] of this.runners) {
-      log.debug(`Disposing session runner: ${newioSessionId}`);
-      runner.queue.close();
-      await runner.session.dispose();
+    // Drain inbound queue
+    this.inbound.length = 0;
+
+    // Close all session slots
+    for (const [newioSessionId, slot] of this.slots) {
+      log.debug(`Disposing session slot: ${newioSessionId}`);
+      slot.queue.close();
+      if (slot.session) {
+        await slot.session.dispose();
+      }
     }
-    this.runners.clear();
+    this.slots.clear();
 
     if (this.udsServer) {
       this.udsServer.close();
@@ -292,80 +309,107 @@ export abstract class BaseAgentInstance implements AgentInstance {
   }
 
   // ---------------------------------------------------------------------------
-  // Event routing
+  // Inbound queue — serial drain ensures arrival-order routing
   // ---------------------------------------------------------------------------
 
-  /** Route an incoming message to the correct session's queue. */
-  private async routeMessage(msg: IncomingMessage): Promise<void> {
-    try {
-      const runner = await this.getOrCreateRunner(msg.conversationId);
-      runner.queue.enqueueMessage(msg);
-    } catch (err: unknown) {
-      log.error(`Failed to route message for ${msg.conversationId}`, err);
+  /** Drain the inbound queue serially. Events are routed one at a time to preserve order. */
+  private async drainInbound(): Promise<void> {
+    if (this.draining) {
+      return;
     }
-  }
-
-  /** Route a contact event to the owner DM session's queue. */
-  private async routeContactEvent(event: ContactEvent): Promise<void> {
+    this.draining = true;
     try {
-      const convId = await this.app.getOwnerDmConversationId();
-      if (!convId) {
-        log.warn(`Cannot route contact event — no owner DM conversation`);
-        return;
+      while (this.inbound.length > 0) {
+        const event = this.inbound.shift();
+        if (!event) {
+          break;
+        }
+        try {
+          await this.routeInboundEvent(event);
+        } catch (err: unknown) {
+          log.error('Failed to route inbound event', err);
+        }
       }
-      const runner = await this.getOrCreateRunner(convId);
-      runner.queue.enqueueContact(event);
-    } catch (err: unknown) {
-      log.error('Failed to route contact event', err);
+    } finally {
+      this.draining = false;
     }
   }
 
-  /** Route a cron trigger to the session that created the cron job. Restarts idle sessions. */
-  private async routeCronEvent(event: CronTriggerEvent): Promise<void> {
-    try {
-      const runner = await this.getOrCreateRunnerBySessionId(event.newioSessionId);
-      runner.queue.enqueueCron(event);
-    } catch (err: unknown) {
-      log.error(`Failed to route cron event ${event.cronId}`, err);
+  /** Resolve session and enqueue to the per-session EventQueue (created eagerly). */
+  private async routeInboundEvent(event: InboundEvent): Promise<void> {
+    switch (event.type) {
+      case 'message': {
+        const slot = await this.getOrCreateSlot(event.msg.conversationId);
+        slot.queue.enqueueMessage(event.msg);
+        break;
+      }
+      case 'contact': {
+        const convId = await this.app.getOwnerDmConversationId();
+        if (!convId) {
+          log.warn('Cannot route contact event — no owner DM conversation');
+          return;
+        }
+        const slot = await this.getOrCreateSlot(convId);
+        slot.queue.enqueueContact(event.event);
+        break;
+      }
+      case 'cron': {
+        const slot = this.getOrCreateSlotBySessionId(event.event.newioSessionId);
+        slot.queue.enqueueCron(event.event);
+        break;
+      }
     }
   }
 
   // ---------------------------------------------------------------------------
-  // Session routing
+  // Session slot management
   // ---------------------------------------------------------------------------
 
   /**
-   * Get or create a SessionRunner for a conversation.
-   * Resolves conversationId → newioSessionId, then delegates to getOrCreateRunnerBySessionId.
+   * Get or create a SessionSlot for a conversation.
+   * Resolves conversationId → newioSessionId, then delegates to getOrCreateSlotBySessionId.
    */
-  private async getOrCreateRunner(conversationId: string): Promise<SessionRunner> {
+  private async getOrCreateSlot(conversationId: string): Promise<SessionSlot> {
     const newioSessionId = await this.app.resolveSessionId(conversationId);
-    return this.getOrCreateRunnerBySessionId(newioSessionId);
+    return this.getOrCreateSlotBySessionId(newioSessionId);
   }
 
   /**
-   * Get or create a SessionRunner by newioSessionId directly.
-   * Returns existing runner if live, otherwise launches a new session (serialized).
+   * Get or create a SessionSlot by newioSessionId.
+   * The queue is created eagerly. Session creation happens in the background.
    */
-  private async getOrCreateRunnerBySessionId(newioSessionId: string): Promise<SessionRunner> {
-    const existing = this.runners.get(newioSessionId);
+  private getOrCreateSlotBySessionId(newioSessionId: string): SessionSlot {
+    const existing = this.slots.get(newioSessionId);
     if (existing) {
       existing.lastActivityAt = Date.now();
       return existing;
     }
 
-    const pending = this.pendingSessions.get(newioSessionId);
-    if (pending) {
-      return pending;
-    }
+    const queue = new EventQueue();
+    const sessionPromise = this.enqueueLaunch(newioSessionId);
 
-    const promise = this.enqueueLaunch(newioSessionId);
-    this.pendingSessions.set(newioSessionId, promise);
-    try {
-      return await promise;
-    } finally {
-      this.pendingSessions.delete(newioSessionId);
-    }
+    const slot: SessionSlot = {
+      queue,
+      session: undefined,
+      sessionPromise,
+      lastActivityAt: Date.now(),
+    };
+    this.slots.set(newioSessionId, slot);
+
+    // Start the processing loop once the session is ready
+    void sessionPromise.then(
+      (session) => {
+        slot.session = session;
+        void this.runSessionLoop(newioSessionId, slot);
+      },
+      (err: unknown) => {
+        log.error(`Session creation failed for ${newioSessionId}, closing slot`, err);
+        queue.close();
+        this.slots.delete(newioSessionId);
+      },
+    );
+
+    return slot;
   }
 
   /**
@@ -373,8 +417,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
    * This ensures the MCP bridge that connects during launch is correctly
    * wired to the right newioSessionId via `latestMcpServer`.
    */
-  private enqueueLaunch(newioSessionId: string): Promise<SessionRunner> {
-    const launch = this.launchQueue.then(() => this.launchRunner(newioSessionId));
+  private enqueueLaunch(newioSessionId: string): Promise<AgentSession> {
+    const launch = this.launchQueue.then(() => this.launchSession(newioSessionId));
     this.launchQueue = launch.then(
       () => {},
       (err: unknown) => {
@@ -384,8 +428,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
     return launch;
   }
 
-  /** Launch a session runner — create or resume the session, wire MCP, start its processing loop. */
-  private async launchRunner(newioSessionId: string): Promise<SessionRunner> {
+  /** Launch a session — create or resume, wire MCP and status hooks. */
+  private async launchSession(newioSessionId: string): Promise<AgentSession> {
     if (this.abortController?.signal.aborted) {
       throw new Error('Agent is stopping — session launch aborted');
     }
@@ -417,18 +461,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
       this.handlePermissionRequest(title, options, conversationId),
     );
 
-    const runner: SessionRunner = {
-      session,
-      queue: new EventQueue(),
-      lastActivityAt: Date.now(),
-    };
-    this.runners.set(newioSessionId, runner);
-    log.info(`New runner: newio=${newioSessionId} → correlation=${session.correlationId}`);
-
-    // Start the per-session processing loop (runs concurrently)
-    void this.runSessionLoop(newioSessionId, runner);
-
-    return runner;
+    log.info(`Session ready: newio=${newioSessionId} → correlation=${session.correlationId}`);
+    return session;
   }
 
   /** Resume an existing session, falling back to a new session on failure. */
@@ -463,9 +497,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** Get a live session by its correlation ID, if running. */
   protected getLiveSession(correlationId: string): AgentSession | undefined {
-    for (const runner of this.runners.values()) {
-      if (runner.session.correlationId === correlationId) {
-        return runner.session;
+    for (const slot of this.slots.values()) {
+      if (slot.session?.correlationId === correlationId) {
+        return slot.session;
       }
     }
     return undefined;
@@ -473,8 +507,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** Get or create a session for a conversation. Used by subclasses (e.g., greeting). */
   protected async getOrCreateSession(conversationId: string): Promise<AgentSession> {
-    const runner = await this.getOrCreateRunner(conversationId);
-    return runner.session;
+    const newioSessionId = await this.app.resolveSessionId(conversationId);
+    const slot = this.getOrCreateSlotBySessionId(newioSessionId);
+    return slot.sessionPromise;
   }
 
   // ---------------------------------------------------------------------------
@@ -562,10 +597,14 @@ export abstract class BaseAgentInstance implements AgentInstance {
   // ---------------------------------------------------------------------------
 
   /** Process events for a single session. Runs until the queue is closed. */
-  private async runSessionLoop(newioSessionId: string, runner: SessionRunner): Promise<void> {
-    for await (const event of runner.queue.events()) {
-      runner.lastActivityAt = Date.now();
-      await this.processEvent(event, runner.session);
+  private async runSessionLoop(newioSessionId: string, slot: SessionSlot): Promise<void> {
+    const session = slot.session;
+    if (!session) {
+      return;
+    }
+    for await (const event of slot.queue.events()) {
+      slot.lastActivityAt = Date.now();
+      await this.processEvent(event, session);
     }
     log.debug(`Session loop ended: ${newioSessionId}`);
   }
@@ -663,18 +702,16 @@ export abstract class BaseAgentInstance implements AgentInstance {
       const timeout = this.config.sessionIdleTimeoutMs ?? DEFAULT_SESSION_IDLE_TIMEOUT_MS;
       const now = Date.now();
 
-      for (const [newioSessionId, runner] of this.runners) {
-        if (!runner.session.disposable) {
+      for (const [newioSessionId, slot] of this.slots) {
+        if (!slot.session?.disposable) {
           continue;
         }
-        if (now - runner.lastActivityAt > timeout) {
-          log.info(
-            `Idle session cleanup: ${newioSessionId} (idle ${Math.round((now - runner.lastActivityAt) / 1000)}s)`,
-          );
-          runner.queue.close();
-          await runner.session.dispose();
-          this.onSessionDisposed(runner.session.correlationId);
-          this.runners.delete(newioSessionId);
+        if (now - slot.lastActivityAt > timeout) {
+          log.info(`Idle session cleanup: ${newioSessionId} (idle ${Math.round((now - slot.lastActivityAt) / 1000)}s)`);
+          slot.queue.close();
+          await slot.session.dispose();
+          this.onSessionDisposed(slot.session.correlationId);
+          this.slots.delete(newioSessionId);
         }
       }
     } finally {

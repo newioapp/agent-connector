@@ -55,6 +55,7 @@ export function resolveCommand(
 
 export type AgentRuntimeStatus =
   | 'stopped'
+  | 'stopping'
   | 'starting'
   | 'awaiting_approval'
   | 'initializing'
