@@ -13,6 +13,7 @@ import { Button } from './ui';
 
 const STATUS_LABELS: Record<string, string> = {
   stopped: 'Stopped',
+  stopping: 'Stopping…',
   starting: 'Connecting to Newio…',
   awaiting_approval: 'Awaiting approval',
   initializing: 'Initializing…',
@@ -23,6 +24,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 const STATUS_CLASSES: Record<string, string> = {
   stopped: 'text-muted-foreground',
+  stopping: 'text-warning',
   starting: 'text-warning',
   awaiting_approval: 'text-warning',
   initializing: 'text-warning',
@@ -33,6 +35,7 @@ const STATUS_CLASSES: Record<string, string> = {
 
 const DOT_CLASSES: Record<string, string> = {
   stopped: 'bg-muted-foreground',
+  stopping: 'bg-warning',
   starting: 'bg-warning',
   awaiting_approval: 'bg-warning',
   initializing: 'bg-warning',
@@ -64,6 +67,7 @@ export function AgentDetailPanel({
   const { config } = agent;
   const isStopped = agent.runtimeStatus === 'stopped' || agent.runtimeStatus === 'error';
   const isRunning = agent.runtimeStatus === 'running';
+  const isStopping = agent.runtimeStatus === 'stopping';
   const isBusy =
     agent.runtimeStatus === 'starting' ||
     agent.runtimeStatus === 'awaiting_approval' ||
@@ -117,6 +121,12 @@ export function AgentDetailPanel({
             <Button variant="danger" onClick={() => void stopAgent(agent.id)}>
               <Square size={12} />
               Stop
+            </Button>
+          )}
+          {isStopping && (
+            <Button variant="danger" disabled>
+              <Loader2 size={12} className="animate-spin" />
+              Stopping
             </Button>
           )}
           {isBusy && (

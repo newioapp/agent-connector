@@ -304,9 +304,7 @@ export function ConfigTab({
             )}
             {agent.runtimeStatus === 'running' && modes && modes.options.length > 0 && (
               <div className="mb-3">
-                <div className="mb-1 text-xs font-medium text-muted-foreground">
-                  {config.type === 'kiro-cli' ? 'Custom Agent (ACP Mode)' : 'Mode'}
-                </div>
+                <div className="mb-1 text-xs font-medium text-muted-foreground">Mode</div>
                 <Dropdown
                   options={modes.options.map((m) => ({ value: m.id, label: m.name }))}
                   value={modes.selectedId}
