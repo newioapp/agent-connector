@@ -9,6 +9,9 @@ import type { SessionStore } from './session-store';
 import type { AgentRuntimeStatus, AgentInfo } from './types';
 import type { AgentInstance, AgentSessionConfig, ConfigureAgentInput } from './agent-instance';
 import { AcpAgentInstance } from './acp-agent-instance';
+import { Logger } from './logger';
+
+const log = new Logger('agent-runtime-manager');
 
 export interface StatusListener {
   onStatusChanged(agentId: string, status: AgentRuntimeStatus, error?: string): void;
@@ -91,6 +94,7 @@ export class AgentRuntimeManager {
     const instance = new AcpAgentInstance(config, this.configManager, this.sessionStore, instanceListener);
 
     this.instances.set(agentId, instance);
+    log.info(`Starting agent ${agentId} (${username ?? 'no username'})`);
     void instance.start();
   }
 
@@ -99,13 +103,17 @@ export class AgentRuntimeManager {
     if (!instance) {
       return;
     }
+    log.info(`Stopping agent ${agentId}`);
     await instance.stop();
     this.instances.delete(agentId);
+    log.info(`Agent ${agentId} stopped and removed`);
   }
 
   async stopAll(): Promise<void> {
     const ids = [...this.instances.keys()];
+    log.info(`Stopping all agents (${String(ids.length)})`);
     await Promise.all(ids.map((id) => this.stop(id)));
+    log.info('All agents stopped');
   }
 
   getAgentInfo(agentId: string): AgentInfo | undefined {

@@ -55,6 +55,7 @@ export function resolveCommand(
 
 export type AgentRuntimeStatus =
   | 'stopped'
+  | 'stopping'
   | 'starting'
   | 'awaiting_approval'
   | 'initializing'
@@ -119,6 +120,9 @@ export interface AgentConfig {
   /** Environment variables passed to the agent process. */
   readonly envVars: Readonly<Record<string, string>>;
 
+  /** Shell used to source envVars (e.g. "/bin/zsh"). */
+  readonly envVarsShell?: string;
+
   readonly acp?: AcpConfig;
 }
 
@@ -137,6 +141,7 @@ export interface UpdateAgentInput {
   readonly displayName?: string;
   readonly newioUsername?: string;
   readonly envVars?: Readonly<Record<string, string>>;
+  readonly envVarsShell?: string;
   readonly acp?: AcpConfig;
 }
 

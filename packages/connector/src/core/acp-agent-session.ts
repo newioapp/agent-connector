@@ -23,20 +23,21 @@ export interface AcpAgentSessionInit {
   readonly connection: ClientSideConnection;
   readonly sessionResponse: NewSessionResponse | LoadSessionResponse;
   readonly disposable: boolean;
+  readonly username?: string;
 }
 
 export class AcpAgentSession implements AgentSession {
   readonly sessionId: string;
   readonly correlationId: string;
 
-  disposable: boolean;
+  readonly disposable: boolean;
 
   private readonly connection: ClientSideConnection;
   private readonly configHandler: AcpSessionConfigHandler;
+  private readonly logTag: string;
   private stream?: AcpSessionStream;
   private statusListener: SessionStatusListener = () => {};
   private permissionHandler: PermissionHandler = () => Promise.reject(new Error('Permission request is unsupported'));
-  private prompting = false;
   private _currentConversationId: string | undefined = undefined;
 
   constructor(init: AcpAgentSessionInit) {
@@ -44,6 +45,7 @@ export class AcpAgentSession implements AgentSession {
     this.correlationId = init.correlationId;
     this.disposable = init.disposable;
     this.connection = init.connection;
+    this.logTag = init.username ? `[${init.username}]` : '';
     this.configHandler = new AcpSessionConfigHandler(init.correlationId, init.connection, init.sessionResponse);
   }
 
@@ -84,7 +86,6 @@ export class AcpAgentSession implements AgentSession {
   }
 
   async *prompt(text: string, conversationId?: string): AsyncGenerator<SessionStreamSegment> {
-    this.prompting = true;
     this._currentConversationId = conversationId;
     const stream = new AcpSessionStream(this.statusListener, conversationId);
     this.stream = stream;
@@ -97,11 +98,11 @@ export class AcpAgentSession implements AgentSession {
       .then((result) => {
         stream.finish();
         if (result.stopReason !== 'end_turn') {
-          log.warn(`[${this.correlationId}] Prompt ended with stop reason: ${result.stopReason}`);
+          log.warn(`${this.logTag} [${this.correlationId}] Prompt ended with stop reason: ${result.stopReason}`);
         }
       })
       .catch((err: unknown) => {
-        log.error(`[${this.correlationId}] Prompt failed`, err);
+        log.error(`${this.logTag} [${this.correlationId}] Prompt failed`, err);
         stream.finish();
         throw err;
       });
@@ -111,7 +112,6 @@ export class AcpAgentSession implements AgentSession {
       await promptDone;
     } finally {
       this.stream = undefined;
-      this.prompting = false;
       const convId = this._currentConversationId;
       this._currentConversationId = undefined;
       this.statusListener('idle', convId);
@@ -120,24 +120,16 @@ export class AcpAgentSession implements AgentSession {
 
   async dispose(): Promise<void> {
     if (!this.disposable) {
-      log.info(`[${this.correlationId}] Session is not disposable, skipping dispose`);
+      log.info(`${this.logTag} [${this.correlationId}] Session is not disposable, skipping dispose`);
       return;
-    }
-    if (this.prompting) {
-      log.info(`[${this.correlationId}] Cancelling in-flight prompt...`);
-      try {
-        await this.connection.cancel({ sessionId: this.correlationId });
-      } catch (err: unknown) {
-        log.debug(`[${this.correlationId}] Cancel failed (expected if already done)`, err);
-      }
     }
     this.stream?.finish();
     try {
       await this.connection.unstable_closeSession({ sessionId: this.correlationId });
     } catch (err: unknown) {
-      log.debug(`[${this.correlationId}] closeSession failed (best-effort)`, err);
+      log.debug(`${this.logTag} [${this.correlationId}] closeSession failed (best-effort)`, err);
     }
-    log.info(`[${this.correlationId}] Session disposed`);
+    log.info(`${this.logTag} [${this.correlationId}] Session disposed`);
   }
 
   // ---------------------------------------------------------------------------
@@ -161,7 +153,7 @@ export class AcpAgentSession implements AgentSession {
       const selectedOptionId = await this.permissionHandler(title, params.options, this._currentConversationId);
       return { outcome: { outcome: 'selected' as const, optionId: selectedOptionId } };
     } catch (err: unknown) {
-      log.warn('Permission request failed', err);
+      log.warn(`${this.logTag} Permission request failed`, err);
       return { outcome: { outcome: 'cancelled' as const } };
     }
   }
