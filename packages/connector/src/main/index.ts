@@ -18,6 +18,7 @@ setLogLevel(__LOG_LEVEL__);
 
 // Route SDK logs through the connector's Logger (respects global log level)
 const sdkLoggers = new Map<string, Logger>();
+const log = new Logger('app');
 setLogHandler((level, name, message, args) => {
   let logger = sdkLoggers.get(name);
   if (!logger) {
@@ -107,8 +108,10 @@ void app.whenReady().then(async () => {
 
   app.on('before-quit', (event) => {
     if (!cleanedUp) {
+      log.info('before-quit: starting cleanup');
       event.preventDefault();
       void cleanup().finally(() => {
+        log.info('before-quit: cleanup complete, quitting');
         cleanedUp = true;
         app.quit();
       });
@@ -119,12 +122,17 @@ void app.whenReady().then(async () => {
   // and child processes keep the event loop alive via stdio pipes.
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.on(signal, () => {
+      log.info(`Received ${signal}`);
       if (cleanedUp) {
+        log.info(`${signal}: already cleaned up, exiting`);
         app.exit(0);
         return;
       }
       cleanedUp = true;
-      void cleanup().finally(() => app.exit(0));
+      void cleanup().finally(() => {
+        log.info(`${signal}: cleanup complete, exiting`);
+        app.exit(0);
+      });
     });
   }
 });
