@@ -54,6 +54,12 @@ export abstract class BaseAgentInstance implements AgentInstance {
   status: AgentRuntimeStatus = 'stopped';
   error?: string;
 
+  /** Log prefix including the agent's username when available. */
+  protected get logTag(): string {
+    const u = this.config.newio?.username;
+    return u ? `[${u}]` : '';
+  }
+
   private _app?: NewioApp;
   private _promptManager?: PromptManager;
   private _ownerDmConversationId?: string;
@@ -92,11 +98,15 @@ export abstract class BaseAgentInstance implements AgentInstance {
     const abortController = new AbortController();
     this.abortController = abortController;
     this.setStatus('starting');
-    log.info('Starting agent');
+    log.info(`${this.logTag} Starting agent`);
 
     try {
       const storedTokens = this.configManager.getTokens(this.config.id);
-      log.debug(storedTokens ? 'Found persisted tokens' : 'No persisted tokens, will run auth flow');
+      log.debug(
+        storedTokens
+          ? `${this.logTag} Found persisted tokens`
+          : `${this.logTag} No persisted tokens, will run auth flow`,
+      );
 
       this._app = await NewioApp.create({
         agentId: this.config.newio?.agentId,
@@ -108,7 +118,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         tokens: storedTokens,
         signal: abortController.signal,
         onApprovalUrl: (url) => {
-          log.info('Awaiting approval', url);
+          log.info(`${this.logTag} Awaiting approval`, url);
           this.listener.onApprovalUrl(url);
           this.setStatus('awaiting_approval');
         },
@@ -116,7 +126,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
           this.listener.onPollAttempt();
         },
         onTokens: (tokens) => {
-          log.debug('Tokens received, persisting');
+          log.debug(`${this.logTag} Tokens received, persisting`);
           this.configManager.setTokens(this.config.id, tokens);
         },
       });
@@ -125,7 +135,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
       // Sync profile to config
       const { userId, username, displayName } = app.identity;
-      log.info(`Authenticated as ${username} (${userId})`);
+      log.info(`${this.logTag} Authenticated as ${username} (${userId})`);
       this.configManager.setNewioIdentity(this.config.id, {
         agentId: userId,
         username,
@@ -142,7 +152,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
       app.onDisconnect(() => {
         if (!abortController.signal.aborted) {
-          log.warn('WebSocket disconnected unexpectedly');
+          log.warn(`${this.logTag} WebSocket disconnected unexpectedly`);
         }
       });
 
@@ -177,9 +187,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
       for (const cron of savedCrons) {
         try {
           app.scheduleCron(cron);
-          log.info(`Restored cron ${cron.cronId}: "${cron.label}"`);
+          log.info(`${this.logTag} Restored cron ${cron.cronId}: "${cron.label}"`);
         } catch (err: unknown) {
-          log.warn(`Failed to restore cron ${cron.cronId}`, err);
+          log.warn(`${this.logTag} Failed to restore cron ${cron.cronId}`, err);
           this.sessionStore.deleteCron(cron.cronId);
         }
       }
@@ -190,23 +200,23 @@ export abstract class BaseAgentInstance implements AgentInstance {
       this.udsServer = startUdsServer({
         socketPath: mcpSocketPath,
         onConnection: (transport) => {
-          log.info(`MCP client connected via ${mcpSocketPath}`);
+          log.info(`${this.logTag} MCP client connected via ${mcpSocketPath}`);
           if (this.pendingMcpServer) {
-            log.warn('New MCP connection arrived before previous one was wired to a session');
+            log.warn(`${this.logTag} New MCP connection arrived before previous one was wired to a session`);
           }
           const mcpServer = new NewioMcpServer(app);
           this.pendingMcpServer = mcpServer;
           void mcpServer.connect(transport);
         },
       });
-      log.info(`MCP UDS server listening on ${mcpSocketPath}`);
+      log.info(`${this.logTag} MCP UDS server listening on ${mcpSocketPath}`);
 
       this.startIdleCleanup();
 
       const ownerDmConversationId = await this.getOwnerDmOrThrow();
       this._ownerDmConversationId = ownerDmConversationId;
       await this.onConnected(ownerDmConversationId);
-      log.info('Agent running');
+      log.info(`${this.logTag} Agent running`);
       this.setStatus('running');
     } catch (err: unknown) {
       const wasAborted = abortController.signal.aborted;
@@ -214,42 +224,42 @@ export abstract class BaseAgentInstance implements AgentInstance {
       await this.onStopped();
 
       if (wasAborted) {
-        log.info('Start aborted');
+        log.info(`${this.logTag} Start aborted`);
         return;
       }
 
       if (err instanceof ApprovalTimeoutError) {
-        log.warn('Approval timed out');
+        log.warn(`${this.logTag} Approval timed out`);
         this.setStatus('error', 'Approval timed out. Please try starting the agent again.');
       } else if (err instanceof NotFoundApiError) {
         const username = this.config.newio?.username;
-        log.warn('Agent not found', username);
+        log.warn(`${this.logTag} Agent not found`, username);
         this.setStatus('error', `Agent "${username ?? 'unknown'}" not found. Check the Newio Username and try again.`);
       } else if (err instanceof Error && err.message.includes('WebSocket closed before open')) {
-        log.warn('WebSocket connection rejected — likely a duplicate session');
+        log.warn(`${this.logTag} WebSocket connection rejected — likely a duplicate session`);
         this.setStatus('error', 'Connection rejected. This agent may already be running in another instance.');
       } else if (isErrnoException(err) && err.code === 'ENOENT') {
         const executable = this.config.acp ? resolveCommand(this.config.type, this.config.acp).command : 'unknown';
-        log.warn(`Executable not found: ${executable}`);
+        log.warn(`${this.logTag} Executable not found: ${executable}`);
         this.setStatus(
           'error',
           `"${executable}" not found. Make sure it is installed and available on your system PATH, or set the executable path in the agent config.\n\n${err.stack ?? err.message}`,
         );
       } else {
         const message = extractErrorMessage(err);
-        log.error('Failed to start', err instanceof Error ? (err.stack ?? message) : message);
+        log.error(`${this.logTag} Failed to start`, err instanceof Error ? (err.stack ?? message) : message);
         this.setStatus('error', message);
       }
     }
   }
 
   async stop(): Promise<void> {
-    log.info('Stopping agent');
+    log.info(`${this.logTag} Stopping agent`);
     this.setStatus('stopping');
     await this.cleanup();
     await this.onStopped();
     this.setStatus('stopped');
-    log.info('Agent stopped');
+    log.info(`${this.logTag} Agent stopped`);
   }
 
   /** Shared cleanup — tears down sessions, MCP server, WebSocket, and timers. */
@@ -266,7 +276,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
     // Close all session slots
     for (const [newioSessionId, slot] of this.slots) {
-      log.debug(`Disposing session slot: ${newioSessionId}`);
+      log.debug(`${this.logTag} Disposing session slot: ${newioSessionId}`);
       slot.queue.close();
       if (slot.session) {
         await slot.session.dispose();
@@ -277,7 +287,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
     if (this.udsServer) {
       this.udsServer.close();
       this.udsServer = undefined;
-      log.debug('MCP UDS server closed');
+      log.debug(`${this.logTag} MCP UDS server closed`);
     }
 
     if (this._app) {
@@ -327,7 +337,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         try {
           await this.routeInboundEvent(event);
         } catch (err: unknown) {
-          log.error('Failed to route inbound event', err);
+          log.error(`${this.logTag} Failed to route inbound event`, err);
         }
       }
     } finally {
@@ -346,7 +356,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       case 'contact': {
         const convId = await this.app.getOwnerDmConversationId();
         if (!convId) {
-          log.warn('Cannot route contact event — no owner DM conversation');
+          log.warn(`${this.logTag} Cannot route contact event — no owner DM conversation`);
           return;
         }
         const slot = await this.getOrCreateSlot(convId);
@@ -403,7 +413,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         void this.runSessionLoop(newioSessionId, slot);
       },
       (err: unknown) => {
-        log.error(`Session creation failed for ${newioSessionId}, closing slot`, err);
+        log.error(`${this.logTag} Session creation failed for ${newioSessionId}, closing slot`, err);
         queue.close();
         this.slots.delete(newioSessionId);
       },
@@ -422,7 +432,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
     this.launchQueue = launch.then(
       () => {},
       (err: unknown) => {
-        log.error(`Session launch failed for ${newioSessionId}`, err);
+        log.error(`${this.logTag} Session launch failed for ${newioSessionId}`, err);
       },
     );
     return launch;
@@ -445,7 +455,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       this.pendingMcpServer.setSessionIdGetter(() => session.sessionId);
       this.pendingMcpServer.setCurrentConversationIdGetter(() => session.currentConversationId);
       this.pendingMcpServer = undefined;
-      log.debug(`Wired sessionId ${newioSessionId} to pending MCP server`);
+      log.debug(`${this.logTag} Wired sessionId ${newioSessionId} to pending MCP server`);
     }
 
     // Wire status listener
@@ -453,7 +463,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
       if (conversationId) {
         this.app.setStatus(status, conversationId);
       } else {
-        log.info(`Status '${status}' from session ${session.correlationId} dropped — no active conversation mapped.`);
+        log.info(
+          `${this.logTag} Status '${status}' from session ${session.correlationId} dropped — no active conversation mapped.`,
+        );
       }
     });
 
@@ -461,19 +473,19 @@ export abstract class BaseAgentInstance implements AgentInstance {
       this.handlePermissionRequest(title, options, conversationId),
     );
 
-    log.info(`Session ready: newio=${newioSessionId} → correlation=${session.correlationId}`);
+    log.info(`${this.logTag} Session ready: newio=${newioSessionId} → correlation=${session.correlationId}`);
     return session;
   }
 
   /** Resume an existing session, falling back to a new session on failure. */
   private async resumeOrCreateSession(newioSessionId: string, correlationId: string): Promise<AgentSession> {
-    log.info(`Resuming session: correlation=${correlationId}`);
+    log.info(`${this.logTag} Resuming session: correlation=${correlationId}`);
     try {
       return await this.resumeSession(newioSessionId, correlationId);
     } catch (err) {
-      log.warn(`Failed to resume session ${correlationId}, falling back to new session`, err);
+      log.warn(`${this.logTag} Failed to resume session ${correlationId}, falling back to new session`, err);
       if (this.pendingMcpServer) {
-        log.debug('Clearing pending MCP server after session resume failure');
+        log.debug(`${this.logTag} Clearing pending MCP server after session resume failure`);
         this.pendingMcpServer = undefined;
       }
       return this.createAndStoreSession(newioSessionId);
@@ -488,7 +500,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       return session;
     } catch (err) {
       if (this.pendingMcpServer) {
-        log.debug('Clearing pending MCP server after session creation failure');
+        log.debug(`${this.logTag} Clearing pending MCP server after session creation failure`);
         this.pendingMcpServer = undefined;
       }
       throw err;
@@ -579,7 +591,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       throw new Error('Cannot route permission request — agent has no owner');
     }
     const convId = conversationId ?? this.ownerDmConversationId;
-    log.info(`Sending permission request ${requestId} to ${convId}`);
+    log.info(`${this.logTag} Sending permission request ${requestId} to ${convId}`);
     const response = await this.app.sendActionRequest(convId, action, [ownerId]);
     return response.selectedOptionId;
   }
@@ -606,7 +618,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       slot.lastActivityAt = Date.now();
       await this.processEvent(event, session);
     }
-    log.debug(`Session loop ended: ${newioSessionId}`);
+    log.debug(`${this.logTag} Session loop ended: ${newioSessionId}`);
   }
 
   /** Dispatch an event to the appropriate handler. */
@@ -642,7 +654,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';
-      log.error(`Prompt/send failed for ${conversationId}: ${errMsg}`);
+      log.error(`${this.logTag} Prompt/send failed for ${conversationId}: ${errMsg}`);
     } finally {
       this.app.setStatus('idle', conversationId);
     }
@@ -650,35 +662,35 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   private async processContactBatch(session: AgentSession, events: readonly ContactEvent[]): Promise<void> {
     const userText = this.promptManager.formatContactPrompt(events);
-    log.debug(`Processing ${String(events.length)} contact event(s) in session ${session.sessionId}`);
+    log.debug(`${this.logTag} Processing ${String(events.length)} contact event(s) in session ${session.sessionId}`);
 
     try {
       for await (const segment of session.prompt(userText)) {
         const text = segment.text.trim();
         if (segment.type === 'agent_message_chunk' && text && text.toLowerCase() !== '_skip') {
-          log.debug(`Contact event response (discarded): ${text.substring(0, 100)}`);
+          log.debug(`${this.logTag} Contact event response (discarded): ${text.substring(0, 100)}`);
         }
       }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';
-      log.error(`Contact event processing failed: ${errMsg}`);
+      log.error(`${this.logTag} Contact event processing failed: ${errMsg}`);
     }
   }
 
   private async processCronTrigger(session: AgentSession, job: CronTriggerEvent): Promise<void> {
     const userText = this.promptManager.formatCronPrompt(job);
-    log.debug(`Processing cron ${job.cronId} ("${job.label}") in session ${session.sessionId}`);
+    log.debug(`${this.logTag} Processing cron ${job.cronId} ("${job.label}") in session ${session.sessionId}`);
 
     try {
       for await (const segment of session.prompt(userText)) {
         const text = segment.text.trim();
         if (segment.type === 'agent_message_chunk' && text && text.toLowerCase() !== '_skip') {
-          log.debug(`Cron response (discarded): ${text.substring(0, 100)}`);
+          log.debug(`${this.logTag} Cron response (discarded): ${text.substring(0, 100)}`);
         }
       }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';
-      log.error(`Cron processing failed for ${job.cronId}: ${errMsg}`);
+      log.error(`${this.logTag} Cron processing failed for ${job.cronId}: ${errMsg}`);
     }
   }
 
@@ -707,7 +719,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
           continue;
         }
         if (now - slot.lastActivityAt > timeout) {
-          log.info(`Idle session cleanup: ${newioSessionId} (idle ${Math.round((now - slot.lastActivityAt) / 1000)}s)`);
+          log.info(
+            `${this.logTag} Idle session cleanup: ${newioSessionId} (idle ${Math.round((now - slot.lastActivityAt) / 1000)}s)`,
+          );
           slot.queue.close();
           await slot.session.dispose();
           this.onSessionDisposed(slot.session.correlationId);
