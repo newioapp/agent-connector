@@ -1,5 +1,5 @@
 appId: dev.newio.connector
-productName: Newio Agent Connector
+productName: Agent Connector
 directories:
   buildResources: build
 files:
@@ -18,11 +18,12 @@ publish:
 
 # --- macOS ---
 mac:
+  icon: build/icon.icon
   entitlementsInherit: build/entitlements.mac.plist
   hardenedRuntime: true
   gatekeeperAssess: false
   notarize: true
-  artifactName: newio-agent-connector-${version}-mac-${arch}.${ext}
+  artifactName: agent-connector-${version}-mac-${arch}.${ext}
   target:
     - dmg
     - zip
@@ -32,7 +33,7 @@ dmg:
 # --- Linux ---
 linux:
   category: Network;Development
-  artifactName: newio-agent-connector-${version}-linux-${arch}.${ext}
+  artifactName: agent-connector-${version}-linux-${arch}.${ext}
   target:
     - AppImage
     - deb

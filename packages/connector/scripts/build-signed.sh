@@ -16,6 +16,6 @@ rm -rf dist
 pnpm exec electron-vite build
 
 pnpm exec electron-builder --mac --arm64 \
-  -c.productName="${APP_DISPLAY_NAME:-Newio Agent Connector}"
+  -c.productName="${APP_DISPLAY_NAME:-Agent Connector}"
 
-echo "✓ Build complete: dist/mac-arm64/${APP_DISPLAY_NAME:-Newio Agent Connector}.app"
+echo "✓ Build complete: dist/mac-arm64/${APP_DISPLAY_NAME:-Agent Connector}.app"

@@ -64,7 +64,7 @@ export function initAutoUpdater(store: Store<StoreSchema>): void {
       .showMessageBox(win, {
         type: 'info',
         title: 'Update Ready',
-        message: `Newio Agent Connector ${info.version} is ready to install.`,
+        message: `Agent Connector ${info.version} is ready to install.`,
         detail: 'The update will be applied when you restart the app.',
         buttons: ['Restart Now', 'Later'],
         defaultId: 0,
@@ -154,7 +154,7 @@ export function initForceUpdateCheck(apiBaseUrl: string): void {
       const { response } = await dialog.showMessageBox(win, {
         type: 'warning',
         title: 'Update Required',
-        message: 'This version of Newio Agent Connector is no longer supported.',
+        message: 'This version of Agent Connector is no longer supported.',
         detail: `Please update to version ${result.latestVersion} or later to continue.`,
         buttons: ['Download Update', 'Quit'],
         defaultId: 0,
@@ -188,7 +188,7 @@ export function manualCheckForUpdates(): void {
             type: 'info',
             title: 'No Updates',
             message: "You're up to date!",
-            detail: `Newio Agent Connector ${currentVersion} is the latest version.`,
+            detail: `Agent Connector ${currentVersion} is the latest version.`,
             buttons: ['OK'],
           });
         }
