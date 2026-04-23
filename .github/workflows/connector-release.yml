@@ -70,7 +70,8 @@ jobs:
 
   build-mac:
     needs: prepare
-    runs-on: ${{ matrix.arch == 'x64' && 'macos-15-intel' || 'macos-latest' }}
+    # macOS 26 required for .icon asset catalog (actool crashes on macOS 15)
+    runs-on: ${{ matrix.arch == 'x64' && 'macos-26-intel' || 'macos-26' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -111,12 +112,6 @@ jobs:
           security import $CERT_PATH -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
           security set-key-partition-list -S apple-tool:,apple: -k "" $KEYCHAIN_PATH
           security list-keychains -d user -s $KEYCHAIN_PATH login.keychain-db
-
-      - name: Select Xcode 26 (required for .icon asset catalog)
-        run: |
-          XCODE_26=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
-          echo "Using $XCODE_26"
-          sudo xcode-select -s "$XCODE_26/Contents/Developer"
 
       - name: Build Electron app
         run: pnpm --filter @newio/connector exec electron-builder --mac --${{ matrix.arch }} -c.productName="${{ needs.prepare.outputs.app_display_name }}"
