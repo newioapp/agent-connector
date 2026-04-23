@@ -3,7 +3,7 @@
  * MCP stdio-to-UDS bridge.
  *
  * Spawned by an ACP agent (e.g., Kiro CLI) as a stdio MCP server.
- * Connects to the Newio Agent Connector's in-process MCP server via
+ * Connects to the Agent Connector's in-process MCP server via
  * a Unix domain socket and relays JSON-RPC messages bidirectionally.
  *
  * Usage: newio-mcp-bridge <socket-path>

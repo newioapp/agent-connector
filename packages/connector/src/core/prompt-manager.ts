@@ -131,7 +131,7 @@ Cron trigger example:
   buildGreetingPrompt() {
     const ownerName = this.app.getOwnerInfo().displayName;
     const prompt =
-      `Context: You are running as an ACP (Agent Client Protocol) agent inside the Newio Agent Connector. ` +
+      `Context: You are running as an ACP (Agent Client Protocol) agent inside the Agent Connector. ` +
       `The connector has already handled authentication and connected you to the Newio messaging platform on your behalf — you do not need to do anything to connect. ` +
       `This is a startup test to verify the connection is working. ` +
       `Your response will be sent as a message to ${ownerName} in your DM conversation.\n\n` +

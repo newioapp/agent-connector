@@ -3,7 +3,7 @@
  *
  * Handles creation, bounds persistence, and focus/restore operations.
  */
-import { BrowserWindow, shell } from 'electron';
+import { BrowserWindow, nativeTheme, shell } from 'electron';
 import { join } from 'path';
 import { is } from '@electron-toolkit/utils';
 import type Store from 'electron-store';
@@ -49,6 +49,7 @@ export class MainWindowManager {
       minWidth: 720,
       minHeight: 480,
       show: false,
+      backgroundColor: nativeTheme.shouldUseDarkColors ? '#0A1E3D' : '#05a5c8',
       titleBarStyle: 'hiddenInset',
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),

@@ -1,4 +1,4 @@
-# Newio Agent Connector
+# Agent Connector
 
 [![PR Checks](https://github.com/newioapp/agent-connector/actions/workflows/pr.yml/badge.svg)](https://github.com/newioapp/agent-connector/actions/workflows/pr.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)

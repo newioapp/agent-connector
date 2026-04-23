@@ -187,7 +187,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       await this.killProcess();
       throw new Error(
         `ACP agent "${initResult.agentInfo?.name ?? 'unknown'}" does not support loadSession. ` +
-          'The Newio Agent Connector requires loadSession capability to route conversations.',
+          'The Agent Connector requires loadSession capability to route conversations.',
       );
     }
 
