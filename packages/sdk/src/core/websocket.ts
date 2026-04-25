@@ -247,11 +247,16 @@ export class NewioWebSocket {
     if (result === 'rejected') {
       log.warn('WebSocket connection rejected during initial connect.');
       this.rejected = true;
-      this.wireWsHandlers(ws);
-      return;
+      this.detachWs(ws);
+      throw new Error('connection rejected');
+    }
+    if (result === 'timeout') {
+      log.warn('WebSocket connection timed out waiting for accepted during initial connect.');
+      this.detachWs(ws);
+      throw new Error('connection accepted timeout');
     }
 
-    log.info(result === 'accepted' ? 'WebSocket ready (accepted).' : 'WebSocket ready (accept timeout, proceeding).');
+    log.info('WebSocket ready (accepted).');
     this.setState('connected');
     this.wireWsHandlers(ws);
     this.onWsConnected();
@@ -266,64 +271,56 @@ export class NewioWebSocket {
 
   /**
    * Wait for a WebSocket to open and receive `connection.accepted` or `connection.rejected`.
-   * Resolves with 'accepted', 'rejected', or 'timeout' (if accepted never arrives).
-   * Rejects if the WS fails to open (error/close before open).
+   * Resolves with 'accepted' or 'rejected'. Rejects on timeout or connection failure.
    * Messages received between open and accepted/rejected are forwarded to handleMessage.
    */
   private waitForReady(ws: WebSocketLike): Promise<'accepted' | 'rejected' | 'timeout'> {
     return new Promise<'accepted' | 'rejected' | 'timeout'>((resolve, reject) => {
-      const openTimeout = setTimeout(() => {
-        this.detachWs(ws);
-        reject(new Error('timeout'));
-      }, 10_000);
+      let opened = false;
 
-      ws.onerror = () => {
-        clearTimeout(openTimeout);
-        reject(new Error('connection error'));
+      const timeout = setTimeout(() => {
+        log.warn(`WebSocket ready timeout after ${PROACTIVE_ACCEPT_TIMEOUT_MS}ms (opened=${String(opened)}).`);
+        resolve('timeout');
+      }, PROACTIVE_ACCEPT_TIMEOUT_MS);
+
+      ws.onopen = () => {
+        opened = true;
+        log.info('WebSocket connected, waiting for subscription setup.');
+      };
+      ws.onmessage = (ev) => {
+        if (!opened) {
+          return;
+        }
+        try {
+          const parsed: Record<string, unknown> =
+            typeof ev.data === 'string'
+              ? (JSON.parse(ev.data) as Record<string, unknown>)
+              : (ev.data as Record<string, unknown>);
+
+          if (parsed['action'] === 'connection.accepted') {
+            clearTimeout(timeout);
+            resolve('accepted');
+            return;
+          }
+          if (parsed['action'] === 'connection.rejected') {
+            clearTimeout(timeout);
+            resolve('rejected');
+            return;
+          }
+        } catch (err) {
+          log.warn(
+            `Failed to parse message while waiting for accept/reject: ${err instanceof Error ? err.message : 'unknown'}`,
+          );
+        }
+        this.handleMessage(ev.data);
       };
       ws.onclose = () => {
-        clearTimeout(openTimeout);
-        reject(new Error('closed before ready'));
+        clearTimeout(timeout);
+        reject(new Error(opened ? 'closed before ready' : 'closed before open'));
       };
-      ws.onopen = () => {
-        clearTimeout(openTimeout);
-        log.info('WebSocket connected, waiting for subscription setup.');
-
-        // Now wait for accepted/rejected. Use a safety timeout — if it never arrives, resolve anyway.
-        const acceptTimeout = setTimeout(() => {
-          resolve('timeout');
-        }, PROACTIVE_ACCEPT_TIMEOUT_MS);
-
-        ws.onmessage = (ev) => {
-          try {
-            const parsed: Record<string, unknown> =
-              typeof ev.data === 'string'
-                ? (JSON.parse(ev.data) as Record<string, unknown>)
-                : (ev.data as Record<string, unknown>);
-
-            if (parsed['action'] === 'connection.accepted') {
-              clearTimeout(acceptTimeout);
-              resolve('accepted');
-              return;
-            }
-            if (parsed['action'] === 'connection.rejected') {
-              clearTimeout(acceptTimeout);
-              resolve('rejected');
-              return;
-            }
-          } catch (err) {
-            log.warn(
-              `Failed to parse message while waiting for accept/reject: ${err instanceof Error ? err.message : 'unknown'}`,
-            );
-          }
-          // Forward non-accept/reject messages to the normal handler
-          this.handleMessage(ev.data);
-        };
-
-        ws.onclose = () => {
-          clearTimeout(acceptTimeout);
-          reject(new Error('closed before ready'));
-        };
+      ws.onerror = () => {
+        clearTimeout(timeout);
+        reject(new Error('connection error'));
       };
     });
   }
@@ -426,8 +423,7 @@ export class NewioWebSocket {
   /**
    * Seamless proactive reconnect: opens a new connection first, waits for the server
    * to confirm subscription setup (`connection.accepted`), then closes the old one.
-   * If the server rejects the new connection (`connection.rejected`), reverts to the
-   * old connection. Falls back to closing the old connection on timeout (15s).
+   * If the server rejects or the accept times out, reverts to the old connection.
    */
   private scheduleProactiveReconnect(): void {
     log.debug(`Scheduling proactive reconnect in ${Math.round(this.proactiveReconnectMs / 60000)}min.`);
@@ -446,7 +442,7 @@ export class NewioWebSocket {
     try {
       const newWs = await this.createWs();
 
-      // Route events from old WS during the wait
+      // Detach old WS lifecycle handlers during the wait
       if (oldWs) {
         oldWs.onclose = null;
         oldWs.onerror = null;
@@ -455,16 +451,10 @@ export class NewioWebSocket {
 
       const result = await this.waitForReady(newWs);
 
-      // Swap to new WS
-      this.clearTimers();
-      this.ws = newWs;
-
-      if (result === 'accepted' || result === 'timeout') {
-        log.info(
-          result === 'accepted'
-            ? 'Proactive reconnect — connection accepted, closing old connection.'
-            : 'Proactive reconnect — timed out waiting for accepted, closing old connection.',
-        );
+      if (result === 'accepted') {
+        log.info('Proactive reconnect — connection accepted, closing old connection.');
+        this.clearTimers();
+        this.ws = newWs;
         this.wireWsHandlers(newWs);
         this.onWsConnected();
         if (oldWs) {
@@ -476,8 +466,8 @@ export class NewioWebSocket {
           }
         }
       } else {
-        // Rejected — revert to old connection
-        log.warn('Proactive reconnect — connection rejected, reverting to old connection.');
+        // Rejected or timeout — revert to old connection
+        log.warn(`Proactive reconnect — ${result}, reverting to old connection.`);
         this.detachWs(newWs);
         if (oldWs) {
           this.ws = oldWs;

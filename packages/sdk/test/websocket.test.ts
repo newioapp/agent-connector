@@ -378,12 +378,9 @@ describe('NewioWebSocket', () => {
       });
 
       client.setOnConnectionRejected(rejectedHandler);
-      await client.connect();
+      // connect() throws on rejection
+      await expect(client.connect()).rejects.toThrow('connection rejected');
       expect(connectCount).toBe(1);
-
-      // Server force-closes after rejection
-      mockWs1.triggerClose();
-      expect(client.getState()).toBe('disconnected');
 
       // Should NOT reconnect
       await vi.advanceTimersByTimeAsync(30_000);
@@ -482,7 +479,7 @@ describe('NewioWebSocket', () => {
       client.disconnect();
     });
 
-    it('should close old connection on timeout if no accepted/rejected received', async () => {
+    it('should revert to old connection on timeout if no accepted/rejected received', async () => {
       const wsInstances: ReturnType<typeof createMockWs>[] = [];
 
       const client = new NewioWebSocket({
@@ -501,7 +498,7 @@ describe('NewioWebSocket', () => {
 
       await client.connect();
 
-      // Trigger proactive reconnect and open new WS
+      // Trigger proactive reconnect and open new WS (but no accepted)
       await vi.advanceTimersByTimeAsync(5000);
       wsInstances[1]!.triggerOpen();
       await vi.advanceTimersByTimeAsync(0);
@@ -510,8 +507,9 @@ describe('NewioWebSocket', () => {
       expect(wsInstances[0]!.close).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(15_000);
 
-      // Old WS closed after timeout
-      expect(wsInstances[0]!.close).toHaveBeenCalled();
+      // New WS closed, old WS kept
+      expect(wsInstances[1]!.close).toHaveBeenCalled();
+      expect(wsInstances[0]!.close).not.toHaveBeenCalled();
       expect(client.getState()).toBe('connected');
 
       client.disconnect();
