@@ -247,16 +247,12 @@ export class NewioWebSocket {
     if (result === 'rejected') {
       log.warn('WebSocket connection rejected during initial connect.');
       this.rejected = true;
+      this.onConnectionRejectedHandler?.('CONNECTION_LIMIT_EXCEEDED');
       this.detachWs(ws);
       throw new Error('connection rejected');
     }
-    if (result === 'timeout') {
-      log.warn('WebSocket connection timed out waiting for accepted during initial connect.');
-      this.detachWs(ws);
-      throw new Error('connection accepted timeout');
-    }
 
-    log.info('WebSocket ready (accepted).');
+    log.info(result === 'accepted' ? 'WebSocket ready (accepted).' : 'WebSocket ready (accept timeout, proceeding).');
     this.setState('connected');
     this.wireWsHandlers(ws);
     this.onWsConnected();
@@ -442,16 +438,27 @@ export class NewioWebSocket {
     try {
       const newWs = await this.createWs();
 
-      // Detach old WS lifecycle handlers during the wait
+      // If old WS dies during the wait, abandon proactive reconnect and let normal reconnect handle it
+      const oldWsState = { died: false };
       if (oldWs) {
-        oldWs.onclose = null;
+        oldWs.onclose = () => {
+          log.warn('Proactive reconnect — old connection died during wait.');
+          oldWsState.died = true;
+        };
         oldWs.onerror = null;
         oldWs.onopen = null;
       }
 
       const result = await this.waitForReady(newWs);
 
-      if (result === 'accepted') {
+      if (oldWsState.died) {
+        // Old WS is gone — just use the new one regardless of result
+        log.info('Proactive reconnect — old connection died, using new connection.');
+        this.clearTimers();
+        this.ws = newWs;
+        this.wireWsHandlers(newWs);
+        this.onWsConnected();
+      } else if (result === 'accepted') {
         log.info('Proactive reconnect — connection accepted, closing old connection.');
         this.clearTimers();
         this.ws = newWs;
@@ -459,6 +466,7 @@ export class NewioWebSocket {
         this.onWsConnected();
         if (oldWs) {
           oldWs.onmessage = null;
+          oldWs.onclose = null;
           try {
             oldWs.close();
           } catch {
@@ -470,6 +478,7 @@ export class NewioWebSocket {
         log.warn(`Proactive reconnect — ${result}, reverting to old connection.`);
         this.detachWs(newWs);
         if (oldWs) {
+          this.clearTimers();
           this.ws = oldWs;
           this.wireWsHandlers(oldWs);
           this.onWsConnected();

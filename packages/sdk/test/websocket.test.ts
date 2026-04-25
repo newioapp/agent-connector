@@ -381,6 +381,7 @@ describe('NewioWebSocket', () => {
       // connect() throws on rejection
       await expect(client.connect()).rejects.toThrow('connection rejected');
       expect(connectCount).toBe(1);
+      expect(rejectedHandler).toHaveBeenCalledWith('CONNECTION_LIMIT_EXCEEDED');
 
       // Should NOT reconnect
       await vi.advanceTimersByTimeAsync(30_000);
