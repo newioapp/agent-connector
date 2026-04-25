@@ -40,6 +40,7 @@ export {
   ConflictApiError,
   WaitlistPendingApiError,
   ApprovalTimeoutError,
+  ConnectionRejectedError,
   TokenRefreshError,
 } from './core/errors.js';
 

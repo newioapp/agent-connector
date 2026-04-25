@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NewioWebSocket, type WebSocketLike } from '../src/core/websocket.js';
+import { ConnectionRejectedError } from '../src/core/errors.js';
 
 /** Creates a mock WebSocket that exposes trigger methods. */
 function createMockWs() {
@@ -379,13 +380,52 @@ describe('NewioWebSocket', () => {
 
       client.setOnConnectionRejected(rejectedHandler);
       // connect() throws on rejection
-      await expect(client.connect()).rejects.toThrow('connection rejected');
+      await expect(client.connect()).rejects.toThrow(ConnectionRejectedError);
       expect(connectCount).toBe(1);
       expect(rejectedHandler).toHaveBeenCalledWith('CONNECTION_LIMIT_EXCEEDED');
 
       // Should NOT reconnect
       await vi.advanceTimersByTimeAsync(30_000);
       expect(connectCount).toBe(1);
+    });
+
+    it('should retry reconnect with backoff when doConnect fails', async () => {
+      const mockWs1 = createMockWs();
+      let connectCount = 0;
+
+      const client = new NewioWebSocket({
+        url: 'wss://ws.test',
+        tokenProvider: () => 'test-token',
+        wsFactory: () => {
+          connectCount++;
+          if (connectCount === 1) {
+            queueMicrotask(() => mockWs1.triggerOpenAndAccept());
+          } else {
+            // Subsequent attempts fail — close before open
+            queueMicrotask(() => mockWs1.triggerClose());
+          }
+          return mockWs1;
+        },
+      });
+
+      await client.connect();
+      expect(connectCount).toBe(1);
+
+      // Unexpected close → schedules reconnect at 1s
+      mockWs1.triggerClose();
+      expect(client.getState()).toBe('disconnected');
+
+      // First retry at 1s — fails
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(connectCount).toBe(2);
+      expect(client.getState()).toBe('disconnected');
+
+      // Second retry at 2s (doubled backoff) — also fails
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(connectCount).toBe(3);
+      expect(client.getState()).toBe('disconnected');
+
+      client.disconnect();
     });
   });
 
@@ -621,6 +661,51 @@ describe('NewioWebSocket', () => {
 
       await vi.advanceTimersByTimeAsync(5000);
       expect(wsInstances).toHaveLength(1);
+    });
+
+    it('should schedule reconnect when old WS dies and new WS is rejected', async () => {
+      const wsInstances: ReturnType<typeof createMockWs>[] = [];
+
+      const client = new NewioWebSocket({
+        url: 'wss://ws.test',
+        tokenProvider: () => 'test-token',
+        proactiveReconnectMs: 5000,
+        wsFactory: () => {
+          const ws = createMockWs();
+          wsInstances.push(ws);
+          if (wsInstances.length === 1) {
+            queueMicrotask(() => ws.triggerOpenAndAccept());
+          }
+          return ws;
+        },
+      });
+
+      await client.connect();
+
+      // Trigger proactive reconnect
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(wsInstances).toHaveLength(2);
+      wsInstances[1]!.triggerOpen();
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Old WS dies
+      wsInstances[0]!.triggerClose();
+
+      // New WS rejected
+      wsInstances[1]!.triggerMessage(
+        JSON.stringify({ action: 'connection.rejected', reason: 'CONNECTION_LIMIT_EXCEEDED' }),
+      );
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Both dead — should be disconnected
+      expect(client.getState()).toBe('disconnected');
+      expect(wsInstances[1]!.close).toHaveBeenCalled();
+
+      // Should schedule reconnect — advance past 1s backoff
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(wsInstances).toHaveLength(3);
+
+      client.disconnect();
     });
 
     it('should use default 1h50m when proactiveReconnectMs not specified', async () => {

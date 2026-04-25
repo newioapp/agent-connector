@@ -1,4 +1,5 @@
 import { getLogger } from './logger.js';
+import { ConnectionRejectedError } from './errors.js';
 import type { TokenProvider } from './http.js';
 import type { EventMap, NewioEvent } from './events.js';
 import type { ActivityStatus } from './types.js';
@@ -237,19 +238,29 @@ export class NewioWebSocket {
     this.cleanup();
     this.setState('connecting');
 
-    const token = await this.tokenProvider();
-    const url = `${this.wsUrl}?token=${encodeURIComponent(token)}`;
-    const ws = this.wsFactory(url);
-    this.ws = ws;
-
-    const result = await this.waitForReady(ws);
+    let ws: WebSocketLike;
+    let result: 'accepted' | 'rejected' | 'timeout';
+    try {
+      const token = await this.tokenProvider();
+      const url = `${this.wsUrl}?token=${encodeURIComponent(token)}`;
+      ws = this.wsFactory(url);
+      this.ws = ws;
+      result = await this.waitForReady(ws);
+    } catch (err) {
+      log.warn(`WebSocket connection failed`, err);
+      this.setState('disconnected');
+      throw err;
+    }
 
     if (result === 'rejected') {
-      log.warn('WebSocket connection rejected during initial connect.');
+      log.warn('WebSocket connection rejected by server.');
       this.rejected = true;
+      this.setState('disconnected');
+      // TODO: waitForReady doesn't propagate the reason from the connection.rejected frame.
+      // If more rejection reasons are added, update waitForReady to return { result, reason }.
       this.onConnectionRejectedHandler?.('CONNECTION_LIMIT_EXCEEDED');
       this.detachWs(ws);
-      throw new Error('connection rejected');
+      throw new ConnectionRejectedError('CONNECTION_LIMIT_EXCEEDED');
     }
 
     log.info(result === 'accepted' ? 'WebSocket ready (accepted).' : 'WebSocket ready (accept timeout, proceeding).');
@@ -451,20 +462,29 @@ export class NewioWebSocket {
 
       const result = await this.waitForReady(newWs);
 
-      if (oldWsState.died) {
-        // Old WS is gone — just use the new one regardless of result
-        log.info('Proactive reconnect — old connection died, using new connection.');
+      if (result === 'rejected' || result === 'timeout') {
+        log.warn(`Proactive reconnect — ${result}.`);
+        this.detachWs(newWs);
+        if (!oldWsState.died && oldWs) {
+          log.info('Reverting to old connection.');
+          this.clearTimers();
+          this.ws = oldWs;
+          this.wireWsHandlers(oldWs);
+          this.onWsConnected();
+        } else {
+          log.warn('No usable connection — scheduling reconnect.');
+          this.cleanup();
+          this.setState('disconnected');
+          this.scheduleReconnect();
+        }
+      } else {
+        // accepted — use new connection
+        log.info('Proactive reconnect — using new connection, and close old connection.');
         this.clearTimers();
         this.ws = newWs;
         this.wireWsHandlers(newWs);
         this.onWsConnected();
-      } else if (result === 'accepted') {
-        log.info('Proactive reconnect — connection accepted, closing old connection.');
-        this.clearTimers();
-        this.ws = newWs;
-        this.wireWsHandlers(newWs);
-        this.onWsConnected();
-        if (oldWs) {
+        if (oldWs && !oldWsState.died) {
           oldWs.onmessage = null;
           oldWs.onclose = null;
           try {
@@ -472,16 +492,6 @@ export class NewioWebSocket {
           } catch {
             /* ignore */
           }
-        }
-      } else {
-        // Rejected or timeout — revert to old connection
-        log.warn(`Proactive reconnect — ${result}, reverting to old connection.`);
-        this.detachWs(newWs);
-        if (oldWs) {
-          this.clearTimers();
-          this.ws = oldWs;
-          this.wireWsHandlers(oldWs);
-          this.onWsConnected();
         }
       }
     } catch (err) {
@@ -495,7 +505,11 @@ export class NewioWebSocket {
   private scheduleReconnect(): void {
     log.info(`Scheduling reconnect in ${this.backoff}ms.`);
     this.reconnectTimer = setTimeout(() => {
-      void this.doConnect().catch(() => {});
+      void this.doConnect().catch(() => {
+        if (!this.intentionalClose && !this.rejected) {
+          this.scheduleReconnect();
+        }
+      });
     }, this.backoff);
     this.backoff = Math.min(this.backoff * 2, MAX_BACKOFF_MS);
   }

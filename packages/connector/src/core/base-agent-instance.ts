@@ -10,7 +10,7 @@
  * Each session processes its own event queue concurrently.
  * Subclasses implement session creation and greeting logic.
  */
-import { ApprovalTimeoutError, NewioApp, NotFoundApiError } from '@newio/sdk';
+import { ApprovalTimeoutError, ConnectionRejectedError, NewioApp, NotFoundApiError } from '@newio/sdk';
 import type { IncomingMessage, ContactEvent, CronTriggerEvent, ActionOption, ActionRequest } from '@newio/sdk';
 import { NewioMcpServer, startUdsServer } from '@newio/mcp-server';
 import type { Server } from 'net';
@@ -239,7 +239,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         const username = this.config.newio?.username;
         log.warn(`${this.logTag} Agent not found`, username);
         this.setStatus('error', `Agent "${username ?? 'unknown'}" not found. Check the Newio Username and try again.`);
-      } else if (err instanceof Error && err.message.includes('WebSocket closed before open')) {
+      } else if (err instanceof ConnectionRejectedError) {
         log.warn(`${this.logTag} WebSocket connection rejected — likely a duplicate session`);
         this.setStatus('error', 'Connection rejected. This agent may already be running in another instance.');
       } else if (isErrnoException(err) && err.code === 'ENOENT') {
