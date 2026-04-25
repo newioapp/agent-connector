@@ -35,14 +35,9 @@ export class SessionStore {
       CREATE TABLE IF NOT EXISTS session_mapping (
         newioSessionId TEXT PRIMARY KEY,
         correlationId TEXT NOT NULL,
-        promptFormatterVersion TEXT NOT NULL DEFAULT '1.0.0'
+        promptFormatterVersion TEXT NOT NULL
       )
     `);
-    // Migrate: add column if missing (existing DBs created before versioning)
-    const columns = this.db.pragma('table_info(session_mapping)') as Array<{ name: string }>;
-    if (!columns.some((c) => c.name === 'promptFormatterVersion')) {
-      this.db.exec(`ALTER TABLE session_mapping ADD COLUMN promptFormatterVersion TEXT NOT NULL DEFAULT '1.0.0'`);
-    }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS cron_jobs (
         cronId TEXT PRIMARY KEY,

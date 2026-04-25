@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AcpSessionStream } from '../../../src/core/acp-session-stream';
-import type { SessionStatusListener } from '../../../src/core/types';
+import { AcpSessionStream } from '../../src/core/acp-session-stream';
+import type { SessionStatusListener } from '../../src/core/types';
 
 function makeUpdate(type: string, text?: string) {
   const update: Record<string, unknown> = { sessionUpdate: type };

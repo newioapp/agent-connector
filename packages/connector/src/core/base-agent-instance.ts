@@ -495,7 +495,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   ): Promise<AgentSession> {
     log.info(`${this.logTag} Resuming session: correlation=${correlationId}`);
     try {
-      // if throws, resume session will fails and create a new session.
+      // If this throws, session resume will fail and a new session will be created.
       this.promptManager.assertPromptFormatterVersion(promptFormatterVersion);
       return await this.resumeSession(newioSessionId, correlationId, promptFormatterVersion);
     } catch (err) {

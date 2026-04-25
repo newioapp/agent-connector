@@ -1,10 +1,9 @@
 /**
- * Prompt manager — centralizes all prompt generation for agent sessions.
+ * Prompt manager — version-aware dispatcher for prompt formatters.
  *
- * The system instruction (agent identity, messaging conventions) lives in
- * the SDK ({@link NewioApp.buildNewioInstruction}). This module owns the
- * runtime event formatters that produce per-turn prompt text. The message
- * format here must stay in sync with the examples in the system instruction.
+ * Holds a registry of {@link PromptFormatter} instances keyed by major version.
+ * Each session stores the formatter version it was created with; on resume the
+ * manager routes to a compatible formatter (same major version) or throws.
  */
 import type { IncomingMessage, ContactEvent, CronTriggerEvent } from '@newio/sdk';
 import type { Instruction, PromptFormatter } from './prompt-formatter';
@@ -26,11 +25,15 @@ function parseMajor(version: string): number {
 }
 
 export class PromptManager {
-  private readonly promptFormatters: ReadonlyArray<PromptFormatter>;
+  private readonly formatterByMajor: ReadonlyMap<number, PromptFormatter>;
   private readonly defaultFormatter: PromptFormatter;
 
   constructor(promptFormatters: ReadonlyArray<PromptFormatter>, defaultFormatter: PromptFormatter) {
-    this.promptFormatters = promptFormatters;
+    const map = new Map<number, PromptFormatter>();
+    for (const f of promptFormatters) {
+      map.set(parseMajor(f.version), f);
+    }
+    this.formatterByMajor = map;
     this.defaultFormatter = defaultFormatter;
   }
 
@@ -54,18 +57,16 @@ export class PromptManager {
     return this.findCompatiblePromptFormatter(promptVersion).formatCronPrompt(job);
   }
 
-  /** Find a formatter whose major version matches the requested version. */
-  findCompatiblePromptFormatter(version: string): PromptFormatter {
-    const requestedMajor = parseMajor(version);
-    for (const formatter of this.promptFormatters) {
-      if (parseMajor(formatter.version) === requestedMajor) {
-        return formatter;
-      }
-    }
-    throw new UnsupportedPromptFormatterVersion(version);
-  }
-
   assertPromptFormatterVersion(version: string): void {
     this.findCompatiblePromptFormatter(version);
+  }
+
+  /** Find a formatter whose major version matches the requested version. */
+  private findCompatiblePromptFormatter(version: string): PromptFormatter {
+    const formatter = this.formatterByMajor.get(parseMajor(version));
+    if (!formatter) {
+      throw new UnsupportedPromptFormatterVersion(version);
+    }
+    return formatter;
   }
 }

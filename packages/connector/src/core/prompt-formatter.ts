@@ -1,10 +1,9 @@
 /**
- * Prompt manager — centralizes all prompt generation for agent sessions.
+ * Prompt formatter — owns all prompt generation for agent sessions.
  *
- * The system instruction (agent identity, messaging conventions) lives in
- * the SDK ({@link NewioApp.buildNewioInstruction}). This module owns the
- * runtime event formatters that produce per-turn prompt text. The message
- * format here must stay in sync with the examples in the system instruction.
+ * Each implementation declares a semver {@link PromptFormatter.version}.
+ * The {@link PromptManager} selects a compatible formatter based on the
+ * major version stored with each session.
  */
 import type { IncomingMessage, ContactEvent, CronTriggerEvent, NewioApp } from '@newio/sdk';
 

@@ -361,7 +361,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
 
     const session = new AcpAgentSession({
       sessionId: newioSessionId,
-      promptFormatterVersion: promptFormatterVersion,
+      promptFormatterVersion,
       correlationId,
       connection: conn,
       sessionResponse: loadResult,
