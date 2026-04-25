@@ -29,6 +29,7 @@ import type { AgentEvent } from './event-queue';
 import { PromptManager } from './prompt-manager';
 import { Logger } from './logger';
 import WebSocket from 'ws';
+import { PromptFormatterImpl } from './prompt-formatter';
 
 const log = new Logger('base-agent-instance');
 
@@ -199,7 +200,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
       }
 
       // Start MCP server on UDS for agent sessions
-      this._promptManager = new PromptManager(app);
+      const defaultPromptFormatter = new PromptFormatterImpl(app);
+      this._promptManager = new PromptManager([defaultPromptFormatter], defaultPromptFormatter);
 
       this.udsServer = startUdsServer({
         socketPath: mcpSocketPath,
@@ -448,10 +450,14 @@ export abstract class BaseAgentInstance implements AgentInstance {
       throw new Error('Agent is stopping — session launch aborted');
     }
 
-    const existingCorrelationId = this.sessionStore.get(newioSessionId);
+    const existingSessionMetadata = this.sessionStore.get(newioSessionId);
 
-    const session = existingCorrelationId
-      ? await this.resumeOrCreateSession(newioSessionId, existingCorrelationId)
+    const session = existingSessionMetadata
+      ? await this.resumeOrCreateSession(
+          newioSessionId,
+          existingSessionMetadata.correlationId,
+          existingSessionMetadata.promptFormatterVersion,
+        )
       : await this.createAndStoreSession(newioSessionId);
 
     // Wire MCP sessionId
@@ -482,10 +488,16 @@ export abstract class BaseAgentInstance implements AgentInstance {
   }
 
   /** Resume an existing session, falling back to a new session on failure. */
-  private async resumeOrCreateSession(newioSessionId: string, correlationId: string): Promise<AgentSession> {
+  private async resumeOrCreateSession(
+    newioSessionId: string,
+    correlationId: string,
+    promptFormatterVersion: string,
+  ): Promise<AgentSession> {
     log.info(`${this.logTag} Resuming session: correlation=${correlationId}`);
     try {
-      return await this.resumeSession(newioSessionId, correlationId);
+      // if throws, resume session will fails and create a new session.
+      this.promptManager.assertPromptFormatterVersion(promptFormatterVersion);
+      return await this.resumeSession(newioSessionId, correlationId, promptFormatterVersion);
     } catch (err) {
       log.warn(`${this.logTag} Failed to resume session ${correlationId}, falling back to new session`, err);
       if (this.pendingMcpServer) {
@@ -500,7 +512,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private async createAndStoreSession(newioSessionId: string): Promise<AgentSession> {
     try {
       const session = await this.createSession(newioSessionId);
-      this.sessionStore.set(newioSessionId, session.correlationId);
+      this.sessionStore.set(newioSessionId, session.correlationId, session.promptFormatterVersion);
       return session;
     } catch (err) {
       if (this.pendingMcpServer) {
@@ -536,7 +548,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
   protected abstract createSession(newioSessionId: string): Promise<AgentSession>;
 
   /** Resume a previously idle-killed session by its correlation ID. */
-  protected abstract resumeSession(newioSessionId: string, correlationId: string): Promise<AgentSession>;
+  protected abstract resumeSession(
+    newioSessionId: string,
+    correlationId: string,
+    promptFormatterVersion: string,
+  ): Promise<AgentSession>;
 
   /** Runtime agent info — available after initialization. */
   abstract getAgentInfo(): AgentInfo | undefined;
@@ -645,7 +661,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
     session: AgentSession,
     messages: readonly IncomingMessage[],
   ): Promise<void> {
-    const userText = this.promptManager.formatMessagePrompt(messages);
+    const userText = this.promptManager.formatMessagePrompt(session.promptFormatterVersion, messages);
     try {
       for await (const segment of session.prompt(userText, conversationId)) {
         if (
@@ -665,7 +681,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   }
 
   private async processContactBatch(session: AgentSession, events: readonly ContactEvent[]): Promise<void> {
-    const userText = this.promptManager.formatContactPrompt(events);
+    const userText = this.promptManager.formatContactPrompt(session.promptFormatterVersion, events);
     log.debug(`${this.logTag} Processing ${String(events.length)} contact event(s) in session ${session.sessionId}`);
 
     try {
@@ -682,7 +698,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   }
 
   private async processCronTrigger(session: AgentSession, job: CronTriggerEvent): Promise<void> {
-    const userText = this.promptManager.formatCronPrompt(job);
+    const userText = this.promptManager.formatCronPrompt(session.promptFormatterVersion, job);
     log.debug(`${this.logTag} Processing cron ${job.cronId} ("${job.label}") in session ${session.sessionId}`);
 
     try {

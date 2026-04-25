@@ -313,8 +313,10 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       mcpServers: buildMcpServers(this.mcpSocketPath),
     });
 
+    const instruction = this.promptManager.buildNewioInstruction();
     const session = new AcpAgentSession({
       sessionId: newioSessionId,
+      promptFormatterVersion: instruction.version,
       correlationId: result.sessionId,
       connection: conn,
       sessionResponse: result,
@@ -328,9 +330,9 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
 
     // Send Newio instruction as the first prompt so the session has context
     log.debug(`${this.logTag} [${result.sessionId}] Sending Newio instruction to new session`);
-    const instruction = this.promptManager.buildNewioInstruction();
+
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    for await (const _ of session.prompt(instruction)) {
+    for await (const _ of session.prompt(instruction.prompt)) {
       // discard
     }
     log.debug(`${this.logTag} [${result.sessionId}] Newio instruction delivered`);
@@ -338,7 +340,11 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     return session;
   }
 
-  protected async resumeSession(newioSessionId: string, correlationId: string): Promise<AgentSession> {
+  protected async resumeSession(
+    newioSessionId: string,
+    correlationId: string,
+    promptFormatterVersion: string,
+  ): Promise<AgentSession> {
     const config = this.config.acp;
     if (!config) {
       throw new Error('ACP config missing');
@@ -355,6 +361,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
 
     const session = new AcpAgentSession({
       sessionId: newioSessionId,
+      promptFormatterVersion: promptFormatterVersion,
       correlationId,
       connection: conn,
       sessionResponse: loadResult,
@@ -446,7 +453,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     let greeting: string | undefined;
     try {
       greeting = await collectAgentMessage(
-        session.prompt(this.promptManager.buildGreetingPrompt(), ownerDmConversationId),
+        session.prompt(this.promptManager.buildGreetingPrompt(session.promptFormatterVersion), ownerDmConversationId),
       );
     } catch (err: unknown) {
       const message = extractErrorMessage(err);

@@ -11,6 +11,8 @@ export interface AgentSession {
   /** Newio platform assigned session ID. */
   readonly sessionId: string;
 
+  readonly promptFormatterVersion: string;
+
   /** Agent-platform-specific session ID (e.g., ACP sessionId). */
   readonly correlationId: string;
 

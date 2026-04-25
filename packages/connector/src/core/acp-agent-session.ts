@@ -19,6 +19,7 @@ const log = new Logger('acp-agent-session');
 
 export interface AcpAgentSessionInit {
   readonly sessionId: string;
+  readonly promptFormatterVersion: string;
   readonly correlationId: string;
   readonly connection: ClientSideConnection;
   readonly sessionResponse: NewSessionResponse | LoadSessionResponse;
@@ -28,6 +29,8 @@ export interface AcpAgentSessionInit {
 
 export class AcpAgentSession implements AgentSession {
   readonly sessionId: string;
+  readonly promptFormatterVersion: string;
+
   readonly correlationId: string;
 
   readonly disposable: boolean;
@@ -42,6 +45,7 @@ export class AcpAgentSession implements AgentSession {
 
   constructor(init: AcpAgentSessionInit) {
     this.sessionId = init.sessionId;
+    this.promptFormatterVersion = init.promptFormatterVersion;
     this.correlationId = init.correlationId;
     this.disposable = init.disposable;
     this.connection = init.connection;
