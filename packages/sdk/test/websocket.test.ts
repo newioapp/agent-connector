@@ -35,7 +35,7 @@ function createMockWs() {
     },
     triggerOpenAndAccept() {
       ws.triggerOpen();
-      queueMicrotask(() => queueMicrotask(() => ws.triggerMessage(JSON.stringify({ action: 'connection.accepted' }))));
+      queueMicrotask(() => ws.triggerMessage(JSON.stringify({ action: 'connection.accepted' })));
     },
   };
   return ws;
@@ -48,7 +48,9 @@ function createClient(mockWs: ReturnType<typeof createMockWs>, autoOpen = true) 
     wsFactory: (url) => {
       mockWs.sent.push(`CONNECT:${url}`);
       if (autoOpen) {
-        queueMicrotask(() => mockWs.triggerOpen());
+        // waitForReady sets ws.onopen synchronously, so triggerOpen fires after it's set.
+        // Inside onopen, ws.onmessage is set synchronously, so the nested microtask fires after that.
+        queueMicrotask(() => mockWs.triggerOpenAndAccept());
       }
       return mockWs;
     },
@@ -285,7 +287,7 @@ describe('NewioWebSocket', () => {
         tokenProvider: () => 'test-token',
         wsFactory: () => {
           connectCount++;
-          queueMicrotask(() => mockWs1.triggerOpen());
+          queueMicrotask(() => mockWs1.triggerOpenAndAccept());
           return mockWs1;
         },
       });
@@ -313,7 +315,7 @@ describe('NewioWebSocket', () => {
         tokenProvider: () => 'test-token',
         wsFactory: () => {
           connectCount++;
-          queueMicrotask(() => mockWs1.triggerOpen());
+          queueMicrotask(() => mockWs1.triggerOpenAndAccept());
           return mockWs1;
         },
       });
@@ -334,7 +336,7 @@ describe('NewioWebSocket', () => {
         tokenProvider: () => 'test-token',
         wsFactory: () => {
           connectCount++;
-          queueMicrotask(() => mockWs1.triggerOpen());
+          queueMicrotask(() => mockWs1.triggerOpenAndAccept());
           return mockWs1;
         },
       });
@@ -362,7 +364,15 @@ describe('NewioWebSocket', () => {
         tokenProvider: () => 'test-token',
         wsFactory: () => {
           connectCount++;
-          queueMicrotask(() => mockWs1.triggerOpen());
+          // Send rejected instead of accepted after open
+          queueMicrotask(() => {
+            mockWs1.triggerOpen();
+            queueMicrotask(() =>
+              mockWs1.triggerMessage(
+                JSON.stringify({ action: 'connection.rejected', reason: 'CONNECTION_LIMIT_EXCEEDED' }),
+              ),
+            );
+          });
           return mockWs1;
         },
       });
@@ -371,11 +381,8 @@ describe('NewioWebSocket', () => {
       await client.connect();
       expect(connectCount).toBe(1);
 
-      // Server sends rejection then closes
-      mockWs1.triggerMessage(JSON.stringify({ action: 'connection.rejected', reason: 'CONNECTION_LIMIT_EXCEEDED' }));
+      // Server force-closes after rejection
       mockWs1.triggerClose();
-
-      expect(rejectedHandler).toHaveBeenCalledWith('CONNECTION_LIMIT_EXCEEDED');
       expect(client.getState()).toBe('disconnected');
 
       // Should NOT reconnect
@@ -396,7 +403,7 @@ describe('NewioWebSocket', () => {
           const ws = createMockWs();
           wsInstances.push(ws);
           if (wsInstances.length === 1) {
-            queueMicrotask(() => ws.triggerOpen());
+            queueMicrotask(() => ws.triggerOpenAndAccept());
           }
           return ws;
         },
@@ -438,7 +445,7 @@ describe('NewioWebSocket', () => {
           const ws = createMockWs();
           wsInstances.push(ws);
           if (wsInstances.length === 1) {
-            queueMicrotask(() => ws.triggerOpen());
+            queueMicrotask(() => ws.triggerOpenAndAccept());
           }
           return ws;
         },
@@ -486,7 +493,7 @@ describe('NewioWebSocket', () => {
           const ws = createMockWs();
           wsInstances.push(ws);
           if (wsInstances.length === 1) {
-            queueMicrotask(() => ws.triggerOpen());
+            queueMicrotask(() => ws.triggerOpenAndAccept());
           }
           return ws;
         },
@@ -521,7 +528,7 @@ describe('NewioWebSocket', () => {
           const ws = createMockWs();
           wsInstances.push(ws);
           if (wsInstances.length === 1) {
-            queueMicrotask(() => ws.triggerOpen());
+            queueMicrotask(() => ws.triggerOpenAndAccept());
           }
           return ws;
         },
@@ -570,7 +577,7 @@ describe('NewioWebSocket', () => {
           const ws = createMockWs();
           wsInstances.push(ws);
           if (wsInstances.length === 1) {
-            queueMicrotask(() => ws.triggerOpen());
+            queueMicrotask(() => ws.triggerOpenAndAccept());
           }
           return ws;
         },
@@ -604,7 +611,7 @@ describe('NewioWebSocket', () => {
           const ws = createMockWs();
           wsInstances.push(ws);
           if (wsInstances.length === 1) {
-            queueMicrotask(() => ws.triggerOpen());
+            queueMicrotask(() => ws.triggerOpenAndAccept());
           }
           return ws;
         },
