@@ -388,7 +388,7 @@ describe('NewioWebSocket', () => {
   });
 
   describe('proactive reconnect', () => {
-    it('should open new connection before closing old at configured interval', async () => {
+    it('should close old connection on connection.accepted', async () => {
       const wsInstances: ReturnType<typeof createMockWs>[] = [];
 
       const client = new NewioWebSocket({
@@ -398,7 +398,6 @@ describe('NewioWebSocket', () => {
         wsFactory: () => {
           const ws = createMockWs();
           wsInstances.push(ws);
-          // Auto-open only the first connection (initial connect)
           if (wsInstances.length === 1) {
             queueMicrotask(() => ws.triggerOpen());
           }
@@ -408,31 +407,113 @@ describe('NewioWebSocket', () => {
 
       await client.connect();
       expect(wsInstances).toHaveLength(1);
-      expect(client.getState()).toBe('connected');
 
       // Trigger proactive reconnect
       await vi.advanceTimersByTimeAsync(5000);
       expect(wsInstances).toHaveLength(2);
 
-      // Old WS is still alive, new WS is pending
-      expect(wsInstances[0]!.close).not.toHaveBeenCalled();
-
       // New WS opens
       wsInstances[1]!.triggerOpen();
       await vi.advanceTimersByTimeAsync(0);
 
-      // State stays connected throughout
+      // Old WS still alive — waiting for accepted
+      expect(wsInstances[0]!.close).not.toHaveBeenCalled();
       expect(client.getState()).toBe('connected');
 
-      // Old WS closed after overlap period (5s)
-      expect(wsInstances[0]!.close).not.toHaveBeenCalled();
-      await vi.advanceTimersByTimeAsync(5000);
+      // Server sends connection.accepted on new WS
+      wsInstances[1]!.triggerMessage(JSON.stringify({ action: 'connection.accepted' }));
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Old WS closed immediately
       expect(wsInstances[0]!.close).toHaveBeenCalled();
 
       client.disconnect();
     });
 
-    it('should receive events from both connections during overlap', async () => {
+    it('should revert to old connection on connection.rejected', async () => {
+      const wsInstances: ReturnType<typeof createMockWs>[] = [];
+
+      const client = new NewioWebSocket({
+        url: 'wss://ws.test',
+        tokenProvider: () => 'test-token',
+        proactiveReconnectMs: 5000,
+        wsFactory: () => {
+          const ws = createMockWs();
+          wsInstances.push(ws);
+          if (wsInstances.length === 1) {
+            queueMicrotask(() => ws.triggerOpen());
+          }
+          return ws;
+        },
+      });
+
+      await client.connect();
+
+      // Trigger proactive reconnect and open new WS
+      await vi.advanceTimersByTimeAsync(5000);
+      wsInstances[1]!.triggerOpen();
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Server rejects new connection
+      wsInstances[1]!.triggerMessage(
+        JSON.stringify({ action: 'connection.rejected', reason: 'CONNECTION_LIMIT_EXCEEDED' }),
+      );
+      await vi.advanceTimersByTimeAsync(0);
+
+      // New WS closed, old WS kept
+      expect(wsInstances[1]!.close).toHaveBeenCalled();
+      expect(wsInstances[0]!.close).not.toHaveBeenCalled();
+      expect(client.getState()).toBe('connected');
+
+      // Old WS still receives events
+      const messages: unknown[] = [];
+      client.on('message.new', (event) => {
+        messages.push(event.payload);
+      });
+      wsInstances[0]!.triggerMessage(
+        JSON.stringify({ type: 'message.new', timestamp: '', payload: { id: 'still-works' } }),
+      );
+      expect(messages).toHaveLength(1);
+
+      client.disconnect();
+    });
+
+    it('should close old connection on timeout if no accepted/rejected received', async () => {
+      const wsInstances: ReturnType<typeof createMockWs>[] = [];
+
+      const client = new NewioWebSocket({
+        url: 'wss://ws.test',
+        tokenProvider: () => 'test-token',
+        proactiveReconnectMs: 5000,
+        wsFactory: () => {
+          const ws = createMockWs();
+          wsInstances.push(ws);
+          if (wsInstances.length === 1) {
+            queueMicrotask(() => ws.triggerOpen());
+          }
+          return ws;
+        },
+      });
+
+      await client.connect();
+
+      // Trigger proactive reconnect and open new WS
+      await vi.advanceTimersByTimeAsync(5000);
+      wsInstances[1]!.triggerOpen();
+      await vi.advanceTimersByTimeAsync(0);
+
+      // No accepted/rejected — wait for 15s timeout
+      expect(wsInstances[0]!.close).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(15_000);
+
+      // Old WS closed after timeout
+      expect(wsInstances[0]!.close).toHaveBeenCalled();
+      expect(client.getState()).toBe('connected');
+
+      client.disconnect();
+    });
+
+    it('should forward non-accept/reject messages during wait', async () => {
       const wsInstances: ReturnType<typeof createMockWs>[] = [];
 
       const client = new NewioWebSocket({
@@ -461,23 +542,27 @@ describe('NewioWebSocket', () => {
       wsInstances[1]!.triggerOpen();
       await vi.advanceTimersByTimeAsync(0);
 
-      // Events from old WS still delivered during overlap
+      // Regular event arrives on new WS before accepted
+      wsInstances[1]!.triggerMessage(
+        JSON.stringify({ type: 'message.new', timestamp: '', payload: { id: 'during-wait' } }),
+      );
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toEqual({ id: 'during-wait' });
+
+      // Events from old WS also delivered
       wsInstances[0]!.triggerMessage(
         JSON.stringify({ type: 'message.new', timestamp: '', payload: { id: 'from-old' } }),
       );
-      // Events from new WS also delivered
-      wsInstances[1]!.triggerMessage(
-        JSON.stringify({ type: 'message.new', timestamp: '', payload: { id: 'from-new' } }),
-      );
-
       expect(messages).toHaveLength(2);
-      expect(messages[0]).toEqual({ id: 'from-old' });
-      expect(messages[1]).toEqual({ id: 'from-new' });
+
+      // Then accepted arrives
+      wsInstances[1]!.triggerMessage(JSON.stringify({ action: 'connection.accepted' }));
+      await vi.advanceTimersByTimeAsync(0);
 
       client.disconnect();
     });
 
-    it('should keep old connection if new connection fails', async () => {
+    it('should keep old connection if new connection fails to open', async () => {
       const wsInstances: ReturnType<typeof createMockWs>[] = [];
 
       const client = new NewioWebSocket({
@@ -507,16 +592,6 @@ describe('NewioWebSocket', () => {
       // State stays connected — old WS still works
       expect(client.getState()).toBe('connected');
       expect(wsInstances[0]!.close).not.toHaveBeenCalled();
-
-      // Old WS still receives events
-      const messages: unknown[] = [];
-      client.on('message.new', (event) => {
-        messages.push(event.payload);
-      });
-      wsInstances[0]!.triggerMessage(
-        JSON.stringify({ type: 'message.new', timestamp: '', payload: { id: 'still-works' } }),
-      );
-      expect(messages).toHaveLength(1);
 
       client.disconnect();
     });

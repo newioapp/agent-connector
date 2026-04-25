@@ -64,8 +64,8 @@ export type WebSocketFactory = (url: string) => WebSocketLike;
 const KEEPALIVE_MS = 5 * 60 * 1000;
 /** Default proactive reconnect before API Gateway 2-hour hard limit. */
 const DEFAULT_PROACTIVE_RECONNECT_MS = 110 * 60 * 1000;
-/** Overlap period after proactive reconnect — keeps old connection alive while backend subscribes the new one. */
-const PROACTIVE_OVERLAP_MS = 5000;
+/** Timeout waiting for connection.accepted during proactive reconnect. Falls back to closing old connection. */
+const PROACTIVE_ACCEPT_TIMEOUT_MS = 15_000;
 /** Backoff config. */
 const INITIAL_BACKOFF_MS = 1000;
 const MAX_BACKOFF_MS = 30_000;
@@ -399,11 +399,10 @@ export class NewioWebSocket {
   }
 
   /**
-   * Seamless proactive reconnect: opens a new connection first, then closes the old one.
-   * Both connections receive events during the overlap window — consumers already
-   * deduplicate via event handlers. If the new connection gets rejected (e.g. connection
-   * limit exceeded), we abandon it and keep using the old connection — it will eventually
-   * hit the 2h hard limit and normal auto-reconnect kicks in.
+   * Seamless proactive reconnect: opens a new connection first, waits for the server
+   * to confirm subscription setup (`connection.accepted`), then closes the old one.
+   * If the server rejects the new connection (`connection.rejected`), reverts to the
+   * old connection. Falls back to closing the old connection on timeout (15s).
    */
   private scheduleProactiveReconnect(): void {
     log.debug(`Scheduling proactive reconnect in ${Math.round(this.proactiveReconnectMs / 60000)}min.`);
@@ -423,9 +422,8 @@ export class NewioWebSocket {
       const newWs = await this.createWs();
       await this.waitForOpen(newWs);
 
-      log.info('Proactive reconnect — new connection open, entering overlap period.');
-      // New connection is open — wire it up and keep old alive during overlap
-      // so events are received on both while backend subscribes the new connectionId.
+      log.info('Proactive reconnect — new connection open, waiting for accepted/rejected.');
+      // Route events from both connections during the wait
       if (oldWs) {
         oldWs.onclose = null;
         oldWs.onerror = null;
@@ -434,33 +432,91 @@ export class NewioWebSocket {
       this.clearTimers();
       this.ws = newWs;
       this.wireWsHandlers(newWs);
-      // Route events from old WS to handlers during overlap
       if (oldWs) {
         oldWs.onmessage = (ev) => {
           this.handleMessage(ev.data);
         };
       }
-      this.onWsConnected();
 
-      // Close old connection after overlap period
-      if (oldWs) {
-        setTimeout(() => {
-          log.info('Proactive reconnect — overlap complete, closing old connection.');
+      const result = await this.waitForAcceptOrReject(newWs);
+
+      if (result === 'accepted') {
+        log.info('Proactive reconnect — connection accepted, closing old connection.');
+        this.onWsConnected();
+        if (oldWs) {
           oldWs.onmessage = null;
           try {
             oldWs.close();
           } catch {
             /* ignore */
           }
-        }, PROACTIVE_OVERLAP_MS);
+        }
+      } else if (result === 'rejected') {
+        log.warn('Proactive reconnect — connection rejected, reverting to old connection.');
+        this.detachWs(newWs);
+        if (oldWs) {
+          this.ws = oldWs;
+          this.wireWsHandlers(oldWs);
+          this.onWsConnected();
+        }
+      } else {
+        // Timeout — no accepted/rejected received. Close old connection as fallback.
+        log.warn('Proactive reconnect — timed out waiting for accepted, closing old connection.');
+        this.onWsConnected();
+        if (oldWs) {
+          oldWs.onmessage = null;
+          try {
+            oldWs.close();
+          } catch {
+            /* ignore */
+          }
+        }
       }
     } catch (err) {
-      // New connection failed — keep using old connection.
-      // It will eventually hit the 2h hard limit and normal auto-reconnect kicks in.
+      // New connection failed to open — keep using old connection.
       log.warn(
         `Proactive reconnect failed (${err instanceof Error ? err.message : 'unknown'}) — keeping old connection.`,
       );
     }
+  }
+
+  /**
+   * Wait for `connection.accepted` or `connection.rejected` on a WebSocket.
+   * Returns 'accepted', 'rejected', or 'timeout'.
+   */
+  private waitForAcceptOrReject(ws: WebSocketLike): Promise<'accepted' | 'rejected' | 'timeout'> {
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        resolve('timeout');
+      }, PROACTIVE_ACCEPT_TIMEOUT_MS);
+
+      const originalOnMessage = ws.onmessage;
+      ws.onmessage = (ev) => {
+        try {
+          const parsed: Record<string, unknown> =
+            typeof ev.data === 'string'
+              ? (JSON.parse(ev.data) as Record<string, unknown>)
+              : (ev.data as Record<string, unknown>);
+
+          if (parsed['action'] === 'connection.accepted') {
+            clearTimeout(timeout);
+            ws.onmessage = originalOnMessage;
+            resolve('accepted');
+            return;
+          }
+          if (parsed['action'] === 'connection.rejected') {
+            clearTimeout(timeout);
+            ws.onmessage = originalOnMessage;
+            resolve('rejected');
+            return;
+          }
+        } catch {
+          /* ignore parse errors */
+        }
+        // Forward non-accept/reject messages to the normal handler
+        originalOnMessage?.call(ws, ev);
+      };
+    });
   }
 
   private scheduleReconnect(): void {
