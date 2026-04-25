@@ -68,8 +68,23 @@ jobs:
               ;;
           esac
 
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - name: Test
+        run: pnpm test
+
   build-mac:
-    needs: prepare
+    needs: [prepare, test]
     # macOS 26 required for .icon asset catalog (actool crashes on macOS 15)
     runs-on: ${{ matrix.arch == 'x64' && 'macos-26-intel' || 'macos-26' }}
     timeout-minutes: 30
@@ -137,7 +152,7 @@ jobs:
             packages/connector/dist/*.yml
 
   build-linux:
-    needs: prepare
+    needs: [prepare, test]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
