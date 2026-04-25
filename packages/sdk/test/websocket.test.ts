@@ -388,25 +388,187 @@ describe('NewioWebSocket', () => {
   });
 
   describe('proactive reconnect', () => {
-    it('should reconnect at 1h50m', async () => {
-      const mockWs1 = createMockWs();
-      let connectCount = 0;
+    it('should open new connection before closing old at configured interval', async () => {
+      const wsInstances: ReturnType<typeof createMockWs>[] = [];
+
+      const client = new NewioWebSocket({
+        url: 'wss://ws.test',
+        tokenProvider: () => 'test-token',
+        proactiveReconnectMs: 5000,
+        wsFactory: () => {
+          const ws = createMockWs();
+          wsInstances.push(ws);
+          // Auto-open only the first connection (initial connect)
+          if (wsInstances.length === 1) {
+            queueMicrotask(() => ws.triggerOpen());
+          }
+          return ws;
+        },
+      });
+
+      await client.connect();
+      expect(wsInstances).toHaveLength(1);
+      expect(client.getState()).toBe('connected');
+
+      // Trigger proactive reconnect
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(wsInstances).toHaveLength(2);
+
+      // Old WS is still alive, new WS is pending
+      expect(wsInstances[0]!.close).not.toHaveBeenCalled();
+
+      // New WS opens
+      wsInstances[1]!.triggerOpen();
+      await vi.advanceTimersByTimeAsync(0);
+
+      // State stays connected throughout
+      expect(client.getState()).toBe('connected');
+
+      // Old WS closed after overlap period (5s)
+      expect(wsInstances[0]!.close).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(wsInstances[0]!.close).toHaveBeenCalled();
+
+      client.disconnect();
+    });
+
+    it('should receive events from both connections during overlap', async () => {
+      const wsInstances: ReturnType<typeof createMockWs>[] = [];
+
+      const client = new NewioWebSocket({
+        url: 'wss://ws.test',
+        tokenProvider: () => 'test-token',
+        proactiveReconnectMs: 5000,
+        wsFactory: () => {
+          const ws = createMockWs();
+          wsInstances.push(ws);
+          if (wsInstances.length === 1) {
+            queueMicrotask(() => ws.triggerOpen());
+          }
+          return ws;
+        },
+      });
+
+      const messages: unknown[] = [];
+      client.on('message.new', (event) => {
+        messages.push(event.payload);
+      });
+
+      await client.connect();
+
+      // Trigger proactive reconnect and open new WS
+      await vi.advanceTimersByTimeAsync(5000);
+      wsInstances[1]!.triggerOpen();
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Events from old WS still delivered during overlap
+      wsInstances[0]!.triggerMessage(
+        JSON.stringify({ type: 'message.new', timestamp: '', payload: { id: 'from-old' } }),
+      );
+      // Events from new WS also delivered
+      wsInstances[1]!.triggerMessage(
+        JSON.stringify({ type: 'message.new', timestamp: '', payload: { id: 'from-new' } }),
+      );
+
+      expect(messages).toHaveLength(2);
+      expect(messages[0]).toEqual({ id: 'from-old' });
+      expect(messages[1]).toEqual({ id: 'from-new' });
+
+      client.disconnect();
+    });
+
+    it('should keep old connection if new connection fails', async () => {
+      const wsInstances: ReturnType<typeof createMockWs>[] = [];
+
+      const client = new NewioWebSocket({
+        url: 'wss://ws.test',
+        tokenProvider: () => 'test-token',
+        proactiveReconnectMs: 5000,
+        wsFactory: () => {
+          const ws = createMockWs();
+          wsInstances.push(ws);
+          if (wsInstances.length === 1) {
+            queueMicrotask(() => ws.triggerOpen());
+          }
+          return ws;
+        },
+      });
+
+      await client.connect();
+
+      // Trigger proactive reconnect
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(wsInstances).toHaveLength(2);
+
+      // New WS fails to connect
+      wsInstances[1]!.triggerClose();
+      await vi.advanceTimersByTimeAsync(0);
+
+      // State stays connected — old WS still works
+      expect(client.getState()).toBe('connected');
+      expect(wsInstances[0]!.close).not.toHaveBeenCalled();
+
+      // Old WS still receives events
+      const messages: unknown[] = [];
+      client.on('message.new', (event) => {
+        messages.push(event.payload);
+      });
+      wsInstances[0]!.triggerMessage(
+        JSON.stringify({ type: 'message.new', timestamp: '', payload: { id: 'still-works' } }),
+      );
+      expect(messages).toHaveLength(1);
+
+      client.disconnect();
+    });
+
+    it('should not proactive reconnect after intentional disconnect', async () => {
+      const wsInstances: ReturnType<typeof createMockWs>[] = [];
+
+      const client = new NewioWebSocket({
+        url: 'wss://ws.test',
+        tokenProvider: () => 'test-token',
+        proactiveReconnectMs: 5000,
+        wsFactory: () => {
+          const ws = createMockWs();
+          wsInstances.push(ws);
+          if (wsInstances.length === 1) {
+            queueMicrotask(() => ws.triggerOpen());
+          }
+          return ws;
+        },
+      });
+
+      await client.connect();
+      client.disconnect();
+
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(wsInstances).toHaveLength(1);
+    });
+
+    it('should use default 1h50m when proactiveReconnectMs not specified', async () => {
+      const wsInstances: ReturnType<typeof createMockWs>[] = [];
 
       const client = new NewioWebSocket({
         url: 'wss://ws.test',
         tokenProvider: () => 'test-token',
         wsFactory: () => {
-          connectCount++;
-          queueMicrotask(() => mockWs1.triggerOpen());
-          return mockWs1;
+          const ws = createMockWs();
+          wsInstances.push(ws);
+          queueMicrotask(() => ws.triggerOpen());
+          return ws;
         },
       });
 
       await client.connect();
-      expect(connectCount).toBe(1);
+      expect(wsInstances).toHaveLength(1);
 
-      await vi.advanceTimersByTimeAsync(110 * 60 * 1000);
-      expect(connectCount).toBe(2);
+      // Not yet at 1h50m
+      await vi.advanceTimersByTimeAsync(109 * 60 * 1000);
+      expect(wsInstances).toHaveLength(1);
+
+      // At 1h50m
+      await vi.advanceTimersByTimeAsync(1 * 60 * 1000);
+      expect(wsInstances).toHaveLength(2);
 
       client.disconnect();
     });

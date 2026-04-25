@@ -62,8 +62,10 @@ export type WebSocketFactory = (url: string) => WebSocketLike;
 
 /** Keepalive interval: 5 minutes. */
 const KEEPALIVE_MS = 5 * 60 * 1000;
-/** Proactive reconnect before API Gateway 2-hour hard limit. */
-const PROACTIVE_RECONNECT_MS = 110 * 60 * 1000;
+/** Default proactive reconnect before API Gateway 2-hour hard limit. */
+const DEFAULT_PROACTIVE_RECONNECT_MS = 110 * 60 * 1000;
+/** Overlap period after proactive reconnect — keeps old connection alive while backend subscribes the new one. */
+const PROACTIVE_OVERLAP_MS = 5000;
 /** Backoff config. */
 const INITIAL_BACKOFF_MS = 1000;
 const MAX_BACKOFF_MS = 30_000;
@@ -108,16 +110,24 @@ export class NewioWebSocket {
   private readonly wsUrl: string;
   private readonly tokenProvider: TokenProvider;
   private readonly wsFactory: WebSocketFactory;
+  private readonly proactiveReconnectMs: number;
   private readonly stateListeners: ConnectionStateListener[] = [];
   private readonly eventHandlers = new Map<string, Set<(event: never) => void>>();
   private onSubscribeAckHandler: ((ack: SubscribeAck) => void) | null = null;
   private onUnsubscribeAckHandler: ((ack: UnsubscribeAck) => void) | null = null;
   private onConnectionRejectedHandler: ((reason: ConnectionRejectedReason) => void) | null = null;
 
-  constructor(opts: { url: string; tokenProvider: TokenProvider; wsFactory?: WebSocketFactory }) {
+  constructor(opts: {
+    url: string;
+    tokenProvider: TokenProvider;
+    wsFactory?: WebSocketFactory;
+    /** Override the proactive reconnect interval (default: 1h50m). Useful for testing. */
+    proactiveReconnectMs?: number;
+  }) {
     this.wsUrl = opts.url;
     this.tokenProvider = opts.tokenProvider;
     this.wsFactory = opts.wsFactory ?? ((url) => new WebSocket(url) as unknown as WebSocketLike);
+    this.proactiveReconnectMs = opts.proactiveReconnectMs ?? DEFAULT_PROACTIVE_RECONNECT_MS;
   }
 
   // ---------------------------------------------------------------------------
@@ -236,16 +246,14 @@ export class NewioWebSocket {
       ws.onopen = () => {
         log.info('WebSocket connected.');
         this.setState('connected');
-        this.backoff = INITIAL_BACKOFF_MS;
-        this.startKeepalive();
-        this.scheduleProactiveReconnect();
+        this.onWsConnected();
         resolve();
       };
 
       ws.onclose = () => {
         this.cleanup();
         if (!this.intentionalClose) {
-          log.warn('WebSocket closed unexpectedly.');
+          log.warn('WebSocket closed unexpectedly — will auto-reconnect.');
           this.setState('disconnected');
           if (!this.rejected) {
             this.scheduleReconnect();
@@ -255,7 +263,7 @@ export class NewioWebSocket {
       };
 
       ws.onerror = () => {
-        log.warn('WebSocket error.');
+        log.warn('WebSocket error during connect.');
         // onclose fires after onerror — rejection handled there
       };
     });
@@ -263,6 +271,76 @@ export class NewioWebSocket {
     ws.onmessage = (ev) => {
       this.handleMessage(ev.data);
     };
+  }
+
+  /** Create a new WebSocket instance with a fresh token. */
+  private async createWs(): Promise<WebSocketLike> {
+    const token = await this.tokenProvider();
+    const url = `${this.wsUrl}?token=${encodeURIComponent(token)}`;
+    return this.wsFactory(url);
+  }
+
+  /** Wait for a WebSocket to open, with a 10-second timeout. Rejects on error/close/timeout. */
+  private waitForOpen(ws: WebSocketLike): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.detachWs(ws);
+        reject(new Error('timeout'));
+      }, 10_000);
+
+      ws.onopen = () => {
+        clearTimeout(timeout);
+        resolve();
+      };
+      ws.onerror = () => {
+        clearTimeout(timeout);
+        reject(new Error('connection error'));
+      };
+      ws.onclose = () => {
+        clearTimeout(timeout);
+        reject(new Error('closed before open'));
+      };
+    });
+  }
+
+  /** Wire onmessage, onclose, and onerror handlers onto a WebSocket. */
+  private wireWsHandlers(ws: WebSocketLike): void {
+    ws.onmessage = (ev) => {
+      this.handleMessage(ev.data);
+    };
+    ws.onclose = () => {
+      log.warn('WebSocket closed unexpectedly — will auto-reconnect.');
+      this.cleanup();
+      if (!this.intentionalClose) {
+        this.setState('disconnected');
+        if (!this.rejected) {
+          this.scheduleReconnect();
+        }
+      }
+    };
+    ws.onerror = () => {
+      // onclose will fire after onerror — reconnect handled there
+    };
+  }
+
+  /** Post-open setup: reset backoff, start keepalive, schedule next proactive reconnect. */
+  private onWsConnected(): void {
+    this.backoff = INITIAL_BACKOFF_MS;
+    this.startKeepalive();
+    this.scheduleProactiveReconnect();
+  }
+
+  /** Detach all handlers from a WebSocket and close it. */
+  private detachWs(ws: WebSocketLike): void {
+    ws.onopen = null;
+    ws.onclose = null;
+    ws.onmessage = null;
+    ws.onerror = null;
+    try {
+      ws.close();
+    } catch {
+      /* ignore */
+    }
   }
 
   private handleMessage(data: unknown): void {
@@ -320,37 +398,81 @@ export class NewioWebSocket {
     }, KEEPALIVE_MS);
   }
 
+  /**
+   * Seamless proactive reconnect: opens a new connection first, then closes the old one.
+   * Both connections receive events during the overlap window — consumers already
+   * deduplicate via event handlers. If the new connection gets rejected (e.g. connection
+   * limit exceeded), we abandon it and keep using the old connection — it will eventually
+   * hit the 2h hard limit and normal auto-reconnect kicks in.
+   */
   private scheduleProactiveReconnect(): void {
-    log.debug(`Scheduling proactive reconnect in ${Math.round(PROACTIVE_RECONNECT_MS / 60000)}min.`);
+    log.debug(`Scheduling proactive reconnect in ${Math.round(this.proactiveReconnectMs / 60000)}min.`);
     this.proactiveReconnectTimer = setTimeout(() => {
-      if (!this.intentionalClose) {
-        log.info('Proactive reconnect triggered (approaching 2h limit).');
-        void this.doConnect().catch(() => {});
+      if (this.intentionalClose) {
+        return;
       }
-    }, PROACTIVE_RECONNECT_MS);
+      void this.doProactiveReconnect();
+    }, this.proactiveReconnectMs);
+  }
+
+  private async doProactiveReconnect(): Promise<void> {
+    log.info('Proactive reconnect starting — opening new connection before closing old.');
+    const oldWs = this.ws;
+
+    try {
+      const newWs = await this.createWs();
+      await this.waitForOpen(newWs);
+
+      log.info('Proactive reconnect — new connection open, entering overlap period.');
+      // New connection is open — wire it up and keep old alive during overlap
+      // so events are received on both while backend subscribes the new connectionId.
+      if (oldWs) {
+        oldWs.onclose = null;
+        oldWs.onerror = null;
+        oldWs.onopen = null;
+      }
+      this.clearTimers();
+      this.ws = newWs;
+      this.wireWsHandlers(newWs);
+      // Route events from old WS to handlers during overlap
+      if (oldWs) {
+        oldWs.onmessage = (ev) => {
+          this.handleMessage(ev.data);
+        };
+      }
+      this.onWsConnected();
+
+      // Close old connection after overlap period
+      if (oldWs) {
+        setTimeout(() => {
+          log.info('Proactive reconnect — overlap complete, closing old connection.');
+          oldWs.onmessage = null;
+          try {
+            oldWs.close();
+          } catch {
+            /* ignore */
+          }
+        }, PROACTIVE_OVERLAP_MS);
+      }
+    } catch (err) {
+      // New connection failed — keep using old connection.
+      // It will eventually hit the 2h hard limit and normal auto-reconnect kicks in.
+      log.warn(
+        `Proactive reconnect failed (${err instanceof Error ? err.message : 'unknown'}) — keeping old connection.`,
+      );
+    }
   }
 
   private scheduleReconnect(): void {
-    log.info(`Reconnecting in ${this.backoff / 1000}s...`);
+    log.info(`Scheduling reconnect in ${this.backoff}ms.`);
     this.reconnectTimer = setTimeout(() => {
       void this.doConnect().catch(() => {});
     }, this.backoff);
     this.backoff = Math.min(this.backoff * 2, MAX_BACKOFF_MS);
   }
 
-  private cleanup(): void {
-    if (this.ws) {
-      this.ws.onopen = null;
-      this.ws.onclose = null;
-      this.ws.onmessage = null;
-      this.ws.onerror = null;
-      try {
-        this.ws.close();
-      } catch {
-        /* ignore */
-      }
-      this.ws = null;
-    }
+  /** Clear all timers (keepalive, reconnect, proactive reconnect). */
+  private clearTimers(): void {
     if (this.keepaliveTimer !== undefined) {
       clearInterval(this.keepaliveTimer);
       this.keepaliveTimer = undefined;
@@ -363,6 +485,14 @@ export class NewioWebSocket {
       clearTimeout(this.proactiveReconnectTimer);
       this.proactiveReconnectTimer = undefined;
     }
+  }
+
+  private cleanup(): void {
+    if (this.ws) {
+      this.detachWs(this.ws);
+      this.ws = null;
+    }
+    this.clearTimers();
   }
 
   private setState(newState: ConnectionState): void {
