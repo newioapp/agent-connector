@@ -158,4 +158,26 @@ describe('AcpSessionStream', () => {
     expect(segments).toHaveLength(1);
     expect(segments[0].text).toBe('delayed');
   });
+
+  it('returns false for unknown session update types', () => {
+    const stream = new AcpSessionStream(statusListener);
+
+    expect(stream.handleSessionUpdate(makeUpdate('current_mode_update'))).toBe(false);
+    expect(stream.handleSessionUpdate(makeUpdate('config_option_update'))).toBe(false);
+    expect(stream.handleSessionUpdate(makeUpdate('unknown_type'))).toBe(false);
+  });
+
+  it('passes conversationId to status listener', () => {
+    const calls: { status: string; conversationId?: string }[] = [];
+    const listener: SessionStatusListener = (s, cid) => calls.push({ status: s, conversationId: cid });
+    const stream = new AcpSessionStream(listener, 'conv-123');
+
+    stream.handleSessionUpdate(makeUpdate('agent_message_chunk', 'hi'));
+    stream.handleSessionUpdate(makeUpdate('tool_call'));
+
+    expect(calls).toEqual([
+      { status: 'typing', conversationId: 'conv-123' },
+      { status: 'tool_calling', conversationId: 'conv-123' },
+    ]);
+  });
 });
