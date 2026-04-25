@@ -256,6 +256,8 @@ export class NewioWebSocket {
       log.warn('WebSocket connection rejected by server.');
       this.rejected = true;
       this.setState('disconnected');
+      // TODO: waitForReady doesn't propagate the reason from the connection.rejected frame.
+      // If more rejection reasons are added, update waitForReady to return { result, reason }.
       this.onConnectionRejectedHandler?.('CONNECTION_LIMIT_EXCEEDED');
       this.detachWs(ws);
       throw new ConnectionRejectedError('CONNECTION_LIMIT_EXCEEDED');
@@ -460,25 +462,23 @@ export class NewioWebSocket {
 
       const result = await this.waitForReady(newWs);
 
-      if (oldWsState.died && (result === 'rejected' || result === 'timeout')) {
-        // Both connections are dead — clean up and let auto-reconnect handle it
-        log.warn('Proactive reconnect — old connection died and new connection rejected, triggering reconnect.');
+      if (result === 'rejected' || result === 'timeout') {
+        log.warn(`Proactive reconnect — ${result}.`);
         this.detachWs(newWs);
-        this.cleanup();
-        this.setState('disconnected');
-        this.scheduleReconnect();
-      } else if (!oldWsState.died && (result === 'rejected' || result === 'timeout')) {
-        // Rejected or timeout — revert to old connection
-        log.warn(`Proactive reconnect — ${result}, reverting to old connection.`);
-        this.detachWs(newWs);
-        if (oldWs) {
+        if (!oldWsState.died && oldWs) {
+          log.info('Reverting to old connection.');
           this.clearTimers();
           this.ws = oldWs;
           this.wireWsHandlers(oldWs);
           this.onWsConnected();
+        } else {
+          log.warn('No usable connection — scheduling reconnect.');
+          this.cleanup();
+          this.setState('disconnected');
+          this.scheduleReconnect();
         }
       } else {
-        // Use the new one (accepted)
+        // accepted — use new connection
         log.info('Proactive reconnect — using new connection, and close old connection.');
         this.clearTimers();
         this.ws = newWs;
