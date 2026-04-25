@@ -20,6 +20,11 @@ export interface CronJobRow {
   readonly payload?: unknown;
 }
 
+export interface SessionMetadata {
+  readonly correlationId: string;
+  readonly promptFormatterVersion: string;
+}
+
 export class SessionStore {
   private readonly db: Database.Database;
 
@@ -29,7 +34,8 @@ export class SessionStore {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS session_mapping (
         newioSessionId TEXT PRIMARY KEY,
-        correlationId TEXT NOT NULL
+        correlationId TEXT NOT NULL,
+        promptFormatterVersion TEXT NOT NULL
       )
     `);
     this.db.exec(`
@@ -45,19 +51,24 @@ export class SessionStore {
     log.info(`Opened session store: ${dbPath}`);
   }
 
-  /** Get the correlation ID for a Newio session. */
-  get(newioSessionId: string): string | undefined {
+  /** Get the session metadata for a Newio session. */
+  get(newioSessionId: string): SessionMetadata | undefined {
     const row = this.db
-      .prepare('SELECT correlationId FROM session_mapping WHERE newioSessionId = ?')
-      .get(newioSessionId) as { correlationId: string } | undefined;
-    return row?.correlationId;
+      .prepare('SELECT correlationId, promptFormatterVersion FROM session_mapping WHERE newioSessionId = ?')
+      .get(newioSessionId) as { correlationId: string; promptFormatterVersion: string } | undefined;
+    if (!row) {
+      return undefined;
+    }
+    return { correlationId: row.correlationId, promptFormatterVersion: row.promptFormatterVersion };
   }
 
   /** Store a mapping. */
-  set(newioSessionId: string, correlationId: string): void {
+  set(newioSessionId: string, correlationId: string, promptFormatterVersion: string): void {
     this.db
-      .prepare('INSERT OR REPLACE INTO session_mapping (newioSessionId, correlationId) VALUES (?, ?)')
-      .run(newioSessionId, correlationId);
+      .prepare(
+        'INSERT OR REPLACE INTO session_mapping (newioSessionId, correlationId, promptFormatterVersion) VALUES (?, ?, ?)',
+      )
+      .run(newioSessionId, correlationId, promptFormatterVersion);
   }
 
   /** Remove a mapping. */

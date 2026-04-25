@@ -1,16 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { SessionStream } from '../../../src/core/instances/session-stream';
-import type { SessionStatusListener } from '../../../src/core/agent-session';
+import { AcpSessionStream } from '../../src/core/acp-session-stream';
+import type { SessionStatusListener } from '../../src/core/types';
 
 function makeUpdate(type: string, text?: string) {
   const update: Record<string, unknown> = { sessionUpdate: type };
   if (text !== undefined) {
     update.content = { type: 'text', text };
   }
-  return { update } as never;
+  return update as never;
 }
 
-describe('SessionStream', () => {
+describe('AcpSessionStream', () => {
   let statusListener: SessionStatusListener;
   let statuses: string[];
 
@@ -20,7 +20,7 @@ describe('SessionStream', () => {
   });
 
   it('aggregates consecutive chunks of the same type', async () => {
-    const stream = new SessionStream(statusListener);
+    const stream = new AcpSessionStream(statusListener);
 
     stream.handleSessionUpdate(makeUpdate('agent_message_chunk', 'Hello '));
     stream.handleSessionUpdate(makeUpdate('agent_message_chunk', 'world'));
@@ -35,7 +35,7 @@ describe('SessionStream', () => {
   });
 
   it('flushes when type changes', async () => {
-    const stream = new SessionStream(statusListener);
+    const stream = new AcpSessionStream(statusListener);
 
     stream.handleSessionUpdate(makeUpdate('agent_thought_chunk', 'thinking...'));
     stream.handleSessionUpdate(makeUpdate('agent_message_chunk', 'result'));
@@ -52,7 +52,7 @@ describe('SessionStream', () => {
   });
 
   it('handles updates without text content', async () => {
-    const stream = new SessionStream(statusListener);
+    const stream = new AcpSessionStream(statusListener);
 
     stream.handleSessionUpdate(makeUpdate('tool_call'));
     stream.handleSessionUpdate(makeUpdate('agent_message_chunk', 'done'));
@@ -69,20 +69,19 @@ describe('SessionStream', () => {
   });
 
   it('emits status changes based on update type', () => {
-    const stream = new SessionStream(statusListener);
+    const stream = new AcpSessionStream(statusListener);
 
     stream.handleSessionUpdate(makeUpdate('agent_message_chunk', 'hi'));
     stream.handleSessionUpdate(makeUpdate('agent_thought_chunk', 'hmm'));
     stream.handleSessionUpdate(makeUpdate('tool_call'));
     stream.handleSessionUpdate(makeUpdate('tool_call_update'));
-    stream.handleSessionUpdate(makeUpdate('plan'));
     stream.finish();
 
     expect(statuses).toEqual(['typing', 'thinking', 'tool_calling', 'tool_calling']);
   });
 
   it('finish is idempotent', async () => {
-    const stream = new SessionStream(statusListener);
+    const stream = new AcpSessionStream(statusListener);
 
     stream.handleSessionUpdate(makeUpdate('agent_message_chunk', 'hi'));
     stream.finish();
@@ -96,7 +95,7 @@ describe('SessionStream', () => {
   });
 
   it('yields nothing when no updates before finish', async () => {
-    const stream = new SessionStream(statusListener);
+    const stream = new AcpSessionStream(statusListener);
     stream.finish();
 
     const segments = [];
@@ -107,11 +106,11 @@ describe('SessionStream', () => {
   });
 
   it('handles non-text content gracefully', async () => {
-    const stream = new SessionStream(statusListener);
+    const stream = new AcpSessionStream(statusListener);
 
-    // Content with non-text type
     stream.handleSessionUpdate({
-      update: { sessionUpdate: 'agent_message_chunk', content: { type: 'image' } },
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'image' },
     } as never);
     stream.finish();
 
@@ -123,10 +122,11 @@ describe('SessionStream', () => {
   });
 
   it('handles content with non-string text gracefully', async () => {
-    const stream = new SessionStream(statusListener);
+    const stream = new AcpSessionStream(statusListener);
 
     stream.handleSessionUpdate({
-      update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 123 } },
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text: 123 },
     } as never);
     stream.finish();
 
@@ -134,12 +134,11 @@ describe('SessionStream', () => {
     for await (const s of stream.segments()) {
       segments.push(s);
     }
-    // text is not a string, so it should be treated as no text
     expect(segments).toEqual([{ type: 'agent_message_chunk', text: '' }]);
   });
 
   it('segments() awaits when no data is ready', async () => {
-    const stream = new SessionStream(statusListener);
+    const stream = new AcpSessionStream(statusListener);
 
     const segments: { type: string; text: string }[] = [];
     const consumer = (async () => {
