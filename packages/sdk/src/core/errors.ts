@@ -103,6 +103,17 @@ export class WaitlistPendingApiError extends ApiError {
   }
 }
 
+/** Thrown when the server rejects a WebSocket connection (e.g. connection limit exceeded). */
+export class ConnectionRejectedError extends NewioError {
+  readonly reason: string;
+
+  constructor(reason: string) {
+    super(`WebSocket connection rejected: ${reason}`);
+    this.name = 'ConnectionRejectedError';
+    this.reason = reason;
+  }
+}
+
 /** Thrown when the approval flow times out or is rejected. */
 export class ApprovalTimeoutError extends NewioError {
   constructor() {

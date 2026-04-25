@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NewioWebSocket, type WebSocketLike } from '../src/core/websocket.js';
+import { ConnectionRejectedError } from '../src/core/errors.js';
 
 /** Creates a mock WebSocket that exposes trigger methods. */
 function createMockWs() {
@@ -379,7 +380,7 @@ describe('NewioWebSocket', () => {
 
       client.setOnConnectionRejected(rejectedHandler);
       // connect() throws on rejection
-      await expect(client.connect()).rejects.toThrow('connection rejected');
+      await expect(client.connect()).rejects.toThrow(ConnectionRejectedError);
       expect(connectCount).toBe(1);
       expect(rejectedHandler).toHaveBeenCalledWith('CONNECTION_LIMIT_EXCEEDED');
 
