@@ -242,35 +242,12 @@ export class NewioWebSocket {
     const ws = this.wsFactory(url);
     this.ws = ws;
 
-    await new Promise<void>((resolve, reject) => {
-      ws.onopen = () => {
-        log.info('WebSocket connected.');
-        this.setState('connected');
-        this.onWsConnected();
-        resolve();
-      };
+    await this.waitForOpen(ws);
 
-      ws.onclose = () => {
-        this.cleanup();
-        if (!this.intentionalClose) {
-          log.warn('WebSocket closed unexpectedly — will auto-reconnect.');
-          this.setState('disconnected');
-          if (!this.rejected) {
-            this.scheduleReconnect();
-          }
-        }
-        reject(new Error('WebSocket closed before open'));
-      };
-
-      ws.onerror = () => {
-        log.warn('WebSocket error during connect.');
-        // onclose fires after onerror — rejection handled there
-      };
-    });
-
-    ws.onmessage = (ev) => {
-      this.handleMessage(ev.data);
-    };
+    log.info('WebSocket connected.');
+    this.setState('connected');
+    this.wireWsHandlers(ws);
+    this.onWsConnected();
   }
 
   /** Create a new WebSocket instance with a fresh token. */
@@ -510,8 +487,10 @@ export class NewioWebSocket {
             resolve('rejected');
             return;
           }
-        } catch {
-          /* ignore parse errors */
+        } catch (err) {
+          log.warn(
+            `Failed to parse message while waiting for accept/reject: ${err instanceof Error ? err.message : 'unknown'}`,
+          );
         }
         // Forward non-accept/reject messages to the normal handler
         originalOnMessage?.call(ws, ev);

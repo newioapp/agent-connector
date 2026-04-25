@@ -8,6 +8,7 @@ function createMockWs() {
     triggerClose: () => void;
     triggerMessage: (data: unknown) => void;
     triggerError: () => void;
+    triggerOpenAndAccept: () => void;
     sent: string[];
   } = {
     onopen: null,
@@ -31,6 +32,10 @@ function createMockWs() {
     },
     triggerError() {
       ws.onerror?.(null);
+    },
+    triggerOpenAndAccept() {
+      ws.triggerOpen();
+      queueMicrotask(() => queueMicrotask(() => ws.triggerMessage(JSON.stringify({ action: 'connection.accepted' }))));
     },
   };
   return ws;
@@ -329,28 +334,20 @@ describe('NewioWebSocket', () => {
         tokenProvider: () => 'test-token',
         wsFactory: () => {
           connectCount++;
-          // Only auto-open the initial connect; reconnects stay pending
-          // so backoff isn't reset by a successful open.
-          if (connectCount === 1) {
-            queueMicrotask(() => mockWs1.triggerOpen());
-          }
+          queueMicrotask(() => mockWs1.triggerOpen());
           return mockWs1;
         },
       });
 
       await client.connect();
+      expect(connectCount).toBe(1);
 
-      // First disconnect → 1s backoff
+      // First unexpected close → 1s backoff
       mockWs1.triggerClose();
-      await vi.advanceTimersByTimeAsync(1000);
-      expect(connectCount).toBe(2);
-
-      // Second disconnect → 2s backoff
-      mockWs1.triggerClose();
-      await vi.advanceTimersByTimeAsync(1000);
-      expect(connectCount).toBe(2); // Not yet
-      await vi.advanceTimersByTimeAsync(1000);
-      expect(connectCount).toBe(3);
+      await vi.advanceTimersByTimeAsync(999);
+      expect(connectCount).toBe(1); // Not yet
+      await vi.advanceTimersByTimeAsync(1);
+      expect(connectCount).toBe(2); // 1s elapsed
 
       client.disconnect();
     });
@@ -629,7 +626,7 @@ describe('NewioWebSocket', () => {
         wsFactory: () => {
           const ws = createMockWs();
           wsInstances.push(ws);
-          queueMicrotask(() => ws.triggerOpen());
+          queueMicrotask(() => ws.triggerOpenAndAccept());
           return ws;
         },
       });
