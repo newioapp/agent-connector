@@ -24,7 +24,8 @@ export const NEWIO_DIR = join(homedir(), '.newio', 'connector');
 const CONFIG_PATH = join(NEWIO_DIR, 'config.json');
 const TOKENS_PATH = join(NEWIO_DIR, 'tokens.json');
 
-function ensureDir(): void {
+/** Create the data directory if it doesn't exist. */
+export function ensureNewioDir(): void {
   if (!existsSync(NEWIO_DIR)) {
     mkdirSync(NEWIO_DIR, { recursive: true, mode: 0o700 });
     log.info(`Created ${NEWIO_DIR}`);
@@ -40,7 +41,7 @@ function readJson<T>(path: string, fallback: T): T {
 }
 
 function writeJson(path: string, data: unknown, mode?: number): void {
-  ensureDir();
+  ensureNewioDir();
   writeFileSync(path, JSON.stringify(data, null, 2) + '\n', 'utf8');
   if (mode !== undefined) {
     chmodSync(path, mode);
