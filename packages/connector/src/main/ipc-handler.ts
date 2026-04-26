@@ -98,15 +98,14 @@ export class IpcHandler implements IpcApi {
   }
 
   async addAgent(input: AddAgentInput): Promise<AgentConfig> {
-    const config = await this.agentConfigManager.add(input);
     // Auto-detect shell and populate env vars for the new agent
     const shells = listAvailableShells();
     const selectedShell = shells.length > 0 ? shells[0] : undefined;
-    if (selectedShell) {
-      const envVars = await getShellEnv(selectedShell);
-      return this.agentConfigManager.update(config.id, { envVars, envVarsShell: selectedShell });
-    }
-    return config;
+    const envVars = selectedShell ? await getShellEnv(selectedShell) : undefined;
+    return this.agentConfigManager.add({
+      ...input,
+      ...(envVars ? { envVars, envVarsShell: selectedShell } : {}),
+    });
   }
 
   async updateAgent(agentId: string, updates: UpdateAgentInput): Promise<AgentConfig> {

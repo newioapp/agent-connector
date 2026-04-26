@@ -8,7 +8,7 @@
  *   ~/.newio/connector/config.json  — AgentConfig[]
  *   ~/.newio/connector/tokens.json  — Record<string, AgentTokens>  (mode 0o600)
  */
-import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { randomUUID } from 'crypto';
@@ -35,17 +35,17 @@ export function ensureNewioDir(): void {
 function readJson<T>(path: string, fallback: T): T {
   try {
     return JSON.parse(readFileSync(path, 'utf8')) as T;
-  } catch {
+  } catch (err) {
+    if (existsSync(path)) {
+      log.warn(`Failed to parse ${path}, using fallback`, err);
+    }
     return fallback;
   }
 }
 
 function writeJson(path: string, data: unknown, mode?: number): void {
   ensureNewioDir();
-  writeFileSync(path, JSON.stringify(data, null, 2) + '\n', 'utf8');
-  if (mode !== undefined) {
-    chmodSync(path, mode);
-  }
+  writeFileSync(path, JSON.stringify(data, null, 2) + '\n', { encoding: 'utf8', mode: mode ?? 0o644 });
 }
 
 export class FileAgentConfigManager implements AgentConfigManager {
@@ -65,7 +65,8 @@ export class FileAgentConfigManager implements AgentConfigManager {
         displayName: input.displayName,
         ...(input.newioUsername ? { username: input.newioUsername } : {}),
       },
-      envVars: {},
+      envVars: input.envVars ?? {},
+      ...(input.envVarsShell ? { envVarsShell: input.envVarsShell } : {}),
       ...(input.acp ? { acp: input.acp } : {}),
     };
     const agents = this.list();
