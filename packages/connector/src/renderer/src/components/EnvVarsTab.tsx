@@ -3,12 +3,11 @@
  *
  * Supports auto-populating from the user's login shell and manual editing.
  * Auto-saves with debounce on every change. Empty entries are pruned on unmount.
- *
- * Env vars are stored in electron-store (desktop-only), not in the agent config.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Plus, Trash2, RefreshCw, Loader2, ChevronDown } from 'lucide-react';
 import type { AgentStatusInfo } from '../../../shared/types';
+import { useAgentStore } from '../stores/agent-store';
 import { Button, Hint } from './ui';
 
 interface EnvEntry {
@@ -40,6 +39,7 @@ function hasContent(entry: EnvEntry): boolean {
 }
 
 export function EnvVarsTab({ agent }: { readonly agent: AgentStatusInfo }): React.JSX.Element {
+  const updateConfig = useAgentStore((s) => s.updateConfig);
   const [entries, setEntries] = useState<EnvEntry[]>([]);
   const [importing, setImporting] = useState(false);
   const [shells, setShells] = useState<string[]>([]);
@@ -52,31 +52,28 @@ export function EnvVarsTab({ agent }: { readonly agent: AgentStatusInfo }): Reac
   const initialLoadRef = useRef(true);
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
+  const updateConfigRef = useRef(updateConfig);
+  updateConfigRef.current = updateConfig;
 
   // Load available shells on mount
   useEffect(() => {
     void window.api.listShells().then((available) => {
       setShells(available);
-      if (available.length > 0 && !selectedShell) {
+      const saved = agent.config.envVarsShell;
+      if (saved && available.includes(saved)) {
+        setSelectedShell(saved);
+      } else if (available.length > 0) {
         setSelectedShell(available[0]);
       }
     });
-  }, []);
+  }, [agent.id]);
 
-  // Load env vars from electron-store on agent change
+  // Load from config on agent change only (not on config updates from our own saves)
   useEffect(() => {
     agentIdRef.current = agent.id;
     initialLoadRef.current = true;
-    void window.api.getAgentEnvVars(agent.id).then((envConfig) => {
-      if (envConfig) {
-        setEntries(Object.entries(envConfig.envVars).map(([key, value]) => ({ key, value })));
-        if (envConfig.envVarsShell) {
-          setSelectedShell(envConfig.envVarsShell);
-        }
-      } else {
-        setEntries([]);
-      }
-    });
+    const envVars = agent.config.envVars;
+    setEntries(Object.entries(envVars).map(([key, value]) => ({ key, value })));
   }, [agent.id]);
 
   // Prune empty entries and save on unmount
@@ -85,7 +82,9 @@ export function EnvVarsTab({ agent }: { readonly agent: AgentStatusInfo }): Reac
       clearTimeout(debounceRef.current);
       const pruned = entriesRef.current.filter(hasContent);
       const envVars = entriesToRecord(pruned);
-      void window.api.updateAgentEnvVars(agentIdRef.current, envVars);
+      void window.api.updateAgentEnvVars(agentIdRef.current, envVars).then((updated) => {
+        updateConfigRef.current(agentIdRef.current, updated);
+      });
     };
   }, []);
 
@@ -99,7 +98,9 @@ export function EnvVarsTab({ agent }: { readonly agent: AgentStatusInfo }): Reac
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       const envVars = entriesToRecord(entries);
-      void window.api.updateAgentEnvVars(agentIdRef.current, envVars);
+      void window.api.updateAgentEnvVars(agentIdRef.current, envVars).then((updated) => {
+        updateConfigRef.current(agentIdRef.current, updated);
+      });
     }, 800);
 
     return () => clearTimeout(debounceRef.current);
@@ -113,8 +114,10 @@ export function EnvVarsTab({ agent }: { readonly agent: AgentStatusInfo }): Reac
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([key, value]) => ({ key, value }));
       setEntries(sorted);
+      // Persist the shell source alongside the env vars
       const envVars = entriesToRecord(sorted);
-      await window.api.updateAgentEnvVars(agentIdRef.current, envVars, selectedShell);
+      const updated = await window.api.updateAgentEnvVars(agentIdRef.current, envVars, selectedShell);
+      updateConfigRef.current(agentIdRef.current, updated);
     } finally {
       setImporting(false);
     }

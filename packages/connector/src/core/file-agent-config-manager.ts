@@ -1,13 +1,12 @@
 /**
- * File-based agent config manager — persists agent configs and tokens to ~/.newio/.
+ * File-based agent config manager — persists agent configs and tokens to ~/.newio/connector/.
  *
  * Platform-agnostic (pure node:fs + node:os). Used by both the Electron desktop app
- * and a future CLI. Environment variables are NOT stored here — they are a
- * desktop-only concern managed by electron-store.
+ * and a future CLI.
  *
  * Files:
- *   ~/.newio/config.json  — AgentConfig[]
- *   ~/.newio/tokens.json  — Record<string, AgentTokens>  (mode 0o600)
+ *   ~/.newio/connector/config.json  — AgentConfig[]
+ *   ~/.newio/connector/tokens.json  — Record<string, AgentTokens>  (mode 0o600)
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from 'fs';
 import { join } from 'path';
@@ -20,7 +19,7 @@ import { Logger } from './logger';
 const log = new Logger('file-agent-config-manager');
 
 /** Shared data directory for all Newio connector apps (desktop + CLI). */
-export const NEWIO_DIR = join(homedir(), '.newio');
+export const NEWIO_DIR = join(homedir(), '.newio', 'connector');
 
 const CONFIG_PATH = join(NEWIO_DIR, 'config.json');
 const TOKENS_PATH = join(NEWIO_DIR, 'tokens.json');
@@ -65,6 +64,7 @@ export class FileAgentConfigManager implements AgentConfigManager {
         displayName: input.displayName,
         ...(input.newioUsername ? { username: input.newioUsername } : {}),
       },
+      envVars: {},
       ...(input.acp ? { acp: input.acp } : {}),
     };
     const agents = this.list();
@@ -90,6 +90,8 @@ export class FileAgentConfigManager implements AgentConfigManager {
     const updated: AgentConfig = {
       ...existing,
       newio,
+      ...(updates.envVars !== undefined ? { envVars: updates.envVars } : {}),
+      ...(updates.envVarsShell !== undefined ? { envVarsShell: updates.envVarsShell } : {}),
       ...(updates.acp !== undefined ? { acp: updates.acp } : {}),
     };
     const copy = [...agents];

@@ -39,7 +39,6 @@ const api: ConnectorAPI = {
   stopAgent: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.stopAgent, agentId),
   listShells: () => ipcRenderer.invoke(IPC_CHANNELS.listShells),
   getShellEnv: (shell) => ipcRenderer.invoke(IPC_CHANNELS.getShellEnv, shell),
-  getAgentEnvVars: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.getAgentEnvVars, agentId),
   updateAgentEnvVars: (agentId, envVars, shell) =>
     ipcRenderer.invoke(IPC_CHANNELS.updateAgentEnvVars, agentId, envVars, shell),
   listAgentModels: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.listAgentModels, agentId),
