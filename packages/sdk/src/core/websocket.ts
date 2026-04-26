@@ -445,12 +445,12 @@ export class NewioWebSocket {
   private async doProactiveReconnect(): Promise<void> {
     log.info('Proactive reconnect starting — opening new connection before closing old.');
     const oldWs = this.ws;
+    const oldWsState = { died: false };
 
     try {
       const newWs = await this.createWs();
 
       // If old WS dies during the wait, abandon proactive reconnect and let normal reconnect handle it
-      const oldWsState = { died: false };
       if (oldWs) {
         oldWs.onclose = () => {
           log.warn('Proactive reconnect — old connection died during wait.');
@@ -465,18 +465,7 @@ export class NewioWebSocket {
       if (result === 'rejected' || result === 'timeout') {
         log.warn(`Proactive reconnect — ${result}.`);
         this.detachWs(newWs);
-        if (!oldWsState.died && oldWs) {
-          log.info('Reverting to old connection.');
-          this.clearTimers();
-          this.ws = oldWs;
-          this.wireWsHandlers(oldWs);
-          this.onWsConnected();
-        } else {
-          log.warn('No usable connection — scheduling reconnect.');
-          this.cleanup();
-          this.setState('disconnected');
-          this.scheduleReconnect();
-        }
+        this.revertOrReconnect(oldWs, oldWsState.died);
       } else {
         // accepted — use new connection
         log.info('Proactive reconnect — using new connection, and close old connection.');
@@ -495,10 +484,24 @@ export class NewioWebSocket {
         }
       }
     } catch (err) {
-      // New connection failed to open — keep using old connection.
-      log.warn(
-        `Proactive reconnect failed (${err instanceof Error ? err.message : 'unknown'}) — keeping old connection.`,
-      );
+      log.warn(`Proactive reconnect failed (${err instanceof Error ? err.message : 'unknown'}).`);
+      this.revertOrReconnect(oldWs, oldWsState.died);
+    }
+  }
+
+  /** Revert to the old WebSocket if it's still alive, otherwise schedule a fresh reconnect. */
+  private revertOrReconnect(oldWs: WebSocketLike | null, oldWsDied: boolean): void {
+    if (!oldWsDied && oldWs) {
+      log.info('Reverting to old connection.');
+      this.clearTimers();
+      this.ws = oldWs;
+      this.wireWsHandlers(oldWs);
+      this.onWsConnected();
+    } else {
+      log.warn('No usable connection — scheduling reconnect.');
+      this.cleanup();
+      this.setState('disconnected');
+      this.scheduleReconnect();
     }
   }
 
