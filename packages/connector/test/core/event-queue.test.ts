@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { EventQueue } from '../../src/core/event-queue';
 import type { AgentEvent } from '../../src/core/event-queue';
-import type { IncomingMessage, ContactEvent, CronTriggerEvent } from '@newio/sdk';
+import type { IncomingMessage, ContactEvent, CronTriggerEvent } from '@newio/agent-sdk';
 
 function makeMsg(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
   return {

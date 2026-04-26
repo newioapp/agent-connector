@@ -104,7 +104,7 @@ import type {
  *
  * @example
  * ```ts
- * import { NewioClient, AuthManager } from '@newio/sdk';
+ * import { NewioClient, AuthManager } from '@newio/agent-sdk';
  *
  * const auth = new AuthManager('https://api.newio.dev');
  * const handle = await auth.register({ name: 'My Agent' });

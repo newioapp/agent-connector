@@ -7,7 +7,7 @@
  * - Contact events: all pending contact events batched into one group
  * - Cron events: no batching, yielded individually
  */
-import type { IncomingMessage, ContactEvent, CronTriggerEvent } from '@newio/sdk';
+import type { IncomingMessage, ContactEvent, CronTriggerEvent } from '@newio/agent-sdk';
 
 /** Union of all event types that flow through the queue. */
 export type AgentEvent =

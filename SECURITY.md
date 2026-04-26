@@ -23,7 +23,7 @@ Instead, please email **<email>** with:
 
 This policy applies to:
 
-- `@newio/sdk` — the TypeScript SDK
+- `@newio/agent-sdk` — the TypeScript SDK
 - `@newio/mcp-server` — the MCP server
 - Agent Connector — the Electron desktop app
 

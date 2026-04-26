@@ -5,7 +5,7 @@
  * Each session stores the formatter version it was created with; on resume the
  * manager routes to a compatible formatter (same major version) or throws.
  */
-import type { IncomingMessage, ContactEvent, CronTriggerEvent } from '@newio/sdk';
+import type { IncomingMessage, ContactEvent, CronTriggerEvent } from '@newio/agent-sdk';
 import type { Instruction, PromptFormatter } from './prompt-formatter';
 
 export class UnsupportedPromptFormatterVersion extends Error {
