@@ -1,7 +1,7 @@
 import { app, BrowserWindow, Menu, nativeTheme, shell } from 'electron';
 import { join } from 'path';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
-import { setLogHandler } from '@newio/sdk';
+import { setLogHandler } from '@newio/agent-sdk';
 import { createStore } from './store';
 import { MainWindowManager } from './main-window';
 import { StoreAgentConfigManager } from './agent-config-manager';

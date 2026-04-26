@@ -5,7 +5,7 @@
  * The {@link PromptManager} selects a compatible formatter based on the
  * major version stored with each session.
  */
-import type { IncomingMessage, ContactEvent, CronTriggerEvent, NewioApp } from '@newio/sdk';
+import type { IncomingMessage, ContactEvent, CronTriggerEvent, NewioApp } from '@newio/agent-sdk';
 
 export interface Instruction {
   readonly prompt: string;

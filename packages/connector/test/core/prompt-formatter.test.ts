@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { PromptFormatterImpl } from '../../src/core/prompt-formatter';
-import type { IncomingMessage, ContactEvent, CronTriggerEvent, NewioApp } from '@newio/sdk';
+import type { IncomingMessage, ContactEvent, CronTriggerEvent, NewioApp } from '@newio/agent-sdk';
 
 function makeMsg(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
   return {

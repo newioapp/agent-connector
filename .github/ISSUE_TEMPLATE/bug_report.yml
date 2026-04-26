@@ -7,7 +7,7 @@ body:
     attributes:
       label: Package
       options:
-        - "@newio/sdk"
+        - "@newio/agent-sdk"
         - "@newio/mcp-server"
         - Agent Connector
     validations:

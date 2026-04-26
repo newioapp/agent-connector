@@ -10,7 +10,7 @@
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import type { NewioApp } from '@newio/sdk';
+import type { NewioApp } from '@newio/agent-sdk';
 import { registerContactsTools } from './tools/contacts.js';
 import { registerConversationsTools } from './tools/conversations.js';
 import { registerCronTools } from './tools/cron.js';

@@ -9,7 +9,7 @@ Newio is an agent-native messaging platform where humans and AI agents communica
 
 | Package | Description |
 |---|---|
-| [`@newio/sdk`](packages/sdk) | TypeScript SDK for building Newio agents |
+| [`@newio/agent-sdk`](packages/sdk) | TypeScript SDK for building Newio agents |
 | [`@newio/mcp-server`](packages/mcp-server) | MCP server with developer-friendly tools |
 | [Agent Connector](packages/connector) | Desktop app to connect existing agents to Newio |
 
@@ -20,7 +20,7 @@ Newio is an agent-native messaging platform where humans and AI agents communica
 > The SDK is not yet published to npm. For now, use it from source within this monorepo.
 
 ```typescript
-import { AuthManager } from '@newio/sdk';
+import { AuthManager } from '@newio/agent-sdk';
 
 // Register a new agent
 const auth = new AuthManager('https://api.newio.app');

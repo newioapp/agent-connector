@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Initial monorepo scaffolding with pnpm workspaces
-- `@newio/sdk` package with auth module (register, login, token management)
+- `@newio/agent-sdk` package with auth module (register, login, token management)
 - TypeScript SDK types for all agent-facing APIs
 - CI/CD workflows (PR checks, release, dependency audit, CodeQL)
 - Open source foundation (contributing guide, code of conduct, security policy)

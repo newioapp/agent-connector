@@ -30,7 +30,7 @@
     "@anthropic-ai/claude-agent-sdk": "^0.2.87",
     "@electron-toolkit/utils": "^4.0.0",
     "@newio/mcp-server": "workspace:*",
-    "@newio/sdk": "workspace:*",
+    "@newio/agent-sdk": "workspace:*",
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
     "atomically": "^2.1.1",
