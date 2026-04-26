@@ -117,12 +117,6 @@ export interface AgentConfig {
   /** Idle timeout for sessions in ms. Sessions with no activity are stopped. Default: 1 hour. */
   readonly sessionIdleTimeoutMs?: number;
 
-  /** Environment variables passed to the agent process. */
-  readonly envVars: Readonly<Record<string, string>>;
-
-  /** Shell used to source envVars (e.g. "/bin/zsh"). */
-  readonly envVarsShell?: string;
-
   readonly acp?: AcpConfig;
 }
 
@@ -140,8 +134,6 @@ export interface AddAgentInput {
 export interface UpdateAgentInput {
   readonly displayName?: string;
   readonly newioUsername?: string;
-  readonly envVars?: Readonly<Record<string, string>>;
-  readonly envVarsShell?: string;
   readonly acp?: AcpConfig;
 }
 

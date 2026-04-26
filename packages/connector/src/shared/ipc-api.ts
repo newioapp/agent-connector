@@ -59,8 +59,10 @@ export interface IpcApi {
   listShells(): Promise<string[]>;
   /** Resolve environment variables from a specific shell. */
   getShellEnv(shell: string): Promise<Record<string, string>>;
-  /** Update only the envVars on an agent config (no restart required). */
-  updateAgentEnvVars(agentId: string, envVars: Record<string, string>, shell?: string): Promise<AgentConfig>;
+  /** Get the persisted env var config for an agent. */
+  getAgentEnvVars(agentId: string): Promise<{ envVars: Record<string, string>; envVarsShell?: string } | undefined>;
+  /** Update only the envVars for an agent (stored in electron-store, not in agent config). */
+  updateAgentEnvVars(agentId: string, envVars: Record<string, string>, shell?: string): Promise<void>;
 
   /** List available models for a running agent. */
   listAgentModels(agentId: string): Promise<AgentSessionConfig | undefined>;
@@ -94,6 +96,7 @@ export const IPC_CHANNELS: { readonly [K in keyof IpcApi]: string } = {
   stopAgent: 'stop-agent',
   listShells: 'list-shells',
   getShellEnv: 'get-shell-env',
+  getAgentEnvVars: 'get-agent-env-vars',
   updateAgentEnvVars: 'update-agent-env-vars',
   listAgentModels: 'list-agent-models',
   listAgentModes: 'list-agent-modes',

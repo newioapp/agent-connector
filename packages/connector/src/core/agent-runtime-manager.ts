@@ -44,7 +44,7 @@ export class AgentRuntimeManager {
     return instance ? { status: instance.status, error: instance.error } : { status: 'stopped' };
   }
 
-  start(agentId: string): void {
+  start(agentId: string, envVars?: Readonly<Record<string, string>>): void {
     const existing = this.instances.get(agentId);
     if (existing && existing.status !== 'stopped' && existing.status !== 'error') {
       return;
@@ -91,7 +91,7 @@ export class AgentRuntimeManager {
       },
     };
 
-    const instance = new AcpAgentInstance(config, this.configManager, this.sessionStore, instanceListener);
+    const instance = new AcpAgentInstance(config, this.configManager, this.sessionStore, instanceListener, envVars);
 
     this.instances.set(agentId, instance);
     log.info(`Starting agent ${agentId} (${username ?? 'no username'})`);

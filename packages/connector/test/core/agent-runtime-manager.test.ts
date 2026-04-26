@@ -19,7 +19,6 @@ function makeConfig(id: string, username?: string): AgentConfig {
     id,
     type: 'claude-code',
     newio: username ? { username, displayName: username } : undefined,
-    envVars: {},
     acp: { cwd: '/tmp' },
   };
 }

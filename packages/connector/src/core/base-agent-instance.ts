@@ -88,6 +88,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
     protected readonly configManager: AgentConfigManager,
     protected readonly sessionStore: SessionStore,
     protected readonly listener: AgentInstanceListener,
+    /** Environment variables for the agent process. Injected by the caller (e.g. desktop merges from electron-store). */
+    protected readonly envVars: Readonly<Record<string, string>> = {},
   ) {}
 
   async start(): Promise<void> {

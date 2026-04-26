@@ -83,7 +83,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       throw new Error('ACP config missing');
     }
 
-    await assertNodeAvailable(this.config.envVars);
+    await assertNodeAvailable(this.envVars);
     await this.spawnAndInit();
     await this.sendGreeting(ownerDmConversationId);
   }
@@ -124,7 +124,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
 
     const child = await spawnAsync(command, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...this.config.envVars, TERM: 'dumb' },
+      env: { ...this.envVars, TERM: 'dumb' },
       ...(cwd ? { cwd } : {}),
     });
 

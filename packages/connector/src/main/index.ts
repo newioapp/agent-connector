@@ -4,7 +4,7 @@ import { electronApp, optimizer } from '@electron-toolkit/utils';
 import { setLogHandler } from '@newio/agent-sdk';
 import { createStore } from './store';
 import { MainWindowManager } from './main-window';
-import { StoreAgentConfigManager } from './agent-config-manager';
+import { FileAgentConfigManager, NEWIO_DIR } from '../core/file-agent-config-manager';
 import { AgentRuntimeManager } from '../core/agent-runtime-manager';
 import { SessionStore } from '../core/session-store';
 import { IpcHandler } from './ipc-handler';
@@ -52,8 +52,8 @@ void app.whenReady().then(async () => {
 
   const store = createStore();
   const mainWindowManager = new MainWindowManager(store);
-  const agentConfigManager = new StoreAgentConfigManager(store);
-  const sessionStore = new SessionStore(join(app.getPath('userData'), 'sessions.db'));
+  const agentConfigManager = new FileAgentConfigManager();
+  const sessionStore = new SessionStore(join(NEWIO_DIR, 'sessions.db'));
 
   const agentRuntimeManager = new AgentRuntimeManager(agentConfigManager, sessionStore, {
     onStatusChanged(agentId, status, error) {

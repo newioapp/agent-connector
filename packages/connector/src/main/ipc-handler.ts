@@ -98,7 +98,15 @@ export class IpcHandler implements IpcApi {
   }
 
   async addAgent(input: AddAgentInput): Promise<AgentConfig> {
-    return await this.agentConfigManager.add(input);
+    const config = await this.agentConfigManager.add(input);
+    // Auto-detect shell and populate env vars for the new agent
+    const shells = listAvailableShells();
+    const selectedShell = shells.length > 0 ? shells[0] : undefined;
+    if (selectedShell) {
+      const envVars = await getShellEnv(selectedShell);
+      this.store.set(`agentEnvVars.${config.id}`, { envVars, envVarsShell: selectedShell });
+    }
+    return config;
   }
 
   async updateAgent(agentId: string, updates: UpdateAgentInput): Promise<AgentConfig> {
@@ -108,10 +116,16 @@ export class IpcHandler implements IpcApi {
   async removeAgent(agentId: string): Promise<void> {
     await this.agentRuntimeManager.stop(agentId);
     this.agentConfigManager.remove(agentId);
+    // Clean up env vars from electron-store
+    const all = this.store.get('agentEnvVars');
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure to omit key
+    const { [agentId]: _removed, ...rest } = all;
+    this.store.set('agentEnvVars', rest);
   }
 
   async startAgent(agentId: string): Promise<void> {
-    this.agentRuntimeManager.start(agentId);
+    const envConfig = this.store.get('agentEnvVars')[agentId];
+    this.agentRuntimeManager.start(agentId, envConfig?.envVars);
   }
 
   async stopAgent(agentId: string): Promise<void> {
@@ -126,8 +140,19 @@ export class IpcHandler implements IpcApi {
     return getShellEnv(shell);
   }
 
-  async updateAgentEnvVars(agentId: string, envVars: Record<string, string>, shell?: string): Promise<AgentConfig> {
-    return this.agentConfigManager.update(agentId, { envVars, ...(shell ? { envVarsShell: shell } : {}) });
+  async getAgentEnvVars(
+    agentId: string,
+  ): Promise<{ envVars: Record<string, string>; envVarsShell?: string } | undefined> {
+    const all = this.store.get('agentEnvVars');
+    return agentId in all ? all[agentId] : undefined;
+  }
+
+  async updateAgentEnvVars(agentId: string, envVars: Record<string, string>, shell?: string): Promise<void> {
+    const existing = this.store.get('agentEnvVars')[agentId];
+    this.store.set(`agentEnvVars.${agentId}`, {
+      envVars,
+      envVarsShell: shell ?? existing?.envVarsShell,
+    });
   }
 
   async listAgentModels(agentId: string): Promise<AgentSessionConfig | undefined> {
