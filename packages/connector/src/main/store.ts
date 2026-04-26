@@ -1,14 +1,12 @@
 /**
  * Electron-store schema and factory for persistent app settings.
+ *
+ * Agent configs and tokens are stored in ~/.newio/connector/ (FileAgentConfigManager).
+ * This store holds only UI/desktop-specific settings.
  */
 import Store from 'electron-store';
-import type { ThemeSource, AgentConfig } from '../shared/types';
+import type { ThemeSource } from '../shared/types';
 import type { UpdateMode, UpdateChannel } from '../shared/types';
-
-export interface AgentTokens {
-  readonly accessToken: string;
-  readonly refreshToken: string;
-}
 
 export interface StoreSchema {
   readonly themeSource: ThemeSource;
@@ -20,9 +18,6 @@ export interface StoreSchema {
     readonly width: number;
     readonly height: number;
   };
-  readonly agents: AgentConfig[];
-  /** Persisted tokens keyed by agent config id. */
-  readonly agentTokens: Record<string, AgentTokens>;
 }
 
 export function createStore(): Store<StoreSchema> {
@@ -32,8 +27,6 @@ export function createStore(): Store<StoreSchema> {
       updateMode: 'auto',
       updateChannel: 'latest',
       windowBounds: { width: 960, height: 640 },
-      agents: [],
-      agentTokens: {},
     },
   });
 }

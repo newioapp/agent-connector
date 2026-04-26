@@ -135,6 +135,10 @@ export interface AddAgentInput {
   /** Optional: existing Newio username to login with instead of registering a new agent. */
   readonly newioUsername?: string;
   readonly acp?: AcpConfig;
+  /** Optional: initial environment variables (e.g. synced from shell by the desktop app). */
+  readonly envVars?: Readonly<Record<string, string>>;
+  /** Optional: shell used to source envVars. */
+  readonly envVarsShell?: string;
 }
 
 export interface UpdateAgentInput {
