@@ -40,7 +40,7 @@ export function AgentListItem({
       onClick={onClick}
     >
       {agent.config.newio?.avatarUrl ? (
-        <img src={agent.config.newio.avatarUrl} alt="" className="h-6 w-6 rounded-md object-cover shrink-0" />
+        <img src={agent.config.newio.avatarUrl} alt="" className="h-6 w-6 rounded-full object-cover shrink-0" />
       ) : (
         <AgentTypeIcon type={agent.config.type} size={16} />
       )}
