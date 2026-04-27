@@ -90,12 +90,13 @@ export function EnvVarsTab({ agent }: { readonly agent: AgentStatusInfo }): Reac
 
   // Debounced auto-save
   useEffect(() => {
+    clearTimeout(debounceRef.current);
+
     if (initialLoadRef.current) {
       initialLoadRef.current = false;
       return;
     }
 
-    clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       const envVars = entriesToRecord(entries);
       void window.api.updateAgentEnvVars(agentIdRef.current, envVars).then((updated) => {
