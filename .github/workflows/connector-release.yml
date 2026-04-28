@@ -9,7 +9,7 @@ on:
 
 permissions:
   id-token: write
-  contents: write
+  contents: read
 
 concurrency:
   group: connector-release-${{ github.ref }}
@@ -246,8 +246,3 @@ jobs:
             --distribution-id "${{ secrets[format('{0}_DISTRIBUTION_ID', needs.prepare.outputs.stage == 'dev' && 'DEV' || needs.prepare.outputs.stage == 'integ' && 'INTEG' || 'PROD')] }}" \
             --paths "/downloads/connector/*"
 
-      - name: Create GitHub Release
-        if: needs.prepare.outputs.stage == 'prod'
-        uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
