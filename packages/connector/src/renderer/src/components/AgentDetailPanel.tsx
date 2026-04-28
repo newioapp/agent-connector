@@ -79,9 +79,9 @@ export function AgentDetailPanel({
       {/* Header */}
       <div className="flex items-center gap-3 px-6 py-4">
         {config.newio?.avatarUrl ? (
-          <img src={config.newio.avatarUrl} alt="" className="h-10 w-10 rounded-lg object-cover" />
+          <img src={config.newio.avatarUrl} alt="" className="h-10 w-10 rounded-full object-cover" />
         ) : (
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground">
             {config.type === 'kiro-cli' ? <Terminal size={20} /> : <Bot size={20} />}
           </div>
         )}
