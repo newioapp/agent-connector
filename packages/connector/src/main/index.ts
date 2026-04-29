@@ -11,6 +11,7 @@ import { IpcHandler } from './ipc-handler';
 import { registerIpcHandlers } from './ipc-registry';
 import { EVENT_CHANNELS } from '../shared/ipc-events';
 import { initAutoUpdater, initForceUpdateCheck } from './auto-updater';
+import { blockChromiumShortcuts } from './keyboard-shortcuts';
 import { setLogLevel, Logger } from '../shared/logger';
 
 // Set log level from build-time config (default: info)
@@ -48,6 +49,7 @@ void app.whenReady().then(async () => {
     if (__ENABLE_DEV_TOOLS__) {
       optimizer.watchWindowShortcuts(window);
     }
+    blockChromiumShortcuts(window);
   });
 
   const store = createStore();
