@@ -5,17 +5,13 @@
 import type { BrowserWindow, Input, Event } from 'electron';
 
 /** Returns true if the given keyboard input is a blocked Chromium shortcut. */
-function isBlockedShortcut(input: Input): boolean {
+export function isBlockedShortcut(input: Input): boolean {
   const key = input.key.toLowerCase();
   const isMac = process.platform === 'darwin';
   const meta = isMac ? input.meta : input.control;
 
   // Function keys (all platforms): F5 (reload), F12 (DevTools)
   if (key === 'f5' || key === 'f12') {
-    return true;
-  }
-  // Ctrl+F5 hard reload (Windows/Linux)
-  if (!isMac && input.control && key === 'f5') {
     return true;
   }
 
