@@ -1,7 +1,7 @@
 /**
  * Agent config manager interface — defines the contract for agent config and token persistence.
  *
- * Implementation: FileAgentConfigManager (core/) — backed by ~/.newio/ JSON files.
+ * Implementation: FileAgentConfigManager (core/) — backed by ~/.newio[-stage]/connector/ JSON files.
  */
 import type { AgentConfig, AddAgentInput, UpdateAgentInput, NewioIdentity } from './types';
 

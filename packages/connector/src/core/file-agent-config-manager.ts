@@ -4,9 +4,14 @@
  * Platform-agnostic (pure node:fs + node:os). Used by both the Electron desktop app
  * and a future CLI.
  *
+ * The directory is environment-aware:
+ *   ~/.newio/connector/       (prod)
+ *   ~/.newio-dev/connector/   (dev)
+ *   ~/.newio-integ/connector/ (integ)
+ *
  * Files:
- *   ~/.newio/connector/config.json  — AgentConfig[]
- *   ~/.newio/connector/tokens.json  — Record<string, AgentTokens>  (mode 0o600)
+ *   config.json  — AgentConfig[]
+ *   tokens.json  — Record<string, AgentTokens>  (mode 0o600)
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
@@ -19,7 +24,8 @@ import { Logger } from './logger';
 const log = new Logger('file-agent-config-manager');
 
 /** Shared data directory for all Newio connector apps (desktop + CLI). */
-export const NEWIO_DIR = join(homedir(), '.newio', 'connector');
+const NEWIO_HOME = __NEWIO_STAGE__ === 'prod' ? '.newio' : `.newio-${__NEWIO_STAGE__}`;
+export const NEWIO_DIR = join(homedir(), NEWIO_HOME, 'connector');
 
 const CONFIG_PATH = join(NEWIO_DIR, 'config.json');
 const TOKENS_PATH = join(NEWIO_DIR, 'tokens.json');
