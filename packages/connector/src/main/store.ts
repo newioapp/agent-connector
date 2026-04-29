@@ -1,7 +1,7 @@
 /**
  * Electron-store schema and factory for persistent app settings.
  *
- * Agent configs and tokens are stored in ~/.newio/connector/ (FileAgentConfigManager).
+ * Agent configs and tokens are stored in ~/.newio[-stage]/connector/ (FileAgentConfigManager).
  * This store holds only UI/desktop-specific settings.
  */
 import Store from 'electron-store';

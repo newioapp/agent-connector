@@ -4,3 +4,4 @@ declare const __APP_DISPLAY_NAME__: string;
 declare const __APP_VERSION__: string;
 declare const __ENABLE_DEV_TOOLS__: boolean;
 declare const __LOG_LEVEL__: 'debug' | 'info' | 'warn' | 'error';
+declare const __NEWIO_STAGE__: 'dev' | 'integ' | 'prod';

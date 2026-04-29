@@ -17,6 +17,7 @@ const apiBaseUrl = process.env.API_BASE_URL ?? 'https://api.newio.app';
 const wsBaseUrl = process.env.WS_BASE_URL ?? 'wss://ws.newio.app';
 const appDisplayName = process.env.APP_DISPLAY_NAME ?? 'Agent Connector';
 
+const newioStage = process.env.NEWIO_STAGE ?? 'prod';
 const enableDevTools = process.env.ENABLE_DEV_TOOLS ?? 'false';
 const logLevel = process.env.LOG_LEVEL ?? 'info';
 
@@ -44,6 +45,7 @@ export default defineConfig({
       __APP_VERSION__: JSON.stringify(appVersion),
       __ENABLE_DEV_TOOLS__: JSON.stringify(enableDevTools === 'true'),
       __LOG_LEVEL__: JSON.stringify(logLevel),
+      __NEWIO_STAGE__: JSON.stringify(newioStage),
     },
   },
   preload: {
