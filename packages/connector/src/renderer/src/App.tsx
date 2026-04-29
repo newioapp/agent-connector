@@ -15,6 +15,20 @@ export function App(): React.JSX.Element {
   const agents = useAgentStore((s) => s.agents);
   const selectedAgentId = useAgentStore((s) => s.selectedAgentId);
   const load = useAgentStore((s) => s.load);
+
+  // Block Cmd/Ctrl+A page-wide select-all; allow only inside text inputs.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent): void => {
+      if (e.key.toLowerCase() === 'a' && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+        const tag = (document.activeElement as HTMLElement | null)?.tagName;
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
+          e.preventDefault();
+        }
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, []);
   const selectAgent = useAgentStore((s) => s.selectAgent);
   const setAgentStatus = useAgentStore((s) => s.setAgentStatus);
   const setApprovalUrl = useAgentStore((s) => s.setApprovalUrl);
