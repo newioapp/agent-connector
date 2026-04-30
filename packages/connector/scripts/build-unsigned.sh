@@ -6,6 +6,10 @@ if [ -f .env ]; then
   set -a; source .env; set +a
 fi
 
+# Build-time defaults (override via environment)
+export NEWIO_STAGE="${NEWIO_STAGE:-dev}"
+export LOG_LEVEL="${LOG_LEVEL:-debug}"
+
 rm -rf dist
 
 export CSC_IDENTITY_AUTO_DISCOVERY=false

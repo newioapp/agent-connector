@@ -501,7 +501,7 @@ function buildMcpServers(mcpSocketPath?: string): AcpMcpServer[] {
   if (!mcpSocketPath) {
     return [];
   }
-  const bridgePath = require.resolve('@newio/mcp-server/bridge');
+  const bridgePath = require.resolve('@newio/mcp-server/bridge').replace('app.asar', 'app.asar.unpacked');
   log.debug(`MCP bridge path: ${bridgePath}`);
   return [
     {
