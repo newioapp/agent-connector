@@ -30,9 +30,10 @@ export default defineConfig({
     build: {
       rollupOptions: {
         external: [
-          '@anthropic-ai/claude-agent-sdk',
           '@newio/mcp-server',
           'better-sqlite3',
+          'electron-log',
+          'electron-log/main',
           'electron-store',
           'electron-updater',
         ],
