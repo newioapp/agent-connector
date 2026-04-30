@@ -434,8 +434,12 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     return Promise.resolve({});
   }
 
-  extNotification(method: string, _params: Record<string, unknown>): Promise<void> {
-    log.debug(`${this.logTag} ext notification: ${method}`);
+  extNotification(method: string, params: Record<string, unknown>): Promise<void> {
+    if (/error|failure/i.test(method)) {
+      log.warn(`${this.logTag} ext notification: ${method}`, JSON.stringify(params));
+    } else {
+      log.debug(`${this.logTag} ext notification: ${method}`);
+    }
     return Promise.resolve();
   }
 
@@ -501,7 +505,7 @@ function buildMcpServers(mcpSocketPath?: string): AcpMcpServer[] {
   if (!mcpSocketPath) {
     return [];
   }
-  const bridgePath = require.resolve('@newio/mcp-server/bridge');
+  const bridgePath = require.resolve('@newio/mcp-server/bridge').replace('app.asar', 'app.asar.unpacked');
   log.debug(`MCP bridge path: ${bridgePath}`);
   return [
     {

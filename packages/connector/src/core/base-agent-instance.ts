@@ -146,7 +146,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
       this.listener.onConfigUpdated();
 
       this.setStatus('initializing');
-      const mcpSocketPath = join(tmpdir(), `newio-mcp-${username}.sock`);
+      const stageInfix = __NEWIO_STAGE__ === 'prod' ? '' : `-${__NEWIO_STAGE__}`;
+      const mcpSocketPath = join(tmpdir(), `newio-connector${stageInfix}-mcp-${username}.sock`);
       this.mcpSocketPath = mcpSocketPath;
 
       await app.init();

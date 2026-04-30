@@ -8,7 +8,13 @@ files:
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
   - '!{.env,.env.*,.npmrc}'
+  - '!coverage/*'
 npmRebuild: true
+asarUnpack:
+  # The MCP bridge is spawned as a child `node` process by ACP agents.
+  # Files inside asar archives cannot be executed directly — unpack so
+  # require.resolve() returns a real filesystem path that `node` can run.
+  - 'node_modules/@newio/mcp-server/dist/bridge.js'
 
 # --- Auto-update via generic provider (S3 + CloudFront CDN) ---
 detectUpdateChannel: true
