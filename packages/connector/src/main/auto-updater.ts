@@ -22,6 +22,10 @@ const FORCE_UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
 let periodicTimer: ReturnType<typeof setInterval> | null = null;
 
+// Track the version that has already been downloaded to avoid redundant
+// downloads and stacking "Update Ready" dialogs every check interval.
+let downloadedVersion: string | null = null;
+
 function getWindow(): BrowserWindow | undefined {
   return BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
 }
@@ -42,6 +46,10 @@ export function initAutoUpdater(store: Store<StoreSchema>): void {
   });
 
   autoUpdater.on('update-available', (info) => {
+    if (downloadedVersion === info.version) {
+      log.info(`Update ${info.version} already downloaded, skipping re-download`);
+      return;
+    }
     log.info('Update available:', info.version);
     void autoUpdater.downloadUpdate();
   });
@@ -56,6 +64,7 @@ export function initAutoUpdater(store: Store<StoreSchema>): void {
 
   autoUpdater.on('update-downloaded', (info) => {
     log.info('Update downloaded:', info.version);
+    downloadedVersion = info.version;
     const win = getWindow();
     if (!win) {
       return;
@@ -120,6 +129,7 @@ export function applyUpdateChannel(channel: UpdateChannel): void {
   log.info(`Setting update channel: ${channel}`);
   autoUpdater.channel = channel;
   autoUpdater.allowDowngrade = true;
+  downloadedVersion = null;
 }
 
 // ---------------------------------------------------------------------------
