@@ -1,5 +1,5 @@
 import log from 'electron-log/main';
-import { rename, unlink } from 'fs';
+import { renameSync, unlinkSync } from 'fs';
 import { join, dirname, basename, extname } from 'path';
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
@@ -11,25 +11,17 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
   error: 3,
 };
 
-// Map our log levels to electron-log levels
-const ELECTRON_LOG_LEVEL: Record<LogLevel, 'debug' | 'info' | 'warn' | 'error'> = {
-  debug: 'debug',
-  info: 'info',
-  warn: 'warn',
-  error: 'error',
-};
-
 const MAX_BACKUPS = 3;
 
 let globalLevel: LogLevel = 'info';
-let initialized = false;
 
-function initElectronLog(): void {
-  if (initialized) {
-    return;
-  }
-  initialized = true;
-
+/**
+ * Configure electron-log file transport. Must be called once from the main
+ * process entry point before any Logger instances are created. Renderer
+ * processes should NOT call this — they can use Logger directly and
+ * electron-log will route messages to the main process via IPC.
+ */
+export function initElectronLog(): void {
   log.transports.file.maxSize = 5 * 1024 * 1024; // 5MB
   log.transports.file.format = '{y}-{m}-{d} {h}:{i}:{s}.{ms} [{level}] {text}';
   log.transports.console.format = '{y}-{m}-{d} {h}:{i}:{s}.{ms} [{level}] {text}';
@@ -41,28 +33,24 @@ function initElectronLog(): void {
     const base = basename(oldLogFile.path, ext);
 
     // Delete the oldest backup if it exists
-    const oldest = join(dir, `${base}.${MAX_BACKUPS}${ext}`);
     try {
-      unlink(oldest, () => {});
+      unlinkSync(join(dir, `${base}.${MAX_BACKUPS}${ext}`));
     } catch {
-      // ignore
+      // ignore — file may not exist
     }
 
     // Shift existing backups: N-1 → N, N-2 → N-1, ..., 1 → 2
     for (let i = MAX_BACKUPS - 1; i >= 1; i--) {
-      const from = join(dir, `${base}.${i}${ext}`);
-      const to = join(dir, `${base}.${i + 1}${ext}`);
       try {
-        rename(from, to, () => {});
+        renameSync(join(dir, `${base}.${i}${ext}`), join(dir, `${base}.${i + 1}${ext}`));
       } catch {
-        // ignore
+        // ignore — file may not exist
       }
     }
 
     // Move current log to .1
-    const firstBackup = join(dir, `${base}.1${ext}`);
     try {
-      rename(oldLogFile.path, firstBackup, () => {});
+      renameSync(oldLogFile.path, join(dir, `${base}.1${ext}`));
     } catch {
       // ignore
     }
@@ -78,7 +66,6 @@ export class Logger {
 
   constructor(tag: string) {
     this.tag = tag;
-    initElectronLog();
   }
 
   debug(message: string, ...args: unknown[]): void {
@@ -101,7 +88,6 @@ export class Logger {
     if (LEVEL_ORDER[level] < LEVEL_ORDER[globalLevel]) {
       return;
     }
-    const tagged = `[${this.tag}] ${message}`;
-    log[ELECTRON_LOG_LEVEL[level]](tagged, ...args);
+    log[level](`[${this.tag}] ${message}`, ...args);
   }
 }

@@ -12,10 +12,13 @@ import { registerIpcHandlers } from './ipc-registry';
 import { EVENT_CHANNELS } from '../shared/ipc-events';
 import { initAutoUpdater, initForceUpdateCheck } from './auto-updater';
 import { blockChromiumShortcuts } from './keyboard-shortcuts';
-import { setLogLevel, Logger } from '../shared/logger';
+import { setLogLevel, Logger, initElectronLog } from '../shared/logger';
 
 // Set log level from build-time config (default: info)
 setLogLevel(__LOG_LEVEL__);
+
+// Configure electron-log file transport (must be called before any Logger usage)
+initElectronLog();
 
 // Route SDK logs through the connector's Logger (respects global log level)
 const sdkLoggers = new Map<string, Logger>();

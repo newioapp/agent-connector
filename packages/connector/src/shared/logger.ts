@@ -1,1 +1,1 @@
-export { Logger, setLogLevel } from '../core/logger';
+export { Logger, setLogLevel, initElectronLog } from '../core/logger';

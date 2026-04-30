@@ -14,7 +14,7 @@ vi.mock('electron-log/main', () => ({
 }));
 
 import log from 'electron-log/main';
-import { Logger, setLogLevel } from '../../src/core/logger';
+import { Logger, setLogLevel, initElectronLog } from '../../src/core/logger';
 
 describe('Logger', () => {
   beforeEach(() => {
@@ -61,8 +61,8 @@ describe('Logger', () => {
     expect(log.error).toHaveBeenCalledTimes(1);
   });
 
-  it('configures electron-log file transport', () => {
-    new Logger('init');
+  it('initElectronLog configures file transport', () => {
+    initElectronLog();
     expect(log.transports.file.maxSize).toBe(5 * 1024 * 1024);
     expect(log.transports.file.archiveLogFn).toBeTypeOf('function');
   });
