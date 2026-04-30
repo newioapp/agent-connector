@@ -129,6 +129,7 @@ export function applyUpdateChannel(channel: UpdateChannel): void {
   log.info(`Setting update channel: ${channel}`);
   autoUpdater.channel = channel;
   autoUpdater.allowDowngrade = true;
+  downloadedVersion = null;
 }
 
 // ---------------------------------------------------------------------------
