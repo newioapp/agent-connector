@@ -434,8 +434,12 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     return Promise.resolve({});
   }
 
-  extNotification(method: string, _params: Record<string, unknown>): Promise<void> {
-    log.debug(`${this.logTag} ext notification: ${method}`);
+  extNotification(method: string, params: Record<string, unknown>): Promise<void> {
+    if (/error|failure/i.test(method)) {
+      log.warn(`${this.logTag} ext notification: ${method}`, JSON.stringify(params));
+    } else {
+      log.debug(`${this.logTag} ext notification: ${method}`);
+    }
     return Promise.resolve();
   }
 
