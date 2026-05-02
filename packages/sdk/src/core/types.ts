@@ -913,23 +913,17 @@ export const SIGNAL_INVOKE_CAPABILITY = 'invoke_capability';
 export const SIGNAL_INVOKE_CAPABILITY_RESPONSE = 'invoke_capability_response';
 
 export interface CapabilitiesReportPayload {
-  readonly agentId: string;
   readonly sessionId: string;
   readonly capabilities: ReadonlyArray<AgentCapability>;
 }
 
 export interface CapabilitiesRequestPayload {
-  readonly agentId: string;
   readonly sessionId?: string;
   readonly conversationId?: string;
 }
 
 export interface CapabilitiesResponsePayload {
-  readonly agentId: string;
-  readonly sessions: ReadonlyArray<{
-    readonly sessionId: string;
-    readonly capabilities: ReadonlyArray<AgentCapability>;
-  }>;
+  readonly capabilities: ReadonlyArray<AgentCapability>;
 }
 
 export interface InvokeCapabilityPayload {

@@ -164,8 +164,7 @@ export class NewioApp {
 
   private readonly eventHandlers: Partial<AppEventHandlers> = {};
   capabilitiesRequestHandler: CapabilitiesRequestHandler = () => ({
-    agentId: this.identity.userId,
-    sessions: [],
+    capabilities: [],
   });
   capabilityInvocationHandler: CapabilityInvocationHandler = (invocation) =>
     Promise.resolve({
@@ -353,7 +352,6 @@ export class NewioApp {
       return;
     }
     const payload: CapabilitiesReportPayload = {
-      agentId: this.identity.userId,
       sessionId,
       capabilities,
     };

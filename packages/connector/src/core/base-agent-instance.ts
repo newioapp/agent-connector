@@ -735,21 +735,20 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** Get capabilities for a session. */
   private getCapabilities(sessionId?: string, conversationId?: string): CapabilitiesResponsePayload {
-    const agentId = this._app?.identity.userId ?? '';
-    const convCaps: AgentCapability[] = conversationId
-      ? [{ id: 'show_tool_call', name: 'Show Tool Calls', scope: 'conversation', currentValue: false }]
-      : [];
+    const capabilities: AgentCapability[] = [];
 
     if (typeof sessionId === 'string') {
       const slot = this.slots.get(sessionId);
-      const sessionCaps = slot?.session ? [...slot.session.getCapabilities()] : [];
-      return { agentId, sessions: [{ sessionId, capabilities: [...sessionCaps, ...convCaps] }] };
+      if (slot?.session) {
+        capabilities.push(...slot.session.getCapabilities());
+      }
     }
-    // No sessionId — return all active sessions (without session-scoped caps)
-    const sessions = Array.from(this.slots.entries())
-      .filter(([, slot]) => slot.session !== undefined)
-      .map(([sid]) => ({ sessionId: sid, capabilities: [...convCaps] }));
-    return { agentId, sessions };
+
+    if (typeof conversationId === 'string') {
+      capabilities.push({ id: 'show_tool_call', name: 'Show Tool Calls', scope: 'conversation', currentValue: false });
+    }
+
+    return { capabilities };
   }
 
   /** Handle a capability invocation from the owner. */
