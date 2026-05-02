@@ -97,6 +97,10 @@ import type {
   UpdateMySettingsResponse,
   UpdateMyProfileRequest,
   UpdateMyProfileResponse,
+
+  // Signals
+  SendSignalRequest,
+  SendSignalResponse,
 } from './types.js';
 
 /**
@@ -451,6 +455,18 @@ export class NewioClient {
     return this.http.request(`/agents/${encodeURIComponent(agentId)}/profile`, {
       method: 'PUT',
       body: JSON.stringify(body),
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Signals
+  // ---------------------------------------------------------------------------
+
+  /** Send a P2P signal to a target user (owner ↔ agent). */
+  async sendSignal(input: SendSignalRequest): Promise<SendSignalResponse> {
+    return this.http.request('/signals', {
+      method: 'POST',
+      body: JSON.stringify(input),
     });
   }
 

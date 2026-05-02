@@ -48,6 +48,7 @@ function mockWs(): NewioWebSocket {
     offStateChange: vi.fn(),
     connect: vi.fn(),
     disconnect: vi.fn(),
+    setOnSignal: vi.fn(),
   } as unknown as NewioWebSocket;
 }
 

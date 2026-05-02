@@ -122,6 +122,12 @@ export class AcpAgentSession implements AgentSession {
     }
   }
 
+  /** Cancel the current prompt turn for this session. */
+  async cancel(): Promise<void> {
+    log.info(`${this.logTag} [${this.correlationId}] Cancelling session`);
+    await this.connection.cancel({ sessionId: this.correlationId });
+  }
+
   async dispose(): Promise<void> {
     if (!this.disposable) {
       log.info(`${this.logTag} [${this.correlationId}] Session is not disposable, skipping dispose`);

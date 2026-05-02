@@ -2,7 +2,7 @@ import { getLogger } from './logger.js';
 import { ConnectionRejectedError } from './errors.js';
 import type { TokenProvider } from './http.js';
 import type { EventMap, NewioEvent } from './events.js';
-import type { ActivityStatus } from './types.js';
+import type { ActivityStatus, SignalEvent } from './types.js';
 
 /** WebSocket connection state. */
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected';
@@ -117,6 +117,7 @@ export class NewioWebSocket {
   private onSubscribeAckHandler: ((ack: SubscribeAck) => void) | null = null;
   private onUnsubscribeAckHandler: ((ack: UnsubscribeAck) => void) | null = null;
   private onConnectionRejectedHandler: ((reason: ConnectionRejectedReason) => void) | null = null;
+  private onSignalHandler: ((event: SignalEvent) => void) | null = null;
 
   constructor(opts: {
     url: string;
@@ -203,6 +204,11 @@ export class NewioWebSocket {
    */
   setOnConnectionRejected(handler: ((reason: ConnectionRejectedReason) => void) | null): void {
     this.onConnectionRejectedHandler = handler;
+  }
+
+  /** Set handler for incoming P2P signal events. */
+  setOnSignal(handler: ((event: SignalEvent) => void) | null): void {
+    this.onSignalHandler = handler;
   }
 
   /** Subscribe to on-demand topics. */
@@ -397,6 +403,13 @@ export class NewioWebSocket {
       // Event messages use 'type' field
       const type = parsed['type'];
       if (typeof type !== 'string') {
+        return;
+      }
+
+      // Signal events are dispatched to a dedicated handler (not EventMap)
+      if (type === 'signal') {
+        log.debug('WS signal event received.');
+        this.onSignalHandler?.(parsed as unknown as SignalEvent);
         return;
       }
 

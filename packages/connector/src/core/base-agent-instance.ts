@@ -28,6 +28,8 @@ import { EventQueue } from './event-queue';
 import type { AgentEvent } from './event-queue';
 import { PromptManager } from './prompt-manager';
 import { Logger } from './logger';
+import { CapabilityManager } from './capability-manager';
+import type { AgentCapability, CapabilityOption } from '@newio/agent-sdk';
 import WebSocket from 'ws';
 import { PromptFormatterImpl } from './prompt-formatter';
 
@@ -64,6 +66,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private _app?: NewioApp;
   private _promptManager?: PromptManager;
   private _ownerDmConversationId?: string;
+  protected readonly capabilityManager = new CapabilityManager();
 
   /** newioSessionId → session slot (queue created eagerly, session attached lazily) */
   private readonly slots = new Map<string, SessionSlot>();
@@ -223,6 +226,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       const ownerDmConversationId = await this.getOwnerDmOrThrow();
       this._ownerDmConversationId = ownerDmConversationId;
       await this.onConnected(ownerDmConversationId);
+      this.wireCapabilityHandlers(app);
       log.info(`${this.logTag} Agent running`);
       this.setStatus('running');
     } catch (err: unknown) {
@@ -485,6 +489,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
     );
 
     log.info(`${this.logTag} Session ready: newio=${newioSessionId} → correlation=${session.correlationId}`);
+    void this.reportSessionCapabilities(session);
     return session;
   }
 
@@ -716,6 +721,118 @@ export abstract class BaseAgentInstance implements AgentInstance {
   }
 
   // ---------------------------------------------------------------------------
+  // Capability management
+  // ---------------------------------------------------------------------------
+
+  /** Wire capability handlers and register the manager with the app. */
+  private wireCapabilityHandlers(app: NewioApp): void {
+    this.capabilityManager.wire(app);
+
+    // set_model: session-scoped
+    this.capabilityManager.registerHandler('set_model', async (targetId, params) => {
+      const value = params?.['value'];
+      if (typeof value !== 'string' || typeof targetId !== 'string') {
+        return { capabilityId: 'set_model', success: false, error: 'Missing value or targetId' };
+      }
+      try {
+        await this.configureAgent({ model: value, sessionId: targetId });
+        return { capabilityId: 'set_model', success: true, result: { model: value } };
+      } catch (err: unknown) {
+        return { capabilityId: 'set_model', success: false, error: extractErrorMessage(err) };
+      }
+    });
+
+    // set_mode: session-scoped
+    this.capabilityManager.registerHandler('set_mode', async (targetId, params) => {
+      const value = params?.['value'];
+      if (typeof value !== 'string' || typeof targetId !== 'string') {
+        return { capabilityId: 'set_mode', success: false, error: 'Missing value or targetId' };
+      }
+      try {
+        await this.configureAgent({ mode: value, sessionId: targetId });
+        return { capabilityId: 'set_mode', success: true, result: { mode: value } };
+      } catch (err: unknown) {
+        return { capabilityId: 'set_mode', success: false, error: extractErrorMessage(err) };
+      }
+    });
+
+    // cancel: session-scoped
+    this.capabilityManager.registerHandler('cancel', async (targetId) => {
+      if (typeof targetId !== 'string') {
+        return { capabilityId: 'cancel', success: false, error: 'Missing targetId (sessionId)' };
+      }
+      const slot = this.slots.get(targetId);
+      if (!slot?.session) {
+        return { capabilityId: 'cancel', success: false, error: 'Session not found or not active' };
+      }
+      try {
+        await slot.session.cancel();
+        return { capabilityId: 'cancel', success: true };
+      } catch (err: unknown) {
+        return { capabilityId: 'cancel', success: false, error: extractErrorMessage(err) };
+      }
+    });
+
+    // show_tool_call: conversation-scoped (no-op for now, always succeeds)
+    this.capabilityManager.registerHandler('show_tool_call', () => {
+      return Promise.resolve({ capabilityId: 'show_tool_call', success: true });
+    });
+  }
+
+  /** Build capabilities for a session from its current ACP config. */
+  protected buildSessionCapabilities(session: AgentSession): AgentCapability[] {
+    const capabilities: AgentCapability[] = [];
+
+    const models = session.listModels();
+    if (models) {
+      const options: CapabilityOption[] = models.options.map((o) => ({
+        value: o.id,
+        label: o.name,
+        description: o.description,
+      }));
+      capabilities.push({
+        id: 'set_model',
+        name: 'Change Model',
+        scope: 'session',
+        options,
+        currentValue: models.selectedId,
+      });
+    }
+
+    const modes = session.listModes();
+    if (modes) {
+      const options: CapabilityOption[] = modes.options.map((o) => ({
+        value: o.id,
+        label: o.name,
+        description: o.description,
+      }));
+      capabilities.push({
+        id: 'set_mode',
+        name: 'Set Mode',
+        scope: 'session',
+        options,
+        currentValue: modes.selectedId,
+      });
+    }
+
+    capabilities.push({ id: 'cancel', name: 'Cancel', scope: 'session' });
+    capabilities.push({ id: 'show_tool_call', name: 'Show Tool Calls', scope: 'conversation', currentValue: false });
+
+    return capabilities;
+  }
+
+  /** Report capabilities for a session and wire config change listener. */
+  protected async reportSessionCapabilities(session: AgentSession): Promise<void> {
+    const caps = this.buildSessionCapabilities(session);
+    await this.capabilityManager.setCapabilities(session.sessionId, caps);
+
+    session.onConfigChanged(() => {
+      const updated = this.buildSessionCapabilities(session);
+      void this.capabilityManager.setCapabilities(session.sessionId, updated);
+    });
+  }
+
+  // ---------------------------------------------------------------------------
   // Idle cleanup
   // ---------------------------------------------------------------------------
 
@@ -745,6 +862,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
           );
           slot.queue.close();
           await slot.session.dispose();
+          this.capabilityManager.removeSession(newioSessionId);
           this.onSessionDisposed(slot.session.correlationId);
           this.slots.delete(newioSessionId);
         }

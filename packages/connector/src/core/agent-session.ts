@@ -48,4 +48,7 @@ export interface AgentSession {
 
   /** Dispose the session (kill process, free resources). */
   dispose(): Promise<void>;
+
+  /** Cancel the current prompt turn. */
+  cancel(): Promise<void>;
 }
