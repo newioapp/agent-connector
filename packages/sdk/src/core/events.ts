@@ -6,6 +6,7 @@ import type {
   ActivityStatus,
   NotifyLevel,
   ConversationType,
+  SignalEvent,
 } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -264,7 +265,8 @@ export type NewioEvent =
   | BlockRemovedEvent
   | UserProfileUpdatedEvent
   | AgentSettingsUpdatedEvent
-  | ActivityStatusEvent;
+  | ActivityStatusEvent
+  | SignalEvent;
 
 /** Map from event type string to its typed interface. */
 export interface EventMap {
@@ -288,4 +290,5 @@ export interface EventMap {
   'user.profile_updated': UserProfileUpdatedEvent;
   'agent.settings_updated': AgentSettingsUpdatedEvent;
   'activity.status': ActivityStatusEvent;
+  signal: SignalEvent;
 }

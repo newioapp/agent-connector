@@ -1,7 +1,14 @@
 /**
  * NewioApp types — public interfaces for the high-level agent client.
  */
-import type { AccountType, Attachment, ConversationType } from '../core/types.js';
+import type {
+  AccountType,
+  Attachment,
+  ConversationType,
+  CapabilitiesResponsePayload,
+  InvokeCapabilityPayload,
+  InvokeCapabilityResponsePayload,
+} from '../core/types.js';
 
 /** A processed incoming message with sender metadata resolved from caches. */
 export type SenderRelationship = 'owner' | 'peer' | 'in-contact' | 'stranger';
@@ -139,3 +146,15 @@ export interface NewioTokens {
   readonly accessToken: string;
   readonly refreshToken: string;
 }
+
+// ---------------------------------------------------------------------------
+// Capability signal handlers
+// ---------------------------------------------------------------------------
+
+/** Handler for owner's capabilities_request signal. Returns the full capabilities response. */
+export type CapabilitiesRequestHandler = (sessionId?: string) => CapabilitiesResponsePayload;
+
+/** Handler for owner's invoke_capability signal. Returns the invocation result. */
+export type CapabilityInvocationHandler = (
+  invocation: InvokeCapabilityPayload,
+) => Promise<InvokeCapabilityResponsePayload>;

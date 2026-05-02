@@ -14,13 +14,7 @@ import { NewioClient } from '../core/client.js';
 import { NewioWebSocket } from '../core/websocket.js';
 import { NewioError } from '../core/errors.js';
 import { getLogger } from '../core/logger.js';
-import {
-  SIGNAL_CAPABILITIES_REPORT,
-  SIGNAL_CAPABILITIES_REQUEST,
-  SIGNAL_CAPABILITIES_RESPONSE,
-  SIGNAL_INVOKE_CAPABILITY,
-  SIGNAL_INVOKE_CAPABILITY_RESPONSE,
-} from '../core/types.js';
+import { SIGNAL_CAPABILITIES_REPORT } from '../core/types.js';
 import { ActivityThrottle } from '../core/activity-throttle.js';
 import { NewioAppStore } from './store.js';
 import { wireEvents } from './events.js';
@@ -41,13 +35,8 @@ import type {
   Mentions,
   MessageContent,
   ConversationType,
-  SignalIntent,
   AgentCapability,
   CapabilitiesReportPayload,
-  CapabilitiesRequestPayload,
-  CapabilitiesResponsePayload,
-  InvokeCapabilityPayload,
-  InvokeCapabilityResponsePayload,
 } from '../core/types.js';
 import type {
   IncomingMessage,
@@ -60,6 +49,8 @@ import type {
   NewioIdentity,
   NewioTokens,
   CronJobDef,
+  CapabilitiesRequestHandler,
+  CapabilityInvocationHandler,
 } from './types.js';
 
 const log = getLogger('newio-app');
@@ -172,10 +163,8 @@ export class NewioApp {
   private readonly cronScheduler: CronScheduler;
 
   private readonly eventHandlers: Partial<AppEventHandlers> = {};
-  private capabilitiesRequestHandler: ((sessionId?: string) => CapabilitiesResponsePayload) | null = null;
-  private capabilityInvocationHandler:
-    | ((invocation: InvokeCapabilityPayload) => Promise<InvokeCapabilityResponsePayload>)
-    | null = null;
+  private capabilitiesRequestHandler: CapabilitiesRequestHandler | null = null;
+  private capabilityInvocationHandler: CapabilityInvocationHandler | null = null;
 
   private constructor(
     identity: NewioIdentity,
@@ -215,8 +204,16 @@ export class NewioApp {
   ): NewioApp {
     const app = new NewioApp(identity, auth, client, ws, store ?? new NewioAppStore());
     const processor = new MessageProcessor(app.store, client, identity, () => app.eventHandlers, app.pendingActions);
-    wireEvents(ws, app.store, client, identity, () => app.eventHandlers, app.pendingActions, processor);
-    app.wireSignalHandler();
+    wireEvents(
+      ws,
+      app.store,
+      client,
+      identity,
+      () => app.eventHandlers,
+      app.pendingActions,
+      processor,
+      app.getSignalHandlers.bind(app),
+    );
     return app;
   }
 
@@ -279,8 +276,16 @@ export class NewioApp {
     const store = new NewioAppStore(opts.persistence);
     const app = new NewioApp(identity, auth, client, ws, store, opts.downloadDir);
     const processor = new MessageProcessor(store, client, identity, () => app.eventHandlers, app.pendingActions);
-    wireEvents(ws, store, client, identity, () => app.eventHandlers, app.pendingActions, processor);
-    app.wireSignalHandler();
+    wireEvents(
+      ws,
+      store,
+      client,
+      identity,
+      () => app.eventHandlers,
+      app.pendingActions,
+      processor,
+      app.getSignalHandlers.bind(app),
+    );
     return app;
   }
 
@@ -352,93 +357,25 @@ export class NewioApp {
       });
   }
 
-  /**
-   * Register a handler for when the owner requests capabilities.
-   * The handler receives an optional sessionId and must return the full capabilities response.
-   */
-  onCapabilitiesRequest(handler: (sessionId?: string) => CapabilitiesResponsePayload): void {
+  /** Register a handler for when the owner requests capabilities. */
+  onCapabilitiesRequest(handler: CapabilitiesRequestHandler): void {
     this.capabilitiesRequestHandler = handler;
   }
 
-  /**
-   * Register a handler for when the owner invokes a capability.
-   * The handler receives the invocation payload and must return the result.
-   */
-  onCapabilityInvocation(
-    handler: (invocation: InvokeCapabilityPayload) => Promise<InvokeCapabilityResponsePayload>,
-  ): void {
+  /** Register a handler for when the owner invokes a capability. */
+  onCapabilityInvocation(handler: CapabilityInvocationHandler): void {
     this.capabilityInvocationHandler = handler;
   }
 
-  /** Wire signal handler on the WebSocket. Called once during initialization. */
-  private wireSignalHandler(): void {
-    this.ws.setOnSignal((event) => {
-      const { senderId, requestId, intent, type, payload } = event.payload;
-
-      if (intent !== 'request') {
-        log.debug(`Ignoring signal with intent=${intent} type=${type}`);
-        return;
-      }
-
-      if (type === SIGNAL_CAPABILITIES_REQUEST) {
-        this.handleCapabilitiesRequest(senderId, requestId, payload as unknown as CapabilitiesRequestPayload);
-      } else if (type === SIGNAL_INVOKE_CAPABILITY) {
-        void this.handleCapabilityInvocation(senderId, requestId, payload as unknown as InvokeCapabilityPayload);
-      } else {
-        log.warn(`Unknown signal request type: ${type}`);
-      }
-    });
-  }
-
-  private handleCapabilitiesRequest(senderId: string, requestId: string, payload: CapabilitiesRequestPayload): void {
-    if (!this.capabilitiesRequestHandler) {
-      log.warn('Received capabilities_request but no handler registered');
-      return;
-    }
-    const response = this.capabilitiesRequestHandler(payload.sessionId);
-    this.client
-      .sendSignal({
-        targetUserId: senderId,
-        requestId,
-        intent: 'response' as SignalIntent,
-        type: SIGNAL_CAPABILITIES_RESPONSE,
-        payload: response as unknown as Record<string, unknown>,
-      })
-      .catch((err: unknown) => {
-        log.error('Failed to send capabilities response', err);
-      });
-  }
-
-  private async handleCapabilityInvocation(
-    senderId: string,
-    requestId: string,
-    payload: InvokeCapabilityPayload,
-  ): Promise<void> {
-    let response: InvokeCapabilityResponsePayload;
-    if (!this.capabilityInvocationHandler) {
-      response = { capabilityId: payload.capabilityId, success: false, error: 'No invocation handler registered' };
-    } else {
-      try {
-        response = await this.capabilityInvocationHandler(payload);
-      } catch (err: unknown) {
-        response = {
-          capabilityId: payload.capabilityId,
-          success: false,
-          error: err instanceof Error ? err.message : 'Unknown error',
-        };
-      }
-    }
-    this.client
-      .sendSignal({
-        targetUserId: senderId,
-        requestId,
-        intent: 'response' as SignalIntent,
-        type: SIGNAL_INVOKE_CAPABILITY_RESPONSE,
-        payload: response as unknown as Record<string, unknown>,
-      })
-      .catch((err: unknown) => {
-        log.error('Failed to send invocation response', err);
-      });
+  /** Returns the current signal handlers for wireEvents to use. */
+  getSignalHandlers(): {
+    capabilitiesRequest: CapabilitiesRequestHandler | null;
+    capabilityInvocation: CapabilityInvocationHandler | null;
+  } {
+    return {
+      capabilitiesRequest: this.capabilitiesRequestHandler,
+      capabilityInvocation: this.capabilityInvocationHandler,
+    };
   }
 
   // ---------------------------------------------------------------------------

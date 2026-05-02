@@ -8,8 +8,25 @@ import { getLogger } from '../core/logger.js';
 import type { NewioWebSocket } from '../core/websocket.js';
 import type { NewioClient } from '../core/client.js';
 import type { ConversationType } from '../core/types.js';
+import type {
+  CapabilitiesRequestPayload,
+  InvokeCapabilityPayload,
+  InvokeCapabilityResponsePayload,
+  SignalIntent,
+} from '../core/types.js';
+import {
+  SIGNAL_CAPABILITIES_REQUEST,
+  SIGNAL_CAPABILITIES_RESPONSE,
+  SIGNAL_INVOKE_CAPABILITY,
+  SIGNAL_INVOKE_CAPABILITY_RESPONSE,
+} from '../core/types.js';
 import type { NewioAppStore } from './store.js';
-import type { AppEventHandlers, NewioIdentity } from './types.js';
+import type {
+  AppEventHandlers,
+  NewioIdentity,
+  CapabilitiesRequestHandler,
+  CapabilityInvocationHandler,
+} from './types.js';
 import type { PendingActions } from './pending-actions.js';
 import type { MessageProcessor } from './message-processor.js';
 
@@ -24,6 +41,10 @@ export function wireEvents(
   getHandlers: () => Partial<AppEventHandlers>,
   pendingActions: PendingActions,
   processor: MessageProcessor,
+  getSignalHandlers: () => {
+    capabilitiesRequest: CapabilitiesRequestHandler | null;
+    capabilityInvocation: CapabilityInvocationHandler | null;
+  },
 ): void {
   /** Per-conversation queue to serialize message processing and prevent duplicate backfills. */
   const messageQueue = new Map<string, Promise<void>>();
@@ -236,6 +257,68 @@ export function wireEvents(
 
   ws.on('agent.settings_updated', () => {
     log.debug('Event agent.settings_updated (no-op).');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Signal events — capability request/response
+  // ---------------------------------------------------------------------------
+
+  ws.on('signal', (event) => {
+    const { senderId, requestId, intent, type, payload } = event.payload;
+    if (intent !== 'request') {
+      log.debug(`Ignoring signal with intent=${intent} type=${type}`);
+      return;
+    }
+
+    const handlers = getSignalHandlers();
+
+    const sendResponse = (responseType: string, responsePayload: Record<string, unknown>): void => {
+      client
+        .sendSignal({
+          targetUserId: senderId,
+          requestId,
+          intent: 'response' as SignalIntent,
+          type: responseType,
+          payload: responsePayload,
+        })
+        .catch((err: unknown) => {
+          log.error(`Failed to send signal response type=${responseType}`, err);
+        });
+    };
+
+    if (type === SIGNAL_CAPABILITIES_REQUEST) {
+      if (!handlers.capabilitiesRequest) {
+        log.warn('Received capabilities_request but no handler registered');
+        return;
+      }
+      const typedPayload = payload as unknown as CapabilitiesRequestPayload;
+      const response = handlers.capabilitiesRequest(typedPayload.sessionId);
+      sendResponse(SIGNAL_CAPABILITIES_RESPONSE, response as unknown as Record<string, unknown>);
+    } else if (type === SIGNAL_INVOKE_CAPABILITY) {
+      const typedPayload = payload as unknown as InvokeCapabilityPayload;
+      if (!handlers.capabilityInvocation) {
+        sendResponse(SIGNAL_INVOKE_CAPABILITY_RESPONSE, {
+          capabilityId: typedPayload.capabilityId,
+          success: false,
+          error: 'No invocation handler registered',
+        } satisfies InvokeCapabilityResponsePayload);
+        return;
+      }
+      void handlers
+        .capabilityInvocation(typedPayload)
+        .catch(
+          (err: unknown): InvokeCapabilityResponsePayload => ({
+            capabilityId: typedPayload.capabilityId,
+            success: false,
+            error: err instanceof Error ? err.message : 'Unknown error',
+          }),
+        )
+        .then((response) => {
+          sendResponse(SIGNAL_INVOKE_CAPABILITY_RESPONSE, response as unknown as Record<string, unknown>);
+        });
+    } else {
+      log.warn(`Unknown signal request type: ${type}`);
+    }
   });
 }
 

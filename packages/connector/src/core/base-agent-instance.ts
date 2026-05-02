@@ -28,8 +28,13 @@ import { EventQueue } from './event-queue';
 import type { AgentEvent } from './event-queue';
 import { PromptManager } from './prompt-manager';
 import { Logger } from './logger';
-import { CapabilityManager } from './capability-manager';
-import type { AgentCapability, CapabilityOption } from '@newio/agent-sdk';
+import type {
+  AgentCapability,
+  CapabilityOption,
+  CapabilitiesResponsePayload,
+  InvokeCapabilityPayload,
+  InvokeCapabilityResponsePayload,
+} from '@newio/agent-sdk';
 import WebSocket from 'ws';
 import { PromptFormatterImpl } from './prompt-formatter';
 
@@ -66,7 +71,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private _app?: NewioApp;
   private _promptManager?: PromptManager;
   private _ownerDmConversationId?: string;
-  protected readonly capabilityManager = new CapabilityManager();
 
   /** newioSessionId → session slot (queue created eagerly, session attached lazily) */
   private readonly slots = new Map<string, SessionSlot>();
@@ -726,57 +730,78 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** Wire capability handlers and register the manager with the app. */
   private wireCapabilityHandlers(app: NewioApp): void {
-    this.capabilityManager.wire(app);
+    app.onCapabilitiesRequest((sessionId) => this.getCapabilities(sessionId));
+    app.onCapabilityInvocation((invocation) => this.handleCapabilityInvocation(invocation));
+  }
 
-    // set_model: session-scoped
-    this.capabilityManager.registerHandler('set_model', async (targetId, params) => {
-      const value = params?.['value'];
-      if (typeof value !== 'string' || typeof targetId !== 'string') {
-        return { capabilityId: 'set_model', success: false, error: 'Missing value or targetId' };
+  /** Get capabilities for a session, building them from current ACP config. */
+  private getCapabilities(sessionId?: string): CapabilitiesResponsePayload {
+    const agentId = this._app?.identity.userId ?? '';
+    if (typeof sessionId === 'string') {
+      const slot = this.slots.get(sessionId);
+      const caps = slot?.session ? this.buildSessionCapabilities(slot.session) : [];
+      return { agentId, sessions: [{ sessionId, capabilities: caps }] };
+    }
+    const sessions = Array.from(this.slots.entries())
+      .filter(([, slot]) => slot.session !== undefined)
+      .map(([sid, slot]) => ({
+        sessionId: sid,
+        capabilities: this.buildSessionCapabilities(slot.session as AgentSession),
+      }));
+    return { agentId, sessions };
+  }
+
+  /** Handle a capability invocation from the owner. */
+  private async handleCapabilityInvocation(
+    invocation: InvokeCapabilityPayload,
+  ): Promise<InvokeCapabilityResponsePayload> {
+    const { capabilityId, targetId, params } = invocation;
+
+    if (capabilityId === 'set_model') {
+      if (typeof params?.['value'] !== 'string' || typeof targetId !== 'string') {
+        return { capabilityId, success: false, error: 'Missing value or targetId' };
       }
       try {
-        await this.configureAgent({ model: value, sessionId: targetId });
-        return { capabilityId: 'set_model', success: true, result: { model: value } };
+        await this.configureAgent({ model: params['value'], sessionId: targetId });
+        return { capabilityId, success: true, result: { model: params['value'] } };
       } catch (err: unknown) {
-        return { capabilityId: 'set_model', success: false, error: extractErrorMessage(err) };
+        return { capabilityId, success: false, error: extractErrorMessage(err) };
       }
-    });
+    }
 
-    // set_mode: session-scoped
-    this.capabilityManager.registerHandler('set_mode', async (targetId, params) => {
-      const value = params?.['value'];
-      if (typeof value !== 'string' || typeof targetId !== 'string') {
-        return { capabilityId: 'set_mode', success: false, error: 'Missing value or targetId' };
+    if (capabilityId === 'set_mode') {
+      if (typeof params?.['value'] !== 'string' || typeof targetId !== 'string') {
+        return { capabilityId, success: false, error: 'Missing value or targetId' };
       }
       try {
-        await this.configureAgent({ mode: value, sessionId: targetId });
-        return { capabilityId: 'set_mode', success: true, result: { mode: value } };
+        await this.configureAgent({ mode: params['value'], sessionId: targetId });
+        return { capabilityId, success: true, result: { mode: params['value'] } };
       } catch (err: unknown) {
-        return { capabilityId: 'set_mode', success: false, error: extractErrorMessage(err) };
+        return { capabilityId, success: false, error: extractErrorMessage(err) };
       }
-    });
+    }
 
-    // cancel: session-scoped
-    this.capabilityManager.registerHandler('cancel', async (targetId) => {
+    if (capabilityId === 'cancel') {
       if (typeof targetId !== 'string') {
-        return { capabilityId: 'cancel', success: false, error: 'Missing targetId (sessionId)' };
+        return { capabilityId, success: false, error: 'Missing targetId (sessionId)' };
       }
       const slot = this.slots.get(targetId);
       if (!slot?.session) {
-        return { capabilityId: 'cancel', success: false, error: 'Session not found or not active' };
+        return { capabilityId, success: false, error: 'Session not found or not active' };
       }
       try {
         await slot.session.cancel();
-        return { capabilityId: 'cancel', success: true };
+        return { capabilityId, success: true };
       } catch (err: unknown) {
-        return { capabilityId: 'cancel', success: false, error: extractErrorMessage(err) };
+        return { capabilityId, success: false, error: extractErrorMessage(err) };
       }
-    });
+    }
 
-    // show_tool_call: conversation-scoped (no-op for now, always succeeds)
-    this.capabilityManager.registerHandler('show_tool_call', () => {
-      return Promise.resolve({ capabilityId: 'show_tool_call', success: true });
-    });
+    if (capabilityId === 'show_tool_call') {
+      return { capabilityId, success: true };
+    }
+
+    return { capabilityId, success: false, error: 'unknown_capability' };
   }
 
   /** Build capabilities for a session from its current ACP config. */
@@ -824,11 +849,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
   /** Report capabilities for a session and wire config change listener. */
   protected async reportSessionCapabilities(session: AgentSession): Promise<void> {
     const caps = this.buildSessionCapabilities(session);
-    await this.capabilityManager.setCapabilities(session.sessionId, caps);
+    await this.app.reportCapabilities(session.sessionId, caps);
 
     session.onConfigChanged(() => {
       const updated = this.buildSessionCapabilities(session);
-      void this.capabilityManager.setCapabilities(session.sessionId, updated);
+      void this.app.reportCapabilities(session.sessionId, updated);
     });
   }
 
@@ -862,7 +887,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
           );
           slot.queue.close();
           await slot.session.dispose();
-          this.capabilityManager.removeSession(newioSessionId);
           this.onSessionDisposed(slot.session.correlationId);
           this.slots.delete(newioSessionId);
         }

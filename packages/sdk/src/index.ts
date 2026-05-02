@@ -283,3 +283,4 @@ export type {
   NewioTokens,
 } from './app/index.js';
 export type { NewioAppCreateOptions } from './app/index.js';
+export type { CapabilitiesRequestHandler, CapabilityInvocationHandler } from './app/index.js';

@@ -24,3 +24,4 @@ export type {
   NewioTokens,
   StorePersistence,
 } from './newio-app.js';
+export type { CapabilitiesRequestHandler, CapabilityInvocationHandler } from './types.js';
