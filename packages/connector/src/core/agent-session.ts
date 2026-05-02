@@ -6,6 +6,7 @@
  */
 import type { SessionStreamSegment, SessionStatusListener, PermissionHandler } from './types';
 import type { AgentSessionConfig } from './agent-instance';
+import type { AgentCapability, InvokeCapabilityPayload, InvokeCapabilityResponsePayload } from '@newio/agent-sdk';
 
 export interface AgentSession {
   /** Newio platform assigned session ID. */
@@ -51,4 +52,10 @@ export interface AgentSession {
 
   /** Cancel the current prompt turn. */
   cancel(): Promise<void>;
+
+  /** Get the capabilities this session supports. */
+  getCapabilities(): readonly AgentCapability[];
+
+  /** Handle a session-scoped capability invocation. */
+  handleCapabilityInvocation(invocation: InvokeCapabilityPayload): Promise<InvokeCapabilityResponsePayload>;
 }

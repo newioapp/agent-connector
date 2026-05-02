@@ -163,8 +163,16 @@ export class NewioApp {
   private readonly cronScheduler: CronScheduler;
 
   private readonly eventHandlers: Partial<AppEventHandlers> = {};
-  private capabilitiesRequestHandler: CapabilitiesRequestHandler | null = null;
-  private capabilityInvocationHandler: CapabilityInvocationHandler | null = null;
+  capabilitiesRequestHandler: CapabilitiesRequestHandler = () => ({
+    agentId: this.identity.userId,
+    sessions: [],
+  });
+  capabilityInvocationHandler: CapabilityInvocationHandler = (invocation) =>
+    Promise.resolve({
+      capabilityId: invocation.capabilityId,
+      success: false,
+      error: 'No handler registered',
+    });
 
   private constructor(
     identity: NewioIdentity,
@@ -212,7 +220,10 @@ export class NewioApp {
       () => app.eventHandlers,
       app.pendingActions,
       processor,
-      app.getSignalHandlers.bind(app),
+      () => ({
+        capabilitiesRequest: app.capabilitiesRequestHandler,
+        capabilityInvocation: app.capabilityInvocationHandler,
+      }),
     );
     return app;
   }
@@ -284,7 +295,10 @@ export class NewioApp {
       () => app.eventHandlers,
       app.pendingActions,
       processor,
-      app.getSignalHandlers.bind(app),
+      () => ({
+        capabilitiesRequest: app.capabilitiesRequestHandler,
+        capabilityInvocation: app.capabilityInvocationHandler,
+      }),
     );
     return app;
   }
@@ -365,17 +379,6 @@ export class NewioApp {
   /** Register a handler for when the owner invokes a capability. */
   onCapabilityInvocation(handler: CapabilityInvocationHandler): void {
     this.capabilityInvocationHandler = handler;
-  }
-
-  /** Returns the current signal handlers for wireEvents to use. */
-  getSignalHandlers(): {
-    capabilitiesRequest: CapabilitiesRequestHandler | null;
-    capabilityInvocation: CapabilityInvocationHandler | null;
-  } {
-    return {
-      capabilitiesRequest: this.capabilitiesRequestHandler,
-      capabilityInvocation: this.capabilityInvocationHandler,
-    };
   }
 
   // ---------------------------------------------------------------------------

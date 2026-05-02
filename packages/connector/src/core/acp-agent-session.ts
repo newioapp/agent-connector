@@ -14,6 +14,13 @@ import type { PermissionHandler, SessionStatusListener, SessionStreamSegment } f
 import { AcpSessionConfigHandler } from './acp-session-config-handler';
 import { Logger } from './logger';
 import type { AgentSessionConfig } from './agent-instance';
+import type {
+  AgentCapability,
+  CapabilityOption,
+  InvokeCapabilityPayload,
+  InvokeCapabilityResponsePayload,
+} from '@newio/agent-sdk';
+import { extractErrorMessage } from './types';
 
 const log = new Logger('acp-agent-session');
 
@@ -126,6 +133,79 @@ export class AcpAgentSession implements AgentSession {
   async cancel(): Promise<void> {
     log.info(`${this.logTag} [${this.correlationId}] Cancelling session`);
     await this.connection.cancel({ sessionId: this.correlationId });
+  }
+
+  getCapabilities(): readonly AgentCapability[] {
+    const capabilities: AgentCapability[] = [];
+    const models = this.listModels();
+    if (models) {
+      const options: CapabilityOption[] = models.options.map((o) => ({
+        value: o.id,
+        label: o.name,
+        description: o.description,
+      }));
+      capabilities.push({
+        id: 'set_model',
+        name: 'Change Model',
+        scope: 'session',
+        options,
+        currentValue: models.selectedId,
+      });
+    }
+    const modes = this.listModes();
+    if (modes) {
+      const options: CapabilityOption[] = modes.options.map((o) => ({
+        value: o.id,
+        label: o.name,
+        description: o.description,
+      }));
+      capabilities.push({
+        id: 'set_mode',
+        name: 'Set Mode',
+        scope: 'session',
+        options,
+        currentValue: modes.selectedId,
+      });
+    }
+    capabilities.push({ id: 'cancel', name: 'Cancel', scope: 'session' });
+    return capabilities;
+  }
+
+  async handleCapabilityInvocation(invocation: InvokeCapabilityPayload): Promise<InvokeCapabilityResponsePayload> {
+    const { capabilityId, params } = invocation;
+    if (capabilityId === 'set_model') {
+      const value = params?.['value'];
+      if (typeof value !== 'string') {
+        return { capabilityId, success: false, error: 'Missing value' };
+      }
+      try {
+        await this.setModel(value);
+        return { capabilityId, success: true, result: { model: value } };
+      } catch (err: unknown) {
+        return { capabilityId, success: false, error: extractErrorMessage(err) };
+      }
+    }
+    if (capabilityId === 'set_mode') {
+      const value = params?.['value'];
+      if (typeof value !== 'string') {
+        return { capabilityId, success: false, error: 'Missing value' };
+      }
+      try {
+        await this.setMode(value);
+        return { capabilityId, success: true, result: { mode: value } };
+      } catch (err: unknown) {
+        return { capabilityId, success: false, error: extractErrorMessage(err) };
+      }
+    }
+    if (capabilityId === 'cancel') {
+      try {
+        await this.cancel();
+        return { capabilityId, success: true };
+      } catch (err: unknown) {
+        return { capabilityId, success: false, error: extractErrorMessage(err) };
+      }
+    }
+    return { capabilityId, success: false, error: 'unknown_capability' };
   }
 
   async dispose(): Promise<void> {

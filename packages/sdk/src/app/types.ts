@@ -152,7 +152,7 @@ export interface NewioTokens {
 // ---------------------------------------------------------------------------
 
 /** Handler for owner's capabilities_request signal. Returns the full capabilities response. */
-export type CapabilitiesRequestHandler = (sessionId?: string) => CapabilitiesResponsePayload;
+export type CapabilitiesRequestHandler = (sessionId?: string, conversationId?: string) => CapabilitiesResponsePayload;
 
 /** Handler for owner's invoke_capability signal. Returns the invocation result. */
 export type CapabilityInvocationHandler = (

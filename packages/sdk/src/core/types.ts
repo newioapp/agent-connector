@@ -921,6 +921,7 @@ export interface CapabilitiesReportPayload {
 export interface CapabilitiesRequestPayload {
   readonly agentId: string;
   readonly sessionId?: string;
+  readonly conversationId?: string;
 }
 
 export interface CapabilitiesResponsePayload {

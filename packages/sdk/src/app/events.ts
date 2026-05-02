@@ -12,7 +12,6 @@ import type {
   CapabilitiesRequestPayload,
   InvokeCapabilityPayload,
   InvokeCapabilityResponsePayload,
-  SignalIntent,
 } from '../core/types.js';
 import {
   SIGNAL_CAPABILITIES_REQUEST,
@@ -42,8 +41,8 @@ export function wireEvents(
   pendingActions: PendingActions,
   processor: MessageProcessor,
   getSignalHandlers: () => {
-    capabilitiesRequest: CapabilitiesRequestHandler | null;
-    capabilityInvocation: CapabilityInvocationHandler | null;
+    capabilitiesRequest: CapabilitiesRequestHandler;
+    capabilityInvocation: CapabilityInvocationHandler;
   },
 ): void {
   /** Per-conversation queue to serialize message processing and prevent duplicate backfills. */
@@ -277,7 +276,7 @@ export function wireEvents(
         .sendSignal({
           targetUserId: senderId,
           requestId,
-          intent: 'response' as SignalIntent,
+          intent: 'response',
           type: responseType,
           payload: responsePayload,
         })
@@ -287,23 +286,11 @@ export function wireEvents(
     };
 
     if (type === SIGNAL_CAPABILITIES_REQUEST) {
-      if (!handlers.capabilitiesRequest) {
-        log.warn('Received capabilities_request but no handler registered');
-        return;
-      }
       const typedPayload = payload as unknown as CapabilitiesRequestPayload;
-      const response = handlers.capabilitiesRequest(typedPayload.sessionId);
+      const response = handlers.capabilitiesRequest(typedPayload.sessionId, typedPayload.conversationId);
       sendResponse(SIGNAL_CAPABILITIES_RESPONSE, response as unknown as Record<string, unknown>);
     } else if (type === SIGNAL_INVOKE_CAPABILITY) {
       const typedPayload = payload as unknown as InvokeCapabilityPayload;
-      if (!handlers.capabilityInvocation) {
-        sendResponse(SIGNAL_INVOKE_CAPABILITY_RESPONSE, {
-          capabilityId: typedPayload.capabilityId,
-          success: false,
-          error: 'No invocation handler registered',
-        } satisfies InvokeCapabilityResponsePayload);
-        return;
-      }
       void handlers
         .capabilityInvocation(typedPayload)
         .catch(
