@@ -438,4 +438,31 @@ describe('NewioClient', () => {
       expect(fetchCalls[0]?.body).toEqual({ content: { text: 'hi' }, visibleTo: ['u2'] });
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Signals
+  // -------------------------------------------------------------------------
+
+  describe('signals', () => {
+    it('sendSignal posts to /signals', async () => {
+      mockFetch([{ status: 200, body: { requestId: 'req-1' } }]);
+      const result = await createClient().sendSignal({
+        targetUserId: 'agent-1',
+        requestId: 'req-1',
+        intent: 'request',
+        type: 'test',
+        payload: { key: 'value' },
+      });
+      expect(result.requestId).toBe('req-1');
+      expect(fetchCalls[0]?.url).toBe('https://api.test/signals');
+      expect(fetchCalls[0]?.method).toBe('POST');
+      expect(fetchCalls[0]?.body).toEqual({
+        targetUserId: 'agent-1',
+        requestId: 'req-1',
+        intent: 'request',
+        type: 'test',
+        payload: { key: 'value' },
+      });
+    });
+  });
 });

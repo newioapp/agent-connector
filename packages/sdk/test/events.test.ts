@@ -5,7 +5,12 @@ import { PendingActions } from '../src/app/pending-actions.js';
 import type { NewioWebSocket } from '../src/core/websocket.js';
 import type { NewioClient } from '../src/core/client.js';
 import type { EventMap } from '../src/core/events.js';
-import type { AppEventHandlers, NewioIdentity } from '../src/app/types.js';
+import type {
+  AppEventHandlers,
+  NewioIdentity,
+  CapabilitiesRequestHandler,
+  CapabilityInvocationHandler,
+} from '../src/app/types.js';
 import type { MessageProcessor } from '../src/app/message-processor.js';
 import type { ContactRecord } from '../src/core/types.js';
 
@@ -65,6 +70,10 @@ describe('wireEvents', () => {
   let handlers: Partial<AppEventHandlers>;
   let pendingActions: PendingActions;
   let processor: MessageProcessor;
+  let signalHandlers: {
+    capabilitiesRequest: CapabilitiesRequestHandler;
+    capabilityInvocation: CapabilityInvocationHandler;
+  };
 
   beforeEach(() => {
     ws = createMockWs();
@@ -73,8 +82,21 @@ describe('wireEvents', () => {
     handlers = {};
     pendingActions = new PendingActions();
     processor = { handleMessageNew: vi.fn().mockResolvedValue(undefined) } as unknown as MessageProcessor;
+    signalHandlers = {
+      capabilitiesRequest: vi.fn().mockReturnValue({ capabilities: [] }),
+      capabilityInvocation: vi.fn().mockResolvedValue({ capabilityId: 'test', success: true }),
+    };
 
-    wireEvents(ws, store, client, identity, () => handlers, pendingActions, processor);
+    wireEvents(
+      ws,
+      store,
+      client,
+      identity,
+      () => handlers,
+      pendingActions,
+      processor,
+      () => signalHandlers,
+    );
   });
 
   // -----------------------------------------------------------------------
@@ -494,5 +516,89 @@ describe('wireEvents', () => {
     expect(eventHandler).toHaveBeenCalledWith(
       expect.objectContaining({ ownerUsername: 'nan', ownerDisplayName: 'Nan' }),
     );
+  });
+
+  // -----------------------------------------------------------------------
+  // signal — capabilities request/response
+  // -----------------------------------------------------------------------
+
+  it('dispatches capabilities_request to handler and sends response', () => {
+    const sendSignal = vi.fn().mockResolvedValue({ requestId: 'req-1' });
+    (client as unknown as Record<string, unknown>).sendSignal = sendSignal;
+
+    ws.fire('signal', {
+      type: 'signal',
+      timestamp: ts,
+      payload: {
+        senderId: 'owner-1',
+        requestId: 'req-1',
+        intent: 'request',
+        type: 'capabilities_request',
+        payload: { sessionId: 's1' },
+      },
+    });
+
+    expect(signalHandlers.capabilitiesRequest).toHaveBeenCalledWith('s1', undefined);
+    expect(sendSignal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetUserId: 'owner-1',
+        requestId: 'req-1',
+        intent: 'response',
+        type: 'capabilities_response',
+      }),
+    );
+  });
+
+  it('dispatches invoke_capability to handler and sends response', async () => {
+    const sendSignal = vi.fn().mockResolvedValue({ requestId: 'req-2' });
+    (client as unknown as Record<string, unknown>).sendSignal = sendSignal;
+
+    ws.fire('signal', {
+      type: 'signal',
+      timestamp: ts,
+      payload: {
+        senderId: 'owner-1',
+        requestId: 'req-2',
+        intent: 'request',
+        type: 'invoke_capability',
+        payload: { capabilityId: 'set_model', scope: 'session', targetId: 's1', params: { value: 'claude-4' } },
+      },
+    });
+
+    // Wait for async handler
+    await vi.waitFor(() => {
+      expect(sendSignal).toHaveBeenCalled();
+    });
+
+    expect(signalHandlers.capabilityInvocation).toHaveBeenCalledWith(
+      expect.objectContaining({ capabilityId: 'set_model', scope: 'session' }),
+    );
+    expect(sendSignal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetUserId: 'owner-1',
+        requestId: 'req-2',
+        intent: 'response',
+        type: 'invoke_capability_response',
+      }),
+    );
+  });
+
+  it('ignores non-request signal intents', () => {
+    const sendSignal = vi.fn();
+    (client as unknown as Record<string, unknown>).sendSignal = sendSignal;
+
+    ws.fire('signal', {
+      type: 'signal',
+      timestamp: ts,
+      payload: {
+        senderId: 'owner-1',
+        requestId: 'req-3',
+        intent: 'notification',
+        type: 'capabilities_report',
+        payload: {},
+      },
+    });
+
+    expect(sendSignal).not.toHaveBeenCalled();
   });
 });

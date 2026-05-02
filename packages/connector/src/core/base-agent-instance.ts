@@ -492,7 +492,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
     );
 
     log.info(`${this.logTag} Session ready: newio=${newioSessionId} → correlation=${session.correlationId}`);
-    void this.reportSessionCapabilities(session);
     return session;
   }
 
@@ -777,22 +776,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
   }
 
   /** Report capabilities for a session and wire config change listener. */
-  protected async reportSessionCapabilities(session: AgentSession): Promise<void> {
-    const caps = [
-      ...session.getCapabilities(),
-      { id: 'show_tool_call', name: 'Show Tool Calls', scope: 'conversation' as const, currentValue: false },
-    ];
-    await this.app.reportCapabilities(session.sessionId, caps);
-
-    session.onConfigChanged(() => {
-      const updated = [
-        ...session.getCapabilities(),
-        { id: 'show_tool_call', name: 'Show Tool Calls', scope: 'conversation' as const, currentValue: false },
-      ];
-      void this.app.reportCapabilities(session.sessionId, updated);
-    });
-  }
-
   // ---------------------------------------------------------------------------
   // Idle cleanup
   // ---------------------------------------------------------------------------

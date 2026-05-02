@@ -14,7 +14,6 @@ import { NewioClient } from '../core/client.js';
 import { NewioWebSocket } from '../core/websocket.js';
 import { NewioError } from '../core/errors.js';
 import { getLogger } from '../core/logger.js';
-import { SIGNAL_CAPABILITIES_REPORT } from '../core/types.js';
 import { ActivityThrottle } from '../core/activity-throttle.js';
 import { NewioAppStore } from './store.js';
 import { wireEvents } from './events.js';
@@ -35,8 +34,6 @@ import type {
   Mentions,
   MessageContent,
   ConversationType,
-  AgentCapability,
-  CapabilitiesReportPayload,
 } from '../core/types.js';
 import type {
   IncomingMessage,
@@ -163,10 +160,10 @@ export class NewioApp {
   private readonly cronScheduler: CronScheduler;
 
   private readonly eventHandlers: Partial<AppEventHandlers> = {};
-  capabilitiesRequestHandler: CapabilitiesRequestHandler = () => ({
+  private capabilitiesRequestHandler: CapabilitiesRequestHandler = () => ({
     capabilities: [],
   });
-  capabilityInvocationHandler: CapabilityInvocationHandler = (invocation) =>
+  private capabilityInvocationHandler: CapabilityInvocationHandler = (invocation) =>
     Promise.resolve({
       capabilityId: invocation.capabilityId,
       success: false,
@@ -219,10 +216,7 @@ export class NewioApp {
       () => app.eventHandlers,
       app.pendingActions,
       processor,
-      () => ({
-        capabilitiesRequest: app.capabilitiesRequestHandler,
-        capabilityInvocation: app.capabilityInvocationHandler,
-      }),
+      () => app._getSignalHandlers(),
     );
     return app;
   }
@@ -294,10 +288,7 @@ export class NewioApp {
       () => app.eventHandlers,
       app.pendingActions,
       processor,
-      () => ({
-        capabilitiesRequest: app.capabilitiesRequestHandler,
-        capabilityInvocation: app.capabilityInvocationHandler,
-      }),
+      () => app._getSignalHandlers(),
     );
     return app;
   }
@@ -342,33 +333,6 @@ export class NewioApp {
   // Capabilities — remote control
   // ---------------------------------------------------------------------------
 
-  /**
-   * Report capabilities for a session to the owner.
-   * Call after session creation and whenever capabilities change (e.g. model list updated).
-   */
-  async reportCapabilities(sessionId: string, capabilities: ReadonlyArray<AgentCapability>): Promise<void> {
-    if (!this.identity.ownerId) {
-      log.warn('reportCapabilities called but no ownerId set');
-      return;
-    }
-    const payload: CapabilitiesReportPayload = {
-      sessionId,
-      capabilities,
-    };
-    log.info(`Reporting ${capabilities.length} capabilities for session ${sessionId}`);
-    await this.client
-      .sendSignal({
-        targetUserId: this.identity.ownerId,
-        requestId: crypto.randomUUID(),
-        intent: 'notification',
-        type: SIGNAL_CAPABILITIES_REPORT,
-        payload: payload as unknown as Record<string, unknown>,
-      })
-      .catch((err: unknown) => {
-        log.debug('reportCapabilities signal not delivered (owner may be offline)', err);
-      });
-  }
-
   /** Register a handler for when the owner requests capabilities. */
   onCapabilitiesRequest(handler: CapabilitiesRequestHandler): void {
     this.capabilitiesRequestHandler = handler;
@@ -377,6 +341,17 @@ export class NewioApp {
   /** Register a handler for when the owner invokes a capability. */
   onCapabilityInvocation(handler: CapabilityInvocationHandler): void {
     this.capabilityInvocationHandler = handler;
+  }
+
+  /** @internal Returns signal handlers for wireEvents. */
+  _getSignalHandlers(): {
+    capabilitiesRequest: CapabilitiesRequestHandler;
+    capabilityInvocation: CapabilityInvocationHandler;
+  } {
+    return {
+      capabilitiesRequest: this.capabilitiesRequestHandler,
+      capabilityInvocation: this.capabilityInvocationHandler,
+    };
   }
 
   // ---------------------------------------------------------------------------

@@ -725,4 +725,37 @@ describe('NewioApp', () => {
       vi.useRealTimers();
     });
   });
+
+  describe('capabilities', () => {
+    it('onCapabilitiesRequest registers handler accessible via _getSignalHandlers', async () => {
+      const { app } = await createApp();
+      const handler = vi.fn().mockReturnValue({ capabilities: [] });
+      app.onCapabilitiesRequest(handler);
+      const handlers = app._getSignalHandlers();
+      handlers.capabilitiesRequest('s1', 'c1');
+      expect(handler).toHaveBeenCalledWith('s1', 'c1');
+    });
+
+    it('onCapabilityInvocation registers handler accessible via _getSignalHandlers', async () => {
+      const { app } = await createApp();
+      const handler = vi.fn().mockResolvedValue({ capabilityId: 'test', success: true });
+      app.onCapabilityInvocation(handler);
+      const handlers = app._getSignalHandlers();
+      const invocation = { capabilityId: 'test', scope: 'session' as const, targetId: 's1' };
+      await handlers.capabilityInvocation(invocation);
+      expect(handler).toHaveBeenCalledWith(invocation);
+    });
+
+    it('default capabilitiesRequest handler returns empty capabilities', async () => {
+      const { app } = await createApp();
+      const result = app._getSignalHandlers().capabilitiesRequest();
+      expect(result).toEqual({ capabilities: [] });
+    });
+
+    it('default capabilityInvocation handler returns error', async () => {
+      const { app } = await createApp();
+      const result = await app._getSignalHandlers().capabilityInvocation({ capabilityId: 'x', scope: 'session' });
+      expect(result).toEqual({ capabilityId: 'x', success: false, error: 'No handler registered' });
+    });
+  });
 });
