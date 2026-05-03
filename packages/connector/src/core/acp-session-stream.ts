@@ -12,6 +12,8 @@ export class AcpSessionStream {
   private currentType: SegmentType | undefined;
   private currentText = '';
   private done = false;
+  /** Whether we've already emitted a 'typing' status for the current agent_message_chunk run. */
+  private typingStatusEmitted = false;
 
   /** Queued segments ready to be yielded. */
   private queue: SessionStreamSegment[] = [];
@@ -49,7 +51,12 @@ export class AcpSessionStream {
 
     switch (type) {
       case 'agent_message_chunk':
-        this.statusListener('typing', this.conversationId);
+        // Defer 'typing' status until we can confirm the response is not _skip.
+        // Once accumulated text exceeds '_skip' length or doesn't match its prefix, emit.
+        if (!this.typingStatusEmitted && !isSkipPrefix(this.currentText)) {
+          this.typingStatusEmitted = true;
+          this.statusListener('typing', this.conversationId);
+        }
         break;
       case 'agent_thought_chunk':
         this.statusListener('thinking', this.conversationId);
@@ -109,6 +116,7 @@ export class AcpSessionStream {
       this.queue.push({ type: this.currentType, text: this.currentText });
       this.currentType = undefined;
       this.currentText = '';
+      this.typingStatusEmitted = false;
       this.waiter?.();
     }
   }
@@ -118,4 +126,15 @@ const SEGMENT_TYPES = new Set<string>(['agent_message_chunk', 'agent_thought_chu
 
 function isSegmentType(type: string): type is SegmentType {
   return SEGMENT_TYPES.has(type);
+}
+
+const SKIP_TOKEN = '_skip';
+
+/** Returns true if the trimmed, lowercased text is still a possible prefix of '_skip'. */
+function isSkipPrefix(text: string): boolean {
+  const trimmed = text.trimStart().toLowerCase();
+  if (trimmed.length === 0) {
+    return true;
+  }
+  return SKIP_TOKEN.startsWith(trimmed);
 }

@@ -180,4 +180,57 @@ describe('AcpSessionStream', () => {
       { status: 'tool_calling', conversationId: 'conv-123' },
     ]);
   });
+
+  it('suppresses typing status when response is _skip', () => {
+    const stream = new AcpSessionStream(statusListener);
+
+    stream.handleSessionUpdate(makeUpdate('agent_message_chunk', '_skip'));
+    stream.finish();
+
+    expect(statuses).toHaveLength(0);
+  });
+
+  it('suppresses typing status for incremental _skip chunks', () => {
+    const stream = new AcpSessionStream(statusListener);
+
+    stream.handleSessionUpdate(makeUpdate('agent_message_chunk', '_s'));
+    stream.handleSessionUpdate(makeUpdate('agent_message_chunk', 'kip'));
+    stream.finish();
+
+    expect(statuses).toHaveLength(0);
+  });
+
+  it('emits typing once text diverges from _skip prefix', () => {
+    const stream = new AcpSessionStream(statusListener);
+
+    stream.handleSessionUpdate(makeUpdate('agent_message_chunk', '_s'));
+    expect(statuses).toHaveLength(0);
+
+    stream.handleSessionUpdate(makeUpdate('agent_message_chunk', 'omething else'));
+    expect(statuses).toEqual(['typing']);
+
+    stream.finish();
+  });
+
+  it('emits typing for text that is not a _skip prefix', () => {
+    const stream = new AcpSessionStream(statusListener);
+
+    stream.handleSessionUpdate(makeUpdate('agent_message_chunk', 'Hello'));
+    expect(statuses).toEqual(['typing']);
+
+    stream.finish();
+  });
+
+  it('resets typing suppression between segment runs', () => {
+    const stream = new AcpSessionStream(statusListener);
+
+    // First run: _skip (suppressed)
+    stream.handleSessionUpdate(makeUpdate('agent_message_chunk', '_skip'));
+    stream.handleSessionUpdate(makeUpdate('tool_call'));
+    // Second run: real message (should emit)
+    stream.handleSessionUpdate(makeUpdate('agent_message_chunk', 'real response'));
+    stream.finish();
+
+    expect(statuses).toEqual(['tool_calling', 'typing']);
+  });
 });
