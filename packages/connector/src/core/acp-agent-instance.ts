@@ -10,7 +10,7 @@ import { spawn } from 'child_process';
 import type { ChildProcess, SpawnOptions } from 'child_process';
 import { Writable, Readable } from 'stream';
 import * as fs from 'fs/promises';
-import { hostname, release, platform } from 'os';
+import { hostname } from 'os';
 import { ClientSideConnection, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk';
 import type * as acp from '@agentclientprotocol/sdk';
 import type { McpServer as AcpMcpServer } from '@agentclientprotocol/sdk';
@@ -495,7 +495,6 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
 
   /** Best-effort report of agent info to the backend after ACP init. */
   private reportAgentInfoToBackend(agentInfo: AgentInfo): void {
-    const osName = platform() === 'darwin' ? 'macos' : platform();
     this.app.client
       .reportAgentInfo({
         agentProtocol: agentInfo.protocol,
@@ -503,9 +502,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
         agentVendorVersion: agentInfo.agentVersion,
         host: {
           hostname: hostname(),
-          os: osName,
-          osVersion: release(),
-          ...(this.config.acp?.cwd ? { workingDirectory: this.config.acp.cwd } : {}),
+          workingDirectory: this.config.acp?.cwd,
         },
       })
       .then(() => log.info(`${this.logTag} Agent info reported`))
