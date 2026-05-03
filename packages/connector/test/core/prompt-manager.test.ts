@@ -24,6 +24,12 @@ function makeMsg(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
 function mockFormatter(version: string): PromptFormatter {
   return {
     version,
+    skipToken: '_skip',
+    isSkipPrefix: vi.fn().mockImplementation((text: string) => {
+      const lower = text.toLowerCase();
+      return lower.length === 0 || '_skip'.startsWith(lower);
+    }),
+    isSkip: vi.fn().mockImplementation((text: string) => text.trim().toLowerCase() === '_skip'),
     buildNewioInstruction: vi.fn().mockReturnValue({ prompt: `instruction-${version}`, version }),
     buildGreetingPrompt: vi.fn().mockReturnValue(`greeting-${version}`),
     formatMessagePrompt: vi.fn().mockReturnValue(`messages-${version}`),
@@ -126,6 +132,24 @@ describe('PromptManager', () => {
       };
       pm.formatCronPrompt('1.0.0', job);
       expect(v1.formatCronPrompt).toHaveBeenCalledWith(job);
+    });
+
+    it('isSkipPrefix dispatches by version', () => {
+      const v1 = mockFormatter('1.0.0');
+      const v2 = mockFormatter('2.0.0');
+      const pm = new PromptManager([v1, v2], v2);
+      pm.isSkipPrefix('1.0.0', '_s');
+      expect(v1.isSkipPrefix).toHaveBeenCalledWith('_s');
+      expect(v2.isSkipPrefix).not.toHaveBeenCalled();
+    });
+
+    it('isSkip dispatches by version', () => {
+      const v1 = mockFormatter('1.0.0');
+      const v2 = mockFormatter('2.0.0');
+      const pm = new PromptManager([v1, v2], v2);
+      pm.isSkip('2.0.0', '_skip');
+      expect(v2.isSkip).toHaveBeenCalledWith('_skip');
+      expect(v1.isSkip).not.toHaveBeenCalled();
     });
   });
 });

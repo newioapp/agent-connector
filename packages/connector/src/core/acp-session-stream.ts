@@ -12,6 +12,8 @@ export class AcpSessionStream {
   private currentType: SegmentType | undefined;
   private currentText = '';
   private done = false;
+  /** Whether we've already emitted a 'typing' status for the current agent_message_chunk run. */
+  private typingStatusEmitted = false;
 
   /** Queued segments ready to be yielded. */
   private queue: SessionStreamSegment[] = [];
@@ -20,6 +22,7 @@ export class AcpSessionStream {
 
   constructor(
     private readonly statusListener: SessionStatusListener,
+    private readonly isSkipPrefix: (text: string) => boolean,
     private readonly conversationId?: string,
   ) {}
 
@@ -49,7 +52,12 @@ export class AcpSessionStream {
 
     switch (type) {
       case 'agent_message_chunk':
-        this.statusListener('typing', this.conversationId);
+        // Defer 'typing' status until we can confirm the response is not _skip.
+        // Once accumulated text exceeds '_skip' length or doesn't match its prefix, emit.
+        if (!this.typingStatusEmitted && !this.isSkipPrefix(this.currentText)) {
+          this.typingStatusEmitted = true;
+          this.statusListener('typing', this.conversationId);
+        }
         break;
       case 'agent_thought_chunk':
         this.statusListener('thinking', this.conversationId);
@@ -109,6 +117,7 @@ export class AcpSessionStream {
       this.queue.push({ type: this.currentType, text: this.currentText });
       this.currentType = undefined;
       this.currentText = '';
+      this.typingStatusEmitted = false;
       this.waiter?.();
     }
   }

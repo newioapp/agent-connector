@@ -32,6 +32,8 @@ export interface AcpAgentSessionInit {
   readonly sessionResponse: NewSessionResponse | LoadSessionResponse;
   readonly disposable: boolean;
   readonly username?: string;
+  /** Check whether text could still become the skip token. */
+  readonly isSkipPrefix: (text: string) => boolean;
 }
 
 export class AcpAgentSession implements AgentSession {
@@ -45,6 +47,7 @@ export class AcpAgentSession implements AgentSession {
   private readonly connection: ClientSideConnection;
   private readonly configHandler: AcpSessionConfigHandler;
   private readonly logTag: string;
+  private readonly _isSkipPrefix: (text: string) => boolean;
   private stream?: AcpSessionStream;
   private statusListener: SessionStatusListener = () => {};
   private permissionHandler: PermissionHandler = () => Promise.reject(new Error('Permission request is unsupported'));
@@ -57,6 +60,7 @@ export class AcpAgentSession implements AgentSession {
     this.disposable = init.disposable;
     this.connection = init.connection;
     this.logTag = init.username ? `[${init.username}]` : '';
+    this._isSkipPrefix = init.isSkipPrefix;
     this.configHandler = new AcpSessionConfigHandler(init.correlationId, init.connection, init.sessionResponse);
   }
 
@@ -98,7 +102,7 @@ export class AcpAgentSession implements AgentSession {
 
   async *prompt(text: string, conversationId?: string): AsyncGenerator<SessionStreamSegment> {
     this._currentConversationId = conversationId;
-    const stream = new AcpSessionStream(this.statusListener, conversationId);
+    const stream = new AcpSessionStream(this.statusListener, this._isSkipPrefix, conversationId);
     this.stream = stream;
 
     const promptDone = this.connection

@@ -14,6 +14,12 @@ export interface Instruction {
 
 export interface PromptFormatter {
   readonly version: string;
+  /** The token the agent uses to indicate "no reply needed". */
+  readonly skipToken: string;
+  /** Returns true if the trimmed, lowercased text could still become the skip token. */
+  isSkipPrefix(text: string): boolean;
+  /** Returns true if the trimmed, lowercased text is exactly the skip token. */
+  isSkip(text: string): boolean;
   buildNewioInstruction(customInstructions?: string): Instruction;
   buildGreetingPrompt(): string;
   formatMessagePrompt(messages: readonly IncomingMessage[]): string;
@@ -24,8 +30,22 @@ export interface PromptFormatter {
 export class PromptFormatterImpl implements PromptFormatter {
   private readonly app: NewioApp;
   readonly version: string = '1.0.0';
+  readonly skipToken: string = '_skip';
+
   constructor(app: NewioApp) {
     this.app = app;
+  }
+
+  isSkipPrefix(text: string): boolean {
+    const lower = text.toLowerCase();
+    if (lower.length === 0) {
+      return true;
+    }
+    return this.skipToken.startsWith(lower);
+  }
+
+  isSkip(text: string): boolean {
+    return text.trim().toLowerCase() === this.skipToken;
   }
 
   buildNewioInstruction(customInstructions?: string): Instruction {
@@ -83,7 +103,7 @@ Group example:
 
 Conversation types and how to behave:
 - dm: A direct message between you and one other person. Always respond — they are talking to you directly.
-- group: A named group chat with multiple participants. Be selective — only respond when @mentioned by username or when you have something clearly relevant to add. Otherwise, respond with _skip.
+- group: A named group chat with multiple participants. Be selective — only respond when @mentioned by username or when you have something clearly relevant to add. Otherwise, respond with ${this.skipToken}.
 - temp_group (Work Session): A collaborative workspace with your owner and sibling agents. Be proactive — you are included specifically to participate and contribute.
 
 @mention convention:
@@ -93,7 +113,7 @@ Conversation types and how to behave:
 
 Response rules:
 - Reply with plain text or markdown — the messaging app renders markdown.
-- If no reply is needed, respond with exactly: _skip
+- If no reply is needed, respond with exactly: ${this.skipToken}
 - Be concise and natural.
 
 Important — how your responses are delivered:
@@ -104,7 +124,7 @@ Important — how your responses are delivered:
 
 Contact events:
 - You receive friend request, acceptance, rejection, and removal events as YAML.
-- Your text response is NOT sent anywhere — it is discarded. Always respond with _skip.
+- Your text response is NOT sent anywhere — it is discarded. Always respond with ${this.skipToken}.
 - If you need to take action (e.g., accept a friend request, notify your owner), use MCP tools like dm_owner, send_dm, accept_friend_request, reject_friend_request, send_friend_request, or remove_friend.
 
 Contact event example:
@@ -126,7 +146,7 @@ Contact event example:
 Cron triggers:
 - You can schedule recurring tasks using the schedule_cron MCP tool.
 - When a cron job fires, you receive a trigger event with the label and optional payload you set.
-- Your text response is NOT sent anywhere — it is discarded. Always respond with _skip.
+- Your text response is NOT sent anywhere — it is discarded. Always respond with ${this.skipToken}.
 - Use MCP tools to take any actions the cron job requires.
 
 Cron trigger example:
