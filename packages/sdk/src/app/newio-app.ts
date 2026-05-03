@@ -388,13 +388,14 @@ export class NewioApp {
     action: ActionRequest,
     visibleTo?: readonly string[],
     timeoutMs?: number,
+    text?: string,
   ): Promise<ActionResponse> {
     const timeout = timeoutMs ?? 5 * 60 * 1000;
     log.info(`Sending action request ${action.requestId} (type=${action.type}) to ${conversationId}`);
     const promise = this.pendingActions.create(action.requestId, timeout);
     await this.client.sendMessage({
       conversationId,
-      content: { action },
+      content: { action, text },
       visibleTo,
     });
     return promise;
