@@ -37,11 +37,11 @@ export class PromptFormatterImpl implements PromptFormatter {
   }
 
   isSkipPrefix(text: string): boolean {
-    const trimmed = text.trimStart().toLowerCase();
-    if (trimmed.length === 0) {
+    const lower = text.toLowerCase();
+    if (lower.length === 0) {
       return true;
     }
-    return this.skipToken.startsWith(trimmed);
+    return this.skipToken.startsWith(lower);
   }
 
   isSkip(text: string): boolean {

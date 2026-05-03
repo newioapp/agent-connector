@@ -14,11 +14,11 @@ const SKIP_TOKEN = '_skip';
 
 /** Default isSkipPrefix matching PromptFormatterImpl behavior. */
 function defaultIsSkipPrefix(text: string): boolean {
-  const trimmed = text.trimStart().toLowerCase();
-  if (trimmed.length === 0) {
+  const lower = text.toLowerCase();
+  if (lower.length === 0) {
     return true;
   }
-  return SKIP_TOKEN.startsWith(trimmed);
+  return SKIP_TOKEN.startsWith(lower);
 }
 
 describe('AcpSessionStream', () => {

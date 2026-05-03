@@ -26,8 +26,8 @@ function mockFormatter(version: string): PromptFormatter {
     version,
     skipToken: '_skip',
     isSkipPrefix: vi.fn().mockImplementation((text: string) => {
-      const trimmed = text.trimStart().toLowerCase();
-      return trimmed.length === 0 || '_skip'.startsWith(trimmed);
+      const lower = text.toLowerCase();
+      return lower.length === 0 || '_skip'.startsWith(lower);
     }),
     isSkip: vi.fn().mockImplementation((text: string) => text.trim().toLowerCase() === '_skip'),
     buildNewioInstruction: vi.fn().mockReturnValue({ prompt: `instruction-${version}`, version }),

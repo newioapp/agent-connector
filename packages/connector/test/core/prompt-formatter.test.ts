@@ -333,7 +333,6 @@ describe('PromptFormatterImpl', () => {
     it('returns true for empty text', () => {
       const pf = new PromptFormatterImpl(mockApp());
       expect(pf.isSkipPrefix('')).toBe(true);
-      expect(pf.isSkipPrefix('  ')).toBe(true);
     });
 
     it('returns true for valid prefixes of _skip', () => {
