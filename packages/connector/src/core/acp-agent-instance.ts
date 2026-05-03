@@ -10,6 +10,7 @@ import { spawn } from 'child_process';
 import type { ChildProcess, SpawnOptions } from 'child_process';
 import { Writable, Readable } from 'stream';
 import * as fs from 'fs/promises';
+import { hostname } from 'os';
 import { ClientSideConnection, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk';
 import type * as acp from '@agentclientprotocol/sdk';
 import type { McpServer as AcpMcpServer } from '@agentclientprotocol/sdk';
@@ -197,6 +198,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
 
     this.agentInfo = buildAgentInfo(initResult);
     this.listener.onAgentInfo(this.agentInfo);
+    this.reportAgentInfoToBackend(this.agentInfo);
   }
 
   private async killProcess(): Promise<void> {
@@ -489,6 +491,22 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       }
       this.listener.onAgentSessionConfigUpdated(session.correlationId, this.cachedModels, this.cachedModes);
     });
+  }
+
+  /** Best-effort report of agent info to the backend after ACP init. */
+  private reportAgentInfoToBackend(agentInfo: AgentInfo): void {
+    this.app.client
+      .reportAgentInfo({
+        agentProtocol: agentInfo.protocol,
+        agentVendor: agentInfo.agentName ?? this.config.type,
+        agentVendorVersion: agentInfo.agentVersion,
+        host: {
+          hostname: hostname(),
+          workingDirectory: this.config.acp?.cwd,
+        },
+      })
+      .then(() => log.info(`${this.logTag} Agent info reported`))
+      .catch((err: unknown) => log.warn(`${this.logTag} Failed to report agent info`, err));
   }
 }
 

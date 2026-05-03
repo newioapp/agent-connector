@@ -101,6 +101,8 @@ import type {
   // Signals
   SendSignalRequest,
   SendSignalResponse,
+  ReportAgentInfoRequest,
+  ReportAgentInfoResponse,
 } from './types.js';
 
 /**
@@ -466,6 +468,18 @@ export class NewioClient {
   async sendSignal(input: SendSignalRequest): Promise<SendSignalResponse> {
     return this.http.request('/signals', {
       method: 'POST',
+      body: JSON.stringify(input),
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Agent Info
+  // ---------------------------------------------------------------------------
+
+  /** Report agent info on startup. Called once after auth + WebSocket connect. */
+  async reportAgentInfo(input: ReportAgentInfoRequest): Promise<ReportAgentInfoResponse> {
+    return this.http.request('/agents/me/info', {
+      method: 'PUT',
       body: JSON.stringify(input),
     });
   }
