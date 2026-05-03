@@ -198,7 +198,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
 
     this.agentInfo = buildAgentInfo(initResult);
     this.listener.onAgentInfo(this.agentInfo);
-    this.reportAgentInfoToBackend();
+    this.reportAgentInfoToBackend(this.agentInfo);
   }
 
   private async killProcess(): Promise<void> {
@@ -494,13 +494,13 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
   }
 
   /** Best-effort report of agent info to the backend after ACP init. */
-  private reportAgentInfoToBackend(): void {
+  private reportAgentInfoToBackend(agentInfo: AgentInfo): void {
     const osName = platform() === 'darwin' ? 'macos' : platform();
     this.app.client
       .reportAgentInfo({
-        agentProtocol: this.agentInfo?.protocol ?? 'acp',
-        agentVendor: this.config.type,
-        ...(this.agentInfo?.agentVersion ? { agentVendorVersion: this.agentInfo.agentVersion } : {}),
+        agentProtocol: agentInfo.protocol,
+        agentVendor: agentInfo.agentName ?? this.config.type,
+        agentVendorVersion: agentInfo.agentVersion,
         host: {
           hostname: hostname(),
           os: osName,
