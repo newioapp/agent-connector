@@ -834,3 +834,109 @@ export interface UpdateMyProfileResponse {
   readonly avatarUrl?: string;
   readonly bio?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Signals — P2P owner ↔ agent communication
+// ---------------------------------------------------------------------------
+
+/** Direction of a P2P signal. */
+export type SignalIntent = 'request' | 'response' | 'notification';
+
+export interface SendSignalRequest {
+  readonly targetUserId: string;
+  readonly requestId: string;
+  readonly intent: SignalIntent;
+  readonly type: string;
+  readonly payload: Record<string, unknown>;
+}
+
+export interface SendSignalResponse {
+  readonly requestId: string;
+}
+
+export interface SignalEventPayload {
+  readonly senderId: string;
+  readonly requestId: string;
+  readonly intent: SignalIntent;
+  readonly type: string;
+  readonly payload: Record<string, unknown>;
+}
+
+export interface SignalEvent {
+  readonly type: 'signal';
+  readonly payload: SignalEventPayload;
+  readonly timestamp: string;
+}
+
+// ---------------------------------------------------------------------------
+// Capabilities — agent remote control
+// ---------------------------------------------------------------------------
+
+export type CapabilityScope = 'agent' | 'session' | 'conversation';
+
+export interface CapabilityOption {
+  readonly value: string;
+  readonly label: string;
+  readonly description?: string;
+}
+
+export interface AgentCapability {
+  /** Unique identifier: 'set_model', 'set_mode', 'cancel', etc. */
+  readonly id: string;
+  /** Display name: 'Change Model', 'Set Mode', etc. */
+  readonly name: string;
+  readonly description?: string;
+  readonly scope: CapabilityScope;
+  /** Available options (e.g. list of models for set_model). */
+  readonly options?: ReadonlyArray<CapabilityOption>;
+  /** Current value if applicable (e.g. current model name, current mode). */
+  readonly currentValue?: string | boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Capability signal constants & payload shapes
+// ---------------------------------------------------------------------------
+
+/** Agent → Owner: full capability report for a session. */
+export const SIGNAL_CAPABILITIES_REPORT = 'capabilities_report';
+
+/** Owner → Agent: request current capabilities. */
+export const SIGNAL_CAPABILITIES_REQUEST = 'capabilities_request';
+
+/** Agent → Owner: response to capabilities_request. */
+export const SIGNAL_CAPABILITIES_RESPONSE = 'capabilities_response';
+
+/** Owner → Agent: invoke a capability. */
+export const SIGNAL_INVOKE_CAPABILITY = 'invoke_capability';
+
+/** Agent → Owner: result of capability invocation. */
+export const SIGNAL_INVOKE_CAPABILITY_RESPONSE = 'invoke_capability_response';
+
+export interface CapabilitiesReportPayload {
+  readonly sessionId: string;
+  readonly capabilities: ReadonlyArray<AgentCapability>;
+}
+
+export interface CapabilitiesRequestPayload {
+  readonly sessionId?: string;
+  readonly conversationId?: string;
+}
+
+export interface CapabilitiesResponsePayload {
+  readonly capabilities: ReadonlyArray<AgentCapability>;
+}
+
+export interface InvokeCapabilityPayload {
+  readonly capabilityId: string;
+  readonly scope: CapabilityScope;
+  /** sessionId for session-scoped, conversationId for conversation-scoped. */
+  readonly targetId?: string;
+  readonly params?: Readonly<Record<string, unknown>>;
+}
+
+export interface InvokeCapabilityResponsePayload {
+  readonly capabilityId: string;
+  readonly success: boolean;
+  readonly result?: Readonly<Record<string, unknown>>;
+  readonly error?: string;
+}

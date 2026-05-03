@@ -202,6 +202,35 @@ export type {
   UpdateMyProfileResponse,
 } from './core/types.js';
 
+// Types — Signals
+export type {
+  SignalIntent,
+  SendSignalRequest,
+  SendSignalResponse,
+  SignalEventPayload,
+  SignalEvent,
+} from './core/types.js';
+
+// Types — Capabilities
+export type {
+  CapabilityScope,
+  CapabilityOption,
+  AgentCapability,
+  CapabilitiesReportPayload,
+  CapabilitiesRequestPayload,
+  CapabilitiesResponsePayload,
+  InvokeCapabilityPayload,
+  InvokeCapabilityResponsePayload,
+} from './core/types.js';
+
+export {
+  SIGNAL_CAPABILITIES_REPORT,
+  SIGNAL_CAPABILITIES_REQUEST,
+  SIGNAL_CAPABILITIES_RESPONSE,
+  SIGNAL_INVOKE_CAPABILITY,
+  SIGNAL_INVOKE_CAPABILITY_RESPONSE,
+} from './core/types.js';
+
 // Events
 export type {
   WebSocketEvent,
@@ -254,3 +283,4 @@ export type {
   NewioTokens,
 } from './app/index.js';
 export type { NewioAppCreateOptions } from './app/index.js';
+export type { CapabilitiesRequestHandler, CapabilityInvocationHandler } from './app/index.js';

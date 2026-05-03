@@ -46,6 +46,8 @@ import type {
   NewioIdentity,
   NewioTokens,
   CronJobDef,
+  CapabilitiesRequestHandler,
+  CapabilityInvocationHandler,
 } from './types.js';
 
 const log = getLogger('newio-app');
@@ -158,6 +160,15 @@ export class NewioApp {
   private readonly cronScheduler: CronScheduler;
 
   private readonly eventHandlers: Partial<AppEventHandlers> = {};
+  private capabilitiesRequestHandler: CapabilitiesRequestHandler = () => ({
+    capabilities: [],
+  });
+  private capabilityInvocationHandler: CapabilityInvocationHandler = (invocation) =>
+    Promise.resolve({
+      capabilityId: invocation.capabilityId,
+      success: false,
+      error: 'No handler registered',
+    });
 
   private constructor(
     identity: NewioIdentity,
@@ -197,7 +208,16 @@ export class NewioApp {
   ): NewioApp {
     const app = new NewioApp(identity, auth, client, ws, store ?? new NewioAppStore());
     const processor = new MessageProcessor(app.store, client, identity, () => app.eventHandlers, app.pendingActions);
-    wireEvents(ws, app.store, client, identity, () => app.eventHandlers, app.pendingActions, processor);
+    wireEvents(
+      ws,
+      app.store,
+      client,
+      identity,
+      () => app.eventHandlers,
+      app.pendingActions,
+      processor,
+      () => app._getSignalHandlers(),
+    );
     return app;
   }
 
@@ -260,7 +280,16 @@ export class NewioApp {
     const store = new NewioAppStore(opts.persistence);
     const app = new NewioApp(identity, auth, client, ws, store, opts.downloadDir);
     const processor = new MessageProcessor(store, client, identity, () => app.eventHandlers, app.pendingActions);
-    wireEvents(ws, store, client, identity, () => app.eventHandlers, app.pendingActions, processor);
+    wireEvents(
+      ws,
+      store,
+      client,
+      identity,
+      () => app.eventHandlers,
+      app.pendingActions,
+      processor,
+      () => app._getSignalHandlers(),
+    );
     return app;
   }
 
@@ -298,6 +327,31 @@ export class NewioApp {
   /** Register a handler for an app-level event. */
   on<K extends keyof AppEventHandlers>(event: K, handler: AppEventHandlers[K]): void {
     this.eventHandlers[event] = handler;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Capabilities — remote control
+  // ---------------------------------------------------------------------------
+
+  /** Register a handler for when the owner requests capabilities. */
+  onCapabilitiesRequest(handler: CapabilitiesRequestHandler): void {
+    this.capabilitiesRequestHandler = handler;
+  }
+
+  /** Register a handler for when the owner invokes a capability. */
+  onCapabilityInvocation(handler: CapabilityInvocationHandler): void {
+    this.capabilityInvocationHandler = handler;
+  }
+
+  /** @internal Returns signal handlers for wireEvents. */
+  _getSignalHandlers(): {
+    capabilitiesRequest: CapabilitiesRequestHandler;
+    capabilityInvocation: CapabilityInvocationHandler;
+  } {
+    return {
+      capabilitiesRequest: this.capabilitiesRequestHandler,
+      capabilityInvocation: this.capabilityInvocationHandler,
+    };
   }
 
   // ---------------------------------------------------------------------------

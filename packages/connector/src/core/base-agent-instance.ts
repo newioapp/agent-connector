@@ -28,6 +28,12 @@ import { EventQueue } from './event-queue';
 import type { AgentEvent } from './event-queue';
 import { PromptManager } from './prompt-manager';
 import { Logger } from './logger';
+import type {
+  AgentCapability,
+  CapabilitiesResponsePayload,
+  InvokeCapabilityPayload,
+  InvokeCapabilityResponsePayload,
+} from '@newio/agent-sdk';
 import WebSocket from 'ws';
 import { PromptFormatterImpl } from './prompt-formatter';
 
@@ -223,6 +229,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       const ownerDmConversationId = await this.getOwnerDmOrThrow();
       this._ownerDmConversationId = ownerDmConversationId;
       await this.onConnected(ownerDmConversationId);
+      this.wireCapabilityHandlers(app);
       log.info(`${this.logTag} Agent running`);
       this.setStatus('running');
     } catch (err: unknown) {
@@ -715,6 +722,60 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Capability management
+  // ---------------------------------------------------------------------------
+
+  /** Wire capability handlers and register the manager with the app. */
+  private wireCapabilityHandlers(app: NewioApp): void {
+    app.onCapabilitiesRequest((sessionId, conversationId) => this.getCapabilities(sessionId, conversationId));
+    app.onCapabilityInvocation((invocation) => this.handleCapabilityInvocation(invocation));
+  }
+
+  /** Get capabilities for a session. */
+  private getCapabilities(sessionId?: string, conversationId?: string): CapabilitiesResponsePayload {
+    const capabilities: AgentCapability[] = [];
+
+    if (typeof sessionId === 'string') {
+      const slot = this.slots.get(sessionId);
+      if (slot?.session) {
+        capabilities.push(...slot.session.getCapabilities());
+      }
+    }
+
+    if (typeof conversationId === 'string') {
+      capabilities.push({ id: 'show_tool_call', name: 'Show Tool Calls', scope: 'conversation', currentValue: false });
+    }
+
+    return { capabilities };
+  }
+
+  /** Handle a capability invocation from the owner. */
+  private async handleCapabilityInvocation(
+    invocation: InvokeCapabilityPayload,
+  ): Promise<InvokeCapabilityResponsePayload> {
+    const { capabilityId, scope, targetId } = invocation;
+
+    // Conversation-scoped: handled at instance level
+    if (scope === 'conversation') {
+      if (capabilityId === 'show_tool_call') {
+        return { capabilityId, success: true };
+      }
+      return { capabilityId, success: false, error: 'unknown_capability' };
+    }
+
+    // Session-scoped: delegate to the session
+    if (typeof targetId !== 'string') {
+      return { capabilityId, success: false, error: 'Missing targetId (sessionId)' };
+    }
+    const slot = this.slots.get(targetId);
+    if (!slot?.session) {
+      return { capabilityId, success: false, error: 'Session not found or not active' };
+    }
+    return slot.session.handleCapabilityInvocation(invocation);
+  }
+
+  /** Report capabilities for a session and wire config change listener. */
   // ---------------------------------------------------------------------------
   // Idle cleanup
   // ---------------------------------------------------------------------------
