@@ -14,7 +14,7 @@ import { ApprovalTimeoutError, ConnectionRejectedError, NewioApp, NotFoundApiErr
 import type { IncomingMessage, ContactEvent, CronTriggerEvent, ActionOption, ActionRequest } from '@newio/agent-sdk';
 import { NewioMcpServer, startUdsServer } from '@newio/mcp-server';
 import type { Server } from 'net';
-import { tmpdir } from 'os';
+import { tmpdir, hostname, release, platform } from 'os';
 import { join } from 'path';
 import type { AgentConfigManager } from './agent-config-manager';
 import type { AgentRuntimeStatus, AgentConfig } from './types';
@@ -230,6 +230,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       this._ownerDmConversationId = ownerDmConversationId;
       await this.onConnected(ownerDmConversationId);
       this.wireCapabilityHandlers(app);
+      this.reportAgentInfoToBackend(app);
       log.info(`${this.logTag} Agent running`);
       this.setStatus('running');
     } catch (err: unknown) {
@@ -735,6 +736,26 @@ export abstract class BaseAgentInstance implements AgentInstance {
   // ---------------------------------------------------------------------------
 
   /** Wire capability handlers and register the manager with the app. */
+  /** Best-effort report of agent info to the backend on startup. */
+  private reportAgentInfoToBackend(app: NewioApp): void {
+    const info = this.getAgentInfo();
+    const osName = platform() === 'darwin' ? 'macos' : platform();
+    app.client
+      .reportAgentInfo({
+        agentProtocol: 'acp',
+        agentVendor: this.config.type,
+        ...(info?.agentVersion ? { agentVendorVersion: info.agentVersion } : {}),
+        host: {
+          hostname: hostname(),
+          os: osName,
+          osVersion: release(),
+          ...(this.config.acp?.cwd ? { workingDirectory: this.config.acp.cwd } : {}),
+        },
+      })
+      .then(() => log.info(`${this.logTag} Agent info reported`))
+      .catch((err: unknown) => log.warn(`${this.logTag} Failed to report agent info`, err));
+  }
+
   private wireCapabilityHandlers(app: NewioApp): void {
     app.onCapabilitiesRequest((sessionId, conversationId) => this.getCapabilities(sessionId, conversationId));
     app.onCapabilityInvocation((invocation) => this.handleCapabilityInvocation(invocation));

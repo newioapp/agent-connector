@@ -211,6 +211,9 @@ export type {
   SignalEvent,
 } from './core/types.js';
 
+// Types — Agent Info
+export type { ReportAgentHostInfo, ReportAgentInfoRequest, ReportAgentInfoResponse } from './core/types.js';
+
 // Types — Capabilities
 export type {
   CapabilityScope,

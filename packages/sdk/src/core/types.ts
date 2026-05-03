@@ -869,6 +869,29 @@ export interface SignalEvent {
 }
 
 // ---------------------------------------------------------------------------
+// Agent Info — static metadata reported on startup
+// ---------------------------------------------------------------------------
+
+/** Host info as reported by the agent — city and ipAddress are resolved server-side. */
+export interface ReportAgentHostInfo {
+  readonly hostname?: string;
+  readonly os?: string;
+  readonly osVersion?: string;
+  readonly workingDirectory?: string;
+}
+
+export interface ReportAgentInfoRequest {
+  readonly agentProtocol: string;
+  readonly agentVendor: string;
+  readonly agentVendorVersion?: string;
+  readonly host?: ReportAgentHostInfo;
+}
+
+export interface ReportAgentInfoResponse {
+  readonly version: string;
+}
+
+// ---------------------------------------------------------------------------
 // Capabilities — agent remote control
 // ---------------------------------------------------------------------------
 
