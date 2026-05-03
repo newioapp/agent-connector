@@ -464,5 +464,13 @@ describe('NewioClient', () => {
         payload: { key: 'value' },
       });
     });
+
+    it('reportAgentInfo puts to /agents/me/info', async () => {
+      mockFetch([{ status: 200, body: { version: 'v#2026-05-01T00:00:00.000Z' } }]);
+      const result = await createClient().reportAgentInfo({ agentProtocol: 'acp', agentVendor: 'kiro-cli' });
+      expect(result.version).toBe('v#2026-05-01T00:00:00.000Z');
+      expect(fetchCalls[0]?.url).toBe('https://api.test/agents/me/info');
+      expect(fetchCalls[0]?.method).toBe('PUT');
+    });
   });
 });
