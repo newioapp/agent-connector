@@ -57,6 +57,16 @@ export class PromptManager {
     return this.findCompatiblePromptFormatter(promptVersion).formatCronPrompt(job);
   }
 
+  /** Returns true if the trimmed, lowercased text could still become the skip token for the given prompt version. */
+  isSkipPrefix(promptVersion: string, text: string): boolean {
+    return this.findCompatiblePromptFormatter(promptVersion).isSkipPrefix(text);
+  }
+
+  /** Returns true if the trimmed, lowercased text is exactly the skip token for the given prompt version. */
+  isSkip(promptVersion: string, text: string): boolean {
+    return this.findCompatiblePromptFormatter(promptVersion).isSkip(text);
+  }
+
   assertPromptFormatterVersion(version: string): void {
     this.findCompatiblePromptFormatter(version);
   }

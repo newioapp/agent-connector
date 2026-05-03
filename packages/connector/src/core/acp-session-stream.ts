@@ -22,6 +22,7 @@ export class AcpSessionStream {
 
   constructor(
     private readonly statusListener: SessionStatusListener,
+    private readonly isSkipPrefix: (text: string) => boolean,
     private readonly conversationId?: string,
   ) {}
 
@@ -53,7 +54,7 @@ export class AcpSessionStream {
       case 'agent_message_chunk':
         // Defer 'typing' status until we can confirm the response is not _skip.
         // Once accumulated text exceeds '_skip' length or doesn't match its prefix, emit.
-        if (!this.typingStatusEmitted && !isSkipPrefix(this.currentText)) {
+        if (!this.typingStatusEmitted && !this.isSkipPrefix(this.currentText)) {
           this.typingStatusEmitted = true;
           this.statusListener('typing', this.conversationId);
         }
@@ -126,15 +127,4 @@ const SEGMENT_TYPES = new Set<string>(['agent_message_chunk', 'agent_thought_chu
 
 function isSegmentType(type: string): type is SegmentType {
   return SEGMENT_TYPES.has(type);
-}
-
-const SKIP_TOKEN = '_skip';
-
-/** Returns true if the trimmed, lowercased text is still a possible prefix of '_skip'. */
-function isSkipPrefix(text: string): boolean {
-  const trimmed = text.trimStart().toLowerCase();
-  if (trimmed.length === 0) {
-    return true;
-  }
-  return SKIP_TOKEN.startsWith(trimmed);
 }

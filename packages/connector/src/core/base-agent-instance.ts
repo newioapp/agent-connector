@@ -675,7 +675,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         if (
           segment.type === 'agent_message_chunk' &&
           segment.text.trim() &&
-          segment.text.trim().toLowerCase() !== '_skip'
+          !this.promptManager.isSkip(session.promptFormatterVersion, segment.text)
         ) {
           await this.app.sendMessage(conversationId, segment.text.trim());
         }
@@ -695,7 +695,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
     try {
       for await (const segment of session.prompt(userText)) {
         const text = segment.text.trim();
-        if (segment.type === 'agent_message_chunk' && text && text.toLowerCase() !== '_skip') {
+        if (
+          segment.type === 'agent_message_chunk' &&
+          text &&
+          !this.promptManager.isSkip(session.promptFormatterVersion, text)
+        ) {
           log.debug(`${this.logTag} Contact event response (discarded): ${text.substring(0, 100)}`);
         }
       }
@@ -712,7 +716,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
     try {
       for await (const segment of session.prompt(userText)) {
         const text = segment.text.trim();
-        if (segment.type === 'agent_message_chunk' && text && text.toLowerCase() !== '_skip') {
+        if (
+          segment.type === 'agent_message_chunk' &&
+          text &&
+          !this.promptManager.isSkip(session.promptFormatterVersion, text)
+        ) {
           log.debug(`${this.logTag} Cron response (discarded): ${text.substring(0, 100)}`);
         }
       }

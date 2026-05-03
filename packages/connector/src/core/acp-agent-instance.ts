@@ -322,6 +322,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       sessionResponse: result,
       disposable: this.supportsClose,
       username: this.config.newio?.username,
+      isSkipPrefix: (text) => this.promptManager.isSkipPrefix(instruction.version, text),
     });
     this.registerSession(result.sessionId, session);
     log.info(`${this.logTag} Session created: ${result.sessionId}`);
@@ -367,6 +368,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       sessionResponse: loadResult,
       disposable: this.supportsClose,
       username: this.config.newio?.username,
+      isSkipPrefix: (text) => this.promptManager.isSkipPrefix(promptFormatterVersion, text),
     });
     this.registerSession(correlationId, session);
     log.info(`${this.logTag} Session resumed: ${correlationId}`);
