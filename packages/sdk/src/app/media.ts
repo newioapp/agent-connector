@@ -164,7 +164,7 @@ export async function uploadFiles(client: NewioClient, filePaths: readonly strin
       body: data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
     });
     attachments.push({
-      type: attachmentType,
+      attachmentType,
       s3Key,
       fileName,
       contentType,

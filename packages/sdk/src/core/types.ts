@@ -150,7 +150,7 @@ export interface MessageContent {
 
 /** A file or image attachment. */
 export interface Attachment {
-  readonly type: AttachmentType;
+  readonly attachmentType: AttachmentType;
   readonly s3Key: string;
   readonly fileName: string;
   readonly contentType: string;
