@@ -35,31 +35,23 @@ export class AcpSessionStream {
     }
 
     let text: string | undefined;
-    if ('content' in update) {
-      const content = update.content;
-      if (
-        typeof content === 'object' &&
-        content !== null &&
-        'type' in content &&
-        content.type === 'text' &&
-        'text' in content &&
-        typeof content.text === 'string'
-      ) {
-        text = content.text;
-      }
-    }
-
     let toolCallId: string | undefined;
-    if (type === 'tool_call' && 'toolCall' in update) {
-      const tc = update.toolCall as Record<string, unknown>;
-      if (typeof tc.toolCallId === 'string') {
-        toolCallId = tc.toolCallId;
+
+    if (type === 'tool_call' || type === 'tool_call_update') {
+      // tool_call and tool_call_update have toolCallId and title directly on the update
+      const u = update as Record<string, unknown>;
+      const tc = (type === 'tool_call' ? u.toolCall : u.toolCallUpdate) as Record<string, unknown> | undefined;
+      if (tc) {
+        if (typeof tc.toolCallId === 'string') {
+          toolCallId = tc.toolCallId;
+        }
+        if (typeof tc.title === 'string') {
+          text = tc.title;
+        }
       }
-    } else if (type === 'tool_call_update' && 'toolCallUpdate' in update) {
-      const tcu = update.toolCallUpdate as Record<string, unknown>;
-      if (typeof tcu.toolCallId === 'string') {
-        toolCallId = tcu.toolCallId;
-      }
+    } else if ('content' in update) {
+      // agent_message_chunk and agent_thought_chunk use content.text
+      text = extractTextContent(update);
     }
 
     this.push(type, text, toolCallId);
@@ -145,4 +137,20 @@ const SEGMENT_TYPES = new Set<string>(['agent_message_chunk', 'agent_thought_chu
 
 function isSegmentType(type: string): type is SegmentType {
   return SEGMENT_TYPES.has(type);
+}
+
+/** Extract text from an ACP session update that has a content field with { type: 'text', text: string }. */
+function extractTextContent(update: Record<string, unknown>): string | undefined {
+  const content = update['content'];
+  if (
+    typeof content === 'object' &&
+    content !== null &&
+    'type' in content &&
+    (content as Record<string, unknown>)['type'] === 'text' &&
+    'text' in content &&
+    typeof (content as Record<string, unknown>)['text'] === 'string'
+  ) {
+    return (content as Record<string, unknown>)['text'] as string;
+  }
+  return undefined;
 }

@@ -176,8 +176,8 @@ export type SessionStatusListener = (status: SessionStatus, conversationId?: str
 
 /** Per-conversation flags toggled by the owner via capability invocations. */
 export interface ConversationFlags {
-  showToolCalls: boolean;
-  showThoughts: boolean;
+  readonly showToolCalls: boolean;
+  readonly showThoughts: boolean;
 }
 
 export interface PermissionRequestOption {

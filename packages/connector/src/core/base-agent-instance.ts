@@ -708,6 +708,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
     const userText = this.promptManager.formatMessagePrompt(session.promptFormatterVersion, messages);
     const flags = this.getConversationFlags(conversationId);
     const ownerId = this.app.identity.ownerId;
+    const ownerVisible = ownerId && this.isOwnerInConversation(conversationId, ownerId);
     try {
       for await (const segment of session.prompt(userText, conversationId)) {
         if (
@@ -716,7 +717,12 @@ export abstract class BaseAgentInstance implements AgentInstance {
           !this.promptManager.isSkip(session.promptFormatterVersion, segment.text)
         ) {
           await this.app.sendMessage(conversationId, segment.text.trim());
-        } else if (segment.type === 'agent_thought_chunk' && flags.showThoughts && segment.text.trim() && ownerId) {
+        } else if (
+          segment.type === 'agent_thought_chunk' &&
+          flags.showThoughts &&
+          segment.text.trim() &&
+          ownerVisible
+        ) {
           await this.app.client.sendMessage({
             conversationId,
             content: { text: segment.text.trim(), metadata: { type: 'agent_thought' } },
@@ -725,12 +731,14 @@ export abstract class BaseAgentInstance implements AgentInstance {
         } else if (
           (segment.type === 'tool_call' || segment.type === 'tool_call_update') &&
           flags.showToolCalls &&
-          segment.text.trim() &&
-          ownerId
+          ownerVisible
         ) {
           await this.app.client.sendMessage({
             conversationId,
-            content: { text: segment.text.trim(), metadata: { type: 'tool_call', toolCallId: segment.toolCallId } },
+            content: {
+              text: segment.text.trim() || undefined,
+              metadata: { type: 'tool_call', toolCallId: segment.toolCallId },
+            },
             visibleTo: [ownerId],
           });
         }
@@ -837,21 +845,17 @@ export abstract class BaseAgentInstance implements AgentInstance {
         if (typeof targetId !== 'string') {
           return { capabilityId, success: false, error: 'Missing targetId (conversationId)' };
         }
-        const flags = this.conversationFlags.get(targetId) ?? { showToolCalls: false, showThoughts: false };
-        if (capabilityId === 'show_tool_call') {
-          flags.showToolCalls = !flags.showToolCalls;
-        } else {
-          flags.showThoughts = !flags.showThoughts;
+        const enable = invocation.params?.['enable'];
+        if (typeof enable !== 'boolean') {
+          return { capabilityId, success: false, error: 'Missing boolean "enable" param' };
         }
-        this.conversationFlags.set(targetId, flags);
-        log.info(
-          `${this.logTag} Toggled ${capabilityId} for ${targetId}: ${capabilityId === 'show_tool_call' ? String(flags.showToolCalls) : String(flags.showThoughts)}`,
-        );
-        return {
-          capabilityId,
-          success: true,
-          result: { enabled: capabilityId === 'show_tool_call' ? flags.showToolCalls : flags.showThoughts },
-        };
+        const prev = this.conversationFlags.get(targetId) ?? { showToolCalls: false, showThoughts: false };
+        const updated =
+          capabilityId === 'show_tool_call' ? { ...prev, showToolCalls: enable } : { ...prev, showThoughts: enable };
+        this.conversationFlags.set(targetId, updated);
+        const value = capabilityId === 'show_tool_call' ? updated.showToolCalls : updated.showThoughts;
+        log.info(`${this.logTag} Set ${capabilityId} for ${targetId}: ${String(value)}`);
+        return { capabilityId, success: true, result: { enabled: value } };
       }
       return { capabilityId, success: false, error: 'unknown_capability' };
     }
