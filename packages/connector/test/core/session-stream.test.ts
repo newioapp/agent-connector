@@ -42,7 +42,9 @@ describe('AcpSessionStream', () => {
       segments.push(s);
     }
 
-    expect(segments).toEqual([{ type: 'agent_message_chunk', text: 'Hello world' }]);
+    expect(segments).toEqual([
+      { type: 'agent_message_chunk', text: 'Hello world', toolCallId: undefined, toolCallStatus: undefined },
+    ]);
   });
 
   it('flushes when type changes', async () => {
@@ -58,8 +60,18 @@ describe('AcpSessionStream', () => {
     }
 
     expect(segments).toHaveLength(2);
-    expect(segments[0]).toEqual({ type: 'agent_thought_chunk', text: 'thinking...' });
-    expect(segments[1]).toEqual({ type: 'agent_message_chunk', text: 'result' });
+    expect(segments[0]).toEqual({
+      type: 'agent_thought_chunk',
+      text: 'thinking...',
+      toolCallId: undefined,
+      toolCallStatus: undefined,
+    });
+    expect(segments[1]).toEqual({
+      type: 'agent_message_chunk',
+      text: 'result',
+      toolCallId: undefined,
+      toolCallStatus: undefined,
+    });
   });
 
   it('handles updates without text content', async () => {
@@ -75,8 +87,13 @@ describe('AcpSessionStream', () => {
     }
 
     expect(segments).toHaveLength(2);
-    expect(segments[0]).toEqual({ type: 'tool_call', text: '' });
-    expect(segments[1]).toEqual({ type: 'agent_message_chunk', text: 'done' });
+    expect(segments[0]).toEqual({ type: 'tool_call', text: '', toolCallId: undefined, toolCallStatus: undefined });
+    expect(segments[1]).toEqual({
+      type: 'agent_message_chunk',
+      text: 'done',
+      toolCallId: undefined,
+      toolCallStatus: undefined,
+    });
   });
 
   it('emits status changes based on update type', () => {
@@ -129,7 +146,9 @@ describe('AcpSessionStream', () => {
     for await (const s of stream.segments()) {
       segments.push(s);
     }
-    expect(segments).toEqual([{ type: 'agent_message_chunk', text: '' }]);
+    expect(segments).toEqual([
+      { type: 'agent_message_chunk', text: '', toolCallId: undefined, toolCallStatus: undefined },
+    ]);
   });
 
   it('handles content with non-string text gracefully', async () => {
@@ -145,7 +164,9 @@ describe('AcpSessionStream', () => {
     for await (const s of stream.segments()) {
       segments.push(s);
     }
-    expect(segments).toEqual([{ type: 'agent_message_chunk', text: '' }]);
+    expect(segments).toEqual([
+      { type: 'agent_message_chunk', text: '', toolCallId: undefined, toolCallStatus: undefined },
+    ]);
   });
 
   it('segments() awaits when no data is ready', async () => {

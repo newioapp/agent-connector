@@ -19,7 +19,7 @@ import { join } from 'path';
 import type { AgentConfigManager } from './agent-config-manager';
 import type { AgentRuntimeStatus, AgentConfig } from './types';
 import { DEFAULT_SESSION_IDLE_TIMEOUT_MS, resolveCommand, extractErrorMessage } from './types';
-import type { AgentInfo, PermissionRequestOption } from './types';
+import type { AgentInfo, PermissionRequestOption, ConversationFlags } from './types';
 import type { AgentInstance, AgentInstanceListener } from './agent-instance';
 import type { AgentSessionConfig, ConfigureAgentInput } from './agent-instance';
 import type { AgentSession } from './agent-session';
@@ -73,6 +73,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** newioSessionId → session slot (queue created eagerly, session attached lazily) */
   private readonly slots = new Map<string, SessionSlot>();
+  /** Per-conversation flags toggled by the owner (e.g. show_tool_call, show_thoughts). */
+  private readonly conversationFlags = new Map<string, ConversationFlags>();
   /** Inbound event buffer — events captured synchronously, routed serially. */
   private readonly inbound: InboundEvent[] = [];
   private draining = false;
@@ -287,6 +289,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
     // Drain inbound queue
     this.inbound.length = 0;
+    this.conversationFlags.clear();
 
     // Close all session slots
     for (const [newioSessionId, slot] of this.slots) {
@@ -703,6 +706,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
     messages: readonly IncomingMessage[],
   ): Promise<void> {
     const userText = this.promptManager.formatMessagePrompt(session.promptFormatterVersion, messages);
+    const flags = this.getConversationFlags(conversationId);
+    const ownerId = this.app.identity.ownerId;
+    const ownerVisible = ownerId && this.isOwnerInConversation(conversationId, ownerId);
     try {
       for await (const segment of session.prompt(userText, conversationId)) {
         if (
@@ -711,6 +717,30 @@ export abstract class BaseAgentInstance implements AgentInstance {
           !this.promptManager.isSkip(session.promptFormatterVersion, segment.text)
         ) {
           await this.app.sendMessage(conversationId, segment.text.trim());
+        } else if (
+          segment.type === 'agent_thought_chunk' &&
+          flags.showThoughts &&
+          segment.text.trim() &&
+          ownerVisible
+        ) {
+          await this.app.client.sendMessage({
+            conversationId,
+            content: { text: segment.text.trim(), metadata: { type: 'agent_thought' } },
+            visibleTo: [ownerId],
+          });
+        } else if (
+          (segment.type === 'tool_call' || segment.type === 'tool_call_update') &&
+          flags.showToolCalls &&
+          ownerVisible
+        ) {
+          await this.app.client.sendMessage({
+            conversationId,
+            content: {
+              text: segment.text.trim() || undefined,
+              metadata: { type: 'tool_call', toolCallId: segment.toolCallId, status: segment.toolCallStatus },
+            },
+            visibleTo: [ownerId],
+          });
         }
       }
     } catch (err: unknown) {
@@ -785,7 +815,19 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
 
     if (typeof conversationId === 'string') {
-      capabilities.push({ id: 'show_tool_call', name: 'Show Tool Calls', scope: 'conversation', currentValue: false });
+      const flags = this.conversationFlags.get(conversationId);
+      capabilities.push({
+        id: 'show_tool_call',
+        name: 'Show Tool Calls',
+        scope: 'conversation',
+        currentValue: flags?.showToolCalls ?? false,
+      });
+      capabilities.push({
+        id: 'show_thoughts',
+        name: 'Show Thoughts',
+        scope: 'conversation',
+        currentValue: flags?.showThoughts ?? false,
+      });
     }
 
     return { capabilities };
@@ -799,8 +841,21 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
     // Conversation-scoped: handled at instance level
     if (scope === 'conversation') {
-      if (capabilityId === 'show_tool_call') {
-        return { capabilityId, success: true };
+      if (capabilityId === 'show_tool_call' || capabilityId === 'show_thoughts') {
+        if (typeof targetId !== 'string') {
+          return { capabilityId, success: false, error: 'Missing targetId (conversationId)' };
+        }
+        const enable = invocation.params?.['enable'];
+        if (typeof enable !== 'boolean') {
+          return { capabilityId, success: false, error: 'Missing boolean "enable" param' };
+        }
+        const prev = this.conversationFlags.get(targetId) ?? { showToolCalls: false, showThoughts: false };
+        const updated =
+          capabilityId === 'show_tool_call' ? { ...prev, showToolCalls: enable } : { ...prev, showThoughts: enable };
+        this.conversationFlags.set(targetId, updated);
+        const value = capabilityId === 'show_tool_call' ? updated.showToolCalls : updated.showThoughts;
+        log.info(`${this.logTag} Set ${capabilityId} for ${targetId}: ${String(value)}`);
+        return { capabilityId, success: true, result: { enabled: value } };
       }
       return { capabilityId, success: false, error: 'unknown_capability' };
     }
@@ -864,5 +919,10 @@ export abstract class BaseAgentInstance implements AgentInstance {
     this.status = status;
     this.error = error;
     this.listener.onStatusChanged(status, error);
+  }
+
+  /** Get the conversation flags for a conversation (defaults to all off). */
+  protected getConversationFlags(conversationId: string): ConversationFlags {
+    return this.conversationFlags.get(conversationId) ?? { showToolCalls: false, showThoughts: false };
   }
 }

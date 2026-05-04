@@ -167,10 +167,20 @@ export type SegmentType = 'agent_message_chunk' | 'agent_thought_chunk' | 'tool_
 export interface SessionStreamSegment {
   readonly type: SegmentType;
   readonly text: string;
+  /** Present for tool_call and tool_call_update segments. */
+  readonly toolCallId?: string;
+  /** Present for tool_call and tool_call_update segments. */
+  readonly toolCallStatus?: string;
 }
 
 export type SessionStatus = 'thinking' | 'typing' | 'tool_calling' | 'idle';
 export type SessionStatusListener = (status: SessionStatus, conversationId?: string) => void;
+
+/** Per-conversation flags toggled by the owner via capability invocations. */
+export interface ConversationFlags {
+  readonly showToolCalls: boolean;
+  readonly showThoughts: boolean;
+}
 
 export interface PermissionRequestOption {
   readonly kind: string;

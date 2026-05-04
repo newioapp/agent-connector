@@ -146,6 +146,8 @@ export interface MessageContent {
   readonly action?: ActionRequest;
   /** Response to a prior action request. */
   readonly response?: ActionResponse;
+  /** Opaque metadata bag — stored and returned as-is by the backend. */
+  readonly metadata?: Readonly<Record<string, unknown>>;
 }
 
 /** A file or image attachment. */
