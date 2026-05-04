@@ -5,7 +5,7 @@ import type { AgentConfigManager } from '../../src/core/agent-config-manager';
 import type { AgentInstanceListener, AgentSessionConfig, ConfigureAgentInput } from '../../src/core/agent-instance';
 import type { AgentConfig, AgentInfo } from '../../src/core/types';
 import type { SessionStore } from '../../src/core/session-store';
-import type { NewioApp, NewioAppStore, ActionRequest, MemberRecord } from '@newio/agent-sdk';
+import type { NewioApp, NewioAppStore, ActionRequest, MemberRecord, ConversationListItem } from '@newio/agent-sdk';
 
 // ---------------------------------------------------------------------------
 // Minimal concrete subclass to expose the private permission handler
@@ -40,7 +40,6 @@ class TestAgentInstance extends BaseAgentInstance {
     options: ReadonlyArray<{ optionId: string; name: string }>,
     conversationId?: string,
   ): Promise<string> {
-    // Access the private method via bracket notation
     return (this as unknown as Record<string, Function>)['handlePermissionRequest'](title, options, conversationId);
   }
 
@@ -59,20 +58,21 @@ class TestAgentInstance extends BaseAgentInstance {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeMemberRecord(userId: string): MemberRecord {
+function makeMemberRecord(userId: string, overrides?: Partial<MemberRecord>): MemberRecord {
   return {
     userId,
     displayName: 'Test User',
     accountType: 'human',
     role: 'member',
     joinedAt: '2026-01-01T00:00:00Z',
+    ...overrides,
   };
 }
 
 function createMockApp(
   ownerId: string,
   members: Map<string, Map<string, MemberRecord>>,
-  conversations?: Map<string, { name?: string }>,
+  conversations?: Map<string, Partial<ConversationListItem>>,
 ): Partial<NewioApp> {
   const store = {
     getMembers: vi.fn((conversationId: string) => members.get(conversationId)),
@@ -124,7 +124,7 @@ describe('BaseAgentInstance — permission request routing', () => {
     instance.setOwnerDmConversationId(ownerDmConvId);
   });
 
-  it('routes to the active conversation when the owner is a member', async () => {
+  it('routes to the active conversation when the owner is a member (no text)', async () => {
     const members = new Map<string, Map<string, MemberRecord>>();
     members.set(
       friendConvId,
@@ -142,13 +142,12 @@ describe('BaseAgentInstance — permission request routing', () => {
     expect(mockApp.sendActionRequest).toHaveBeenCalledWith(
       friendConvId,
       expect.objectContaining({ type: 'permission', title: 'Use tool X?' }),
+      undefined,
       [ownerId],
-      undefined,
-      undefined,
     );
   });
 
-  it('falls back to owner DM when the owner is NOT a member of the active conversation', async () => {
+  it('falls back to owner DM for a named group conversation', async () => {
     const members = new Map<string, Map<string, MemberRecord>>();
     members.set(
       friendConvId,
@@ -157,8 +156,8 @@ describe('BaseAgentInstance — permission request routing', () => {
         ['friend-1', makeMemberRecord('friend-1')],
       ]),
     );
-    const conversations = new Map<string, { name?: string }>();
-    conversations.set(friendConvId, { name: 'Project Chat' });
+    const conversations = new Map<string, Partial<ConversationListItem>>();
+    conversations.set(friendConvId, { type: 'group', name: 'Project Chat' });
 
     const mockApp = createMockApp(ownerId, members, conversations);
     instance.setApp(mockApp);
@@ -168,13 +167,37 @@ describe('BaseAgentInstance — permission request routing', () => {
     expect(mockApp.sendActionRequest).toHaveBeenCalledWith(
       ownerDmConvId,
       expect.objectContaining({ type: 'permission', title: 'Use tool Y?' }),
+      'Requesting permission for Project Chat conversation',
       [ownerId],
-      undefined,
-      'From conversation: Project Chat',
     );
   });
 
-  it('uses conversationId as fallback label when conversation name is not available', async () => {
+  it('falls back to owner DM for a DM conversation with friend display name', async () => {
+    const members = new Map<string, Map<string, MemberRecord>>();
+    members.set(
+      friendConvId,
+      new Map([
+        ['agent-1', makeMemberRecord('agent-1')],
+        ['friend-1', makeMemberRecord('friend-1', { displayName: 'Alice' })],
+      ]),
+    );
+    const conversations = new Map<string, Partial<ConversationListItem>>();
+    conversations.set(friendConvId, { type: 'dm' });
+
+    const mockApp = createMockApp(ownerId, members, conversations);
+    instance.setApp(mockApp);
+
+    await instance.testPermissionRequest('Use tool?', options, friendConvId);
+
+    expect(mockApp.sendActionRequest).toHaveBeenCalledWith(
+      ownerDmConvId,
+      expect.objectContaining({ type: 'permission' }),
+      'Requesting permission for a DM conversation with Alice',
+      [ownerId],
+    );
+  });
+
+  it('uses conversationId as fallback when conversation is not cached', async () => {
     const members = new Map<string, Map<string, MemberRecord>>();
     members.set(
       friendConvId,
@@ -192,29 +215,12 @@ describe('BaseAgentInstance — permission request routing', () => {
     expect(mockApp.sendActionRequest).toHaveBeenCalledWith(
       ownerDmConvId,
       expect.objectContaining({ type: 'permission' }),
+      `Requesting permission for ${friendConvId} conversation`,
       [ownerId],
-      undefined,
-      `From conversation: ${friendConvId}`,
     );
   });
 
-  it('falls back to owner DM when members are not cached for the conversation', async () => {
-    const members = new Map<string, Map<string, MemberRecord>>();
-    const mockApp = createMockApp(ownerId, members);
-    instance.setApp(mockApp);
-
-    await instance.testPermissionRequest('Use tool Z?', options, friendConvId);
-
-    expect(mockApp.sendActionRequest).toHaveBeenCalledWith(
-      ownerDmConvId,
-      expect.objectContaining({ type: 'permission', title: 'Use tool Z?' }),
-      [ownerId],
-      undefined,
-      `From conversation: ${friendConvId}`,
-    );
-  });
-
-  it('falls back to owner DM when no conversationId is provided', async () => {
+  it('falls back to owner DM when no conversationId is provided (no text)', async () => {
     const members = new Map<string, Map<string, MemberRecord>>();
     const mockApp = createMockApp(ownerId, members);
     instance.setApp(mockApp);
@@ -224,15 +230,13 @@ describe('BaseAgentInstance — permission request routing', () => {
     expect(mockApp.sendActionRequest).toHaveBeenCalledWith(
       ownerDmConvId,
       expect.objectContaining({ type: 'permission', title: 'Use tool W?' }),
+      undefined,
       [ownerId],
-      undefined,
-      undefined,
     );
   });
 
   it('throws when the agent has no owner', async () => {
     const mockApp = createMockApp(undefined as unknown as string, new Map());
-    // Override identity to have no ownerId
     (mockApp as Record<string, unknown>).identity = {
       userId: 'agent-1',
       username: 'test-agent',

@@ -386,9 +386,9 @@ export class NewioApp {
   async sendActionRequest(
     conversationId: string,
     action: ActionRequest,
+    text?: string,
     visibleTo?: readonly string[],
     timeoutMs?: number,
-    text?: string,
   ): Promise<ActionResponse> {
     const timeout = timeoutMs ?? 5 * 60 * 1000;
     log.info(`Sending action request ${action.requestId} (type=${action.type}) to ${conversationId}`);

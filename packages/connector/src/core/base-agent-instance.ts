@@ -624,14 +624,31 @@ export abstract class BaseAgentInstance implements AgentInstance {
     // When rerouting to the owner DM, include context about the source conversation
     let text: string | undefined;
     if (conversationId && !ownerIsInConversation) {
-      const conv = this.app.store.getConversation(conversationId);
-      const label = conv?.name ?? conversationId;
-      text = `From conversation: ${label}`;
+      text = this.buildPermissionContextText(conversationId);
     }
 
     log.info(`${this.logTag} Sending permission request ${requestId} to ${convId}`);
-    const response = await this.app.sendActionRequest(convId, action, [ownerId], undefined, text);
+    const response = await this.app.sendActionRequest(convId, action, text, [ownerId]);
     return response.selectedOptionId;
+  }
+
+  /** Build a human-readable context message for a rerouted permission request. */
+  private buildPermissionContextText(conversationId: string): string {
+    const conv = this.app.store.getConversation(conversationId);
+    if (conv?.type === 'dm') {
+      const members = this.app.store.getMembers(conversationId);
+      if (members) {
+        for (const [userId, member] of members) {
+          if (userId !== this.app.identity.userId) {
+            const name = member.displayName ?? member.username ?? userId;
+            return `Requesting permission for a DM conversation with ${name}`;
+          }
+        }
+      }
+      return `Requesting permission for a DM conversation`;
+    }
+    const label = conv?.name ?? conversationId;
+    return `Requesting permission for ${label} conversation`;
   }
 
   /** Check if the owner is a member of the given conversation (in-memory lookup). */
