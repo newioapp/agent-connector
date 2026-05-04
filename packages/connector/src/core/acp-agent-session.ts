@@ -12,6 +12,7 @@ import type { AgentSession } from './agent-session';
 import { AcpSessionStream } from './acp-session-stream';
 import type { PermissionHandler, SessionStatusListener, SessionStreamSegment } from './types';
 import { AcpSessionConfigHandler } from './acp-session-config-handler';
+import { AcpSlashCommandHandler } from './acp-slash-command-handler';
 import { Logger } from './logger';
 import type { AgentSessionConfig } from './agent-instance';
 import type {
@@ -36,7 +37,24 @@ export interface AcpAgentSessionInit {
   readonly isSkipPrefix: (text: string) => boolean;
 }
 
-export class AcpAgentSession implements AgentSession {
+export interface AcpAgentSessionInterface extends AgentSession {
+  /** Set the model for this session. */
+  setModel(modelId: string): Promise<void>;
+
+  /** Set the operational mode for this session. */
+  setMode(modeId: string): Promise<void>;
+
+  /** List available models for this session. */
+  listModels(): AgentSessionConfig | undefined;
+
+  /** List available modes for this session. */
+  listModes(): AgentSessionConfig | undefined;
+
+  /** Register a listener for model/mode config changes. */
+  onConfigChanged(listener: () => void): void;
+}
+
+export class AcpAgentSession implements AcpAgentSessionInterface {
   readonly sessionId: string;
   readonly promptFormatterVersion: string;
 
@@ -46,6 +64,7 @@ export class AcpAgentSession implements AgentSession {
 
   private readonly connection: ClientSideConnection;
   private readonly configHandler: AcpSessionConfigHandler;
+  private readonly slashCommandHandler: AcpSlashCommandHandler;
   private readonly logTag: string;
   private readonly _isSkipPrefix: (text: string) => boolean;
   private stream?: AcpSessionStream;
@@ -62,6 +81,7 @@ export class AcpAgentSession implements AgentSession {
     this.logTag = init.username ? `[${init.username}]` : '';
     this._isSkipPrefix = init.isSkipPrefix;
     this.configHandler = new AcpSessionConfigHandler(init.correlationId, init.connection, init.sessionResponse);
+    this.slashCommandHandler = new AcpSlashCommandHandler(init.correlationId);
   }
 
   // ---------------------------------------------------------------------------
@@ -172,6 +192,9 @@ export class AcpAgentSession implements AgentSession {
       });
     }
     capabilities.push({ id: 'cancel', name: 'Cancel', scope: 'session' });
+    if (this.slashCommandHandler.isCompactSupported()) {
+      capabilities.push({ id: 'compact', name: 'Compact Context', scope: 'session' });
+    }
     return capabilities;
   }
 
@@ -209,6 +232,22 @@ export class AcpAgentSession implements AgentSession {
         return { capabilityId, success: false, error: extractErrorMessage(err) };
       }
     }
+    if (capabilityId === 'compact') {
+      const commandName = this.slashCommandHandler.getCompactCommandName();
+      if (!commandName) {
+        return { capabilityId, success: false, error: 'Compact not supported by this agent' };
+      }
+      try {
+        const result = await this.connection.prompt({
+          sessionId: this.correlationId,
+          prompt: [{ type: 'text', text: `/${commandName}` }],
+        });
+        log.info(`${this.logTag} [${this.correlationId}] Compact completed: stopReason=${result.stopReason}`);
+        return { capabilityId, success: true };
+      } catch (err: unknown) {
+        return { capabilityId, success: false, error: extractErrorMessage(err) };
+      }
+    }
     return { capabilityId, success: false, error: 'unknown_capability' };
   }
 
@@ -232,6 +271,7 @@ export class AcpAgentSession implements AgentSession {
 
   handleSessionUpdate(params: acp.SessionNotification): void {
     this.configHandler.handleSessionUpdate(params.update);
+    this.slashCommandHandler.handleSessionUpdate(params.update);
     this.stream?.handleSessionUpdate(params.update);
   }
 

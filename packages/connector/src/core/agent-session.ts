@@ -5,7 +5,6 @@
  * A single agent instance manages multiple sessions.
  */
 import type { SessionStreamSegment, SessionStatusListener, PermissionHandler } from './types';
-import type { AgentSessionConfig } from './agent-instance';
 import type { AgentCapability, InvokeCapabilityPayload, InvokeCapabilityResponsePayload } from '@newio/agent-sdk';
 
 export interface AgentSession {
@@ -27,25 +26,10 @@ export interface AgentSession {
   /** Send a prompt and yield aggregated response segments as they arrive. */
   prompt(text: string, conversationId?: string): AsyncGenerator<SessionStreamSegment>;
 
-  /** Set the model for this session. */
-  setModel(modelId: string): Promise<void>;
-
-  /** Set the operational mode for this session. */
-  setMode(modeId: string): Promise<void>;
-
   /** Register a listener for session status changes. Replaces any previous listener. */
   onStatus(listener: SessionStatusListener): void;
 
   onPermissionRequest(handler: PermissionHandler): void;
-
-  /** List available models for this session. */
-  listModels(): AgentSessionConfig | undefined;
-
-  /** List available modes for this session. */
-  listModes(): AgentSessionConfig | undefined;
-
-  /** Register a listener for model/mode config changes. */
-  onConfigChanged(listener: () => void): void;
 
   /** Dispose the session (kill process, free resources). */
   dispose(): Promise<void>;

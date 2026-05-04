@@ -15,7 +15,7 @@ import { ClientSideConnection, ndJsonStream, PROTOCOL_VERSION } from '@agentclie
 import type * as acp from '@agentclientprotocol/sdk';
 import type { McpServer as AcpMcpServer } from '@agentclientprotocol/sdk';
 import { BaseAgentInstance } from './base-agent-instance';
-import { AcpAgentSession } from './acp-agent-session';
+import { AcpAgentSession, AcpAgentSessionInterface } from './acp-agent-session';
 import type { AgentSession } from './agent-session';
 import type { AgentSessionConfig, ConfigureAgentInput } from './agent-instance';
 import type { SessionStreamSegment } from './types';
@@ -386,10 +386,14 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     const buffered = this.pendingUpdates.get(correlationId);
     if (buffered) {
       this.pendingUpdates.delete(correlationId);
-      // for (const update of buffered) {
-      //   session.handleSessionUpdate(update);
-      // }
-      log.debug(`${this.logTag} Replayed ${String(buffered.length)} buffered update(s) for ${correlationId}`);
+      // Only replay config/command updates — skip historical content (tool calls, messages, etc.)
+      const replayable = new Set(['available_commands_update', 'current_mode_update', 'config_option_update']);
+      for (const update of buffered) {
+        if (replayable.has(update.update.sessionUpdate)) {
+          session.handleSessionUpdate(update);
+        }
+      }
+      log.debug(`${this.logTag} Replayed buffered update(s) for ${correlationId}`);
     }
   }
 
@@ -455,7 +459,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     log.debug(`${this.logTag} Owner DM conversation: ${ownerDmConversationId}`);
 
     this.setStatus('greeting');
-    const session = await this.getOrCreateSession(ownerDmConversationId);
+    const session = (await this.getOrCreateSession(ownerDmConversationId)) as AcpAgentSessionInterface;
     log.debug(`${this.logTag} [${session.correlationId}] Generating greeting for owner...`);
 
     let greeting: string | undefined;
