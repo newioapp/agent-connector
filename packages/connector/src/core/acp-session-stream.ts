@@ -159,15 +159,13 @@ interface ToolCallParsed {
  * Parse a tool_call or tool_call_update ACP session update into a normalized shape.
  *
  * Different ACP agents produce different shapes:
- * - kiro-cli: tool_call with title + diff content + locations
- * - claude-agent-acp: tool_call_update with title + content[].content.text
+ * - kiro-cli: tool_call with title + rawInput.__tool_use_purpose
+ * - claude-agent-acp: tool_call_update with title + rawInput.description
  * - codex-acp: tool_call with title + status
  * - cursor: tool_call with title + status, tool_call_update with status only (no title)
  *
- * We extract the best human-readable text in priority order:
- * 1. title (most agents provide this)
- * 2. First content item with type=content that has a text description
- * 3. Empty string (toolCallId is still useful for grouping)
+ * Text is built from title + purpose/description from rawInput when available.
+ * Falls back to content text if no title exists.
  */
 function parseToolCallUpdate(update: acp.SessionUpdate): ToolCallParsed {
   const raw = update as Record<string, unknown>;
@@ -181,18 +179,19 @@ function parseToolCallUpdate(update: acp.SessionUpdate): ToolCallParsed {
 
   const toolCallId = typeof tc['toolCallId'] === 'string' ? tc['toolCallId'] : undefined;
   const status = typeof tc['status'] === 'string' ? tc['status'] : undefined;
+  const title = typeof tc['title'] === 'string' && tc['title'].length > 0 ? tc['title'] : undefined;
+  const purpose = extractRawInputPurpose(tc);
 
-  // Priority 1: title
-  if (typeof tc['title'] === 'string' && tc['title'].length > 0) {
-    return { toolCallId, status, text: tc['title'] };
+  if (title) {
+    const text = purpose ? `${title}\n${purpose}` : title;
+    return { toolCallId, status, text };
   }
 
-  // Priority 2: first content item with a text description
+  // Fallback: first content item with a text description (claude-agent-acp shape)
   if (Array.isArray(tc['content'])) {
     for (const item of tc['content']) {
       if (typeof item === 'object' && item !== null) {
         const entry = item as Record<string, unknown>;
-        // claude-agent-acp shape: { type: 'content', content: { type: 'text', text: '...' } }
         if (typeof entry['content'] === 'object' && entry['content'] !== null) {
           const inner = entry['content'] as Record<string, unknown>;
           if (inner['type'] === 'text' && typeof inner['text'] === 'string') {
@@ -204,4 +203,19 @@ function parseToolCallUpdate(update: acp.SessionUpdate): ToolCallParsed {
   }
 
   return { toolCallId, status };
+}
+
+/** Extract a human-readable purpose from rawInput (__tool_use_purpose for kiro-cli, description for claude). */
+function extractRawInputPurpose(tc: Record<string, unknown>): string | undefined {
+  if (typeof tc['rawInput'] !== 'object' || tc['rawInput'] === null) {
+    return undefined;
+  }
+  const ri = tc['rawInput'] as Record<string, unknown>;
+  if (typeof ri['__tool_use_purpose'] === 'string' && ri['__tool_use_purpose'].length > 0) {
+    return ri['__tool_use_purpose'];
+  }
+  if (typeof ri['description'] === 'string' && ri['description'].length > 0) {
+    return ri['description'];
+  }
+  return undefined;
 }
