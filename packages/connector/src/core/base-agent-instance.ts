@@ -591,8 +591,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /**
    * Handle an ACP permission request by sending an action message to the owner.
-   * Routes to the active conversation if the session is processing a message,
-   * otherwise falls back to the owner DM.
+   * Routes to the active conversation if the owner is a member, otherwise
+   * falls back to the owner DM.
    */
   private async handlePermissionRequest(
     title: string,
@@ -618,10 +618,43 @@ export abstract class BaseAgentInstance implements AgentInstance {
     if (!ownerId) {
       throw new Error('Cannot route permission request — agent has no owner');
     }
-    const convId = conversationId ?? this.ownerDmConversationId;
+    const ownerIsInConversation = conversationId && this.isOwnerInConversation(conversationId, ownerId);
+    const convId = ownerIsInConversation ? conversationId : this.ownerDmConversationId;
+
+    // When rerouting to the owner DM, include context about the source conversation
+    let text: string | undefined;
+    if (conversationId && !ownerIsInConversation) {
+      text = this.buildPermissionContextText(conversationId);
+    }
+
     log.info(`${this.logTag} Sending permission request ${requestId} to ${convId}`);
-    const response = await this.app.sendActionRequest(convId, action, [ownerId]);
+    const response = await this.app.sendActionRequest(convId, action, text, [ownerId]);
     return response.selectedOptionId;
+  }
+
+  /** Build a human-readable context message for a rerouted permission request. */
+  private buildPermissionContextText(conversationId: string): string {
+    const conv = this.app.store.getConversation(conversationId);
+    if (conv?.type === 'dm') {
+      const members = this.app.store.getMembers(conversationId);
+      if (members) {
+        for (const [userId, member] of members) {
+          if (userId !== this.app.identity.userId) {
+            const name = member.displayName ?? member.username ?? userId;
+            return `Requesting permission for a DM conversation with ${name}`;
+          }
+        }
+      }
+      return `Requesting permission for a DM conversation`;
+    }
+    const label = conv?.name ?? conversationId;
+    return `Requesting permission for ${label} conversation`;
+  }
+
+  /** Check if the owner is a member of the given conversation (in-memory lookup). */
+  private isOwnerInConversation(conversationId: string, ownerId: string): boolean {
+    const members = this.app.store.getMembers(conversationId);
+    return members?.has(ownerId) ?? false;
   }
 
   private async getOwnerDmOrThrow(): Promise<string> {

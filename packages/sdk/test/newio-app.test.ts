@@ -627,11 +627,11 @@ describe('NewioApp', () => {
         title: 'Allow?',
         options: [{ optionId: 'yes', label: 'Yes' }],
       };
-      const promise = app.sendActionRequest('conv-1', action, ['owner-1'], 5000);
+      const promise = app.sendActionRequest('conv-1', action, undefined, ['owner-1'], 5000);
 
       expect(client.sendMessage).toHaveBeenCalledWith({
         conversationId: 'conv-1',
-        content: { action },
+        content: { action, text: undefined },
         visibleTo: ['owner-1'],
       });
 

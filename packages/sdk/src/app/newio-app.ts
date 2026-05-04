@@ -386,6 +386,7 @@ export class NewioApp {
   async sendActionRequest(
     conversationId: string,
     action: ActionRequest,
+    text?: string,
     visibleTo?: readonly string[],
     timeoutMs?: number,
   ): Promise<ActionResponse> {
@@ -394,7 +395,7 @@ export class NewioApp {
     const promise = this.pendingActions.create(action.requestId, timeout);
     await this.client.sendMessage({
       conversationId,
-      content: { action },
+      content: { action, text },
       visibleTo,
     });
     return promise;
