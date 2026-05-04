@@ -11,6 +11,7 @@ import type { SegmentType, SessionStreamSegment, SessionStatusListener } from '.
 export class AcpSessionStream {
   private currentType: SegmentType | undefined;
   private currentText = '';
+  private currentToolCallId: string | undefined;
   private done = false;
   /** Whether we've already emitted a 'typing' status for the current agent_message_chunk run. */
   private typingStatusEmitted = false;
@@ -48,7 +49,20 @@ export class AcpSessionStream {
       }
     }
 
-    this.push(type, text);
+    let toolCallId: string | undefined;
+    if (type === 'tool_call' && 'toolCall' in update) {
+      const tc = update.toolCall as Record<string, unknown>;
+      if (typeof tc.toolCallId === 'string') {
+        toolCallId = tc.toolCallId;
+      }
+    } else if (type === 'tool_call_update' && 'toolCallUpdate' in update) {
+      const tcu = update.toolCallUpdate as Record<string, unknown>;
+      if (typeof tcu.toolCallId === 'string') {
+        toolCallId = tcu.toolCallId;
+      }
+    }
+
+    this.push(type, text, toolCallId);
 
     switch (type) {
       case 'agent_message_chunk':
@@ -101,7 +115,7 @@ export class AcpSessionStream {
     }
   }
 
-  private push(type: SegmentType, text?: string): void {
+  private push(type: SegmentType, text?: string, toolCallId?: string): void {
     if (this.currentType && this.currentType !== type) {
       this.flushCurrent();
     }
@@ -110,13 +124,17 @@ export class AcpSessionStream {
     if (text) {
       this.currentText += text;
     }
+    if (toolCallId) {
+      this.currentToolCallId = toolCallId;
+    }
   }
 
   private flushCurrent(): void {
     if (this.currentType) {
-      this.queue.push({ type: this.currentType, text: this.currentText });
+      this.queue.push({ type: this.currentType, text: this.currentText, toolCallId: this.currentToolCallId });
       this.currentType = undefined;
       this.currentText = '';
+      this.currentToolCallId = undefined;
       this.typingStatusEmitted = false;
       this.waiter?.();
     }
