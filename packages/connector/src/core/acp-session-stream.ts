@@ -2,7 +2,8 @@
  * SessionStream — async generator that yields aggregated session update segments.
  *
  * Consecutive updates of the same type are merged into a single segment.
- * When the update type changes, the accumulated segment is yielded.
+ * When the update type changes (or toolCallId changes for tool calls),
+ * the accumulated segment is yielded.
  * The generator completes when {@link finish} is called (i.e., when `conn.prompt` resolves).
  */
 import type * as acp from '@agentclientprotocol/sdk';
@@ -12,6 +13,7 @@ export class AcpSessionStream {
   private currentType: SegmentType | undefined;
   private currentText = '';
   private currentToolCallId: string | undefined;
+  private currentToolCallStatus: string | undefined;
   private done = false;
   /** Whether we've already emitted a 'typing' status for the current agent_message_chunk run. */
   private typingStatusEmitted = false;
@@ -36,25 +38,23 @@ export class AcpSessionStream {
 
     let text: string | undefined;
     let toolCallId: string | undefined;
+    let toolCallStatus: string | undefined;
 
     if (type === 'tool_call' || type === 'tool_call_update') {
-      // tool_call and tool_call_update have toolCallId and title directly on the update
-      const u = update as Record<string, unknown>;
-      const tc = (type === 'tool_call' ? u.toolCall : u.toolCallUpdate) as Record<string, unknown> | undefined;
-      if (tc) {
-        if (typeof tc.toolCallId === 'string') {
-          toolCallId = tc.toolCallId;
-        }
-        if (typeof tc.title === 'string') {
-          text = tc.title;
-        }
-      }
-    } else if ('content' in update) {
-      // agent_message_chunk and agent_thought_chunk use content.text
-      text = extractTextContent(update);
+      const parsed = parseToolCallUpdate(update);
+      toolCallId = parsed.toolCallId;
+      toolCallStatus = parsed.status;
+      text = parsed.text;
+    } else if (
+      type === 'agent_message_chunk' ||
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- narrows union to ContentChunk
+      type === 'agent_thought_chunk'
+    ) {
+      text =
+        update.content.type === 'text' && typeof update.content.text === 'string' ? update.content.text : undefined;
     }
 
-    this.push(type, text, toolCallId);
+    this.push(type, text, toolCallId, toolCallStatus);
 
     switch (type) {
       case 'agent_message_chunk':
@@ -107,8 +107,9 @@ export class AcpSessionStream {
     }
   }
 
-  private push(type: SegmentType, text?: string, toolCallId?: string): void {
-    if (this.currentType && this.currentType !== type) {
+  private push(type: SegmentType, text?: string, toolCallId?: string, toolCallStatus?: string): void {
+    // Flush when type changes or when toolCallId changes (different tool call)
+    if (this.currentType && (this.currentType !== type || (toolCallId && this.currentToolCallId !== toolCallId))) {
       this.flushCurrent();
     }
 
@@ -119,14 +120,23 @@ export class AcpSessionStream {
     if (toolCallId) {
       this.currentToolCallId = toolCallId;
     }
+    if (toolCallStatus) {
+      this.currentToolCallStatus = toolCallStatus;
+    }
   }
 
   private flushCurrent(): void {
     if (this.currentType) {
-      this.queue.push({ type: this.currentType, text: this.currentText, toolCallId: this.currentToolCallId });
+      this.queue.push({
+        type: this.currentType,
+        text: this.currentText,
+        toolCallId: this.currentToolCallId,
+        toolCallStatus: this.currentToolCallStatus,
+      });
       this.currentType = undefined;
       this.currentText = '';
       this.currentToolCallId = undefined;
+      this.currentToolCallStatus = undefined;
       this.typingStatusEmitted = false;
       this.waiter?.();
     }
@@ -139,18 +149,59 @@ function isSegmentType(type: string): type is SegmentType {
   return SEGMENT_TYPES.has(type);
 }
 
-/** Extract text from an ACP session update that has a content field with { type: 'text', text: string }. */
-function extractTextContent(update: Record<string, unknown>): string | undefined {
-  const content = update['content'];
-  if (
-    typeof content === 'object' &&
-    content !== null &&
-    'type' in content &&
-    (content as Record<string, unknown>)['type'] === 'text' &&
-    'text' in content &&
-    typeof (content as Record<string, unknown>)['text'] === 'string'
-  ) {
-    return (content as Record<string, unknown>)['text'] as string;
+interface ToolCallParsed {
+  readonly toolCallId?: string;
+  readonly status?: string;
+  readonly text?: string;
+}
+
+/**
+ * Parse a tool_call or tool_call_update ACP session update into a normalized shape.
+ *
+ * Different ACP agents produce different shapes:
+ * - kiro-cli: tool_call with title + diff content + locations
+ * - claude-agent-acp: tool_call_update with title + content[].content.text
+ * - codex-acp: tool_call with title + status
+ * - cursor: tool_call with title + status, tool_call_update with status only (no title)
+ *
+ * We extract the best human-readable text in priority order:
+ * 1. title (most agents provide this)
+ * 2. First content item with type=content that has a text description
+ * 3. Empty string (toolCallId is still useful for grouping)
+ */
+function parseToolCallUpdate(update: acp.SessionUpdate): ToolCallParsed {
+  const raw = update as Record<string, unknown>;
+  const tc =
+    update.sessionUpdate === 'tool_call'
+      ? (raw['toolCall'] as Record<string, unknown> | undefined)
+      : (raw['toolCallUpdate'] as Record<string, unknown> | undefined);
+  if (!tc) {
+    return {};
   }
-  return undefined;
+
+  const toolCallId = typeof tc['toolCallId'] === 'string' ? tc['toolCallId'] : undefined;
+  const status = typeof tc['status'] === 'string' ? tc['status'] : undefined;
+
+  // Priority 1: title
+  if (typeof tc['title'] === 'string' && tc['title'].length > 0) {
+    return { toolCallId, status, text: tc['title'] };
+  }
+
+  // Priority 2: first content item with a text description
+  if (Array.isArray(tc['content'])) {
+    for (const item of tc['content']) {
+      if (typeof item === 'object' && item !== null) {
+        const entry = item as Record<string, unknown>;
+        // claude-agent-acp shape: { type: 'content', content: { type: 'text', text: '...' } }
+        if (typeof entry['content'] === 'object' && entry['content'] !== null) {
+          const inner = entry['content'] as Record<string, unknown>;
+          if (inner['type'] === 'text' && typeof inner['text'] === 'string') {
+            return { toolCallId, status, text: inner['text'] };
+          }
+        }
+      }
+    }
+  }
+
+  return { toolCallId, status };
 }

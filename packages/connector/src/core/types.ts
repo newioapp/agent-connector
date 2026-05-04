@@ -169,6 +169,8 @@ export interface SessionStreamSegment {
   readonly text: string;
   /** Present for tool_call and tool_call_update segments. */
   readonly toolCallId?: string;
+  /** Present for tool_call and tool_call_update segments. */
+  readonly toolCallStatus?: string;
 }
 
 export type SessionStatus = 'thinking' | 'typing' | 'tool_calling' | 'idle';

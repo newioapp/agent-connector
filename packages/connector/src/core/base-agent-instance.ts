@@ -737,7 +737,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
             conversationId,
             content: {
               text: segment.text.trim() || undefined,
-              metadata: { type: 'tool_call', toolCallId: segment.toolCallId },
+              metadata: { type: 'tool_call', toolCallId: segment.toolCallId, status: segment.toolCallStatus },
             },
             visibleTo: [ownerId],
           });
