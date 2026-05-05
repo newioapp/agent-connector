@@ -86,13 +86,11 @@ describe('AcpSessionStream', () => {
       segments.push(s);
     }
 
-    expect(segments).toHaveLength(2);
-    expect(segments[0]).toEqual({ type: 'tool_call', text: '', toolCallId: undefined, toolCallStatus: undefined });
-    expect(segments[1]).toEqual({
+    // tool_call without toolCallId is dropped
+    expect(segments).toHaveLength(1);
+    expect(segments[0]).toEqual({
       type: 'agent_message_chunk',
       text: 'done',
-      toolCallId: undefined,
-      toolCallStatus: undefined,
     });
   });
 

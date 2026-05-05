@@ -711,32 +711,24 @@ export abstract class BaseAgentInstance implements AgentInstance {
     const ownerVisible = ownerId && this.isOwnerInConversation(conversationId, ownerId);
     try {
       for await (const segment of session.prompt(userText, conversationId)) {
+        const text = segment.text.trim();
         if (
           segment.type === 'agent_message_chunk' &&
-          segment.text.trim() &&
+          text &&
           !this.promptManager.isSkip(session.promptFormatterVersion, segment.text)
         ) {
-          await this.app.sendMessage(conversationId, segment.text.trim());
-        } else if (
-          segment.type === 'agent_thought_chunk' &&
-          flags.showThoughts &&
-          segment.text.trim() &&
-          ownerVisible
-        ) {
+          await this.app.sendMessage(conversationId, text);
+        } else if (segment.type === 'agent_thought_chunk' && flags.showThoughts && text && ownerVisible) {
           await this.app.client.sendMessage({
             conversationId,
-            content: { text: segment.text.trim(), metadata: { type: 'agent_thought' } },
+            content: { text: text, metadata: { type: 'agent_thought' } },
             visibleTo: [ownerId],
           });
-        } else if (
-          (segment.type === 'tool_call' || segment.type === 'tool_call_update') &&
-          flags.showToolCalls &&
-          ownerVisible
-        ) {
+        } else if (segment.type === 'tool_call' && flags.showToolCalls && text && ownerVisible) {
           await this.app.client.sendMessage({
             conversationId,
             content: {
-              text: segment.text.trim() || undefined,
+              text,
               metadata: { type: 'tool_call', toolCallId: segment.toolCallId, status: segment.toolCallStatus },
             },
             visibleTo: [ownerId],
