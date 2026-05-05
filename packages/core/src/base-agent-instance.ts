@@ -724,7 +724,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         } else if (segment.type === 'agent_thought_chunk' && flags.showThoughts && text && ownerVisible) {
           await this.app.client.sendMessage({
             conversationId,
-            content: { text: text, metadata: { type: 'agent_thought' } },
+            content: { text: text, metadata: { type: 'agent_thought' } } as never,
             visibleTo: [ownerId],
           });
         } else if (segment.type === 'tool_call' && flags.showToolCalls && text && ownerVisible) {
@@ -733,7 +733,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
             content: {
               text,
               metadata: { type: 'tool_call', toolCallId: segment.toolCallId, status: segment.toolCallStatus },
-            },
+            } as never,
             visibleTo: [ownerId],
           });
         }

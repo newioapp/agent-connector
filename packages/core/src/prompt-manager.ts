@@ -17,7 +17,7 @@ export class UnsupportedPromptFormatterVersion extends Error {
 
 /** Parse the major version number from a semver string. */
 function parseMajor(version: string): number {
-  const major = parseInt(version.split('.')[0] ?? '', 10);
+  const major = parseInt(version.split('.')[0], 10);
   if (isNaN(major)) {
     throw new UnsupportedPromptFormatterVersion(version);
   }

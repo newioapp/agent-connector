@@ -15,10 +15,10 @@ describe('Logger', () => {
 
   it('logs at all levels with tag prefix', () => {
     const logger = new Logger('test-tag');
-    logger.debug('d');
-    logger.info('i');
-    logger.warn('w');
-    logger.error('e');
+    logger.debug('d', 1);
+    logger.info('i', 2);
+    logger.warn('w', 3);
+    logger.error('e', 4);
 
     const calls = stderrSpy.mock.calls.map((c) => String(c[0]));
     expect(calls.some((s) => s.includes('[DEBUG] [test-tag] d'))).toBe(true);
@@ -30,7 +30,6 @@ describe('Logger', () => {
   it('respects log level filtering', () => {
     setLogLevel('warn');
     const logger = new Logger('test');
-
     logger.debug('should not appear');
     logger.info('should not appear');
     logger.warn('should appear');
@@ -44,7 +43,6 @@ describe('Logger', () => {
   it('error level only logs errors', () => {
     setLogLevel('error');
     const logger = new Logger('test');
-
     logger.warn('nope');
     logger.error('yes');
 

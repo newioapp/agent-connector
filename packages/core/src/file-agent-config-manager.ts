@@ -88,7 +88,6 @@ export class FileAgentConfigManager implements AgentConfigManager {
       throw new Error(`Agent ${agentId} not found.`);
     }
     const existing = agents[index];
-    if (!existing) throw new Error(`Agent ${agentId} not found.`);
     const usernameChanged = updates.newioUsername !== undefined && updates.newioUsername !== existing.newio?.username;
     const displayName = updates.displayName ?? existing.newio?.displayName;
     let newio = existing.newio;
@@ -131,9 +130,7 @@ export class FileAgentConfigManager implements AgentConfigManager {
     if (index === -1) {
       throw new Error(`Agent ${agentId} not found.`);
     }
-    const base = agents[index];
-    if (!base) throw new Error(`Agent ${agentId} not found.`);
-    const updated: AgentConfig = { ...base, newio: identity };
+    const updated: AgentConfig = { ...agents[index], newio: identity };
     const copy = [...agents];
     copy[index] = updated;
     writeJson(CONFIG_PATH, copy);
