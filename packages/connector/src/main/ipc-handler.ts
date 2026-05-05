@@ -22,7 +22,7 @@ import type {
 import type { StoreSchema } from './store';
 import type { AgentConfigManager } from '@newio/core';
 import type { AgentRuntimeManager } from '@newio/core';
-import { getShellEnv, listAvailableShells } from './shell-env';
+import { getShellEnv, listAvailableShells } from '@newio/core';
 import { applyUpdateMode, applyUpdateChannel, manualCheckForUpdates } from './auto-updater';
 
 interface IpcHandlerDeps {

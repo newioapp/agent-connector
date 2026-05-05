@@ -9,7 +9,7 @@ import { app, BrowserWindow, dialog, shell } from 'electron';
 import type Store from 'electron-store';
 import type { StoreSchema } from './store';
 import type { UpdateMode, UpdateChannel } from '../shared/types';
-import { Logger } from '../shared/logger';
+import { Logger } from '@newio/core';
 
 const log = new Logger('auto-updater');
 
