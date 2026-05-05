@@ -20,8 +20,8 @@ import type {
   UpdateChannel,
 } from '../shared/types';
 import type { StoreSchema } from './store';
-import type { AgentConfigManager } from '../core/agent-config-manager';
-import type { AgentRuntimeManager } from '../core/agent-runtime-manager';
+import type { AgentConfigManager } from '@newio/core';
+import type { AgentRuntimeManager } from '@newio/core';
 import { getShellEnv, listAvailableShells } from './shell-env';
 import { applyUpdateMode, applyUpdateChannel, manualCheckForUpdates } from './auto-updater';
 

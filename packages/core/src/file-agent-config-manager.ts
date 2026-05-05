@@ -17,9 +17,10 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { randomUUID } from 'crypto';
-import type { AgentConfig, AddAgentInput, UpdateAgentInput, NewioIdentity } from './types';
-import type { AgentConfigManager, AgentTokens } from './agent-config-manager';
-import { Logger } from './logger';
+import type { AgentConfig, AddAgentInput, UpdateAgentInput, NewioIdentity } from './types.js';
+import type { AgentConfigManager, AgentTokens } from './agent-config-manager.js';
+import { Logger } from './logger.js';
+declare const __NEWIO_STAGE__: string;
 
 const log = new Logger('file-agent-config-manager');
 
@@ -87,6 +88,7 @@ export class FileAgentConfigManager implements AgentConfigManager {
       throw new Error(`Agent ${agentId} not found.`);
     }
     const existing = agents[index];
+    if (!existing) throw new Error(`Agent ${agentId} not found.`);
     const usernameChanged = updates.newioUsername !== undefined && updates.newioUsername !== existing.newio?.username;
     const displayName = updates.displayName ?? existing.newio?.displayName;
     let newio = existing.newio;
@@ -129,7 +131,9 @@ export class FileAgentConfigManager implements AgentConfigManager {
     if (index === -1) {
       throw new Error(`Agent ${agentId} not found.`);
     }
-    const updated: AgentConfig = { ...agents[index], newio: identity };
+    const base = agents[index];
+    if (!base) throw new Error(`Agent ${agentId} not found.`);
+    const updated: AgentConfig = { ...base, newio: identity };
     const copy = [...agents];
     copy[index] = updated;
     writeJson(CONFIG_PATH, copy);

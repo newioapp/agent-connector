@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { BaseAgentInstance } from '../../src/core/base-agent-instance';
-import type { AgentSession } from '../../src/core/agent-session';
-import type { AgentConfigManager } from '../../src/core/agent-config-manager';
-import type { AgentInstanceListener, AgentSessionConfig, ConfigureAgentInput } from '../../src/core/agent-instance';
-import type { AgentConfig, AgentInfo } from '../../src/core/types';
-import type { SessionStore } from '../../src/core/session-store';
+import { BaseAgentInstance } from '@newio/core';
+import type { AgentSession } from '@newio/core';
+import type { AgentConfigManager } from '@newio/core';
+import type { AgentInstanceListener, AgentSessionConfig, ConfigureAgentInput } from '@newio/core';
+import type { AgentConfig, AgentInfo } from '@newio/core';
+import type { SessionStore } from '@newio/core';
 import type { NewioApp, NewioAppStore, ActionRequest, MemberRecord, ConversationListItem } from '@newio/agent-sdk';
 
 // ---------------------------------------------------------------------------

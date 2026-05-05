@@ -50,6 +50,9 @@ export function resolveCommand(
     throw new Error('No executable path configured for custom agent type');
   }
   const [command, ...rest] = parts;
+  if (!command) {
+    throw new Error('No executable path configured for custom agent type');
+  }
   return { command, args: rest };
 }
 

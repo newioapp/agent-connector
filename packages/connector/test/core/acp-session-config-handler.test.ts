@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AcpSessionConfigHandler } from '../../src/core/acp-session-config-handler';
+import { AcpSessionConfigHandler } from '@newio/core';
 import type { ClientSideConnection, NewSessionResponse } from '@agentclientprotocol/sdk';
 
 /** Minimal mock connection — only setSessionMode and unstable_setSessionModel are used. */

@@ -13,6 +13,6 @@ export type {
   AgentStatusInfo,
   UpdateMode,
   UpdateChannel,
-} from '../core/types';
-
-export type { AgentSessionConfigOption, AgentSessionConfig } from '../core/agent-instance';
+  AgentSessionConfigOption,
+  AgentSessionConfig,
+} from '@newio/core';

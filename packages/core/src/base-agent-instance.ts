@@ -28,6 +28,9 @@ import { EventQueue } from './event-queue';
 import type { AgentEvent } from './event-queue';
 import { PromptManager } from './prompt-manager';
 import { Logger } from './logger';
+declare const __API_BASE_URL__: string;
+declare const __WS_BASE_URL__: string;
+declare const __NEWIO_STAGE__: string;
 import type {
   AgentCapability,
   CapabilitiesResponsePayload,

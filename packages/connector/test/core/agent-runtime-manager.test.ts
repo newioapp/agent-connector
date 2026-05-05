@@ -1,16 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AgentRuntimeManager } from '../../src/core/agent-runtime-manager';
-import type { StatusListener } from '../../src/core/agent-runtime-manager';
-import type { AgentConfigManager } from '../../src/core/agent-config-manager';
-import type { SessionStore } from '../../src/core/session-store';
-import type { AgentConfig } from '../../src/core/types';
+import { AgentRuntimeManager } from '@newio/core';
+import type { StatusListener } from '@newio/core';
+import type { AgentConfigManager } from '@newio/core';
+import type { SessionStore } from '@newio/core';
+import type { AgentConfig } from '@newio/core';
 
 // Mock AcpAgentInstance — the only concrete implementation created by the manager
-vi.mock('../../src/core/acp-agent-instance', () => ({
+vi.mock('../../../core/src/acp-agent-instance', () => ({
   AcpAgentInstance: vi.fn(),
 }));
 
-import { AcpAgentInstance } from '../../src/core/acp-agent-instance';
+import { AcpAgentInstance } from '@newio/core';
 
 const MockAcpAgentInstance = vi.mocked(AcpAgentInstance);
 

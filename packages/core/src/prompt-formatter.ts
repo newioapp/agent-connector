@@ -184,6 +184,7 @@ Cron trigger example:
       return '';
     }
     const first = messages[0];
+    if (!first) return '';
     const isGroup = first.conversationType === 'group' || first.conversationType === 'temp_group';
     if (isGroup) {
       return this.formatGroupBatch(first.conversationId, first.groupName, messages);
@@ -253,6 +254,7 @@ Cron trigger example:
 
   private formatDmBatch(conversationId: string, messages: readonly IncomingMessage[]): string {
     const first = messages[0];
+    if (!first) return '';
     const lines = [`conversationId: ${conversationId}`, `type: dm`, `from:`, this.formatSender(first), `messages:`];
     for (const m of messages) {
       lines.push(`  - message: ${m.text}`);

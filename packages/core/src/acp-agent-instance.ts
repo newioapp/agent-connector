@@ -22,6 +22,8 @@ import type { SessionStreamSegment } from './types';
 import { resolveCommand, extractErrorMessage } from './types';
 import type { AgentInfo } from './types';
 import { Logger } from './logger';
+declare const __APP_DISPLAY_NAME__: string;
+declare const __APP_VERSION__: string;
 
 const log = new Logger('acp-agent-instance');
 

@@ -26,6 +26,7 @@
     "clean": "rm -rf out dist"
   },
   "dependencies": {
+    "@newio/core": "workspace:*",
     "@agentclientprotocol/sdk": "^0.17.1",
     "@electron-toolkit/utils": "^4.0.0",
     "@newio/agent-sdk": "workspace:*",
