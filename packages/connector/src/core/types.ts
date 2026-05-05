@@ -161,7 +161,7 @@ export interface AgentStatusInfo {
 // ---------------------------------------------------------------------------
 
 /** Segment types that the stream aggregates and yields. */
-export type SegmentType = 'agent_message_chunk' | 'agent_thought_chunk' | 'tool_call' | 'tool_call_update';
+export type SegmentType = 'agent_message_chunk' | 'agent_thought_chunk' | 'tool_call';
 
 /** An aggregated segment yielded by the stream. */
 export interface SessionStreamSegment {
