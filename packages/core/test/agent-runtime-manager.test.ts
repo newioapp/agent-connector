@@ -6,7 +6,7 @@ import type { SessionStore } from '@newio/core';
 import type { AgentConfig } from '@newio/core';
 
 // Mock AcpAgentInstance — the only concrete implementation created by the manager
-vi.mock('../../../core/src/acp-agent-instance', () => ({
+vi.mock('../src/acp-agent-instance', () => ({
   AcpAgentInstance: vi.fn(),
 }));
 
