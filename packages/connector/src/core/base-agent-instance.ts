@@ -21,7 +21,6 @@ import type { AgentRuntimeStatus, AgentConfig } from './types';
 import { DEFAULT_SESSION_IDLE_TIMEOUT_MS, resolveCommand, extractErrorMessage } from './types';
 import type { AgentInfo, PermissionRequestOption, ConversationFlags } from './types';
 import type { AgentInstance, AgentInstanceListener } from './agent-instance';
-import type { AgentSessionConfig, ConfigureAgentInput } from './agent-instance';
 import type { AgentSession } from './agent-session';
 import type { SessionStore } from './session-store';
 import { EventQueue } from './event-queue';
@@ -194,6 +193,34 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
       app.on('cron.cancelled', (cronId) => {
         this.sessionStore.deleteCron(cronId);
+      });
+
+      // React to persisted showToolCalls/showThoughts changes from the owner
+      app.on('conversation.member_updated', (event) => {
+        const { conversationId, userId, changes } = event;
+        if (userId !== app.identity.userId) {
+          return;
+        }
+        if (changes.showToolCalls !== undefined || changes.showThoughts !== undefined) {
+          const prev = this.conversationFlags.get(conversationId) ?? { showToolCalls: false, showThoughts: false };
+          this.conversationFlags.set(conversationId, {
+            showToolCalls: changes.showToolCalls ?? prev.showToolCalls,
+            showThoughts: changes.showThoughts ?? prev.showThoughts,
+          });
+          log.info(
+            `${this.logTag} Updated conversation flags for ${conversationId}: showToolCalls=${changes.showToolCalls ?? prev.showToolCalls}, showThoughts=${changes.showThoughts ?? prev.showThoughts}`,
+          );
+        }
+      });
+
+      // React to persisted acpModel/acpMode changes from the owner
+      app.on('session.updated', (event) => {
+        const { sessionId, agentId, updatedBy, changes } = event;
+        // Ignore events not meant for this agent or triggered by self
+        if (agentId !== app.identity.userId || updatedBy === app.identity.userId) {
+          return;
+        }
+        void this.applySessionConfigChange(sessionId, changes);
       });
 
       // Reload persisted cron jobs
@@ -495,6 +522,10 @@ export abstract class BaseAgentInstance implements AgentInstance {
     );
 
     log.info(`${this.logTag} Session ready: newio=${newioSessionId} → correlation=${session.correlationId}`);
+
+    // Apply persisted acpModel/acpMode from the backend
+    void this.applyPersistedSessionConfig(newioSessionId, session);
+
     return session;
   }
 
@@ -579,14 +610,32 @@ export abstract class BaseAgentInstance implements AgentInstance {
     // Default no-op — subclasses override as needed
   }
 
-  /** List available models from the representative session. */
-  abstract listModels(): AgentSessionConfig | undefined;
+  // ---------------------------------------------------------------------------
+  // Session config — apply persisted acpModel/acpMode from session.updated events
+  // ---------------------------------------------------------------------------
 
-  /** List available modes from the representative session. */
-  abstract listModes(): AgentSessionConfig | undefined;
+  /** Read persisted acpModel/acpMode from the backend and apply on session launch. */
+  private async applyPersistedSessionConfig(newioSessionId: string, session: AgentSession): Promise<void> {
+    try {
+      const { session: record } = await this.app.client.getSession({ sessionId: newioSessionId });
+      await session.applySessionConfig(record);
+    } catch (err: unknown) {
+      log.warn(`${this.logTag} Failed to apply persisted session config for ${newioSessionId}`, err);
+    }
+  }
 
-  /** Configure model/mode on one or all sessions. */
-  abstract configureAgent(input: ConfigureAgentInput): Promise<void>;
+  /** Apply model/mode changes from a session.updated event to the live session. */
+  private async applySessionConfigChange(
+    newioSessionId: string,
+    changes: { acpModel?: string | null; acpMode?: string | null },
+  ): Promise<void> {
+    const slot = this.slots.get(newioSessionId);
+    if (!slot?.session) {
+      log.debug(`${this.logTag} session.updated for ${newioSessionId} — session not active, ignoring`);
+      return;
+    }
+    await slot.session.applySessionConfig(changes);
+  }
 
   // ---------------------------------------------------------------------------
   // Permission handling — routes ACP permission requests to owner via Newio
@@ -791,12 +840,12 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** Wire capability handlers and register the manager with the app. */
   private wireCapabilityHandlers(app: NewioApp): void {
-    app.onCapabilitiesRequest((sessionId, conversationId) => this.getCapabilities(sessionId, conversationId));
+    app.onCapabilitiesRequest((sessionId) => this.getCapabilities(sessionId));
     app.onCapabilityInvocation((invocation) => this.handleCapabilityInvocation(invocation));
   }
 
   /** Get capabilities for a session. */
-  private getCapabilities(sessionId?: string, conversationId?: string): CapabilitiesResponsePayload {
+  private getCapabilities(sessionId?: string): CapabilitiesResponsePayload {
     const capabilities: AgentCapability[] = [];
 
     if (typeof sessionId === 'string') {
@@ -804,22 +853,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
       if (slot?.session) {
         capabilities.push(...slot.session.getCapabilities());
       }
-    }
-
-    if (typeof conversationId === 'string') {
-      const flags = this.conversationFlags.get(conversationId);
-      capabilities.push({
-        id: 'show_tool_call',
-        name: 'Show Tool Calls',
-        scope: 'conversation',
-        currentValue: flags?.showToolCalls ?? false,
-      });
-      capabilities.push({
-        id: 'show_thoughts',
-        name: 'Show Thoughts',
-        scope: 'conversation',
-        currentValue: flags?.showThoughts ?? false,
-      });
     }
 
     return { capabilities };
@@ -831,29 +864,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
   ): Promise<InvokeCapabilityResponsePayload> {
     const { capabilityId, scope, targetId } = invocation;
 
-    // Conversation-scoped: handled at instance level
-    if (scope === 'conversation') {
-      if (capabilityId === 'show_tool_call' || capabilityId === 'show_thoughts') {
-        if (typeof targetId !== 'string') {
-          return { capabilityId, success: false, error: 'Missing targetId (conversationId)' };
-        }
-        const enable = invocation.params?.['enable'];
-        if (typeof enable !== 'boolean') {
-          return { capabilityId, success: false, error: 'Missing boolean "enable" param' };
-        }
-        const prev = this.conversationFlags.get(targetId) ?? { showToolCalls: false, showThoughts: false };
-        const updated =
-          capabilityId === 'show_tool_call' ? { ...prev, showToolCalls: enable } : { ...prev, showThoughts: enable };
-        this.conversationFlags.set(targetId, updated);
-        const value = capabilityId === 'show_tool_call' ? updated.showToolCalls : updated.showThoughts;
-        log.info(`${this.logTag} Set ${capabilityId} for ${targetId}: ${String(value)}`);
-        return { capabilityId, success: true, result: { enabled: value } };
-      }
-      return { capabilityId, success: false, error: 'unknown_capability' };
-    }
-
     // Session-scoped: delegate to the session
-    if (typeof targetId !== 'string') {
+    if (scope !== 'session' || typeof targetId !== 'string') {
       return { capabilityId, success: false, error: 'Missing targetId (sessionId)' };
     }
     const slot = this.slots.get(targetId);

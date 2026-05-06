@@ -7,7 +7,7 @@
 import type { AgentConfigManager } from './agent-config-manager';
 import type { SessionStore } from './session-store';
 import type { AgentRuntimeStatus, AgentInfo } from './types';
-import type { AgentInstance, AgentSessionConfig, ConfigureAgentInput } from './agent-instance';
+import type { AgentInstance } from './agent-instance';
 import { AcpAgentInstance } from './acp-agent-instance';
 import { Logger } from './logger';
 
@@ -19,12 +19,6 @@ export interface StatusListener {
   onPollAttempt(agentId: string): void;
   onConfigUpdated(agentId: string): void;
   onAgentInfo(agentId: string, info: AgentInfo): void;
-  onAgentSessionConfigUpdated(
-    agentId: string,
-    sessionId: string,
-    models?: AgentSessionConfig,
-    modes?: AgentSessionConfig,
-  ): void;
 }
 
 export class AgentRuntimeManager {
@@ -86,9 +80,6 @@ export class AgentRuntimeManager {
       onAgentInfo: (info: AgentInfo) => {
         this.listener.onAgentInfo(agentId, info);
       },
-      onAgentSessionConfigUpdated: (sessionId: string, models?: AgentSessionConfig, modes?: AgentSessionConfig) => {
-        this.listener.onAgentSessionConfigUpdated(agentId, sessionId, models, modes);
-      },
     };
 
     const instance = new AcpAgentInstance(config, this.configManager, this.sessionStore, instanceListener);
@@ -118,21 +109,5 @@ export class AgentRuntimeManager {
 
   getAgentInfo(agentId: string): AgentInfo | undefined {
     return this.instances.get(agentId)?.getAgentInfo();
-  }
-
-  listModels(agentId: string): AgentSessionConfig | undefined {
-    return this.instances.get(agentId)?.listModels();
-  }
-
-  listModes(agentId: string): AgentSessionConfig | undefined {
-    return this.instances.get(agentId)?.listModes();
-  }
-
-  /** Configure model/mode on one or all sessions. */
-  async configureAgent(agentId: string, input: ConfigureAgentInput): Promise<void> {
-    const instance = this.instances.get(agentId);
-    if (instance) {
-      await instance.configureAgent(input);
-    }
   }
 }

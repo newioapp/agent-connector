@@ -8,6 +8,7 @@
 import type { ClientSideConnection, NewSessionResponse, LoadSessionResponse } from '@agentclientprotocol/sdk';
 import type * as acp from '@agentclientprotocol/sdk';
 import type { AgentSessionConfig } from './agent-instance';
+import type { NewioClient, SessionConfigUpdate } from '@newio/agent-sdk';
 import { Logger } from './logger';
 
 const log = new Logger('acp-session-config-handler');
@@ -26,7 +27,9 @@ export class AcpSessionConfigHandler {
 
   constructor(
     private readonly sessionId: string,
+    private readonly newioSessionId: string,
     private readonly connection: ClientSideConnection,
+    private readonly client: NewioClient,
     sessionResponse: NewSessionResponse | LoadSessionResponse,
   ) {
     const { configOptions, models, modes } = sessionResponse;
@@ -127,6 +130,49 @@ export class AcpSessionConfigHandler {
       }
       default:
         return false;
+    }
+  }
+
+  /**
+   * Apply acpModel/acpMode config. Reports corrected values back if unavailable.
+   */
+  async applySessionConfig(config: SessionConfigUpdate): Promise<void> {
+    let needsReport = false;
+
+    if (config.acpModel) {
+      try {
+        await this.setModel(config.acpModel);
+      } catch {
+        log.warn(`[${this.sessionId}] Model ${config.acpModel} not available`);
+        needsReport = true;
+      }
+    }
+
+    if (config.acpMode) {
+      try {
+        await this.setMode(config.acpMode);
+      } catch {
+        log.warn(`[${this.sessionId}] Mode ${config.acpMode} not available`);
+        needsReport = true;
+      }
+    }
+
+    if (needsReport) {
+      await this.reportCurrentConfig();
+    }
+  }
+
+  /** Report the current model/mode back to the backend (corrects stale persisted values). */
+  async reportCurrentConfig(): Promise<void> {
+    try {
+      await this.client.updateSession({
+        sessionId: this.newioSessionId,
+        acpModel: this.modelConfig?.selectedId ?? null,
+        acpMode: this.modeConfig?.selectedId ?? null,
+      });
+      log.info(`[${this.sessionId}] Reported corrected config for session ${this.newioSessionId}`);
+    } catch (err: unknown) {
+      log.warn(`[${this.sessionId}] Failed to report corrected session config`, err);
     }
   }
 }

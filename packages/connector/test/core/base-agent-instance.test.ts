@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { BaseAgentInstance } from '../../src/core/base-agent-instance';
 import type { AgentSession } from '../../src/core/agent-session';
 import type { AgentConfigManager } from '../../src/core/agent-config-manager';
-import type { AgentInstanceListener, AgentSessionConfig, ConfigureAgentInput } from '../../src/core/agent-instance';
+import type { AgentInstanceListener } from '../../src/core/agent-instance';
 import type { AgentConfig, AgentInfo } from '../../src/core/types';
 import type { SessionStore } from '../../src/core/session-store';
 import type { NewioApp, NewioAppStore, ActionRequest, MemberRecord, ConversationListItem } from '@newio/agent-sdk';
@@ -23,13 +23,6 @@ class TestAgentInstance extends BaseAgentInstance {
   }
   protected onConnected(): void {}
   protected onStopped(): void {}
-  listModels(): AgentSessionConfig | undefined {
-    return undefined;
-  }
-  listModes(): AgentSessionConfig | undefined {
-    return undefined;
-  }
-  async configureAgent(_input: ConfigureAgentInput): Promise<void> {}
 
   /**
    * Expose the private handlePermissionRequest for testing by calling it
@@ -98,7 +91,6 @@ function createInstance(): TestAgentInstance {
     onPollAttempt: vi.fn(),
     onConfigUpdated: vi.fn(),
     onAgentInfo: vi.fn(),
-    onAgentSessionConfigUpdated: vi.fn(),
   } satisfies AgentInstanceListener;
 
   return new TestAgentInstance(config, configManager, sessionStore, listener);

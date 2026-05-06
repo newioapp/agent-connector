@@ -214,6 +214,16 @@ export type {
 // Types — Agent Info
 export type { ReportAgentHostInfo, ReportAgentInfoRequest, ReportAgentInfoResponse } from './core/types.js';
 
+// Types — Sessions
+export type {
+  SessionRecord,
+  SessionConfigUpdate,
+  GetSessionRequest,
+  GetSessionResponse,
+  UpdateSessionRequest,
+  UpdateSessionResponse,
+} from './core/types.js';
+
 // Types — Capabilities
 export type {
   CapabilityScope,
@@ -257,6 +267,8 @@ export type {
   UserProfileUpdatedEvent,
   AgentSettingsUpdatedEvent,
   ActivityStatusEvent,
+  SessionCreatedEvent,
+  SessionUpdatedEvent,
   NewioEvent,
   EventMap,
 } from './core/events.js';

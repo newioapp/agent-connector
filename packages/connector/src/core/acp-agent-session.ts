@@ -20,6 +20,8 @@ import type {
   CapabilityOption,
   InvokeCapabilityPayload,
   InvokeCapabilityResponsePayload,
+  NewioClient,
+  SessionConfigUpdate,
 } from '@newio/agent-sdk';
 import { extractErrorMessage } from './types';
 
@@ -30,6 +32,7 @@ export interface AcpAgentSessionInit {
   readonly promptFormatterVersion: string;
   readonly correlationId: string;
   readonly connection: ClientSideConnection;
+  readonly client: NewioClient;
   readonly sessionResponse: NewSessionResponse | LoadSessionResponse;
   readonly disposable: boolean;
   readonly username?: string;
@@ -80,7 +83,13 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
     this.connection = init.connection;
     this.logTag = init.username ? `[${init.username}]` : '';
     this._isSkipPrefix = init.isSkipPrefix;
-    this.configHandler = new AcpSessionConfigHandler(init.correlationId, init.connection, init.sessionResponse);
+    this.configHandler = new AcpSessionConfigHandler(
+      init.correlationId,
+      init.sessionId,
+      init.connection,
+      init.client,
+      init.sessionResponse,
+    );
     this.slashCommandHandler = new AcpSlashCommandHandler(init.correlationId);
   }
 
@@ -249,6 +258,10 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
       }
     }
     return { capabilityId, success: false, error: 'unknown_capability' };
+  }
+
+  async applySessionConfig(config: SessionConfigUpdate): Promise<void> {
+    await this.configHandler.applySessionConfig(config);
   }
 
   async dispose(): Promise<void> {

@@ -81,9 +81,6 @@ void app.whenReady().then(async () => {
     onAgentInfo(agentId, info) {
       mainWindowManager.send(EVENT_CHANNELS['agent-acp-info'], { agentId, info });
     },
-    onAgentSessionConfigUpdated(agentId, sessionId, models, modes) {
-      mainWindowManager.send(EVENT_CHANNELS['agent-session-config-updated'], { agentId, sessionId, models, modes });
-    },
   });
 
   // Apply persisted theme

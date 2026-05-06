@@ -6,6 +6,8 @@ import type {
   ActivityStatus,
   NotifyLevel,
   ConversationType,
+  SessionRecord,
+  SessionConfigUpdate,
   SignalEvent,
 } from './types.js';
 
@@ -120,6 +122,8 @@ export interface ConversationMemberUpdatedEvent extends WebSocketEvent {
       readonly canSend?: boolean;
       readonly notifyLevel?: NotifyLevel;
       readonly sessionId?: string;
+      readonly showToolCalls?: boolean;
+      readonly showThoughts?: boolean;
     };
   };
 }
@@ -242,6 +246,28 @@ export interface ActivityStatusEvent extends WebSocketEvent {
 }
 
 // ---------------------------------------------------------------------------
+// Session Events
+// ---------------------------------------------------------------------------
+
+export interface SessionCreatedEvent extends WebSocketEvent {
+  readonly type: 'session.created';
+  readonly payload: {
+    readonly session: SessionRecord;
+    readonly createdBy: string;
+  };
+}
+
+export interface SessionUpdatedEvent extends WebSocketEvent {
+  readonly type: 'session.updated';
+  readonly payload: {
+    readonly sessionId: string;
+    readonly agentId: string;
+    readonly updatedBy: string;
+    readonly changes: SessionConfigUpdate & { readonly name?: string };
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Union & Map
 // ---------------------------------------------------------------------------
 
@@ -265,6 +291,8 @@ export type NewioEvent =
   | BlockRemovedEvent
   | UserProfileUpdatedEvent
   | AgentSettingsUpdatedEvent
+  | SessionCreatedEvent
+  | SessionUpdatedEvent
   | ActivityStatusEvent
   | SignalEvent;
 
@@ -290,5 +318,7 @@ export interface EventMap {
   'user.profile_updated': UserProfileUpdatedEvent;
   'agent.settings_updated': AgentSettingsUpdatedEvent;
   'activity.status': ActivityStatusEvent;
+  'session.created': SessionCreatedEvent;
+  'session.updated': SessionUpdatedEvent;
   signal: SignalEvent;
 }

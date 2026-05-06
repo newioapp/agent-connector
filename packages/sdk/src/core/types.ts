@@ -78,6 +78,8 @@ export interface MemberRecord {
   readonly canSend?: boolean;
   readonly notifyLevel?: NotifyLevel;
   readonly sessionId?: string;
+  readonly showToolCalls?: boolean;
+  readonly showThoughts?: boolean;
   readonly joinedAt: string;
   readonly username?: string;
   readonly displayName?: string;
@@ -891,6 +893,45 @@ export interface ReportAgentInfoRequest {
 
 export interface ReportAgentInfoResponse {
   readonly version: string;
+}
+
+// ---------------------------------------------------------------------------
+// Sessions
+// ---------------------------------------------------------------------------
+
+export interface SessionRecord {
+  readonly sessionId: string;
+  readonly agentId: string;
+  readonly name: string;
+  readonly acpModel?: string;
+  readonly acpMode?: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+/** Config fields that can be applied to a session (subset of SessionRecord). */
+export interface SessionConfigUpdate {
+  readonly acpModel?: string | null;
+  readonly acpMode?: string | null;
+}
+
+export interface GetSessionRequest {
+  readonly sessionId: string;
+}
+
+export interface GetSessionResponse {
+  readonly session: SessionRecord;
+}
+
+export interface UpdateSessionRequest {
+  readonly sessionId: string;
+  readonly name?: string;
+  readonly acpModel?: string | null;
+  readonly acpMode?: string | null;
+}
+
+export interface UpdateSessionResponse {
+  readonly session: SessionRecord;
 }
 
 // ---------------------------------------------------------------------------

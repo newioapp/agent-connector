@@ -5,7 +5,12 @@
  * A single agent instance manages multiple sessions.
  */
 import type { SessionStreamSegment, SessionStatusListener, PermissionHandler } from './types';
-import type { AgentCapability, InvokeCapabilityPayload, InvokeCapabilityResponsePayload } from '@newio/agent-sdk';
+import type {
+  AgentCapability,
+  InvokeCapabilityPayload,
+  InvokeCapabilityResponsePayload,
+  SessionConfigUpdate,
+} from '@newio/agent-sdk';
 
 export interface AgentSession {
   /** Newio platform assigned session ID. */
@@ -42,4 +47,7 @@ export interface AgentSession {
 
   /** Handle a session-scoped capability invocation. */
   handleCapabilityInvocation(invocation: InvokeCapabilityPayload): Promise<InvokeCapabilityResponsePayload>;
+
+  /** Apply session config (acpModel/acpMode) from the backend. Reports corrected values on failure. */
+  applySessionConfig(config: SessionConfigUpdate): Promise<void>;
 }

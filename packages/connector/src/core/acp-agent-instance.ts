@@ -15,9 +15,8 @@ import { ClientSideConnection, ndJsonStream, PROTOCOL_VERSION } from '@agentclie
 import type * as acp from '@agentclientprotocol/sdk';
 import type { McpServer as AcpMcpServer } from '@agentclientprotocol/sdk';
 import { BaseAgentInstance } from './base-agent-instance';
-import { AcpAgentSession, AcpAgentSessionInterface } from './acp-agent-session';
+import { AcpAgentSession } from './acp-agent-session';
 import type { AgentSession } from './agent-session';
-import type { AgentSessionConfig, ConfigureAgentInput } from './agent-instance';
 import type { SessionStreamSegment } from './types';
 import { resolveCommand, extractErrorMessage } from './types';
 import type { AgentInfo } from './types';
@@ -64,16 +63,6 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
   /** Set to true when stop/kill is intentional — prevents the exit handler from treating it as unexpected. */
   private stopping = false;
 
-  /** Cached model/mode config — copied from the greeting session, updated on config changes. */
-  private cachedModels?: AgentSessionConfig;
-  private cachedModes?: AgentSessionConfig;
-
-  /** Runtime-selected model — applied to new sessions. */
-  private selectedModel?: string;
-
-  /** Runtime-selected mode — applied to new sessions. */
-  private selectedMode?: string;
-
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
@@ -92,10 +81,6 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
   protected async onStopped(): Promise<void> {
     log.info(`${this.logTag} ACP agent instance stopping...`);
     this.stopping = true;
-    this.cachedModels = undefined;
-    this.cachedModes = undefined;
-    this.selectedModel = undefined;
-    this.selectedMode = undefined;
     this.acpSessions.clear();
     this.pendingUpdates.clear();
     this.connection = undefined;
@@ -244,57 +229,8 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
   // Public — model/mode queries and configuration
   // ---------------------------------------------------------------------------
 
-  /** Apply the runtime-selected model/mode to a session. Best-effort — errors are logged, not thrown. */
-  private async applySessionConfig(session: AcpAgentSession): Promise<void> {
-    try {
-      if (this.selectedModel) {
-        await session.setModel(this.selectedModel);
-      }
-      if (this.selectedMode) {
-        await session.setMode(this.selectedMode);
-      }
-    } catch (err: unknown) {
-      log.warn(`${this.logTag} Failed to apply session config: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
   getAgentInfo(): AgentInfo | undefined {
     return this.agentInfo;
-  }
-
-  listModels(): AgentSessionConfig | undefined {
-    return this.cachedModels;
-  }
-
-  listModes(): AgentSessionConfig | undefined {
-    return this.cachedModes;
-  }
-
-  async configureAgent(input: ConfigureAgentInput): Promise<void> {
-    const targets = input.sessionId
-      ? ([this.acpSessions.get(input.sessionId)].filter(Boolean) as AcpAgentSession[])
-      : [...this.acpSessions.values()];
-
-    const promises: Promise<void>[] = [];
-    for (const session of targets) {
-      if (input.model) {
-        promises.push(session.setModel(input.model));
-      }
-      if (input.mode) {
-        promises.push(session.setMode(input.mode));
-      }
-    }
-    await Promise.all(promises);
-
-    if (input.model) {
-      this.selectedModel = input.model;
-    }
-    if (input.mode) {
-      this.selectedMode = input.mode;
-    }
-    log.info(
-      `${this.logTag} Configured ${String(targets.length)} session(s): model=${input.model ?? '-'}, mode=${input.mode ?? '-'}`,
-    );
   }
 
   // ---------------------------------------------------------------------------
@@ -321,6 +257,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       promptFormatterVersion: instruction.version,
       correlationId: result.sessionId,
       connection: conn,
+      client: this.app.client,
       sessionResponse: result,
       disposable: this.supportsClose,
       username: this.config.newio?.username,
@@ -328,8 +265,6 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     });
     this.registerSession(result.sessionId, session);
     log.info(`${this.logTag} Session created: ${result.sessionId}`);
-
-    await this.applySessionConfig(session);
 
     // Send Newio instruction as the first prompt so the session has context
     log.debug(`${this.logTag} [${result.sessionId}] Sending Newio instruction to new session`);
@@ -367,6 +302,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       promptFormatterVersion,
       correlationId,
       connection: conn,
+      client: this.app.client,
       sessionResponse: loadResult,
       disposable: this.supportsClose,
       username: this.config.newio?.username,
@@ -374,8 +310,6 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     });
     this.registerSession(correlationId, session);
     log.info(`${this.logTag} Session resumed: ${correlationId}`);
-
-    await this.applySessionConfig(session);
 
     return session;
   }
@@ -459,7 +393,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     log.debug(`${this.logTag} Owner DM conversation: ${ownerDmConversationId}`);
 
     this.setStatus('greeting');
-    const session = (await this.getOrCreateSession(ownerDmConversationId)) as AcpAgentSessionInterface;
+    const session = await this.getOrCreateSession(ownerDmConversationId);
     log.debug(`${this.logTag} [${session.correlationId}] Generating greeting for owner...`);
 
     let greeting: string | undefined;
@@ -480,21 +414,6 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
 
     await this.app.sendMessage(ownerDmConversationId, greeting.trim());
     log.info(`${this.logTag} [${session.correlationId}] Greeting sent to owner`);
-
-    // Cache initial models/modes and listen for config changes from the ACP agent
-    this.cachedModels = session.listModels();
-    this.cachedModes = session.listModes();
-    session.onConfigChanged(() => {
-      this.cachedModels = session.listModels();
-      this.cachedModes = session.listModes();
-      if (this.cachedModels?.selectedId) {
-        this.selectedModel = this.cachedModels.selectedId;
-      }
-      if (this.cachedModes?.selectedId) {
-        this.selectedMode = this.cachedModes.selectedId;
-      }
-      this.listener.onAgentSessionConfigUpdated(session.correlationId, this.cachedModels, this.cachedModes);
-    });
   }
 
   /** Best-effort report of agent info to the backend after ACP init. */

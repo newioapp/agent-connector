@@ -91,6 +91,24 @@ export interface AppEventHandlers {
   'cron.triggered': (event: CronTriggerEvent) => void;
   'cron.scheduled': (def: CronJobDef) => void;
   'cron.cancelled': (cronId: string) => void;
+  'conversation.member_updated': (event: {
+    conversationId: string;
+    userId: string;
+    updatedBy?: string;
+    changes: {
+      showToolCalls?: boolean;
+      showThoughts?: boolean;
+      sessionId?: string;
+      notifyLevel?: string;
+      canSend?: boolean;
+    };
+  }) => void;
+  'session.updated': (event: {
+    sessionId: string;
+    agentId: string;
+    updatedBy: string;
+    changes: { name?: string; acpModel?: string | null; acpMode?: string | null };
+  }) => void;
 }
 
 /** Agent-friendly contact summary (no UUIDs). */

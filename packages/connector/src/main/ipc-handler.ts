@@ -14,7 +14,6 @@ import type {
   AddAgentInput,
   UpdateAgentInput,
   AgentStatusInfo,
-  AgentSessionConfig,
   AgentInfo,
   UpdateMode,
   UpdateChannel,
@@ -135,18 +134,6 @@ export class IpcHandler implements IpcApi {
 
   async updateAgentEnvVars(agentId: string, envVars: Record<string, string>, shell?: string): Promise<AgentConfig> {
     return this.agentConfigManager.update(agentId, { envVars, ...(shell ? { envVarsShell: shell } : {}) });
-  }
-
-  async listAgentModels(agentId: string): Promise<AgentSessionConfig | undefined> {
-    return this.agentRuntimeManager.listModels(agentId);
-  }
-
-  async listAgentModes(agentId: string): Promise<AgentSessionConfig | undefined> {
-    return this.agentRuntimeManager.listModes(agentId);
-  }
-
-  async configureAgent(agentId: string, model?: string, mode?: string): Promise<void> {
-    await this.agentRuntimeManager.configureAgent(agentId, { model, mode });
   }
 
   async getAgentInfo(agentId: string): Promise<AgentInfo | undefined> {

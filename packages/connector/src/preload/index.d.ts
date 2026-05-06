@@ -9,9 +9,6 @@ export interface ConnectorAPI extends IpcApi {
   onAgentApprovalUrl(callback: (data: MainToRendererEvents['agent-approval-url']) => void): () => void;
   onAgentPollAttempt(callback: (data: MainToRendererEvents['agent-poll-attempt']) => void): () => void;
   onAgentConfigUpdated(callback: (data: MainToRendererEvents['agent-config-updated']) => void): () => void;
-  onAgentSessionConfigUpdated(
-    callback: (data: MainToRendererEvents['agent-session-config-updated']) => void,
-  ): () => void;
   onAgentAcpInfo(callback: (data: MainToRendererEvents['agent-acp-info']) => void): () => void;
 }
 
