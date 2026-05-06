@@ -66,7 +66,7 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
   readonly disposable: boolean;
 
   private readonly connection: ClientSideConnection;
-  readonly configHandler: AcpSessionConfigHandler;
+  private readonly configHandler: AcpSessionConfigHandler;
   private readonly slashCommandHandler: AcpSlashCommandHandler;
   private readonly logTag: string;
   private readonly _isSkipPrefix: (text: string) => boolean;

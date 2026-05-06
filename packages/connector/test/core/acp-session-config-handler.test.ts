@@ -402,4 +402,48 @@ describe('AcpSessionConfigHandler', () => {
       expect(handler.handleSessionUpdate({ sessionUpdate: 'unknown' } as never)).toBe(false);
     });
   });
+
+  describe('applySessionConfig', () => {
+    it('reports corrected config when setModel fails', async () => {
+      const conn = mockConnection({
+        unstable_setSessionModel: vi.fn().mockRejectedValue(new Error('model not available')),
+      });
+      const client = mockClient();
+      const handler = new AcpSessionConfigHandler(
+        'sess-1',
+        'newio-sess-1',
+        conn,
+        client,
+        makeSessionResponse({
+          models: { availableModels: [{ modelId: 'fallback', name: 'Fallback' }], currentModelId: 'fallback' },
+        }),
+      );
+
+      await handler.applySessionConfig({ acpModel: 'unavailable-model' });
+
+      expect(conn.unstable_setSessionModel).toHaveBeenCalledWith({ sessionId: 'sess-1', modelId: 'unavailable-model' });
+      expect(client.updateSession).toHaveBeenCalledWith({
+        sessionId: 'newio-sess-1',
+        acpModel: 'fallback',
+        acpMode: null,
+      });
+    });
+
+    it('does not report when setModel succeeds', async () => {
+      const client = mockClient();
+      const handler = new AcpSessionConfigHandler(
+        'sess-1',
+        'newio-sess-1',
+        mockConnection(),
+        client,
+        makeSessionResponse({
+          models: { availableModels: [{ modelId: 'a', name: 'A' }], currentModelId: 'a' },
+        }),
+      );
+
+      await handler.applySessionConfig({ acpModel: 'a' });
+
+      expect(client.updateSession).not.toHaveBeenCalled();
+    });
+  });
 });
