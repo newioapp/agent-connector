@@ -103,6 +103,12 @@ import type {
   SendSignalResponse,
   ReportAgentInfoRequest,
   ReportAgentInfoResponse,
+
+  // Sessions
+  GetSessionRequest,
+  GetSessionResponse,
+  UpdateSessionRequest,
+  UpdateSessionResponse,
 } from './types.js';
 
 /**
@@ -481,6 +487,24 @@ export class NewioClient {
     return this.http.request('/agents/me/info', {
       method: 'PUT',
       body: JSON.stringify(input),
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sessions
+  // ---------------------------------------------------------------------------
+
+  /** Get a session by ID. */
+  async getSession(input: GetSessionRequest): Promise<GetSessionResponse> {
+    return this.http.request(`/sessions/${input.sessionId}`, { method: 'GET' });
+  }
+
+  /** Update a session (name, acpModel, acpMode). */
+  async updateSession(input: UpdateSessionRequest): Promise<UpdateSessionResponse> {
+    const { sessionId, ...body } = input;
+    return this.http.request(`/sessions/${sessionId}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
     });
   }
 

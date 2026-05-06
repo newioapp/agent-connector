@@ -131,6 +131,17 @@ export function wireEvents(
     if (event.payload.changes.sessionId) {
       store.setSessionId(event.payload.conversationId, event.payload.changes.sessionId);
     }
+    getHandlers()['conversation.member_updated']?.({
+      conversationId: event.payload.conversationId,
+      userId: event.payload.userId,
+      updatedBy: event.payload.updatedBy,
+      changes: event.payload.changes,
+    });
+  });
+
+  ws.on('session.updated', (event) => {
+    log.debug(`Event session.updated: sessionId=${event.payload.sessionId} updatedBy=${event.payload.updatedBy}`);
+    getHandlers()['session.updated']?.(event.payload);
   });
 
   ws.on('contact.request_received', (event) => {
