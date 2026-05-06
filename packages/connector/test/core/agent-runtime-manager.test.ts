@@ -50,7 +50,6 @@ function mockListener(): StatusListener {
     onPollAttempt: vi.fn(),
     onConfigUpdated: vi.fn(),
     onAgentInfo: vi.fn(),
-    onAgentSessionConfigUpdated: vi.fn(),
   };
 }
 
@@ -75,9 +74,6 @@ describe('AgentRuntimeManager', () => {
         start: vi.fn().mockResolvedValue(undefined),
         stop: vi.fn().mockResolvedValue(undefined),
         getAgentInfo: vi.fn().mockReturnValue(undefined),
-        listModels: vi.fn().mockReturnValue(undefined),
-        listModes: vi.fn().mockReturnValue(undefined),
-        configureAgent: vi.fn().mockResolvedValue(undefined),
       } as never;
     });
   });
@@ -175,9 +171,6 @@ describe('AgentRuntimeManager', () => {
       const info = { protocol: 'acp' as const, protocolVersion: '1.0', capabilities: [] };
       instanceListener.onAgentInfo(info);
       expect(listener.onAgentInfo).toHaveBeenCalledWith('agent-1', info);
-
-      instanceListener.onAgentSessionConfigUpdated('sess-1', undefined, undefined);
-      expect(listener.onAgentSessionConfigUpdated).toHaveBeenCalledWith('agent-1', 'sess-1', undefined, undefined);
     });
   });
 
@@ -222,40 +215,6 @@ describe('AgentRuntimeManager', () => {
 
     it('getAgentInfo returns undefined for unknown agent', () => {
       expect(manager.getAgentInfo('unknown')).toBeUndefined();
-    });
-
-    it('listModels/listModes delegate to instance', () => {
-      const models = { options: [{ id: 'm1', name: 'M1' }], selectedId: 'm1' };
-      const modes = { options: [{ id: 'fast', name: 'Fast' }], selectedId: 'fast' };
-      MockAcpAgentInstance.mockImplementationOnce(() => {
-        return {
-          status: 'running',
-          start: vi.fn(),
-          listModels: vi.fn().mockReturnValue(models),
-          listModes: vi.fn().mockReturnValue(modes),
-        } as never;
-      });
-
-      manager.start('agent-1');
-      expect(manager.listModels('agent-1')).toBe(models);
-      expect(manager.listModes('agent-1')).toBe(modes);
-    });
-
-    it('listModels/listModes return undefined for unknown agent', () => {
-      expect(manager.listModels('unknown')).toBeUndefined();
-      expect(manager.listModes('unknown')).toBeUndefined();
-    });
-
-    it('configureAgent delegates to instance', async () => {
-      manager.start('agent-1');
-      const instance = MockAcpAgentInstance.mock.results[0].value;
-
-      await manager.configureAgent('agent-1', { model: 'gpt-4' });
-      expect(instance.configureAgent).toHaveBeenCalledWith({ model: 'gpt-4' });
-    });
-
-    it('configureAgent is a no-op for unknown agent', async () => {
-      await expect(manager.configureAgent('unknown', { model: 'x' })).resolves.toBeUndefined();
     });
   });
 });

@@ -899,20 +899,22 @@ export interface ReportAgentInfoResponse {
 // Sessions
 // ---------------------------------------------------------------------------
 
+export interface SessionRecord {
+  readonly sessionId: string;
+  readonly agentId: string;
+  readonly name: string;
+  readonly acpModel?: string;
+  readonly acpMode?: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
 export interface GetSessionRequest {
   readonly sessionId: string;
 }
 
 export interface GetSessionResponse {
-  readonly session: {
-    readonly sessionId: string;
-    readonly agentId: string;
-    readonly name: string;
-    readonly acpModel?: string;
-    readonly acpMode?: string;
-    readonly createdAt: string;
-    readonly updatedAt: string;
-  };
+  readonly session: SessionRecord;
 }
 
 export interface UpdateSessionRequest {
@@ -923,15 +925,7 @@ export interface UpdateSessionRequest {
 }
 
 export interface UpdateSessionResponse {
-  readonly session: {
-    readonly sessionId: string;
-    readonly agentId: string;
-    readonly name: string;
-    readonly acpModel?: string;
-    readonly acpMode?: string;
-    readonly createdAt: string;
-    readonly updatedAt: string;
-  };
+  readonly session: SessionRecord;
 }
 
 // ---------------------------------------------------------------------------

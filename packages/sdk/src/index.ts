@@ -216,6 +216,7 @@ export type { ReportAgentHostInfo, ReportAgentInfoRequest, ReportAgentInfoRespon
 
 // Types — Sessions
 export type {
+  SessionRecord,
   GetSessionRequest,
   GetSessionResponse,
   UpdateSessionRequest,

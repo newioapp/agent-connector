@@ -21,8 +21,8 @@ import type { AgentRuntimeStatus, AgentConfig } from './types';
 import { DEFAULT_SESSION_IDLE_TIMEOUT_MS, resolveCommand, extractErrorMessage } from './types';
 import type { AgentInfo, PermissionRequestOption, ConversationFlags } from './types';
 import type { AgentInstance, AgentInstanceListener } from './agent-instance';
-import type { AgentSessionConfig, ConfigureAgentInput } from './agent-instance';
 import type { AgentSession } from './agent-session';
+import { AcpAgentSession } from './acp-agent-session';
 import type { SessionStore } from './session-store';
 import { EventQueue } from './event-queue';
 import type { AgentEvent } from './event-queue';
@@ -608,50 +608,14 @@ export abstract class BaseAgentInstance implements AgentInstance {
     // Default no-op — subclasses override as needed
   }
 
-  /** List available models from the representative session. */
-  abstract listModels(): AgentSessionConfig | undefined;
-
-  /** List available modes from the representative session. */
-  abstract listModes(): AgentSessionConfig | undefined;
-
-  /** Configure model/mode on one or all sessions. */
-  abstract configureAgent(input: ConfigureAgentInput): Promise<void>;
-
   // ---------------------------------------------------------------------------
   // Session config — apply persisted acpModel/acpMode from session.updated events
   // ---------------------------------------------------------------------------
 
   /** Read persisted acpModel/acpMode from the backend and apply on session launch. */
   private async applyPersistedSessionConfig(newioSessionId: string, session: AgentSession): Promise<void> {
-    try {
-      const { session: record } = await this.app.client.getSession({ sessionId: newioSessionId });
-      let needsReport = false;
-
-      if (record.acpModel) {
-        try {
-          await session.setModel(record.acpModel);
-          log.info(`${this.logTag} Applied persisted model: ${record.acpModel}`);
-        } catch {
-          log.warn(`${this.logTag} Persisted model ${record.acpModel} not available`);
-          needsReport = true;
-        }
-      }
-
-      if (record.acpMode) {
-        try {
-          await session.setMode(record.acpMode);
-          log.info(`${this.logTag} Applied persisted mode: ${record.acpMode}`);
-        } catch {
-          log.warn(`${this.logTag} Persisted mode ${record.acpMode} not available`);
-          needsReport = true;
-        }
-      }
-
-      if (needsReport) {
-        await this.reportCurrentSessionConfig(newioSessionId, session);
-      }
-    } catch (err: unknown) {
-      log.warn(`${this.logTag} Failed to apply persisted session config for ${newioSessionId}`, err);
+    if (session instanceof AcpAgentSession) {
+      await session.configHandler.applyPersistedConfig(newioSessionId, this.app.client);
     }
   }
 
@@ -666,14 +630,17 @@ export abstract class BaseAgentInstance implements AgentInstance {
       return;
     }
 
+    if (!(slot.session instanceof AcpAgentSession)) {
+      return;
+    }
+
     if (changes.acpModel !== undefined && changes.acpModel !== null) {
       try {
         await slot.session.setModel(changes.acpModel);
         log.info(`${this.logTag} Applied model change: ${changes.acpModel} for session ${newioSessionId}`);
       } catch (err: unknown) {
         log.warn(`${this.logTag} Failed to apply model ${changes.acpModel} for session ${newioSessionId}`, err);
-        // Report the actual model back to the backend
-        await this.reportCurrentSessionConfig(newioSessionId, slot.session);
+        await slot.session.configHandler.reportCurrentConfig(newioSessionId, this.app.client);
       }
     }
 
@@ -683,24 +650,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
         log.info(`${this.logTag} Applied mode change: ${changes.acpMode} for session ${newioSessionId}`);
       } catch (err: unknown) {
         log.warn(`${this.logTag} Failed to apply mode ${changes.acpMode} for session ${newioSessionId}`, err);
-        await this.reportCurrentSessionConfig(newioSessionId, slot.session);
+        await slot.session.configHandler.reportCurrentConfig(newioSessionId, this.app.client);
       }
-    }
-  }
-
-  /** Report the current model/mode back to the backend (corrects stale persisted values). */
-  private async reportCurrentSessionConfig(newioSessionId: string, session: AgentSession): Promise<void> {
-    try {
-      const models = session.listModels?.();
-      const modes = session.listModes?.();
-      await this.app.client.updateSession({
-        sessionId: newioSessionId,
-        acpModel: models?.selectedId ?? null,
-        acpMode: modes?.selectedId ?? null,
-      });
-      log.info(`${this.logTag} Reported corrected config for session ${newioSessionId}`);
-    } catch (err: unknown) {
-      log.warn(`${this.logTag} Failed to report corrected session config`, err);
     }
   }
 
@@ -907,12 +858,12 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** Wire capability handlers and register the manager with the app. */
   private wireCapabilityHandlers(app: NewioApp): void {
-    app.onCapabilitiesRequest((sessionId, conversationId) => this.getCapabilities(sessionId, conversationId));
+    app.onCapabilitiesRequest((sessionId) => this.getCapabilities(sessionId));
     app.onCapabilityInvocation((invocation) => this.handleCapabilityInvocation(invocation));
   }
 
   /** Get capabilities for a session. */
-  private getCapabilities(sessionId?: string, _conversationId?: string): CapabilitiesResponsePayload {
+  private getCapabilities(sessionId?: string): CapabilitiesResponsePayload {
     const capabilities: AgentCapability[] = [];
 
     if (typeof sessionId === 'string') {

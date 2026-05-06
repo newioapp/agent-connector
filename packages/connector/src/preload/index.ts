@@ -41,9 +41,6 @@ const api: ConnectorAPI = {
   getShellEnv: (shell) => ipcRenderer.invoke(IPC_CHANNELS.getShellEnv, shell),
   updateAgentEnvVars: (agentId, envVars, shell) =>
     ipcRenderer.invoke(IPC_CHANNELS.updateAgentEnvVars, agentId, envVars, shell),
-  listAgentModels: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.listAgentModels, agentId),
-  listAgentModes: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.listAgentModes, agentId),
-  configureAgent: (agentId, model, mode) => ipcRenderer.invoke(IPC_CHANNELS.configureAgent, agentId, model, mode),
   getAgentInfo: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.getAgentInfo, agentId),
 
   // Push events
@@ -51,7 +48,6 @@ const api: ConnectorAPI = {
   onAgentApprovalUrl: (callback) => onEvent(EVENT_CHANNELS['agent-approval-url'], callback),
   onAgentPollAttempt: (callback) => onEvent(EVENT_CHANNELS['agent-poll-attempt'], callback),
   onAgentConfigUpdated: (callback) => onEvent(EVENT_CHANNELS['agent-config-updated'], callback),
-  onAgentSessionConfigUpdated: (callback) => onEvent(EVENT_CHANNELS['agent-session-config-updated'], callback),
   onAgentAcpInfo: (callback) => onEvent(EVENT_CHANNELS['agent-acp-info'], callback),
 };
 

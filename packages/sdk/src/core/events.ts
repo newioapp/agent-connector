@@ -6,6 +6,7 @@ import type {
   ActivityStatus,
   NotifyLevel,
   ConversationType,
+  SessionRecord,
   SignalEvent,
 } from './types.js';
 
@@ -250,15 +251,7 @@ export interface ActivityStatusEvent extends WebSocketEvent {
 export interface SessionCreatedEvent extends WebSocketEvent {
   readonly type: 'session.created';
   readonly payload: {
-    readonly session: {
-      readonly sessionId: string;
-      readonly agentId: string;
-      readonly name: string;
-      readonly acpModel?: string;
-      readonly acpMode?: string;
-      readonly createdAt: string;
-      readonly updatedAt: string;
-    };
+    readonly session: SessionRecord;
     readonly createdBy: string;
   };
 }

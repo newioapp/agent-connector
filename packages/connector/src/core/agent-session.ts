@@ -6,7 +6,6 @@
  */
 import type { SessionStreamSegment, SessionStatusListener, PermissionHandler } from './types';
 import type { AgentCapability, InvokeCapabilityPayload, InvokeCapabilityResponsePayload } from '@newio/agent-sdk';
-import type { AgentSessionConfig } from './agent-instance';
 
 export interface AgentSession {
   /** Newio platform assigned session ID. */
@@ -43,16 +42,4 @@ export interface AgentSession {
 
   /** Handle a session-scoped capability invocation. */
   handleCapabilityInvocation(invocation: InvokeCapabilityPayload): Promise<InvokeCapabilityResponsePayload>;
-
-  /** Set the model for this session. May throw if model is unavailable. */
-  setModel(modelId: string): Promise<void>;
-
-  /** Set the mode for this session. May throw if mode is unavailable. */
-  setMode(modeId: string): Promise<void>;
-
-  /** List available models. Returns undefined if not supported. */
-  listModels?(): AgentSessionConfig | undefined;
-
-  /** List available modes. Returns undefined if not supported. */
-  listModes?(): AgentSessionConfig | undefined;
 }
