@@ -22,7 +22,6 @@ import { DEFAULT_SESSION_IDLE_TIMEOUT_MS, resolveCommand, extractErrorMessage } 
 import type { AgentInfo, PermissionRequestOption, ConversationFlags } from './types';
 import type { AgentInstance, AgentInstanceListener } from './agent-instance';
 import type { AgentSession } from './agent-session';
-import { AcpAgentSession } from './acp-agent-session';
 import type { SessionStore } from './session-store';
 import { EventQueue } from './event-queue';
 import type { AgentEvent } from './event-queue';
@@ -198,7 +197,10 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
       // React to persisted showToolCalls/showThoughts changes from the owner
       app.on('conversation.member_updated', (event) => {
-        const { conversationId, changes } = event;
+        const { conversationId, userId, changes } = event;
+        if (userId !== app.identity.userId) {
+          return;
+        }
         if (changes.showToolCalls !== undefined || changes.showThoughts !== undefined) {
           const prev = this.conversationFlags.get(conversationId) ?? { showToolCalls: false, showThoughts: false };
           this.conversationFlags.set(conversationId, {
@@ -213,9 +215,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
       // React to persisted acpModel/acpMode changes from the owner
       app.on('session.updated', (event) => {
-        const { sessionId, updatedBy, changes } = event;
-        // Ignore our own updates to avoid redundant setModel/setMode calls
-        if (updatedBy === app.identity.userId) {
+        const { sessionId, agentId, updatedBy, changes } = event;
+        // Ignore events not meant for this agent or triggered by self
+        if (agentId !== app.identity.userId || updatedBy === app.identity.userId) {
           return;
         }
         void this.applySessionConfigChange(sessionId, changes);
@@ -614,8 +616,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** Read persisted acpModel/acpMode from the backend and apply on session launch. */
   private async applyPersistedSessionConfig(newioSessionId: string, session: AgentSession): Promise<void> {
-    if (session instanceof AcpAgentSession) {
-      await session.configHandler.applyPersistedConfig(newioSessionId, this.app.client);
+    try {
+      const { session: record } = await this.app.client.getSession({ sessionId: newioSessionId });
+      await session.applySessionConfig(record);
+    } catch (err: unknown) {
+      log.warn(`${this.logTag} Failed to apply persisted session config for ${newioSessionId}`, err);
     }
   }
 
@@ -629,30 +634,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       log.debug(`${this.logTag} session.updated for ${newioSessionId} — session not active, ignoring`);
       return;
     }
-
-    if (!(slot.session instanceof AcpAgentSession)) {
-      return;
-    }
-
-    if (changes.acpModel !== undefined && changes.acpModel !== null) {
-      try {
-        await slot.session.setModel(changes.acpModel);
-        log.info(`${this.logTag} Applied model change: ${changes.acpModel} for session ${newioSessionId}`);
-      } catch (err: unknown) {
-        log.warn(`${this.logTag} Failed to apply model ${changes.acpModel} for session ${newioSessionId}`, err);
-        await slot.session.configHandler.reportCurrentConfig(newioSessionId, this.app.client);
-      }
-    }
-
-    if (changes.acpMode !== undefined && changes.acpMode !== null) {
-      try {
-        await slot.session.setMode(changes.acpMode);
-        log.info(`${this.logTag} Applied mode change: ${changes.acpMode} for session ${newioSessionId}`);
-      } catch (err: unknown) {
-        log.warn(`${this.logTag} Failed to apply mode ${changes.acpMode} for session ${newioSessionId}`, err);
-        await slot.session.configHandler.reportCurrentConfig(newioSessionId, this.app.client);
-      }
-    }
+    await slot.session.applySessionConfig(changes);
   }
 
   // ---------------------------------------------------------------------------

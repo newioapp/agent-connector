@@ -909,6 +909,12 @@ export interface SessionRecord {
   readonly updatedAt: string;
 }
 
+/** Config fields that can be applied to a session (subset of SessionRecord). */
+export interface SessionConfigUpdate {
+  readonly acpModel?: string | null;
+  readonly acpMode?: string | null;
+}
+
 export interface GetSessionRequest {
   readonly sessionId: string;
 }

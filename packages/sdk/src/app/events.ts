@@ -121,16 +121,17 @@ export function wireEvents(
   });
 
   ws.on('conversation.member_updated', (event) => {
-    if (event.payload.userId !== identity.userId) {
-      return;
+    // Store updates only for self
+    if (event.payload.userId === identity.userId) {
+      log.debug(`Event conversation.member_updated (self): ${event.payload.conversationId}`);
+      if (event.payload.changes.notifyLevel) {
+        store.setNotifyLevel(event.payload.conversationId, event.payload.changes.notifyLevel);
+      }
+      if (event.payload.changes.sessionId) {
+        store.setSessionId(event.payload.conversationId, event.payload.changes.sessionId);
+      }
     }
-    log.debug(`Event conversation.member_updated (self): ${event.payload.conversationId}`);
-    if (event.payload.changes.notifyLevel) {
-      store.setNotifyLevel(event.payload.conversationId, event.payload.changes.notifyLevel);
-    }
-    if (event.payload.changes.sessionId) {
-      store.setSessionId(event.payload.conversationId, event.payload.changes.sessionId);
-    }
+    // App handler fires for all member updates
     getHandlers()['conversation.member_updated']?.({
       conversationId: event.payload.conversationId,
       userId: event.payload.userId,

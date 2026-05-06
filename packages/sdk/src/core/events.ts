@@ -7,6 +7,7 @@ import type {
   NotifyLevel,
   ConversationType,
   SessionRecord,
+  SessionConfigUpdate,
   SignalEvent,
 } from './types.js';
 
@@ -262,11 +263,7 @@ export interface SessionUpdatedEvent extends WebSocketEvent {
     readonly sessionId: string;
     readonly agentId: string;
     readonly updatedBy: string;
-    readonly changes: {
-      readonly name?: string;
-      readonly acpModel?: string | null;
-      readonly acpMode?: string | null;
-    };
+    readonly changes: SessionConfigUpdate & { readonly name?: string };
   };
 }
 
