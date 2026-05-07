@@ -24,4 +24,9 @@ export type {
   NewioTokens,
   StorePersistence,
 } from './newio-app.js';
-export type { LiveSessionInfoHandler, CancelSessionHandler, CompactSessionHandler } from './types.js';
+export type {
+  LiveSessionInfoHandler,
+  CancelSessionHandler,
+  CompactSessionHandler,
+  StartSessionHandler,
+} from './types.js';

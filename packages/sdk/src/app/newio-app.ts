@@ -49,6 +49,7 @@ import type {
   LiveSessionInfoHandler,
   CancelSessionHandler,
   CompactSessionHandler,
+  StartSessionHandler,
 } from './types.js';
 
 const log = getLogger('newio-app');
@@ -173,6 +174,8 @@ export class NewioApp {
     Promise.resolve({ success: false, errorCode: 'not_implemented', error: 'No handler registered' });
   private compactSessionHandler: CompactSessionHandler = () =>
     Promise.resolve({ success: false, errorCode: 'not_implemented', error: 'No handler registered' });
+  private startSessionHandler: StartSessionHandler = () =>
+    Promise.resolve({ success: false, error: 'No handler registered' });
 
   private constructor(
     identity: NewioIdentity,
@@ -352,16 +355,23 @@ export class NewioApp {
     this.compactSessionHandler = handler;
   }
 
+  /** Register a handler for when the owner starts an idle session. */
+  onStartSession(handler: StartSessionHandler): void {
+    this.startSessionHandler = handler;
+  }
+
   /** @internal Returns signal handlers for wireEvents. */
   _getSignalHandlers(): {
     liveSessionInfo: LiveSessionInfoHandler;
     cancelSession: CancelSessionHandler;
     compactSession: CompactSessionHandler;
+    startSession: StartSessionHandler;
   } {
     return {
       liveSessionInfo: this.liveSessionInfoHandler,
       cancelSession: this.cancelSessionHandler,
       compactSession: this.compactSessionHandler,
+      startSession: this.startSessionHandler,
     };
   }
 
