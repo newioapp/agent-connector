@@ -238,6 +238,7 @@ export type {
   CompactSessionResponse,
   StartSessionRequest,
   StartSessionResponse,
+  ContextWindowUpdatePayload,
 } from './core/types.js';
 
 // Events
