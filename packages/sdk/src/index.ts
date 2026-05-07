@@ -211,6 +211,7 @@ export type {
   SendSignalResponse,
   SignalEventPayload,
   SignalEvent,
+  SignalPayload,
 } from './core/types.js';
 
 // Types — Agent Info

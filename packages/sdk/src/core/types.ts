@@ -846,12 +846,20 @@ export interface UpdateMyProfileResponse {
 /** Direction of a P2P signal. */
 export type SignalIntent = 'request' | 'response' | 'notification';
 
+export type SignalPayload =
+  | LiveSessionInfoRequest
+  | LiveSessionInfoResponse
+  | CancelSessionRequest
+  | CancelSessionResponse
+  | CompactSessionRequest
+  | CompactSessionResponse;
+
 export interface SendSignalRequest {
   readonly targetUserId: string;
   readonly requestId: string;
   readonly intent: SignalIntent;
   readonly type: string;
-  readonly payload: Record<string, unknown>;
+  readonly payload: SignalPayload;
 }
 
 export interface SendSignalResponse {
@@ -863,7 +871,7 @@ export interface SignalEventPayload {
   readonly requestId: string;
   readonly intent: SignalIntent;
   readonly type: string;
-  readonly payload: Record<string, unknown>;
+  readonly payload: SignalPayload;
 }
 
 export interface SignalEvent {
@@ -966,6 +974,7 @@ export interface LiveSessionInfoRequest {
 
 export interface LiveSessionInfoResponse {
   readonly sessionId: string;
+  readonly isLive: boolean;
   readonly availableModels: ReadonlyArray<ModelOption>;
   readonly currentModel?: string;
   readonly availableModes: ReadonlyArray<ModeOption>;
@@ -980,6 +989,7 @@ export interface CancelSessionRequest {
 
 export interface CancelSessionResponse {
   readonly success: boolean;
+  readonly errorCode?: string;
   readonly error?: string;
 }
 
@@ -989,5 +999,6 @@ export interface CompactSessionRequest {
 
 export interface CompactSessionResponse {
   readonly success: boolean;
+  readonly errorCode?: string;
   readonly error?: string;
 }

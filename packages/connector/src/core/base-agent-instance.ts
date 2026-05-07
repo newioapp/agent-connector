@@ -853,6 +853,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
     if (!slot?.session) {
       return {
         sessionId: request.sessionId,
+        isLive: false,
         availableModels: [],
         availableModes: [],
         canCancel: false,
@@ -866,7 +867,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private async handleCancelSession(request: CancelSessionRequest): Promise<CancelSessionResponse> {
     const slot = this.slots.get(request.sessionId);
     if (!slot?.session) {
-      return { success: false, error: 'Session not found or not active' };
+      return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
     }
     return slot.session.handleCancelSession(request);
   }
@@ -875,7 +876,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private async handleCompactSession(request: CompactSessionRequest): Promise<CompactSessionResponse> {
     const slot = this.slots.get(request.sessionId);
     if (!slot?.session) {
-      return { success: false, error: 'Session not found or not active' };
+      return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
     }
     return slot.session.handleCompactSession(request);
   }

@@ -196,6 +196,7 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
 
     return {
       sessionId: request.sessionId,
+      isLive: true,
       availableModels,
       currentModel,
       availableModes,
