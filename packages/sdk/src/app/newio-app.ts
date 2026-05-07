@@ -163,15 +163,16 @@ export class NewioApp {
   private readonly eventHandlers: Partial<AppEventHandlers> = {};
   private liveSessionInfoHandler: LiveSessionInfoHandler = (request) => ({
     sessionId: request.sessionId,
+    isLive: false,
     availableModels: [],
     availableModes: [],
     canCancel: false,
     canCompact: false,
   });
   private cancelSessionHandler: CancelSessionHandler = () =>
-    Promise.resolve({ success: false, error: 'No handler registered' });
+    Promise.resolve({ success: false, errorCode: 'not_implemented', error: 'No handler registered' });
   private compactSessionHandler: CompactSessionHandler = () =>
-    Promise.resolve({ success: false, error: 'No handler registered' });
+    Promise.resolve({ success: false, errorCode: 'not_implemented', error: 'No handler registered' });
 
   private constructor(
     identity: NewioIdentity,

@@ -729,15 +729,13 @@ describe('NewioApp', () => {
   describe('signal handlers', () => {
     it('onLiveSessionInfo registers handler accessible via _getSignalHandlers', async () => {
       const { app } = await createApp();
-      const handler = vi
-        .fn()
-        .mockReturnValue({
-          sessionId: 's1',
-          availableModels: [],
-          availableModes: [],
-          canCancel: true,
-          canCompact: false,
-        });
+      const handler = vi.fn().mockReturnValue({
+        sessionId: 's1',
+        availableModels: [],
+        availableModes: [],
+        canCancel: true,
+        canCompact: false,
+      });
       app.onLiveSessionInfo(handler);
       const handlers = app._getSignalHandlers();
       handlers.liveSessionInfo({ sessionId: 's1' });
@@ -767,6 +765,7 @@ describe('NewioApp', () => {
       const result = app._getSignalHandlers().liveSessionInfo({ sessionId: 's1' });
       expect(result).toEqual({
         sessionId: 's1',
+        isLive: false,
         availableModels: [],
         availableModes: [],
         canCancel: false,
@@ -777,13 +776,13 @@ describe('NewioApp', () => {
     it('default cancelSession handler returns error', async () => {
       const { app } = await createApp();
       const result = await app._getSignalHandlers().cancelSession({ sessionId: 's1' });
-      expect(result).toEqual({ success: false, error: 'No handler registered' });
+      expect(result).toEqual({ success: false, errorCode: 'not_implemented', error: 'No handler registered' });
     });
 
     it('default compactSession handler returns error', async () => {
       const { app } = await createApp();
       const result = await app._getSignalHandlers().compactSession({ sessionId: 's1' });
-      expect(result).toEqual({ success: false, error: 'No handler registered' });
+      expect(result).toEqual({ success: false, errorCode: 'not_implemented', error: 'No handler registered' });
     });
   });
 });

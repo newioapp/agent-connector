@@ -8,7 +8,12 @@ import { getLogger } from '../core/logger.js';
 import type { NewioWebSocket } from '../core/websocket.js';
 import type { NewioClient } from '../core/client.js';
 import type { ConversationType } from '../core/types.js';
-import type { LiveSessionInfoRequest, CancelSessionRequest, CompactSessionRequest } from '../core/types.js';
+import type {
+  LiveSessionInfoRequest,
+  CancelSessionRequest,
+  CompactSessionRequest,
+  SignalPayload,
+} from '../core/types.js';
 import type { NewioAppStore } from './store.js';
 import type {
   AppEventHandlers,
@@ -275,7 +280,7 @@ export function wireEvents(
 
     const handlers = getSignalHandlers();
 
-    const sendResponse = (responseType: string, responsePayload: Record<string, unknown>): void => {
+    const sendResponse = (responseType: string, responsePayload: SignalPayload): void => {
       client
         .sendSignal({
           targetUserId: senderId,
@@ -292,7 +297,7 @@ export function wireEvents(
     if (type === 'live_session_info') {
       const request = payload as unknown as LiveSessionInfoRequest;
       const response = handlers.liveSessionInfo(request);
-      sendResponse('live_session_info_response', response as unknown as Record<string, unknown>);
+      sendResponse('live_session_info_response', response);
     } else if (type === 'cancel_session') {
       const request = payload as unknown as CancelSessionRequest;
       void handlers
@@ -302,7 +307,7 @@ export function wireEvents(
           error: err instanceof Error ? err.message : 'Unknown error',
         }))
         .then((response) => {
-          sendResponse('cancel_session_response', response as unknown as Record<string, unknown>);
+          sendResponse('cancel_session_response', response);
         });
     } else if (type === 'compact_session') {
       const request = payload as unknown as CompactSessionRequest;
@@ -313,11 +318,11 @@ export function wireEvents(
           error: err instanceof Error ? err.message : 'Unknown error',
         }))
         .then((response) => {
-          sendResponse('compact_session_response', response as unknown as Record<string, unknown>);
+          sendResponse('compact_session_response', response);
         });
     } else {
       log.warn(`Unknown signal request type: ${type}`);
-      sendResponse(`${type}_response`, { success: false, error: 'unknown_signal_type' });
+      sendResponse(`${type}_response`, { success: false, error: 'unknown_signal_type' } as SignalPayload);
     }
   });
 }
