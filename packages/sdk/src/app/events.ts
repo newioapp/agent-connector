@@ -8,23 +8,14 @@ import { getLogger } from '../core/logger.js';
 import type { NewioWebSocket } from '../core/websocket.js';
 import type { NewioClient } from '../core/client.js';
 import type { ConversationType } from '../core/types.js';
-import type {
-  CapabilitiesRequestPayload,
-  InvokeCapabilityPayload,
-  InvokeCapabilityResponsePayload,
-} from '../core/types.js';
-import {
-  SIGNAL_CAPABILITIES_REQUEST,
-  SIGNAL_CAPABILITIES_RESPONSE,
-  SIGNAL_INVOKE_CAPABILITY,
-  SIGNAL_INVOKE_CAPABILITY_RESPONSE,
-} from '../core/types.js';
+import type { LiveSessionInfoRequest, CancelSessionRequest, CompactSessionRequest } from '../core/types.js';
 import type { NewioAppStore } from './store.js';
 import type {
   AppEventHandlers,
   NewioIdentity,
-  CapabilitiesRequestHandler,
-  CapabilityInvocationHandler,
+  LiveSessionInfoHandler,
+  CancelSessionHandler,
+  CompactSessionHandler,
 } from './types.js';
 import type { PendingActions } from './pending-actions.js';
 import type { MessageProcessor } from './message-processor.js';
@@ -41,8 +32,9 @@ export function wireEvents(
   pendingActions: PendingActions,
   processor: MessageProcessor,
   getSignalHandlers: () => {
-    capabilitiesRequest: CapabilitiesRequestHandler;
-    capabilityInvocation: CapabilityInvocationHandler;
+    liveSessionInfo: LiveSessionInfoHandler;
+    cancelSession: CancelSessionHandler;
+    compactSession: CompactSessionHandler;
   },
 ): void {
   /** Per-conversation queue to serialize message processing and prevent duplicate backfills. */
@@ -297,26 +289,35 @@ export function wireEvents(
         });
     };
 
-    if (type === SIGNAL_CAPABILITIES_REQUEST) {
-      const typedPayload = payload as unknown as CapabilitiesRequestPayload;
-      const response = handlers.capabilitiesRequest(typedPayload.sessionId, typedPayload.conversationId);
-      sendResponse(SIGNAL_CAPABILITIES_RESPONSE, response as unknown as Record<string, unknown>);
-    } else if (type === SIGNAL_INVOKE_CAPABILITY) {
-      const typedPayload = payload as unknown as InvokeCapabilityPayload;
+    if (type === 'live_session_info') {
+      const request = payload as unknown as LiveSessionInfoRequest;
+      const response = handlers.liveSessionInfo(request);
+      sendResponse('live_session_info_response', response as unknown as Record<string, unknown>);
+    } else if (type === 'cancel_session') {
+      const request = payload as unknown as CancelSessionRequest;
       void handlers
-        .capabilityInvocation(typedPayload)
-        .catch(
-          (err: unknown): InvokeCapabilityResponsePayload => ({
-            capabilityId: typedPayload.capabilityId,
-            success: false,
-            error: err instanceof Error ? err.message : 'Unknown error',
-          }),
-        )
+        .cancelSession(request)
+        .catch((err: unknown): { success: boolean; error: string } => ({
+          success: false,
+          error: err instanceof Error ? err.message : 'Unknown error',
+        }))
         .then((response) => {
-          sendResponse(SIGNAL_INVOKE_CAPABILITY_RESPONSE, response as unknown as Record<string, unknown>);
+          sendResponse('cancel_session_response', response as unknown as Record<string, unknown>);
+        });
+    } else if (type === 'compact_session') {
+      const request = payload as unknown as CompactSessionRequest;
+      void handlers
+        .compactSession(request)
+        .catch((err: unknown): { success: boolean; error: string } => ({
+          success: false,
+          error: err instanceof Error ? err.message : 'Unknown error',
+        }))
+        .then((response) => {
+          sendResponse('compact_session_response', response as unknown as Record<string, unknown>);
         });
     } else {
       log.warn(`Unknown signal request type: ${type}`);
+      sendResponse(`${type}_response`, { success: false, error: 'unknown_signal_type' });
     }
   });
 }

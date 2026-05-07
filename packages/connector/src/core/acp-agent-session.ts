@@ -16,10 +16,14 @@ import { AcpSlashCommandHandler } from './acp-slash-command-handler';
 import { Logger } from './logger';
 import type { AgentSessionConfig } from './agent-instance';
 import type {
-  AgentCapability,
-  CapabilityOption,
-  InvokeCapabilityPayload,
-  InvokeCapabilityResponsePayload,
+  LiveSessionInfoRequest,
+  LiveSessionInfoResponse,
+  CancelSessionRequest,
+  CancelSessionResponse,
+  CompactSessionRequest,
+  CompactSessionResponse,
+  ModelOption,
+  ModeOption,
   NewioClient,
   SessionConfigUpdate,
 } from '@newio/agent-sdk';
@@ -168,96 +172,63 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
     await this.connection.cancel({ sessionId: this.correlationId });
   }
 
-  getCapabilities(): readonly AgentCapability[] {
-    const capabilities: AgentCapability[] = [];
+  getLiveSessionInfo(request: LiveSessionInfoRequest): LiveSessionInfoResponse {
+    const availableModels: ModelOption[] = [];
+    const availableModes: ModeOption[] = [];
+    let currentModel: string | undefined;
+    let currentMode: string | undefined;
+
     const models = this.listModels();
     if (models) {
-      const options: CapabilityOption[] = models.options.map((o) => ({
-        value: o.id,
-        label: o.name,
-        description: o.description,
-      }));
-      capabilities.push({
-        id: 'set_model',
-        name: 'Change Model',
-        scope: 'session',
-        options,
-        currentValue: models.selectedId,
-      });
+      for (const o of models.options) {
+        availableModels.push({ value: o.id, label: o.name });
+      }
+      currentModel = models.selectedId;
     }
+
     const modes = this.listModes();
     if (modes) {
-      const options: CapabilityOption[] = modes.options.map((o) => ({
-        value: o.id,
-        label: o.name,
-        description: o.description,
-      }));
-      capabilities.push({
-        id: 'set_mode',
-        name: 'Set Mode',
-        scope: 'session',
-        options,
-        currentValue: modes.selectedId,
-      });
+      for (const o of modes.options) {
+        availableModes.push({ value: o.id, label: o.name });
+      }
+      currentMode = modes.selectedId;
     }
-    capabilities.push({ id: 'cancel', name: 'Cancel', scope: 'session' });
-    if (this.slashCommandHandler.isCompactSupported()) {
-      capabilities.push({ id: 'compact', name: 'Compact Context', scope: 'session' });
-    }
-    return capabilities;
+
+    return {
+      sessionId: request.sessionId,
+      availableModels,
+      currentModel,
+      availableModes,
+      currentMode,
+      canCancel: true,
+      canCompact: this.slashCommandHandler.isCompactSupported(),
+    };
   }
 
-  async handleCapabilityInvocation(invocation: InvokeCapabilityPayload): Promise<InvokeCapabilityResponsePayload> {
-    const { capabilityId, params } = invocation;
-    if (capabilityId === 'set_model') {
-      const value = params?.['value'];
-      if (typeof value !== 'string') {
-        return { capabilityId, success: false, error: 'Missing value' };
-      }
-      try {
-        await this.setModel(value);
-        return { capabilityId, success: true, result: { model: value } };
-      } catch (err: unknown) {
-        return { capabilityId, success: false, error: extractErrorMessage(err) };
-      }
+  async handleCancelSession(_request: CancelSessionRequest): Promise<CancelSessionResponse> {
+    try {
+      await this.cancel();
+      return { success: true };
+    } catch (err: unknown) {
+      return { success: false, error: extractErrorMessage(err) };
     }
-    if (capabilityId === 'set_mode') {
-      const value = params?.['value'];
-      if (typeof value !== 'string') {
-        return { capabilityId, success: false, error: 'Missing value' };
-      }
-      try {
-        await this.setMode(value);
-        return { capabilityId, success: true, result: { mode: value } };
-      } catch (err: unknown) {
-        return { capabilityId, success: false, error: extractErrorMessage(err) };
-      }
+  }
+
+  async handleCompactSession(_request: CompactSessionRequest): Promise<CompactSessionResponse> {
+    const commandName = this.slashCommandHandler.getCompactCommandName();
+    if (!commandName) {
+      return { success: false, error: 'Compact not supported by this agent' };
     }
-    if (capabilityId === 'cancel') {
-      try {
-        await this.cancel();
-        return { capabilityId, success: true };
-      } catch (err: unknown) {
-        return { capabilityId, success: false, error: extractErrorMessage(err) };
-      }
+    try {
+      const result = await this.connection.prompt({
+        sessionId: this.correlationId,
+        prompt: [{ type: 'text', text: `/${commandName}` }],
+      });
+      log.info(`${this.logTag} [${this.correlationId}] Compact completed: stopReason=${result.stopReason}`);
+      return { success: true };
+    } catch (err: unknown) {
+      return { success: false, error: extractErrorMessage(err) };
     }
-    if (capabilityId === 'compact') {
-      const commandName = this.slashCommandHandler.getCompactCommandName();
-      if (!commandName) {
-        return { capabilityId, success: false, error: 'Compact not supported by this agent' };
-      }
-      try {
-        const result = await this.connection.prompt({
-          sessionId: this.correlationId,
-          prompt: [{ type: 'text', text: `/${commandName}` }],
-        });
-        log.info(`${this.logTag} [${this.correlationId}] Compact completed: stopReason=${result.stopReason}`);
-        return { capabilityId, success: true };
-      } catch (err: unknown) {
-        return { capabilityId, success: false, error: extractErrorMessage(err) };
-      }
-    }
-    return { capabilityId, success: false, error: 'unknown_capability' };
   }
 
   async applySessionConfig(config: SessionConfigUpdate): Promise<void> {

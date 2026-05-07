@@ -726,36 +726,64 @@ describe('NewioApp', () => {
     });
   });
 
-  describe('capabilities', () => {
-    it('onCapabilitiesRequest registers handler accessible via _getSignalHandlers', async () => {
+  describe('signal handlers', () => {
+    it('onLiveSessionInfo registers handler accessible via _getSignalHandlers', async () => {
       const { app } = await createApp();
-      const handler = vi.fn().mockReturnValue({ capabilities: [] });
-      app.onCapabilitiesRequest(handler);
+      const handler = vi
+        .fn()
+        .mockReturnValue({
+          sessionId: 's1',
+          availableModels: [],
+          availableModes: [],
+          canCancel: true,
+          canCompact: false,
+        });
+      app.onLiveSessionInfo(handler);
       const handlers = app._getSignalHandlers();
-      handlers.capabilitiesRequest('s1', 'c1');
-      expect(handler).toHaveBeenCalledWith('s1', 'c1');
+      handlers.liveSessionInfo({ sessionId: 's1' });
+      expect(handler).toHaveBeenCalledWith({ sessionId: 's1' });
     });
 
-    it('onCapabilityInvocation registers handler accessible via _getSignalHandlers', async () => {
+    it('onCancelSession registers handler accessible via _getSignalHandlers', async () => {
       const { app } = await createApp();
-      const handler = vi.fn().mockResolvedValue({ capabilityId: 'test', success: true });
-      app.onCapabilityInvocation(handler);
+      const handler = vi.fn().mockResolvedValue({ success: true });
+      app.onCancelSession(handler);
       const handlers = app._getSignalHandlers();
-      const invocation = { capabilityId: 'test', scope: 'session' as const, targetId: 's1' };
-      await handlers.capabilityInvocation(invocation);
-      expect(handler).toHaveBeenCalledWith(invocation);
+      await handlers.cancelSession({ sessionId: 's1' });
+      expect(handler).toHaveBeenCalledWith({ sessionId: 's1' });
     });
 
-    it('default capabilitiesRequest handler returns empty capabilities', async () => {
+    it('onCompactSession registers handler accessible via _getSignalHandlers', async () => {
       const { app } = await createApp();
-      const result = app._getSignalHandlers().capabilitiesRequest();
-      expect(result).toEqual({ capabilities: [] });
+      const handler = vi.fn().mockResolvedValue({ success: true });
+      app.onCompactSession(handler);
+      const handlers = app._getSignalHandlers();
+      await handlers.compactSession({ sessionId: 's1' });
+      expect(handler).toHaveBeenCalledWith({ sessionId: 's1' });
     });
 
-    it('default capabilityInvocation handler returns error', async () => {
+    it('default liveSessionInfo handler returns empty info', async () => {
       const { app } = await createApp();
-      const result = await app._getSignalHandlers().capabilityInvocation({ capabilityId: 'x', scope: 'session' });
-      expect(result).toEqual({ capabilityId: 'x', success: false, error: 'No handler registered' });
+      const result = app._getSignalHandlers().liveSessionInfo({ sessionId: 's1' });
+      expect(result).toEqual({
+        sessionId: 's1',
+        availableModels: [],
+        availableModes: [],
+        canCancel: false,
+        canCompact: false,
+      });
+    });
+
+    it('default cancelSession handler returns error', async () => {
+      const { app } = await createApp();
+      const result = await app._getSignalHandlers().cancelSession({ sessionId: 's1' });
+      expect(result).toEqual({ success: false, error: 'No handler registered' });
+    });
+
+    it('default compactSession handler returns error', async () => {
+      const { app } = await createApp();
+      const result = await app._getSignalHandlers().compactSession({ sessionId: 's1' });
+      expect(result).toEqual({ success: false, error: 'No handler registered' });
     });
   });
 });

@@ -46,8 +46,9 @@ import type {
   NewioIdentity,
   NewioTokens,
   CronJobDef,
-  CapabilitiesRequestHandler,
-  CapabilityInvocationHandler,
+  LiveSessionInfoHandler,
+  CancelSessionHandler,
+  CompactSessionHandler,
 } from './types.js';
 
 const log = getLogger('newio-app');
@@ -160,15 +161,17 @@ export class NewioApp {
   private readonly cronScheduler: CronScheduler;
 
   private readonly eventHandlers: Partial<AppEventHandlers> = {};
-  private capabilitiesRequestHandler: CapabilitiesRequestHandler = () => ({
-    capabilities: [],
+  private liveSessionInfoHandler: LiveSessionInfoHandler = (request) => ({
+    sessionId: request.sessionId,
+    availableModels: [],
+    availableModes: [],
+    canCancel: false,
+    canCompact: false,
   });
-  private capabilityInvocationHandler: CapabilityInvocationHandler = (invocation) =>
-    Promise.resolve({
-      capabilityId: invocation.capabilityId,
-      success: false,
-      error: 'No handler registered',
-    });
+  private cancelSessionHandler: CancelSessionHandler = () =>
+    Promise.resolve({ success: false, error: 'No handler registered' });
+  private compactSessionHandler: CompactSessionHandler = () =>
+    Promise.resolve({ success: false, error: 'No handler registered' });
 
   private constructor(
     identity: NewioIdentity,
@@ -333,24 +336,31 @@ export class NewioApp {
   // Capabilities — remote control
   // ---------------------------------------------------------------------------
 
-  /** Register a handler for when the owner requests capabilities. */
-  onCapabilitiesRequest(handler: CapabilitiesRequestHandler): void {
-    this.capabilitiesRequestHandler = handler;
+  /** Register a handler for when the owner requests live session info. */
+  onLiveSessionInfo(handler: LiveSessionInfoHandler): void {
+    this.liveSessionInfoHandler = handler;
   }
 
-  /** Register a handler for when the owner invokes a capability. */
-  onCapabilityInvocation(handler: CapabilityInvocationHandler): void {
-    this.capabilityInvocationHandler = handler;
+  /** Register a handler for when the owner cancels a session. */
+  onCancelSession(handler: CancelSessionHandler): void {
+    this.cancelSessionHandler = handler;
+  }
+
+  /** Register a handler for when the owner compacts a session. */
+  onCompactSession(handler: CompactSessionHandler): void {
+    this.compactSessionHandler = handler;
   }
 
   /** @internal Returns signal handlers for wireEvents. */
   _getSignalHandlers(): {
-    capabilitiesRequest: CapabilitiesRequestHandler;
-    capabilityInvocation: CapabilityInvocationHandler;
+    liveSessionInfo: LiveSessionInfoHandler;
+    cancelSession: CancelSessionHandler;
+    compactSession: CompactSessionHandler;
   } {
     return {
-      capabilitiesRequest: this.capabilitiesRequestHandler,
-      capabilityInvocation: this.capabilityInvocationHandler,
+      liveSessionInfo: this.liveSessionInfoHandler,
+      cancelSession: this.cancelSessionHandler,
+      compactSession: this.compactSessionHandler,
     };
   }
 

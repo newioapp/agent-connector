@@ -28,10 +28,12 @@ import type { AgentEvent } from './event-queue';
 import { PromptManager } from './prompt-manager';
 import { Logger } from './logger';
 import type {
-  AgentCapability,
-  CapabilitiesResponsePayload,
-  InvokeCapabilityPayload,
-  InvokeCapabilityResponsePayload,
+  LiveSessionInfoRequest,
+  LiveSessionInfoResponse,
+  CancelSessionRequest,
+  CancelSessionResponse,
+  CompactSessionRequest,
+  CompactSessionResponse,
 } from '@newio/agent-sdk';
 import WebSocket from 'ws';
 import { PromptFormatterImpl } from './prompt-formatter';
@@ -838,44 +840,45 @@ export abstract class BaseAgentInstance implements AgentInstance {
   // Capability management
   // ---------------------------------------------------------------------------
 
-  /** Wire capability handlers and register the manager with the app. */
+  /** Wire signal handlers and register them with the app. */
   private wireCapabilityHandlers(app: NewioApp): void {
-    app.onCapabilitiesRequest((sessionId) => this.getCapabilities(sessionId));
-    app.onCapabilityInvocation((invocation) => this.handleCapabilityInvocation(invocation));
+    app.onLiveSessionInfo((request) => this.getLiveSessionInfo(request));
+    app.onCancelSession((request) => this.handleCancelSession(request));
+    app.onCompactSession((request) => this.handleCompactSession(request));
   }
 
-  /** Get capabilities for a session. */
-  private getCapabilities(sessionId?: string): CapabilitiesResponsePayload {
-    const capabilities: AgentCapability[] = [];
-
-    if (typeof sessionId === 'string') {
-      const slot = this.slots.get(sessionId);
-      if (slot?.session) {
-        capabilities.push(...slot.session.getCapabilities());
-      }
-    }
-
-    return { capabilities };
-  }
-
-  /** Handle a capability invocation from the owner. */
-  private async handleCapabilityInvocation(
-    invocation: InvokeCapabilityPayload,
-  ): Promise<InvokeCapabilityResponsePayload> {
-    const { capabilityId, scope, targetId } = invocation;
-
-    // Session-scoped: delegate to the session
-    if (scope !== 'session' || typeof targetId !== 'string') {
-      return { capabilityId, success: false, error: 'Missing targetId (sessionId)' };
-    }
-    const slot = this.slots.get(targetId);
+  /** Get live session info for a session. */
+  private getLiveSessionInfo(request: LiveSessionInfoRequest): LiveSessionInfoResponse {
+    const slot = this.slots.get(request.sessionId);
     if (!slot?.session) {
-      return { capabilityId, success: false, error: 'Session not found or not active' };
+      return {
+        sessionId: request.sessionId,
+        availableModels: [],
+        availableModes: [],
+        canCancel: false,
+        canCompact: false,
+      };
     }
-    return slot.session.handleCapabilityInvocation(invocation);
+    return slot.session.getLiveSessionInfo(request);
   }
 
-  /** Report capabilities for a session and wire config change listener. */
+  /** Handle cancel session signal. */
+  private async handleCancelSession(request: CancelSessionRequest): Promise<CancelSessionResponse> {
+    const slot = this.slots.get(request.sessionId);
+    if (!slot?.session) {
+      return { success: false, error: 'Session not found or not active' };
+    }
+    return slot.session.handleCancelSession(request);
+  }
+
+  /** Handle compact session signal. */
+  private async handleCompactSession(request: CompactSessionRequest): Promise<CompactSessionResponse> {
+    const slot = this.slots.get(request.sessionId);
+    if (!slot?.session) {
+      return { success: false, error: 'Session not found or not active' };
+    }
+    return slot.session.handleCompactSession(request);
+  }
   // ---------------------------------------------------------------------------
   // Idle cleanup
   // ---------------------------------------------------------------------------
