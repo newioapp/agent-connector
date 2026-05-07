@@ -12,6 +12,7 @@ import type {
   LiveSessionInfoRequest,
   CancelSessionRequest,
   CompactSessionRequest,
+  StartSessionRequest,
   SignalPayload,
 } from '../core/types.js';
 import type { NewioAppStore } from './store.js';
@@ -21,6 +22,7 @@ import type {
   LiveSessionInfoHandler,
   CancelSessionHandler,
   CompactSessionHandler,
+  StartSessionHandler,
 } from './types.js';
 import type { PendingActions } from './pending-actions.js';
 import type { MessageProcessor } from './message-processor.js';
@@ -40,6 +42,7 @@ export function wireEvents(
     liveSessionInfo: LiveSessionInfoHandler;
     cancelSession: CancelSessionHandler;
     compactSession: CompactSessionHandler;
+    startSession: StartSessionHandler;
   },
 ): void {
   /** Per-conversation queue to serialize message processing and prevent duplicate backfills. */
@@ -319,6 +322,17 @@ export function wireEvents(
         }))
         .then((response) => {
           sendResponse('compact_session_response', response);
+        });
+    } else if (type === 'start_session') {
+      const request = payload as unknown as StartSessionRequest;
+      void handlers
+        .startSession(request)
+        .catch((err: unknown): { success: boolean; error: string } => ({
+          success: false,
+          error: err instanceof Error ? err.message : 'Unknown error',
+        }))
+        .then((response) => {
+          sendResponse('start_session_response', response as SignalPayload);
         });
     } else {
       log.warn(`Unknown signal request type: ${type}`);

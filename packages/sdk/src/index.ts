@@ -238,6 +238,8 @@ export type {
   CancelSessionResponse,
   CompactSessionRequest,
   CompactSessionResponse,
+  StartSessionRequest,
+  StartSessionResponse,
 } from './core/types.js';
 
 // Events
