@@ -11,6 +11,8 @@ import type {
   CancelSessionResponse,
   CompactSessionRequest,
   CompactSessionResponse,
+  StartSessionRequest,
+  StartSessionResponse,
 } from '../core/types.js';
 
 /** A processed incoming message with sender metadata resolved from caches. */
@@ -180,3 +182,6 @@ export type CancelSessionHandler = (request: CancelSessionRequest) => Promise<Ca
 
 /** Handler for owner's compact_session signal. */
 export type CompactSessionHandler = (request: CompactSessionRequest) => Promise<CompactSessionResponse>;
+
+/** Handler for owner's start_session signal. Starts an idle session and returns full info. */
+export type StartSessionHandler = (request: StartSessionRequest) => Promise<StartSessionResponse>;

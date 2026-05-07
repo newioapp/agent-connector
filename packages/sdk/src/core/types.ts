@@ -852,7 +852,9 @@ export type SignalPayload =
   | CancelSessionRequest
   | CancelSessionResponse
   | CompactSessionRequest
-  | CompactSessionResponse;
+  | CompactSessionResponse
+  | StartSessionRequest
+  | StartSessionResponse;
 
 export interface SendSignalRequest {
   readonly targetUserId: string;
@@ -956,7 +958,9 @@ export type SignalType =
   | 'cancel_session'
   | 'cancel_session_response'
   | 'compact_session'
-  | 'compact_session_response';
+  | 'compact_session_response'
+  | 'start_session'
+  | 'start_session_response';
 
 export interface ModelOption {
   readonly value: string;
@@ -1000,5 +1004,16 @@ export interface CompactSessionRequest {
 export interface CompactSessionResponse {
   readonly success: boolean;
   readonly errorCode?: string;
+  readonly error?: string;
+}
+
+export interface StartSessionRequest {
+  readonly sessionId: string;
+}
+
+/** Returns the full session info on success, or an error on failure. */
+export interface StartSessionResponse {
+  readonly success: boolean;
+  readonly info?: LiveSessionInfoResponse;
   readonly error?: string;
 }

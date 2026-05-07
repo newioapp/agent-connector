@@ -34,6 +34,8 @@ import type {
   CancelSessionResponse,
   CompactSessionRequest,
   CompactSessionResponse,
+  StartSessionRequest,
+  StartSessionResponse,
 } from '@newio/agent-sdk';
 import WebSocket from 'ws';
 import { PromptFormatterImpl } from './prompt-formatter';
@@ -845,6 +847,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
     app.onLiveSessionInfo((request) => this.getLiveSessionInfo(request));
     app.onCancelSession((request) => this.handleCancelSession(request));
     app.onCompactSession((request) => this.handleCompactSession(request));
+    app.onStartSession((request) => this.handleStartSession(request));
   }
 
   /** Get live session info for a session. */
@@ -879,6 +882,22 @@ export abstract class BaseAgentInstance implements AgentInstance {
       return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
     }
     return slot.session.handleCompactSession(request);
+  }
+
+  /** Handle start session signal. Launches the session if not already running. */
+  private async handleStartSession(request: StartSessionRequest): Promise<StartSessionResponse> {
+    const sessionId = request.sessionId;
+    const slot = this.getOrCreateSlotBySessionId(sessionId);
+    try {
+      await slot.sessionPromise;
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : 'Session launch failed' };
+    }
+    if (!slot.session) {
+      return { success: false, error: 'Session launch failed' };
+    }
+    const info = slot.session.getLiveSessionInfo({ sessionId });
+    return { success: true, info };
   }
   // ---------------------------------------------------------------------------
   // Idle cleanup
