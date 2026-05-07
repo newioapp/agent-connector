@@ -12,6 +12,7 @@ import type { AgentSession } from './agent-session';
 import { AcpSessionStream } from './acp-session-stream';
 import type { PermissionHandler, SessionStatusListener, SessionStreamSegment } from './types';
 import { AcpSessionConfigHandler } from './acp-session-config-handler';
+import { AcpSessionContextWindowHandler } from './acp-session-context-window-handler';
 import { AcpSlashCommandHandler } from './acp-slash-command-handler';
 import { Logger } from './logger';
 import type { AgentSessionConfig } from './agent-instance';
@@ -37,6 +38,7 @@ export interface AcpAgentSessionInit {
   readonly correlationId: string;
   readonly connection: ClientSideConnection;
   readonly client: NewioClient;
+  readonly ownerId: string;
   readonly sessionResponse: NewSessionResponse | LoadSessionResponse;
   readonly disposable: boolean;
   readonly username?: string;
@@ -71,6 +73,7 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
 
   private readonly connection: ClientSideConnection;
   private readonly configHandler: AcpSessionConfigHandler;
+  private readonly contextWindowHandler: AcpSessionContextWindowHandler;
   private readonly slashCommandHandler: AcpSlashCommandHandler;
   private readonly logTag: string;
   private readonly _isSkipPrefix: (text: string) => boolean;
@@ -94,6 +97,7 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
       init.client,
       init.sessionResponse,
     );
+    this.contextWindowHandler = new AcpSessionContextWindowHandler(init.sessionId, init.ownerId, init.client);
     this.slashCommandHandler = new AcpSlashCommandHandler(init.correlationId);
   }
 
@@ -203,6 +207,8 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
       currentMode,
       canCancel: true,
       canCompact: this.slashCommandHandler.isCompactSupported(),
+      contextWindowSize: this.contextWindowHandler.getContextWindow()?.size,
+      contextWindowUsed: this.contextWindowHandler.getContextWindow()?.used,
     };
   }
 
@@ -256,6 +262,7 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
 
   handleSessionUpdate(params: acp.SessionNotification): void {
     this.configHandler.handleSessionUpdate(params.update);
+    this.contextWindowHandler.handleSessionUpdate(params.update);
     this.slashCommandHandler.handleSessionUpdate(params.update);
     this.stream?.handleSessionUpdate(params.update);
   }

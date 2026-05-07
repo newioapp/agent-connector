@@ -854,7 +854,8 @@ export type SignalPayload =
   | CompactSessionRequest
   | CompactSessionResponse
   | StartSessionRequest
-  | StartSessionResponse;
+  | StartSessionResponse
+  | ContextWindowUpdatePayload;
 
 export interface SendSignalRequest {
   readonly targetUserId: string;
@@ -960,7 +961,8 @@ export type SignalType =
   | 'compact_session'
   | 'compact_session_response'
   | 'start_session'
-  | 'start_session_response';
+  | 'start_session_response'
+  | 'context_window_update';
 
 export interface ModelOption {
   readonly value: string;
@@ -985,6 +987,8 @@ export interface LiveSessionInfoResponse {
   readonly currentMode?: string;
   readonly canCancel: boolean;
   readonly canCompact: boolean;
+  readonly contextWindowSize?: number;
+  readonly contextWindowUsed?: number;
 }
 
 export interface CancelSessionRequest {
@@ -1016,4 +1020,10 @@ export interface StartSessionResponse {
   readonly success: boolean;
   readonly info?: LiveSessionInfoResponse;
   readonly error?: string;
+}
+
+export interface ContextWindowUpdatePayload {
+  readonly sessionId: string;
+  readonly contextWindowSize: number;
+  readonly contextWindowUsed: number;
 }
