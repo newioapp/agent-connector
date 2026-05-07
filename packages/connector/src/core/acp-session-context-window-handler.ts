@@ -6,6 +6,7 @@
  * AND at least 5 seconds have elapsed since the last notification.
  */
 import type * as acp from '@agentclientprotocol/sdk';
+import type { UsageUpdate } from '@agentclientprotocol/sdk';
 import type { NewioClient } from '@newio/agent-sdk';
 import { Logger } from './logger';
 
@@ -44,9 +45,9 @@ export class AcpSessionContextWindowHandler {
     if (update.sessionUpdate !== 'usage_update') {
       return false;
     }
-    const { size, used } = update as acp.SessionUpdate & { size: number; used: number };
-    this.size = size;
-    this.used = used;
+    const usageUpdate = update as unknown as UsageUpdate;
+    this.size = usageUpdate.size;
+    this.used = usageUpdate.used;
     this.maybeSendNotification();
     return true;
   }

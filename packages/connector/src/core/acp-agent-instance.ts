@@ -252,13 +252,16 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     });
 
     const instruction = this.promptManager.buildNewioInstruction();
+    if (!this.app.identity.ownerId) {
+      throw new Error('Cannot create session: ownerId is not set');
+    }
     const session = new AcpAgentSession({
       sessionId: newioSessionId,
       promptFormatterVersion: instruction.version,
       correlationId: result.sessionId,
       connection: conn,
       client: this.app.client,
-      ownerId: this.app.identity.ownerId ?? '',
+      ownerId: this.app.identity.ownerId,
       sessionResponse: result,
       disposable: this.supportsClose,
       username: this.config.newio?.username,
@@ -298,13 +301,16 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       mcpServers: buildMcpServers(this.mcpSocketPath),
     });
 
+    if (!this.app.identity.ownerId) {
+      throw new Error('Cannot resume session: ownerId is not set');
+    }
     const session = new AcpAgentSession({
       sessionId: newioSessionId,
       promptFormatterVersion,
       correlationId,
       connection: conn,
       client: this.app.client,
-      ownerId: this.app.identity.ownerId ?? '',
+      ownerId: this.app.identity.ownerId,
       sessionResponse: loadResult,
       disposable: this.supportsClose,
       username: this.config.newio?.username,
