@@ -24,4 +24,4 @@ export type {
   NewioTokens,
   StorePersistence,
 } from './newio-app.js';
-export type { CapabilitiesRequestHandler, CapabilityInvocationHandler } from './types.js';
+export type { LiveSessionInfoHandler, CancelSessionHandler, CompactSessionHandler } from './types.js';

@@ -8,8 +8,9 @@ import type { EventMap } from '../src/core/events.js';
 import type {
   AppEventHandlers,
   NewioIdentity,
-  CapabilitiesRequestHandler,
-  CapabilityInvocationHandler,
+  LiveSessionInfoHandler,
+  CancelSessionHandler,
+  CompactSessionHandler,
 } from '../src/app/types.js';
 import type { MessageProcessor } from '../src/app/message-processor.js';
 import type { ContactRecord } from '../src/core/types.js';
@@ -71,8 +72,9 @@ describe('wireEvents', () => {
   let pendingActions: PendingActions;
   let processor: MessageProcessor;
   let signalHandlers: {
-    capabilitiesRequest: CapabilitiesRequestHandler;
-    capabilityInvocation: CapabilityInvocationHandler;
+    liveSessionInfo: LiveSessionInfoHandler;
+    cancelSession: CancelSessionHandler;
+    compactSession: CompactSessionHandler;
   };
 
   beforeEach(() => {
@@ -83,8 +85,17 @@ describe('wireEvents', () => {
     pendingActions = new PendingActions();
     processor = { handleMessageNew: vi.fn().mockResolvedValue(undefined) } as unknown as MessageProcessor;
     signalHandlers = {
-      capabilitiesRequest: vi.fn().mockReturnValue({ capabilities: [] }),
-      capabilityInvocation: vi.fn().mockResolvedValue({ capabilityId: 'test', success: true }),
+      liveSessionInfo: vi
+        .fn()
+        .mockReturnValue({
+          sessionId: 's1',
+          availableModels: [],
+          availableModes: [],
+          canCancel: true,
+          canCompact: false,
+        }),
+      cancelSession: vi.fn().mockResolvedValue({ success: true }),
+      compactSession: vi.fn().mockResolvedValue({ success: true }),
     };
 
     wireEvents(
@@ -522,7 +533,7 @@ describe('wireEvents', () => {
   // signal — capabilities request/response
   // -----------------------------------------------------------------------
 
-  it('dispatches capabilities_request to handler and sends response', () => {
+  it('dispatches live_session_info to handler and sends response', () => {
     const sendSignal = vi.fn().mockResolvedValue({ requestId: 'req-1' });
     (client as unknown as Record<string, unknown>).sendSignal = sendSignal;
 
@@ -533,23 +544,23 @@ describe('wireEvents', () => {
         senderId: 'owner-1',
         requestId: 'req-1',
         intent: 'request',
-        type: 'capabilities_request',
+        type: 'live_session_info',
         payload: { sessionId: 's1' },
       },
     });
 
-    expect(signalHandlers.capabilitiesRequest).toHaveBeenCalledWith('s1', undefined);
+    expect(signalHandlers.liveSessionInfo).toHaveBeenCalledWith({ sessionId: 's1' });
     expect(sendSignal).toHaveBeenCalledWith(
       expect.objectContaining({
         targetUserId: 'owner-1',
         requestId: 'req-1',
         intent: 'response',
-        type: 'capabilities_response',
+        type: 'live_session_info_response',
       }),
     );
   });
 
-  it('dispatches invoke_capability to handler and sends response', async () => {
+  it('dispatches cancel_session to handler and sends response', async () => {
     const sendSignal = vi.fn().mockResolvedValue({ requestId: 'req-2' });
     (client as unknown as Record<string, unknown>).sendSignal = sendSignal;
 
@@ -560,25 +571,22 @@ describe('wireEvents', () => {
         senderId: 'owner-1',
         requestId: 'req-2',
         intent: 'request',
-        type: 'invoke_capability',
-        payload: { capabilityId: 'set_model', scope: 'session', targetId: 's1', params: { value: 'claude-4' } },
+        type: 'cancel_session',
+        payload: { sessionId: 's1' },
       },
     });
 
-    // Wait for async handler
     await vi.waitFor(() => {
       expect(sendSignal).toHaveBeenCalled();
     });
 
-    expect(signalHandlers.capabilityInvocation).toHaveBeenCalledWith(
-      expect.objectContaining({ capabilityId: 'set_model', scope: 'session' }),
-    );
+    expect(signalHandlers.cancelSession).toHaveBeenCalledWith({ sessionId: 's1' });
     expect(sendSignal).toHaveBeenCalledWith(
       expect.objectContaining({
         targetUserId: 'owner-1',
         requestId: 'req-2',
         intent: 'response',
-        type: 'invoke_capability_response',
+        type: 'cancel_session_response',
       }),
     );
   });

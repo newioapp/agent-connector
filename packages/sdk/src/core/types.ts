@@ -938,71 +938,56 @@ export interface UpdateSessionResponse {
 // Capabilities — agent remote control
 // ---------------------------------------------------------------------------
 
-export type CapabilityScope = 'agent' | 'session' | 'conversation';
+// ---------------------------------------------------------------------------
+// Signal types — constrained vocabulary
+// ---------------------------------------------------------------------------
 
-export interface CapabilityOption {
+export type SignalType =
+  | 'live_session_info'
+  | 'live_session_info_response'
+  | 'cancel_session'
+  | 'cancel_session_response'
+  | 'compact_session'
+  | 'compact_session_response';
+
+export interface ModelOption {
   readonly value: string;
   readonly label: string;
-  readonly description?: string;
 }
 
-export interface AgentCapability {
-  /** Unique identifier: 'set_model', 'set_mode', 'cancel', etc. */
-  readonly id: string;
-  /** Display name: 'Change Model', 'Set Mode', etc. */
-  readonly name: string;
-  readonly description?: string;
-  readonly scope: CapabilityScope;
-  /** Available options (e.g. list of models for set_model). */
-  readonly options?: ReadonlyArray<CapabilityOption>;
-  /** Current value if applicable (e.g. current model name, current mode). */
-  readonly currentValue?: string | boolean;
+export interface ModeOption {
+  readonly value: string;
+  readonly label: string;
 }
 
-// ---------------------------------------------------------------------------
-// Capability signal constants & payload shapes
-// ---------------------------------------------------------------------------
-
-/** Agent → Owner: full capability report for a session. */
-export const SIGNAL_CAPABILITIES_REPORT = 'capabilities_report';
-
-/** Owner → Agent: request current capabilities. */
-export const SIGNAL_CAPABILITIES_REQUEST = 'capabilities_request';
-
-/** Agent → Owner: response to capabilities_request. */
-export const SIGNAL_CAPABILITIES_RESPONSE = 'capabilities_response';
-
-/** Owner → Agent: invoke a capability. */
-export const SIGNAL_INVOKE_CAPABILITY = 'invoke_capability';
-
-/** Agent → Owner: result of capability invocation. */
-export const SIGNAL_INVOKE_CAPABILITY_RESPONSE = 'invoke_capability_response';
-
-export interface CapabilitiesReportPayload {
+export interface LiveSessionInfoRequest {
   readonly sessionId: string;
-  readonly capabilities: ReadonlyArray<AgentCapability>;
 }
 
-export interface CapabilitiesRequestPayload {
-  readonly sessionId?: string;
-  readonly conversationId?: string;
+export interface LiveSessionInfoResponse {
+  readonly sessionId: string;
+  readonly availableModels: ReadonlyArray<ModelOption>;
+  readonly currentModel?: string;
+  readonly availableModes: ReadonlyArray<ModeOption>;
+  readonly currentMode?: string;
+  readonly canCancel: boolean;
+  readonly canCompact: boolean;
 }
 
-export interface CapabilitiesResponsePayload {
-  readonly capabilities: ReadonlyArray<AgentCapability>;
+export interface CancelSessionRequest {
+  readonly sessionId: string;
 }
 
-export interface InvokeCapabilityPayload {
-  readonly capabilityId: string;
-  readonly scope: CapabilityScope;
-  /** sessionId for session-scoped, conversationId for conversation-scoped. */
-  readonly targetId?: string;
-  readonly params?: Readonly<Record<string, unknown>>;
-}
-
-export interface InvokeCapabilityResponsePayload {
-  readonly capabilityId: string;
+export interface CancelSessionResponse {
   readonly success: boolean;
-  readonly result?: Readonly<Record<string, unknown>>;
+  readonly error?: string;
+}
+
+export interface CompactSessionRequest {
+  readonly sessionId: string;
+}
+
+export interface CompactSessionResponse {
+  readonly success: boolean;
   readonly error?: string;
 }

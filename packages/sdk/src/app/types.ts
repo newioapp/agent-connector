@@ -5,9 +5,12 @@ import type {
   AccountType,
   Attachment,
   ConversationType,
-  CapabilitiesResponsePayload,
-  InvokeCapabilityPayload,
-  InvokeCapabilityResponsePayload,
+  LiveSessionInfoRequest,
+  LiveSessionInfoResponse,
+  CancelSessionRequest,
+  CancelSessionResponse,
+  CompactSessionRequest,
+  CompactSessionResponse,
 } from '../core/types.js';
 
 /** A processed incoming message with sender metadata resolved from caches. */
@@ -166,13 +169,14 @@ export interface NewioTokens {
 }
 
 // ---------------------------------------------------------------------------
-// Capability signal handlers
+// Signal handlers
 // ---------------------------------------------------------------------------
 
-/** Handler for owner's capabilities_request signal. Returns the full capabilities response. */
-export type CapabilitiesRequestHandler = (sessionId?: string, conversationId?: string) => CapabilitiesResponsePayload;
+/** Handler for owner's live_session_info signal. Returns session state. */
+export type LiveSessionInfoHandler = (request: LiveSessionInfoRequest) => LiveSessionInfoResponse;
 
-/** Handler for owner's invoke_capability signal. Returns the invocation result. */
-export type CapabilityInvocationHandler = (
-  invocation: InvokeCapabilityPayload,
-) => Promise<InvokeCapabilityResponsePayload>;
+/** Handler for owner's cancel_session signal. */
+export type CancelSessionHandler = (request: CancelSessionRequest) => Promise<CancelSessionResponse>;
+
+/** Handler for owner's compact_session signal. */
+export type CompactSessionHandler = (request: CompactSessionRequest) => Promise<CompactSessionResponse>;
