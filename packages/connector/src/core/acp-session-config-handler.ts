@@ -17,14 +17,6 @@ export class AcpSessionConfigHandler {
   private modelConfig: AgentSessionConfig | undefined;
   private modeConfig: AgentSessionConfig | undefined;
 
-  /** Called when model or mode config changes (user action or agent-initiated). */
-  private configChangedListener?: () => void;
-
-  /** Set a listener for config changes. */
-  setOnConfigChanged(listener: () => void): void {
-    this.configChangedListener = listener;
-  }
-
   constructor(
     private readonly sessionId: string,
     private readonly newioSessionId: string,
@@ -61,7 +53,7 @@ export class AcpSessionConfigHandler {
         : undefined);
   }
 
-  async setModel(modelId: string): Promise<void> {
+  private async setModel(modelId: string): Promise<void> {
     try {
       await this.connection.unstable_setSessionModel({ sessionId: this.sessionId, modelId });
     } catch (err: unknown) {
@@ -71,10 +63,9 @@ export class AcpSessionConfigHandler {
       this.modelConfig = { ...this.modelConfig, selectedId: modelId };
     }
     log.info(`[${this.sessionId}] Model set to: ${modelId}`);
-    this.configChangedListener?.();
   }
 
-  async setMode(modeId: string): Promise<void> {
+  private async setMode(modeId: string): Promise<void> {
     try {
       await this.connection.setSessionMode({ sessionId: this.sessionId, modeId });
     } catch (err: unknown) {
@@ -84,7 +75,6 @@ export class AcpSessionConfigHandler {
       this.modeConfig = { ...this.modeConfig, selectedId: modeId };
     }
     log.info(`[${this.sessionId}] Mode set to: ${modeId}`);
-    this.configChangedListener?.();
   }
 
   listModels(): AgentSessionConfig | undefined {
@@ -102,7 +92,6 @@ export class AcpSessionConfigHandler {
         if (this.modeConfig) {
           this.modeConfig = { ...this.modeConfig, selectedId: update.currentModeId };
           log.info(`[${this.sessionId}] Mode updated to: ${update.currentModeId}`);
-          this.configChangedListener?.();
         }
         return true;
       }
@@ -125,7 +114,6 @@ export class AcpSessionConfigHandler {
             log.info(`[${this.sessionId}] Mode config updated via config_option_update`);
           }
         }
-        this.configChangedListener?.();
         return true;
       }
       default:

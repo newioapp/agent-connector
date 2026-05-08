@@ -191,23 +191,6 @@ describe('AcpSessionConfigHandler', () => {
       expect(handler.listModels()?.selectedId).toBe('b');
     });
 
-    it('fires configChangedListener on setModel', async () => {
-      const listener = vi.fn();
-      const handler = new AcpSessionConfigHandler(
-        'sess-1',
-        'newio-sess-1',
-        mockConnection(),
-        mockClient(),
-        makeSessionResponse({
-          models: { availableModels: [{ modelId: 'a', name: 'A' }], currentModelId: 'a' },
-        }),
-      );
-      handler.setOnConfigChanged(listener);
-
-      await handler.setModel('b');
-      expect(listener).toHaveBeenCalledOnce();
-    });
-
     it('throws with ACP error details on failure', async () => {
       const conn = mockConnection({
         unstable_setSessionModel: vi.fn().mockRejectedValue({ data: { details: 'Model not found' } }),
@@ -275,7 +258,6 @@ describe('AcpSessionConfigHandler', () => {
 
   describe('handleSessionUpdate', () => {
     it('handles current_mode_update', () => {
-      const listener = vi.fn();
       const handler = new AcpSessionConfigHandler(
         'sess-1',
         'newio-sess-1',
@@ -285,7 +267,6 @@ describe('AcpSessionConfigHandler', () => {
           modes: { availableModes: [{ id: 'a', name: 'A' }], currentModeId: 'a' },
         }),
       );
-      handler.setOnConfigChanged(listener);
 
       const handled = handler.handleSessionUpdate({
         sessionUpdate: 'current_mode_update',
@@ -294,7 +275,6 @@ describe('AcpSessionConfigHandler', () => {
 
       expect(handled).toBe(true);
       expect(handler.listModes()?.selectedId).toBe('b');
-      expect(listener).toHaveBeenCalledOnce();
     });
 
     it('current_mode_update is no-op when modeConfig is undefined', () => {
@@ -316,7 +296,6 @@ describe('AcpSessionConfigHandler', () => {
     });
 
     it('handles config_option_update for model', () => {
-      const listener = vi.fn();
       const handler = new AcpSessionConfigHandler(
         'sess-1',
         'newio-sess-1',
@@ -324,7 +303,6 @@ describe('AcpSessionConfigHandler', () => {
         mockClient(),
         makeSessionResponse(),
       );
-      handler.setOnConfigChanged(listener);
 
       handler.handleSessionUpdate({
         sessionUpdate: 'config_option_update',
@@ -342,7 +320,6 @@ describe('AcpSessionConfigHandler', () => {
         options: [{ id: 'new-model', name: 'New Model', description: undefined }],
         selectedId: 'new-model',
       });
-      expect(listener).toHaveBeenCalledOnce();
     });
 
     it('handles config_option_update for mode', () => {

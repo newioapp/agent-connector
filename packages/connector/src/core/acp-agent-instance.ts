@@ -57,6 +57,9 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
   /** Buffered session updates received before the session was registered. */
   private readonly pendingUpdates = new Map<string, acp.SessionNotification[]>();
 
+  /** Buffered ext notifications received before the session was registered. */
+  private readonly pendingExtNotifications = new Map<string, { method: string; params: Record<string, unknown> }[]>();
+
   /** Runtime agent info — populated after ACP initialization. */
   private agentInfo?: AgentInfo;
 
@@ -83,6 +86,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     this.stopping = true;
     this.acpSessions.clear();
     this.pendingUpdates.clear();
+    this.pendingExtNotifications.clear();
     this.connection = undefined;
     await this.killProcess();
   }
@@ -337,6 +341,16 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       }
       log.debug(`${this.logTag} Replayed buffered update(s) for ${correlationId}`);
     }
+    const bufferedExt = this.pendingExtNotifications.get(correlationId);
+    if (bufferedExt) {
+      this.pendingExtNotifications.delete(correlationId);
+      for (const { method, params } of bufferedExt) {
+        if (method === '_kiro.dev/commands/available') {
+          session.handleExtNotification(method, params);
+        }
+      }
+      log.debug(`${this.logTag} Replayed buffered extNotification(s) for ${correlationId}`);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -390,6 +404,25 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     } else {
       log.debug(`${this.logTag} ext notification: ${method}`);
     }
+
+    // Route to session if sessionId is present
+    const sessionId = typeof params.sessionId === 'string' ? params.sessionId : undefined;
+    if (sessionId) {
+      const session = this.acpSessions.get(sessionId);
+      if (session) {
+        session.handleExtNotification(method, params);
+      } else {
+        // Session still initializing — buffer for replay after registration
+        let buffered = this.pendingExtNotifications.get(sessionId);
+        if (!buffered) {
+          buffered = [];
+          this.pendingExtNotifications.set(sessionId, buffered);
+        }
+        buffered.push({ method, params });
+        log.debug(`${this.logTag} Buffered extNotification for pending session: ${sessionId}`);
+      }
+    }
+
     return Promise.resolve();
   }
 
