@@ -6,6 +6,8 @@ import {
   ForbiddenApiError,
   NotFoundApiError,
   ConflictApiError,
+  TargetOfflineApiError,
+  SignalDeliveryFailedApiError,
   WaitlistPendingApiError,
   ApprovalTimeoutError,
   TokenRefreshError,
@@ -46,6 +48,20 @@ describe('errors', () => {
       expect(err.statusCode).toBe(409);
     });
 
+    it('returns TargetOfflineApiError for TARGET_OFFLINE', () => {
+      const err = ApiError.fromResponse(409, { error: 'offline', errorCode: 'TARGET_OFFLINE' });
+      expect(err).toBeInstanceOf(TargetOfflineApiError);
+      expect(err.statusCode).toBe(409);
+      expect(err.errorCode).toBe('TARGET_OFFLINE');
+    });
+
+    it('returns SignalDeliveryFailedApiError for SIGNAL_DELIVERY_FAILED', () => {
+      const err = ApiError.fromResponse(502, { error: 'delivery failed', errorCode: 'SIGNAL_DELIVERY_FAILED' });
+      expect(err).toBeInstanceOf(SignalDeliveryFailedApiError);
+      expect(err.statusCode).toBe(502);
+      expect(err.errorCode).toBe('SIGNAL_DELIVERY_FAILED');
+    });
+
     it('returns WaitlistPendingApiError for WAITLIST_PENDING', () => {
       const err = ApiError.fromResponse(403, { error: 'wait', errorCode: 'WAITLIST_PENDING' });
       expect(err).toBeInstanceOf(WaitlistPendingApiError);
@@ -81,6 +97,8 @@ describe('errors', () => {
       expect(new ForbiddenApiError('x', {}).name).toBe('ForbiddenApiError');
       expect(new NotFoundApiError('x', {}).name).toBe('NotFoundApiError');
       expect(new ConflictApiError('x', {}).name).toBe('ConflictApiError');
+      expect(new TargetOfflineApiError('x', {}).name).toBe('TargetOfflineApiError');
+      expect(new SignalDeliveryFailedApiError('x', {}).name).toBe('SignalDeliveryFailedApiError');
       expect(new WaitlistPendingApiError('x', {}).name).toBe('WaitlistPendingApiError');
       expect(new ApprovalTimeoutError().name).toBe('ApprovalTimeoutError');
       expect(new TokenRefreshError('x').name).toBe('TokenRefreshError');

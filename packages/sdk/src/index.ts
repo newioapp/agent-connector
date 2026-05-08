@@ -38,6 +38,8 @@ export {
   ForbiddenApiError,
   NotFoundApiError,
   ConflictApiError,
+  TargetOfflineApiError,
+  SignalDeliveryFailedApiError,
   WaitlistPendingApiError,
   ApprovalTimeoutError,
   ConnectionRejectedError,
