@@ -15,7 +15,6 @@ import { AcpSessionConfigHandler } from './acp-session-config-handler';
 import { AcpSessionContextWindowHandler } from './acp-session-context-window-handler';
 import { AcpSlashCommandHandler } from './acp-slash-command-handler';
 import { Logger } from './logger';
-import type { AgentSessionConfig } from './agent-instance';
 import type {
   LiveSessionInfoRequest,
   LiveSessionInfoResponse,
@@ -46,22 +45,7 @@ export interface AcpAgentSessionInit {
   readonly isSkipPrefix: (text: string) => boolean;
 }
 
-export interface AcpAgentSessionInterface extends AgentSession {
-  /** Set the model for this session. */
-  setModel(modelId: string): Promise<void>;
-
-  /** Set the operational mode for this session. */
-  setMode(modeId: string): Promise<void>;
-
-  /** List available models for this session. */
-  listModels(): AgentSessionConfig | undefined;
-
-  /** List available modes for this session. */
-  listModes(): AgentSessionConfig | undefined;
-
-  /** Register a listener for model/mode config changes. */
-  onConfigChanged(listener: () => void): void;
-}
+export interface AcpAgentSessionInterface extends AgentSession {}
 
 export class AcpAgentSession implements AcpAgentSessionInterface {
   readonly sessionId: string;
@@ -98,7 +82,7 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
       init.sessionResponse,
     );
     this.contextWindowHandler = new AcpSessionContextWindowHandler(init.sessionId, init.ownerId, init.client);
-    this.slashCommandHandler = new AcpSlashCommandHandler(init.correlationId);
+    this.slashCommandHandler = new AcpSlashCommandHandler(init.correlationId, init.connection);
   }
 
   // ---------------------------------------------------------------------------
@@ -114,27 +98,6 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
 
   onPermissionRequest(handler: PermissionHandler): void {
     this.permissionHandler = handler;
-  }
-
-  /** Set a callback for when model/mode config changes. */
-  onConfigChanged(listener: () => void): void {
-    this.configHandler.setOnConfigChanged(listener);
-  }
-
-  async setModel(modelId: string): Promise<void> {
-    await this.configHandler.setModel(modelId);
-  }
-
-  async setMode(modeId: string): Promise<void> {
-    await this.configHandler.setMode(modeId);
-  }
-
-  listModels(): AgentSessionConfig | undefined {
-    return this.configHandler.listModels();
-  }
-
-  listModes(): AgentSessionConfig | undefined {
-    return this.configHandler.listModes();
   }
 
   async *prompt(text: string, conversationId?: string): AsyncGenerator<SessionStreamSegment> {
@@ -182,7 +145,7 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
     let currentModel: string | undefined;
     let currentMode: string | undefined;
 
-    const models = this.listModels();
+    const models = this.configHandler.listModels();
     if (models) {
       for (const o of models.options) {
         availableModels.push({ value: o.id, label: o.name });
@@ -190,7 +153,7 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
       currentModel = models.selectedId;
     }
 
-    const modes = this.listModes();
+    const modes = this.configHandler.listModes();
     if (modes) {
       for (const o of modes.options) {
         availableModes.push({ value: o.id, label: o.name });
@@ -222,20 +185,7 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
   }
 
   async handleCompactSession(_request: CompactSessionRequest): Promise<CompactSessionResponse> {
-    const commandName = this.slashCommandHandler.getCompactCommandName();
-    if (!commandName) {
-      return { success: false, error: 'Compact not supported by this agent' };
-    }
-    try {
-      const result = await this.connection.prompt({
-        sessionId: this.correlationId,
-        prompt: [{ type: 'text', text: `/${commandName}` }],
-      });
-      log.info(`${this.logTag} [${this.correlationId}] Compact completed: stopReason=${result.stopReason}`);
-      return { success: true };
-    } catch (err: unknown) {
-      return { success: false, error: extractErrorMessage(err) };
-    }
+    return this.slashCommandHandler.compact();
   }
 
   async applySessionConfig(config: SessionConfigUpdate): Promise<void> {
@@ -265,6 +215,12 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
     this.contextWindowHandler.handleSessionUpdate(params.update);
     this.slashCommandHandler.handleSessionUpdate(params.update);
     this.stream?.handleSessionUpdate(params.update);
+  }
+
+  /** Handle a vendor-specific ext notification routed by method + sessionId. */
+  handleExtNotification(method: string, params: Record<string, unknown>): void {
+    this.contextWindowHandler.handleExtNotification(method, params);
+    this.slashCommandHandler.handleExtNotification(method, params);
   }
 
   async handleRequestPermission(params: acp.RequestPermissionRequest): Promise<acp.RequestPermissionResponse> {
