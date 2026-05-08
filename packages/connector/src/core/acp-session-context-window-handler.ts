@@ -44,10 +44,24 @@ export class AcpSessionContextWindowHandler {
     if (update.sessionUpdate !== 'usage_update') {
       return false;
     }
+    log.debug(`[${this.newioSessionId}] Context window update: size=${update.size}, used=${update.used}`);
     this.size = update.size;
     this.used = update.used;
     this.maybeSendNotification();
     return true;
+  }
+
+  /** Handle a vendor-specific ext notification (e.g. kiro-cli metadata). */
+  handleExtNotification(method: string, params: Record<string, unknown>): void {
+    if (method === '_kiro.dev/metadata') {
+      const percentage = params.contextUsagePercentage;
+      if (typeof percentage === 'number') {
+        log.debug(`[${this.newioSessionId}] Ext context usage: ${percentage}%`);
+        this.size = 100;
+        this.used = percentage;
+        this.maybeSendNotification();
+      }
+    }
   }
 
   private maybeSendNotification(): void {
@@ -65,6 +79,10 @@ export class AcpSessionContextWindowHandler {
 
     this.lastNotifiedPercentage = currentPercentage;
     this.lastNotifiedAt = Date.now();
+
+    log.debug(
+      `[${this.newioSessionId}] Sending context window notification to owner: ${currentPercentage}% (size=${this.size}, used=${this.used})`,
+    );
 
     this.client
       .sendSignal({
