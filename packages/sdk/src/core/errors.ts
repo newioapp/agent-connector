@@ -5,6 +5,8 @@ export type ErrorCode =
   | 'FORBIDDEN'
   | 'NOT_FOUND'
   | 'CONFLICT'
+  | 'TARGET_OFFLINE'
+  | 'SIGNAL_DELIVERY_FAILED'
   | 'WAITLIST_PENDING'
   | 'INTERNAL';
 
@@ -47,6 +49,10 @@ export class ApiError extends NewioError {
         return new NotFoundApiError(message, body);
       case 'CONFLICT':
         return new ConflictApiError(message, body);
+      case 'TARGET_OFFLINE':
+        return new TargetOfflineApiError(message, body);
+      case 'SIGNAL_DELIVERY_FAILED':
+        return new SignalDeliveryFailedApiError(message, body);
       case 'WAITLIST_PENDING':
         return new WaitlistPendingApiError(message, body);
       default:
@@ -92,6 +98,22 @@ export class ConflictApiError extends ApiError {
   constructor(message: string, body: unknown) {
     super(409, 'CONFLICT', message, body);
     this.name = 'ConflictApiError';
+  }
+}
+
+/** 409 — target user has no active WebSocket connections. */
+export class TargetOfflineApiError extends ApiError {
+  constructor(message: string, body: unknown) {
+    super(409, 'TARGET_OFFLINE', message, body);
+    this.name = 'TargetOfflineApiError';
+  }
+}
+
+/** 502 — signal delivery failed (target is online but unreachable). */
+export class SignalDeliveryFailedApiError extends ApiError {
+  constructor(message: string, body: unknown) {
+    super(502, 'SIGNAL_DELIVERY_FAILED', message, body);
+    this.name = 'SignalDeliveryFailedApiError';
   }
 }
 
