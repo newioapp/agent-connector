@@ -45,7 +45,24 @@ function mockApp(
       }),
       searchUsers: vi.fn().mockResolvedValue({ users: [{ userId: 'u1', username: 'alice' }] }),
       getUserByUsername: vi.fn().mockResolvedValue({ userId: 'user-1', username: 'alice' }),
+      getMemory: vi.fn().mockResolvedValue({
+        data: { summary: null, facts: [{ factId: 'f1', text: 'Test fact', createdAt: 't', updatedAt: 't' }] },
+      }),
+      batchUpdateMemory: vi.fn().mockResolvedValue({ applied: 1 }),
     },
+    getGlobalMemory: vi.fn().mockResolvedValue({
+      summary: null,
+      facts: [{ factId: 'f1', text: 'Global fact', createdAt: 't', updatedAt: 't' }],
+    }),
+    getContactMemory: vi.fn().mockResolvedValue({
+      summary: { text: 'A developer' },
+      facts: [{ factId: 'f2', text: 'Likes Python', createdAt: 't', updatedAt: 't' }],
+    }),
+    getConversationMemory: vi.fn().mockResolvedValue({ summary: null, facts: [] }),
+    addMemory: vi.fn().mockResolvedValue(undefined),
+    updateMemory: vi.fn().mockResolvedValue(undefined),
+    deleteMemory: vi.fn().mockResolvedValue(undefined),
+    updateMemorySummary: vi.fn().mockResolvedValue(undefined),
   } as unknown as NewioApp;
 }
 
@@ -76,12 +93,15 @@ describe('MCP Server', () => {
     expect(names).toEqual([
       'accept_friend_request',
       'add_members',
+      'add_memory',
       'cancel_cron',
       'create_group',
       'create_work_session',
+      'delete_memory',
       'dm_owner',
       'download_attachment',
       'get_conversation',
+      'get_memory',
       'get_my_profile',
       'get_user_profile',
       'list_conversations',
@@ -97,6 +117,8 @@ describe('MCP Server', () => {
       'send_dm',
       'send_friend_request',
       'send_message',
+      'update_memory',
+      'update_memory_summary',
       'upload_attachment_to_current_conversation',
     ]);
   });
@@ -434,5 +456,78 @@ describe('MCP Server', () => {
     const client = await createConnectedClientWithSession(app, 'session-1');
     await client.callTool({ name: 'create_work_session', arguments: { name: 'test', usernames: ['bot'] } });
     expect(app.createWorkSession).toHaveBeenCalled();
+  });
+
+  // ── Memory tools ──
+
+  it('get_memory with username calls app.getContactMemory', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    const result = await client.callTool({ name: 'get_memory', arguments: { username: 'alice' } });
+    expect(app.getContactMemory).toHaveBeenCalledWith('alice');
+    const content = (result.content[0] as { text: string }).text;
+    expect(content).toContain('Likes Python');
+  });
+
+  it('get_memory with no args returns error', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    const result = await client.callTool({ name: 'get_memory', arguments: {} });
+    const content = (result.content[0] as { text: string }).text;
+    expect(content).toContain('Provide either a username or conversationId');
+    expect(result.isError).toBe(true);
+  });
+
+  it('get_memory with conversationId calls app.getConversationMemory', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    await client.callTool({ name: 'get_memory', arguments: { conversationId: 'conv-1' } });
+    expect(app.getConversationMemory).toHaveBeenCalledWith('conv-1');
+  });
+
+  it('add_memory calls app.addMemory with username', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    await client.callTool({ name: 'add_memory', arguments: { text: 'User likes Python.', username: 'alice' } });
+    expect(app.addMemory).toHaveBeenCalledWith('User likes Python.', { username: 'alice', conversationId: undefined });
+  });
+
+  it('add_memory with own username throws error', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    const result = await client.callTool({
+      name: 'add_memory',
+      arguments: { text: 'I am smart.', username: 'myagent' },
+    });
+    expect(result.isError).toBe(true);
+    const content = (result.content[0] as { text: string }).text;
+    expect(content).toContain('omit the username');
+  });
+
+  it('update_memory calls app.updateMemory', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    await client.callTool({
+      name: 'update_memory',
+      arguments: { factId: 'f1', text: 'Updated.', conversationId: 'conv-1' },
+    });
+    expect(app.updateMemory).toHaveBeenCalledWith('f1', 'Updated.', { username: undefined, conversationId: 'conv-1' });
+  });
+
+  it('delete_memory calls app.deleteMemory', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    await client.callTool({ name: 'delete_memory', arguments: { factId: 'f1' } });
+    expect(app.deleteMemory).toHaveBeenCalledWith('f1', { username: undefined, conversationId: undefined });
+  });
+
+  it('update_memory_summary calls app.updateMemorySummary', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    await client.callTool({ name: 'update_memory_summary', arguments: { text: 'A developer.', username: 'alice' } });
+    expect(app.updateMemorySummary).toHaveBeenCalledWith('A developer.', {
+      username: 'alice',
+      conversationId: undefined,
+    });
   });
 });

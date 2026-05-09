@@ -472,5 +472,47 @@ describe('NewioClient', () => {
       expect(fetchCalls[0]?.url).toBe('https://api.test/agents/me/info');
       expect(fetchCalls[0]?.method).toBe('PUT');
     });
+
+    it('getMemory calls GET /agents/:id/memory with scope params', async () => {
+      mockFetch([{ status: 200, body: { data: { summary: null, facts: [] } } }]);
+      const result = await createClient().getMemory({ agentId: 'a1', scope: 'user', scopeId: 'u1' });
+      expect(result.data.facts).toEqual([]);
+      expect(fetchCalls[0]?.url).toContain('/agents/a1/memory?scope=user&scopeId=u1');
+    });
+
+    it('batchUpdateMemory calls POST /agents/:id/memory', async () => {
+      mockFetch([{ status: 200, body: { applied: 1 } }]);
+      const result = await createClient().batchUpdateMemory({
+        agentId: 'a1',
+        operations: [{ op: 'add', scope: 'global', scopeId: '_', text: 'fact' }],
+      });
+      expect(result.applied).toBe(1);
+      expect(fetchCalls[0]?.url).toBe('https://api.test/agents/a1/memory');
+      expect(fetchCalls[0]?.method).toBe('POST');
+    });
+
+    it('touchMemoryScope calls PUT /agents/:id/memory/touch', async () => {
+      mockFetch([{ status: 200, body: {} }]);
+      await createClient().touchMemoryScope({ agentId: 'a1', scope: 'user', scopeId: 'u1' });
+      expect(fetchCalls[0]?.url).toBe('https://api.test/agents/a1/memory/touch');
+      expect(fetchCalls[0]?.method).toBe('PUT');
+    });
+
+    it('loadSessionMemory calls GET /agents/:id/memory/session', async () => {
+      mockFetch([
+        {
+          status: 200,
+          body: {
+            global: { summary: null, facts: [] },
+            participants: {},
+            conversation: { summary: null, facts: [] },
+            topUsers: [],
+            topConversations: [],
+          },
+        },
+      ]);
+      await createClient().loadSessionMemory({ agentId: 'a1', conversationId: 'c1', participantIds: ['u1'] });
+      expect(fetchCalls[0]?.url).toContain('/agents/a1/memory/session?conversationId=c1&participantIds=u1');
+    });
   });
 });

@@ -34,6 +34,8 @@ import type {
   Mentions,
   MessageContent,
   ConversationType,
+  MemoryScope,
+  MemoryScopeData,
 } from '../core/types.js';
 import type {
   IncomingMessage,
@@ -867,6 +869,90 @@ export class NewioApp {
   private async buildMentions(conversationId: string, text: string): Promise<Mentions | undefined> {
     const members = await this.getMembersRaw(conversationId);
     return buildMentions(text, members);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Memory
+  // ---------------------------------------------------------------------------
+
+  /** Get the agent's global memory. */
+  async getGlobalMemory(): Promise<MemoryScopeData> {
+    const result = await this.client.getMemory({ agentId: this.identity.userId, scope: 'global', scopeId: '_' });
+    return result.data;
+  }
+
+  /** Get memory about a specific user (by username). */
+  async getContactMemory(username: string): Promise<MemoryScopeData> {
+    const userId = await this.resolveUsername(username);
+    const result = await this.client.getMemory({ agentId: this.identity.userId, scope: 'user', scopeId: userId });
+    return result.data;
+  }
+
+  /** Get memory about a specific conversation. */
+  async getConversationMemory(conversationId: string): Promise<MemoryScopeData> {
+    const result = await this.client.getMemory({
+      agentId: this.identity.userId,
+      scope: 'conversation',
+      scopeId: conversationId,
+    });
+    return result.data;
+  }
+
+  /** Add a memory fact. Scope is inferred: username → user, conversationId → conversation, neither → global. */
+  async addMemory(text: string, opts?: { username?: string; conversationId?: string }): Promise<void> {
+    const { scope, scopeId } = await this.resolveMemoryScope(opts?.username, opts?.conversationId);
+    await this.client.batchUpdateMemory({
+      agentId: this.identity.userId,
+      operations: [{ op: 'add', scope, scopeId, text }],
+    });
+  }
+
+  /** Update an existing memory fact. */
+  async updateMemory(
+    factId: string,
+    text: string,
+    opts?: { username?: string; conversationId?: string },
+  ): Promise<void> {
+    const { scope, scopeId } = await this.resolveMemoryScope(opts?.username, opts?.conversationId);
+    await this.client.batchUpdateMemory({
+      agentId: this.identity.userId,
+      operations: [{ op: 'update', scope, scopeId, factId, text }],
+    });
+  }
+
+  /** Delete a memory fact. */
+  async deleteMemory(factId: string, opts?: { username?: string; conversationId?: string }): Promise<void> {
+    const { scope, scopeId } = await this.resolveMemoryScope(opts?.username, opts?.conversationId);
+    await this.client.batchUpdateMemory({
+      agentId: this.identity.userId,
+      operations: [{ op: 'delete', scope, scopeId, factId }],
+    });
+  }
+
+  /** Update the summary for a memory scope. */
+  async updateMemorySummary(text: string, opts?: { username?: string; conversationId?: string }): Promise<void> {
+    const { scope, scopeId } = await this.resolveMemoryScope(opts?.username, opts?.conversationId);
+    await this.client.batchUpdateMemory({
+      agentId: this.identity.userId,
+      operations: [{ op: 'update_summary', scope, scopeId, text }],
+    });
+  }
+
+  private async resolveMemoryScope(
+    username?: string,
+    conversationId?: string,
+  ): Promise<{ scope: MemoryScope; scopeId: string }> {
+    if (username && conversationId) {
+      throw new Error('Provide either username or conversationId, not both.');
+    }
+    if (username) {
+      const userId = await this.resolveUsername(username);
+      return { scope: 'user', scopeId: userId };
+    }
+    if (conversationId) {
+      return { scope: 'conversation', scopeId: conversationId };
+    }
+    return { scope: 'global', scopeId: '_' };
   }
 }
 
