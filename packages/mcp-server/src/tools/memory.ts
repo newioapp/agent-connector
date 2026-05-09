@@ -8,42 +8,13 @@
  */
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { NewioApp, MemoryScope } from '@newio/agent-sdk';
+import type { NewioApp } from '@newio/agent-sdk';
 import { stringify } from 'yaml';
 
-const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
-const yaml = (obj: unknown) => text(stringify(obj));
-
-function resolveScope(username?: string, conversationId?: string): { scope: MemoryScope; scopeId: string } {
-  if (username && conversationId) {
-    throw new Error('Provide either username or conversationId, not both.');
-  }
-  if (username) {
-    return { scope: 'user', scopeId: username }; // placeholder — resolved to userId below
-  }
-  if (conversationId) {
-    return { scope: 'conversation', scopeId: conversationId };
-  }
-  return { scope: 'global', scopeId: '_' };
-}
+const yaml = (obj: unknown) => ({ content: [{ type: 'text' as const, text: stringify(obj) }] });
 
 /** Register memory tools on the MCP server. */
 export function registerMemoryTools(server: McpServer, app: NewioApp): void {
-  const agentId = app.identity.userId;
-
-  /** Resolve username to userId if scope is user. */
-  async function resolveScopeId(
-    username?: string,
-    conversationId?: string,
-  ): Promise<{ scope: MemoryScope; scopeId: string }> {
-    const { scope, scopeId } = resolveScope(username, conversationId);
-    if (scope === 'user') {
-      const userId = await app.resolveUsername(scopeId);
-      return { scope, scopeId: userId };
-    }
-    return { scope, scopeId };
-  }
-
   server.registerTool(
     'get_memory',
     {
@@ -55,9 +26,13 @@ export function registerMemoryTools(server: McpServer, app: NewioApp): void {
       },
     },
     async ({ username, conversationId }) => {
-      const { scope, scopeId } = await resolveScopeId(username, conversationId);
-      const result = await app.client.getMemory({ agentId, scope, scopeId });
-      return yaml(result.data);
+      if (username) {
+        return yaml(await app.getContactMemory(username));
+      }
+      if (conversationId) {
+        return yaml(await app.getConversationMemory(conversationId));
+      }
+      return yaml(await app.getGlobalMemory());
     },
   );
 
@@ -72,13 +47,9 @@ export function registerMemoryTools(server: McpServer, app: NewioApp): void {
         conversationId: z.string().optional().describe('Conversation ID this fact is about'),
       },
     },
-    async ({ text: factText, username, conversationId }) => {
-      const { scope, scopeId } = await resolveScopeId(username, conversationId);
-      const result = await app.client.batchUpdateMemory({
-        agentId,
-        operations: [{ op: 'add', scope, scopeId, text: factText }],
-      });
-      return yaml({ stored: true, applied: result.applied });
+    async ({ text, username, conversationId }) => {
+      await app.addMemory(text, { username, conversationId });
+      return yaml({ stored: true });
     },
   );
 
@@ -94,13 +65,9 @@ export function registerMemoryTools(server: McpServer, app: NewioApp): void {
         conversationId: z.string().optional().describe('Conversation ID this fact is about'),
       },
     },
-    async ({ factId, text: factText, username, conversationId }) => {
-      const { scope, scopeId } = await resolveScopeId(username, conversationId);
-      const result = await app.client.batchUpdateMemory({
-        agentId,
-        operations: [{ op: 'update', scope, scopeId, factId, text: factText }],
-      });
-      return yaml({ updated: true, applied: result.applied });
+    async ({ factId, text, username, conversationId }) => {
+      await app.updateMemory(factId, text, { username, conversationId });
+      return yaml({ updated: true });
     },
   );
 
@@ -115,12 +82,8 @@ export function registerMemoryTools(server: McpServer, app: NewioApp): void {
       },
     },
     async ({ factId, username, conversationId }) => {
-      const { scope, scopeId } = await resolveScopeId(username, conversationId);
-      const result = await app.client.batchUpdateMemory({
-        agentId,
-        operations: [{ op: 'delete', scope, scopeId, factId }],
-      });
-      return yaml({ deleted: true, applied: result.applied });
+      await app.deleteMemory(factId, { username, conversationId });
+      return yaml({ deleted: true });
     },
   );
 
@@ -135,13 +98,9 @@ export function registerMemoryTools(server: McpServer, app: NewioApp): void {
         conversationId: z.string().optional().describe('Conversation ID this summary is about'),
       },
     },
-    async ({ text: summaryText, username, conversationId }) => {
-      const { scope, scopeId } = await resolveScopeId(username, conversationId);
-      const result = await app.client.batchUpdateMemory({
-        agentId,
-        operations: [{ op: 'update_summary', scope, scopeId, text: summaryText }],
-      });
-      return yaml({ updated: true, applied: result.applied });
+    async ({ text, username, conversationId }) => {
+      await app.updateMemorySummary(text, { username, conversationId });
+      return yaml({ updated: true });
     },
   );
 }
