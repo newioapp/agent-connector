@@ -87,6 +87,13 @@ function mockClient(contacts: ContactRecord[] = [], conversations: ConversationL
     rejectFriendRequest: vi.fn().mockResolvedValue({}),
     removeFriend: vi.fn().mockResolvedValue(undefined),
     getUserSummaries: vi.fn().mockResolvedValue({ users: [] }),
+    getMemory: vi
+      .fn()
+      .mockResolvedValue({
+        data: { summary: null, facts: [{ factId: 'f1', text: 'Test', createdAt: 't', updatedAt: 't' }] },
+      }),
+    batchUpdateMemory: vi.fn().mockResolvedValue({ applied: 1 }),
+    touchMemoryScope: vi.fn().mockResolvedValue({}),
   } as unknown as NewioClient;
 }
 
@@ -783,6 +790,80 @@ describe('NewioApp', () => {
       const { app } = await createApp();
       const result = await app._getSignalHandlers().compactSession({ sessionId: 's1' });
       expect(result).toEqual({ success: false, errorCode: 'not_implemented', error: 'No handler registered' });
+    });
+  });
+
+  describe('memory', () => {
+    it('getGlobalMemory calls client.getMemory with global scope', async () => {
+      const { app, client } = await createApp();
+      const result = await app.getGlobalMemory();
+      expect(result.facts).toHaveLength(1);
+      expect(client.getMemory).toHaveBeenCalledWith({ agentId: 'me', scope: 'global', scopeId: '_' });
+    });
+
+    it('getContactMemory resolves username and calls client.getMemory', async () => {
+      const { app, client } = await createApp();
+      await app.getContactMemory('alice');
+      expect(client.getUserByUsername).toHaveBeenCalledWith({ username: 'alice' });
+      expect(client.getMemory).toHaveBeenCalledWith({ agentId: 'me', scope: 'user', scopeId: 'resolved-id' });
+    });
+
+    it('getConversationMemory calls client.getMemory with conversation scope', async () => {
+      const { app, client } = await createApp();
+      await app.getConversationMemory('conv-1');
+      expect(client.getMemory).toHaveBeenCalledWith({ agentId: 'me', scope: 'conversation', scopeId: 'conv-1' });
+    });
+
+    it('addMemory with username resolves and calls batchUpdateMemory', async () => {
+      const { app, client } = await createApp();
+      await app.addMemory('Likes Python', { username: 'alice' });
+      expect(client.batchUpdateMemory).toHaveBeenCalledWith({
+        agentId: 'me',
+        operations: [{ op: 'add', scope: 'user', scopeId: 'resolved-id', text: 'Likes Python' }],
+      });
+    });
+
+    it('addMemory with no opts uses global scope', async () => {
+      const { app, client } = await createApp();
+      await app.addMemory('I prefer concise answers');
+      expect(client.batchUpdateMemory).toHaveBeenCalledWith({
+        agentId: 'me',
+        operations: [{ op: 'add', scope: 'global', scopeId: '_', text: 'I prefer concise answers' }],
+      });
+    });
+
+    it('updateMemory calls batchUpdateMemory with update op', async () => {
+      const { app, client } = await createApp();
+      await app.updateMemory('f1', 'Updated fact', { conversationId: 'conv-1' });
+      expect(client.batchUpdateMemory).toHaveBeenCalledWith({
+        agentId: 'me',
+        operations: [{ op: 'update', scope: 'conversation', scopeId: 'conv-1', factId: 'f1', text: 'Updated fact' }],
+      });
+    });
+
+    it('deleteMemory calls batchUpdateMemory with delete op', async () => {
+      const { app, client } = await createApp();
+      await app.deleteMemory('f1');
+      expect(client.batchUpdateMemory).toHaveBeenCalledWith({
+        agentId: 'me',
+        operations: [{ op: 'delete', scope: 'global', scopeId: '_', factId: 'f1' }],
+      });
+    });
+
+    it('updateMemorySummary calls batchUpdateMemory with update_summary op', async () => {
+      const { app, client } = await createApp();
+      await app.updateMemorySummary('A helpful agent', { username: 'alice' });
+      expect(client.batchUpdateMemory).toHaveBeenCalledWith({
+        agentId: 'me',
+        operations: [{ op: 'update_summary', scope: 'user', scopeId: 'resolved-id', text: 'A helpful agent' }],
+      });
+    });
+
+    it('resolveMemoryScope throws if both username and conversationId provided', async () => {
+      const { app } = await createApp();
+      await expect(app.addMemory('test', { username: 'alice', conversationId: 'conv-1' })).rejects.toThrow(
+        'Provide either username or conversationId, not both',
+      );
     });
   });
 });

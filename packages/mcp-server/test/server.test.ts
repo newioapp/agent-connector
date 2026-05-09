@@ -50,18 +50,14 @@ function mockApp(
       }),
       batchUpdateMemory: vi.fn().mockResolvedValue({ applied: 1 }),
     },
-    getGlobalMemory: vi
-      .fn()
-      .mockResolvedValue({
-        summary: null,
-        facts: [{ factId: 'f1', text: 'Global fact', createdAt: 't', updatedAt: 't' }],
-      }),
-    getContactMemory: vi
-      .fn()
-      .mockResolvedValue({
-        summary: { text: 'A developer' },
-        facts: [{ factId: 'f2', text: 'Likes Python', createdAt: 't', updatedAt: 't' }],
-      }),
+    getGlobalMemory: vi.fn().mockResolvedValue({
+      summary: null,
+      facts: [{ factId: 'f1', text: 'Global fact', createdAt: 't', updatedAt: 't' }],
+    }),
+    getContactMemory: vi.fn().mockResolvedValue({
+      summary: { text: 'A developer' },
+      facts: [{ factId: 'f2', text: 'Likes Python', createdAt: 't', updatedAt: 't' }],
+    }),
     getConversationMemory: vi.fn().mockResolvedValue({ summary: null, facts: [] }),
     addMemory: vi.fn().mockResolvedValue(undefined),
     updateMemory: vi.fn().mockResolvedValue(undefined),
@@ -473,13 +469,13 @@ describe('MCP Server', () => {
     expect(content).toContain('Likes Python');
   });
 
-  it('get_memory with no args calls app.getGlobalMemory', async () => {
+  it('get_memory with no args returns error', async () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
     const result = await client.callTool({ name: 'get_memory', arguments: {} });
-    expect(app.getGlobalMemory).toHaveBeenCalled();
     const content = (result.content[0] as { text: string }).text;
-    expect(content).toContain('Global fact');
+    expect(content).toContain('Provide either a username or conversationId');
+    expect(result.isError).toBe(true);
   });
 
   it('get_memory with conversationId calls app.getConversationMemory', async () => {
@@ -494,6 +490,18 @@ describe('MCP Server', () => {
     const client = await createConnectedClient(app);
     await client.callTool({ name: 'add_memory', arguments: { text: 'User likes Python.', username: 'alice' } });
     expect(app.addMemory).toHaveBeenCalledWith('User likes Python.', { username: 'alice', conversationId: undefined });
+  });
+
+  it('add_memory with own username throws error', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    const result = await client.callTool({
+      name: 'add_memory',
+      arguments: { text: 'I am smart.', username: 'myagent' },
+    });
+    expect(result.isError).toBe(true);
+    const content = (result.content[0] as { text: string }).text;
+    expect(content).toContain('omit the username');
   });
 
   it('update_memory calls app.updateMemory', async () => {
