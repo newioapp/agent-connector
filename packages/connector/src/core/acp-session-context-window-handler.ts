@@ -13,6 +13,7 @@ const log = new Logger('acp-session-context-window-handler');
 
 const MIN_INTERVAL_MS = 5_000;
 const MIN_PERCENTAGE_CHANGE = 1;
+const CONTEXT_PRESSURE_THRESHOLD = 80;
 
 export interface ContextWindow {
   readonly size: number;
@@ -24,12 +25,19 @@ export class AcpSessionContextWindowHandler {
   private used = 0;
   private lastNotifiedPercentage = -1;
   private lastNotifiedAt = 0;
+  private pressureFired = false;
+  private onPressureCallback?: () => void;
 
   constructor(
     private readonly newioSessionId: string,
     private readonly ownerId: string,
     private readonly client: NewioClient,
   ) {}
+
+  /** Register a one-shot callback that fires when context usage crosses the pressure threshold. */
+  onContextPressure(cb: () => void): void {
+    this.onPressureCallback = cb;
+  }
 
   /** Get the current context window state. */
   getContextWindow(): ContextWindow | undefined {
@@ -70,6 +78,14 @@ export class AcpSessionContextWindowHandler {
     }
 
     const currentPercentage = Math.round((this.used / this.size) * 100);
+
+    // Fire context pressure callback once when threshold is crossed
+    if (!this.pressureFired && currentPercentage >= CONTEXT_PRESSURE_THRESHOLD && this.onPressureCallback) {
+      this.pressureFired = true;
+      log.info(`[${this.newioSessionId}] Context pressure threshold reached: ${currentPercentage}%`);
+      this.onPressureCallback();
+    }
+
     const percentageChange = Math.abs(currentPercentage - this.lastNotifiedPercentage);
     const elapsed = Date.now() - this.lastNotifiedAt;
 

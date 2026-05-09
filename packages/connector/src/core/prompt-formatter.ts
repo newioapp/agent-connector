@@ -5,7 +5,13 @@
  * The {@link PromptManager} selects a compatible formatter based on the
  * major version stored with each session.
  */
-import type { IncomingMessage, ContactEvent, CronTriggerEvent, NewioApp } from '@newio/agent-sdk';
+import type {
+  IncomingMessage,
+  ContactEvent,
+  CronTriggerEvent,
+  NewioApp,
+  LoadSessionMemoryResponse,
+} from '@newio/agent-sdk';
 
 export interface Instruction {
   readonly prompt: string;
@@ -25,6 +31,12 @@ export interface PromptFormatter {
   formatMessagePrompt(messages: readonly IncomingMessage[]): string;
   formatContactPrompt(events: readonly ContactEvent[]): string;
   formatCronPrompt(job: CronTriggerEvent): string;
+  /** Format loaded memory into context to inject at session start. */
+  formatMemoryContext(memory: LoadSessionMemoryResponse, handoffNote?: string): string;
+  /** Build the memory update prompt for mid-session (no handoff, session continues). */
+  buildMemoryUpdatePrompt(): string;
+  /** Build the session-ending prompt: update memory + generate handoff note. */
+  buildSessionEndPrompt(): string;
 }
 
 export class PromptFormatterImpl implements PromptFormatter {
@@ -155,6 +167,12 @@ Cron trigger example:
   label: "Send daily standup reminder to Team Chat"
   triggeredAt: "2026-04-05T09:00:00Z"`);
 
+    parts.push(`Session lifecycle:
+- Your sessions are ephemeral. Each conversation interaction starts a fresh session with your persistent memory loaded.
+- You may receive a "memory update" prompt asking you to review the session and persist important facts using memory MCP tools. Your session will continue after this.
+- You may receive a "session ending" prompt when your session is about to close (idle timeout or context limit). You should update memory and produce a brief handoff note so the next session can pick up context.
+- Memory and handoff notes are your continuity mechanism across sessions.`);
+
     if (customInstructions) {
       parts.push(customInstructions);
     }
@@ -236,6 +254,127 @@ Cron trigger example:
       lines.push(`payload: ${JSON.stringify(job.payload)}`);
     }
     return lines.join('\n');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Memory & session lifecycle
+  // ---------------------------------------------------------------------------
+
+  formatMemoryContext(memory: LoadSessionMemoryResponse, handoffNote?: string): string {
+    const sections: string[] = [];
+
+    if (handoffNote) {
+      sections.push(`## Handoff from previous session\n${handoffNote}`);
+    }
+
+    const globalParts: string[] = [];
+    if (memory.global.summary) {
+      globalParts.push(memory.global.summary.text);
+    }
+    for (const fact of memory.global.facts) {
+      globalParts.push(`- ${fact.text}`);
+    }
+    if (globalParts.length > 0) {
+      sections.push(`## Your memory (global)\n${globalParts.join('\n')}`);
+    }
+
+    for (const [userId, data] of Object.entries(memory.participants)) {
+      const parts: string[] = [];
+      if (data.summary) {
+        parts.push(`Summary: ${data.summary.text}`);
+      }
+      for (const fact of data.facts) {
+        parts.push(`- ${fact.text}`);
+      }
+      if (parts.length > 0) {
+        sections.push(`## Memory about user ${userId}\n${parts.join('\n')}`);
+      }
+    }
+
+    const convParts: string[] = [];
+    if (memory.conversation.summary) {
+      convParts.push(`Summary: ${memory.conversation.summary.text}`);
+    }
+    for (const fact of memory.conversation.facts) {
+      convParts.push(`- ${fact.text}`);
+    }
+    if (convParts.length > 0) {
+      sections.push(`## Memory about this conversation\n${convParts.join('\n')}`);
+    }
+
+    if (memory.topUsers.length > 0) {
+      const lines = memory.topUsers.map((s) => `- ${s.scopeId}: ${s.text}`);
+      sections.push(`## Other people you know\n${lines.join('\n')}`);
+    }
+
+    if (memory.topConversations.length > 0) {
+      const lines = memory.topConversations.map((s) => `- ${s.scopeId}: ${s.text}`);
+      sections.push(`## Other conversations\n${lines.join('\n')}`);
+    }
+
+    if (sections.length === 0) {
+      return '';
+    }
+
+    return `# Memory\n\nThe following is your persistent memory from previous sessions. Use it for context but do not repeat it back to users.\n\n${sections.join('\n\n')}`;
+  }
+
+  buildMemoryUpdatePrompt(): string {
+    return `Update your memory now. Your session will continue after this.
+
+Before making changes, use \`get_memory\` to check what you already know about relevant users and this conversation.
+
+For each piece of durable information from this session:
+
+1. **Future Utility** — Will this matter in future interactions?
+2. **Novelty** — Is this already captured in your current memory?
+3. **Factual** — Is this a fact, preference, or decision (not ephemeral chatter)?
+4. **Safe** — No sensitive credentials or PII?
+
+Actions:
+- New fact → \`add_memory\` with the appropriate username or conversationId
+- Update existing → \`update_memory\` with the factId
+- Obsolete → \`delete_memory\` with the factId
+- Summary needs refresh → \`update_memory_summary\`
+
+Rules:
+- Facts: self-contained, third-person, no pronouns.
+- Summaries: max 8 lines. Keep them high-level overviews.
+- Do NOT store: transient task status, verbatim conversation, or anything stale tomorrow.
+- Omit username and conversationId to store facts about yourself (global scope).`;
+  }
+
+  buildSessionEndPrompt(): string {
+    return `Your session is ending. Update your memory and produce a handoff note.
+
+## Step 1: Update memory
+
+Before making changes, use \`get_memory\` to check what you already know about relevant users and this conversation.
+
+For each piece of durable information from this session:
+
+1. **Future Utility** — Will this matter in future interactions?
+2. **Novelty** — Is this already captured in your current memory?
+3. **Factual** — Is this a fact, preference, or decision (not ephemeral chatter)?
+4. **Safe** — No sensitive credentials or PII?
+
+Actions:
+- New fact → \`add_memory\` with the appropriate username or conversationId
+- Update existing → \`update_memory\` with the factId
+- Obsolete → \`delete_memory\` with the factId
+- Summary needs refresh → \`update_memory_summary\`
+
+Rules:
+- Facts: self-contained, third-person, no pronouns.
+- Summaries: max 8 lines.
+- Do NOT store: transient task status, verbatim conversation, or anything stale tomorrow.
+- Omit username and conversationId to store facts about yourself (global scope).
+
+## Step 2: Handoff note
+
+After updating memory, output a brief handoff note (2-4 sentences) describing what was happening in this session so the next session can pick up context. This should capture the current state of work, not durable facts (those go in memory).
+
+Output the handoff note as your final message, prefixed with exactly "HANDOFF:" on its own line.`;
   }
 
   // ---------------------------------------------------------------------------

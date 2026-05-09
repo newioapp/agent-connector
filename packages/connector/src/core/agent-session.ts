@@ -39,6 +39,9 @@ export interface AgentSession {
 
   onPermissionRequest(handler: PermissionHandler): void;
 
+  /** Register a one-shot callback for context pressure (80% usage). */
+  onContextPressure(cb: () => void): void;
+
   /** Dispose the session (kill process, free resources). */
   dispose(): Promise<void>;
 

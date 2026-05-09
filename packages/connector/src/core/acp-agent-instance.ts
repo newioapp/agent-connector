@@ -241,7 +241,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
   // Session factory
   // ---------------------------------------------------------------------------
 
-  protected async createSession(newioSessionId: string): Promise<AgentSession> {
+  protected async createSession(sessionKey: string): Promise<AgentSession> {
     const config = this.config.acp;
     if (!config) {
       throw new Error('ACP config missing');
@@ -260,7 +260,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       throw new Error('Cannot create session: ownerId is not set');
     }
     const session = new AcpAgentSession({
-      sessionId: newioSessionId,
+      sessionId: sessionKey,
       promptFormatterVersion: instruction.version,
       correlationId: result.sessionId,
       connection: conn,
@@ -274,11 +274,24 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     this.registerSession(result.sessionId, session);
     log.info(`${this.logTag} Session created: ${result.sessionId}`);
 
-    // Send Newio instruction as the first prompt so the session has context
+    // Load memory for conversation sessions
+    let memoryContext = '';
+    if (!sessionKey.startsWith('__')) {
+      try {
+        const memory = await this.loadMemoryForSession(sessionKey);
+        const handoffNote = await this.loadHandoffNote(sessionKey);
+        memoryContext = this.promptManager.formatMemoryContext(instruction.version, memory, handoffNote ?? undefined);
+      } catch (err: unknown) {
+        log.warn(`${this.logTag} Failed to load memory for session, continuing without`, err);
+      }
+    }
+
+    // Send Newio instruction (+ memory context if available) as the first prompt
+    const fullInstruction = memoryContext ? `${instruction.prompt}\n\n${memoryContext}` : instruction.prompt;
     log.debug(`${this.logTag} [${result.sessionId}] Sending Newio instruction to new session`);
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    for await (const _ of session.prompt(instruction.prompt)) {
+    for await (const _ of session.prompt(fullInstruction)) {
       // discard
     }
     log.debug(`${this.logTag} [${result.sessionId}] Newio instruction delivered`);
@@ -287,7 +300,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
   }
 
   protected async resumeSession(
-    newioSessionId: string,
+    sessionKey: string,
     correlationId: string,
     promptFormatterVersion: string,
   ): Promise<AgentSession> {
@@ -309,7 +322,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       throw new Error('Cannot resume session: ownerId is not set');
     }
     const session = new AcpAgentSession({
-      sessionId: newioSessionId,
+      sessionId: sessionKey,
       promptFormatterVersion,
       correlationId,
       connection: conn,
@@ -324,6 +337,52 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     log.info(`${this.logTag} Session resumed: ${correlationId}`);
 
     return session;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Memory & handoff
+  // ---------------------------------------------------------------------------
+
+  /** Load memory for a conversation session. */
+  private async loadMemoryForSession(conversationId: string) {
+    const agentId = this.app.identity.userId;
+    const conv = this.app.store.getConversation(conversationId);
+    const members = this.app.store.getMembers(conversationId);
+
+    // For DMs, load full memory for the other participant
+    const participantIds: string[] = [];
+    if (conv?.type === 'dm' && members) {
+      for (const [userId] of members) {
+        if (userId !== agentId) {
+          participantIds.push(userId);
+        }
+      }
+    }
+
+    return this.app.client.loadSessionMemory({ agentId, conversationId, participantIds });
+  }
+
+  /** Load the handoff note for a conversation (graceful fallback if endpoint doesn't exist). */
+  private async loadHandoffNote(conversationId: string): Promise<string | null> {
+    try {
+      const result = await this.app.client.getHandoffNote({
+        agentId: this.app.identity.userId,
+        conversationId,
+      });
+      return result.text;
+    } catch {
+      // Endpoint may not exist yet — graceful fallback
+      return null;
+    }
+  }
+
+  /** Persist a handoff note for a conversation (graceful fallback if endpoint doesn't exist). */
+  protected onHandoffGenerated(conversationId: string, summary: string): void {
+    this.app.client
+      .putHandoffNote({ agentId: this.app.identity.userId, conversationId, text: summary })
+      .catch((err: unknown) => {
+        log.warn(`${this.logTag} Failed to persist handoff note for ${conversationId}`, err);
+      });
   }
 
   /** Register a session and replay any buffered updates received during initialization. */

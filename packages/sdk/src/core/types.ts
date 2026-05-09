@@ -1106,3 +1106,20 @@ export interface LoadSessionMemoryResponse {
   readonly topUsers: ReadonlyArray<MemoryScopeSummary>;
   readonly topConversations: ReadonlyArray<MemoryScopeSummary>;
 }
+
+// ── Handoff notes ──
+
+export interface GetHandoffNoteRequest {
+  readonly agentId: string;
+  readonly conversationId: string;
+}
+
+export interface GetHandoffNoteResponse {
+  readonly text: string | null;
+}
+
+export interface PutHandoffNoteRequest {
+  readonly agentId: string;
+  readonly conversationId: string;
+  readonly text: string;
+}

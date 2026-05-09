@@ -119,6 +119,9 @@ import type {
   TouchMemoryScopeResponse,
   LoadSessionMemoryRequest,
   LoadSessionMemoryResponse,
+  GetHandoffNoteRequest,
+  GetHandoffNoteResponse,
+  PutHandoffNoteRequest,
 } from './types.js';
 
 /**
@@ -554,6 +557,21 @@ export class NewioClient {
       params.set('participantIds', input.participantIds.join(','));
     }
     return this.http.request(`/agents/${encodeURIComponent(input.agentId)}/memory/session?${params}`);
+  }
+
+  /** Get the handoff note for a conversation. */
+  async getHandoffNote(input: GetHandoffNoteRequest): Promise<GetHandoffNoteResponse> {
+    return this.http.request(
+      `/agents/${encodeURIComponent(input.agentId)}/conversations/${encodeURIComponent(input.conversationId)}/handoff`,
+    );
+  }
+
+  /** Save or overwrite the handoff note for a conversation. */
+  async putHandoffNote(input: PutHandoffNoteRequest): Promise<void> {
+    await this.http.request(
+      `/agents/${encodeURIComponent(input.agentId)}/conversations/${encodeURIComponent(input.conversationId)}/handoff`,
+      { method: 'PUT', body: JSON.stringify({ text: input.text }) },
+    );
   }
 
   // ---------------------------------------------------------------------------

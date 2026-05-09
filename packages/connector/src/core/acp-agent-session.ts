@@ -100,6 +100,10 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
     this.permissionHandler = handler;
   }
 
+  onContextPressure(cb: () => void): void {
+    this.contextWindowHandler.onContextPressure(cb);
+  }
+
   async *prompt(text: string, conversationId?: string): AsyncGenerator<SessionStreamSegment> {
     this._currentConversationId = conversationId;
     const stream = new AcpSessionStream(this.statusListener, this._isSkipPrefix, conversationId);

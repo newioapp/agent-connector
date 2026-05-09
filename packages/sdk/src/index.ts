@@ -242,6 +242,9 @@ export type {
   TouchMemoryScopeResponse,
   LoadSessionMemoryRequest,
   LoadSessionMemoryResponse,
+  GetHandoffNoteRequest,
+  GetHandoffNoteResponse,
+  PutHandoffNoteRequest,
 } from './core/types.js';
 
 // Types — Signals (typed payloads)
