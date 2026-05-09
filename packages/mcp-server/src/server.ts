@@ -17,6 +17,7 @@ import { registerCronTools } from './tools/cron.js';
 import { registerMessagingTools } from './tools/messaging.js';
 import { registerUsersTools } from './tools/users.js';
 import { registerMediaTools } from './tools/media.js';
+import { registerMemoryTools } from './tools/memory.js';
 import { IdGetter } from './types.js';
 
 /**
@@ -54,6 +55,7 @@ export class NewioMcpServer {
     registerMessagingTools(this.server, app);
     registerUsersTools(this.server, app);
     registerMediaTools(this.server, app, () => this.getCurrentConversationId());
+    registerMemoryTools(this.server, app);
   }
 
   /** Set the Newio session ID for this MCP connection. */

@@ -227,6 +227,23 @@ export type {
   UpdateSessionResponse,
 } from './core/types.js';
 
+// Types — Memory
+export type {
+  MemoryScope,
+  MemoryFact,
+  MemoryScopeSummary,
+  MemoryScopeData,
+  MemoryOperation,
+  GetMemoryRequest,
+  GetMemoryResponse,
+  BatchUpdateMemoryRequest,
+  BatchUpdateMemoryResponse,
+  TouchMemoryScopeRequest,
+  TouchMemoryScopeResponse,
+  LoadSessionMemoryRequest,
+  LoadSessionMemoryResponse,
+} from './core/types.js';
+
 // Types — Signals (typed payloads)
 export type {
   SignalType,

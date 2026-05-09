@@ -109,6 +109,16 @@ import type {
   GetSessionResponse,
   UpdateSessionRequest,
   UpdateSessionResponse,
+
+  // Memory
+  GetMemoryRequest,
+  GetMemoryResponse,
+  BatchUpdateMemoryRequest,
+  BatchUpdateMemoryResponse,
+  TouchMemoryScopeRequest,
+  TouchMemoryScopeResponse,
+  LoadSessionMemoryRequest,
+  LoadSessionMemoryResponse,
 } from './types.js';
 
 /**
@@ -506,6 +516,44 @@ export class NewioClient {
       method: 'PUT',
       body: JSON.stringify(body),
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Memory
+  // ---------------------------------------------------------------------------
+
+  /** Get memory facts for a specific scope. */
+  async getMemory(input: GetMemoryRequest): Promise<GetMemoryResponse> {
+    const params = new URLSearchParams({ scope: input.scope, scopeId: input.scopeId });
+    return this.http.request(`/agents/${encodeURIComponent(input.agentId)}/memory?${params}`);
+  }
+
+  /** Batch add/update/delete memory facts. */
+  async batchUpdateMemory(input: BatchUpdateMemoryRequest): Promise<BatchUpdateMemoryResponse> {
+    return this.http.request(`/agents/${encodeURIComponent(input.agentId)}/memory`, {
+      method: 'POST',
+      body: JSON.stringify({ operations: input.operations }),
+    });
+  }
+
+  /** Update interaction recency for a memory scope. */
+  async touchMemoryScope(input: TouchMemoryScopeRequest): Promise<TouchMemoryScopeResponse> {
+    return this.http.request(`/agents/${encodeURIComponent(input.agentId)}/memory/touch`, {
+      method: 'PUT',
+      body: JSON.stringify({ scope: input.scope, scopeId: input.scopeId }),
+    });
+  }
+
+  /** Load full session memory (global + participants + conversation + top-N). */
+  async loadSessionMemory(input: LoadSessionMemoryRequest): Promise<LoadSessionMemoryResponse> {
+    const params = new URLSearchParams();
+    if (input.conversationId) {
+      params.set('conversationId', input.conversationId);
+    }
+    if (input.participantIds && input.participantIds.length > 0) {
+      params.set('participantIds', input.participantIds.join(','));
+    }
+    return this.http.request(`/agents/${encodeURIComponent(input.agentId)}/memory/session?${params}`);
   }
 
   // ---------------------------------------------------------------------------

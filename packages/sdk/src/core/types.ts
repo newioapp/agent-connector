@@ -1027,3 +1027,82 @@ export interface ContextWindowUpdatePayload {
   readonly contextWindowSize: number;
   readonly contextWindowUsed: number;
 }
+
+// ---------------------------------------------------------------------------
+// Memory
+// ---------------------------------------------------------------------------
+
+export type MemoryScope = 'global' | 'user' | 'conversation';
+
+export interface MemoryFact {
+  readonly factId: string;
+  readonly text: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface MemoryScopeSummary {
+  readonly scope: MemoryScope;
+  readonly scopeId: string;
+  readonly text: string;
+  readonly lastInteractionAt: string;
+  readonly interactionCount: number;
+}
+
+export interface MemoryScopeData {
+  readonly summary: MemoryScopeSummary | null;
+  readonly facts: ReadonlyArray<MemoryFact>;
+}
+
+export type MemoryOperation =
+  | { readonly op: 'add'; readonly scope: MemoryScope; readonly scopeId: string; readonly text: string }
+  | {
+      readonly op: 'update';
+      readonly scope: MemoryScope;
+      readonly scopeId: string;
+      readonly factId: string;
+      readonly text: string;
+    }
+  | { readonly op: 'delete'; readonly scope: MemoryScope; readonly scopeId: string; readonly factId: string }
+  | { readonly op: 'update_summary'; readonly scope: MemoryScope; readonly scopeId: string; readonly text: string };
+
+export interface GetMemoryRequest {
+  readonly agentId: string;
+  readonly scope: MemoryScope;
+  readonly scopeId: string;
+}
+
+export interface GetMemoryResponse {
+  readonly data: MemoryScopeData;
+}
+
+export interface BatchUpdateMemoryRequest {
+  readonly agentId: string;
+  readonly operations: ReadonlyArray<MemoryOperation>;
+}
+
+export interface BatchUpdateMemoryResponse {
+  readonly applied: number;
+}
+
+export interface TouchMemoryScopeRequest {
+  readonly agentId: string;
+  readonly scope: MemoryScope;
+  readonly scopeId: string;
+}
+
+export interface TouchMemoryScopeResponse {}
+
+export interface LoadSessionMemoryRequest {
+  readonly agentId: string;
+  readonly conversationId?: string;
+  readonly participantIds?: ReadonlyArray<string>;
+}
+
+export interface LoadSessionMemoryResponse {
+  readonly global: MemoryScopeData;
+  readonly participants: Readonly<Record<string, MemoryScopeData>>;
+  readonly conversation: MemoryScopeData;
+  readonly topUsers: ReadonlyArray<MemoryScopeSummary>;
+  readonly topConversations: ReadonlyArray<MemoryScopeSummary>;
+}
