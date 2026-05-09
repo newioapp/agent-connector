@@ -45,11 +45,9 @@ function mockApp(
       }),
       searchUsers: vi.fn().mockResolvedValue({ users: [{ userId: 'u1', username: 'alice' }] }),
       getUserByUsername: vi.fn().mockResolvedValue({ userId: 'user-1', username: 'alice' }),
-      getMemory: vi
-        .fn()
-        .mockResolvedValue({
-          data: { summary: null, facts: [{ factId: 'f1', text: 'Test fact', createdAt: 't', updatedAt: 't' }] },
-        }),
+      getMemory: vi.fn().mockResolvedValue({
+        data: { summary: null, facts: [{ factId: 'f1', text: 'Test fact', createdAt: 't', updatedAt: 't' }] },
+      }),
       batchUpdateMemory: vi.fn().mockResolvedValue({ applied: 1 }),
     },
   } as unknown as NewioApp;
@@ -82,12 +80,15 @@ describe('MCP Server', () => {
     expect(names).toEqual([
       'accept_friend_request',
       'add_members',
+      'add_memory',
       'cancel_cron',
       'create_group',
       'create_work_session',
+      'delete_memory',
       'dm_owner',
       'download_attachment',
       'get_conversation',
+      'get_memory',
       'get_my_profile',
       'get_user_profile',
       'list_conversations',
@@ -95,11 +96,6 @@ describe('MCP Server', () => {
       'list_friends',
       'list_incoming_friend_requests',
       'list_messages',
-      'memory_add',
-      'memory_delete',
-      'memory_get_scope',
-      'memory_update',
-      'memory_update_summary',
       'reject_friend_request',
       'remove_friend',
       'remove_member',
@@ -108,6 +104,8 @@ describe('MCP Server', () => {
       'send_dm',
       'send_friend_request',
       'send_message',
+      'update_memory',
+      'update_memory_summary',
       'upload_attachment_to_current_conversation',
     ]);
   });
@@ -449,64 +447,68 @@ describe('MCP Server', () => {
 
   // ── Memory tools ──
 
-  it('memory_get_scope calls client.getMemory', async () => {
+  it('get_memory resolves username and calls client.getMemory', async () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
-    const result = await client.callTool({ name: 'memory_get_scope', arguments: { scope: 'user', scopeId: 'user-1' } });
-    const parsed = JSON.parse((result.content[0] as { text: string }).text);
-    expect(parsed.facts).toHaveLength(1);
-    expect(parsed.facts[0].factId).toBe('f1');
-    expect(app.client.getMemory).toHaveBeenCalledWith({ agentId: 'me', scope: 'user', scopeId: 'user-1' });
+    const result = await client.callTool({ name: 'get_memory', arguments: { username: 'alice' } });
+    expect(app.resolveUsername).toHaveBeenCalledWith('alice');
+    expect(app.client.getMemory).toHaveBeenCalledWith({ agentId: 'me', scope: 'user', scopeId: 'resolved-id' });
+    const content = (result.content[0] as { text: string }).text;
+    expect(content).toContain('factId');
   });
 
-  it('memory_add calls client.batchUpdateMemory with add op', async () => {
+  it('get_memory uses global scope when no username or conversationId', async () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
-    const result = await client.callTool({
-      name: 'memory_add',
-      arguments: { scope: 'global', scopeId: '_', text: 'I am helpful.' },
-    });
-    const parsed = JSON.parse((result.content[0] as { text: string }).text);
-    expect(parsed.stored).toBe(true);
+    await client.callTool({ name: 'get_memory', arguments: {} });
+    expect(app.client.getMemory).toHaveBeenCalledWith({ agentId: 'me', scope: 'global', scopeId: '_' });
+  });
+
+  it('add_memory resolves username and calls batchUpdateMemory', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    await client.callTool({ name: 'add_memory', arguments: { text: 'User likes Python.', username: 'alice' } });
+    expect(app.resolveUsername).toHaveBeenCalledWith('alice');
     expect(app.client.batchUpdateMemory).toHaveBeenCalledWith({
       agentId: 'me',
-      operations: [{ op: 'add', scope: 'global', scopeId: '_', text: 'I am helpful.' }],
+      operations: [{ op: 'add', scope: 'user', scopeId: 'resolved-id', text: 'User likes Python.' }],
     });
   });
 
-  it('memory_update calls client.batchUpdateMemory with update op', async () => {
+  it('update_memory calls batchUpdateMemory with conversation scope', async () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
     await client.callTool({
-      name: 'memory_update',
-      arguments: { scope: 'user', scopeId: 'u1', factId: 'f1', text: 'Updated.' },
+      name: 'update_memory',
+      arguments: { factId: 'f1', text: 'Updated.', conversationId: 'conv-1' },
     });
     expect(app.client.batchUpdateMemory).toHaveBeenCalledWith({
       agentId: 'me',
-      operations: [{ op: 'update', scope: 'user', scopeId: 'u1', factId: 'f1', text: 'Updated.' }],
+      operations: [{ op: 'update', scope: 'conversation', scopeId: 'conv-1', factId: 'f1', text: 'Updated.' }],
     });
   });
 
-  it('memory_delete calls client.batchUpdateMemory with delete op', async () => {
+  it('delete_memory uses global scope when no target specified', async () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
-    await client.callTool({ name: 'memory_delete', arguments: { scope: 'conversation', scopeId: 'c1', factId: 'f1' } });
+    await client.callTool({ name: 'delete_memory', arguments: { factId: 'f1' } });
     expect(app.client.batchUpdateMemory).toHaveBeenCalledWith({
       agentId: 'me',
-      operations: [{ op: 'delete', scope: 'conversation', scopeId: 'c1', factId: 'f1' }],
+      operations: [{ op: 'delete', scope: 'global', scopeId: '_', factId: 'f1' }],
     });
   });
 
-  it('memory_update_summary calls client.batchUpdateMemory with update_summary op', async () => {
+  it('update_memory_summary resolves username', async () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
     await client.callTool({
-      name: 'memory_update_summary',
-      arguments: { scope: 'user', scopeId: 'u1', text: 'A developer.' },
+      name: 'update_memory_summary',
+      arguments: { text: 'A developer.', username: 'alice' },
     });
+    expect(app.resolveUsername).toHaveBeenCalledWith('alice');
     expect(app.client.batchUpdateMemory).toHaveBeenCalledWith({
       agentId: 'me',
-      operations: [{ op: 'update_summary', scope: 'user', scopeId: 'u1', text: 'A developer.' }],
+      operations: [{ op: 'update_summary', scope: 'user', scopeId: 'resolved-id', text: 'A developer.' }],
     });
   });
 });

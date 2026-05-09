@@ -1,113 +1,147 @@
 /**
- * Memory tools — read and write agent memory scopes.
+ * Memory tools — read and write agent memory.
+ *
+ * Scoping is inferred from parameters:
+ * - username provided → user-scoped memory
+ * - conversationId provided → conversation-scoped memory
+ * - neither → global (agent-wide) memory
  */
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NewioApp, MemoryScope } from '@newio/agent-sdk';
+import { stringify } from 'yaml';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
-const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
+const yaml = (obj: unknown) => text(stringify(obj));
 
-const scopeEnum = z
-  .enum(['global', 'user', 'conversation'])
-  .describe('Memory scope: global (agent-wide), user (per-person), or conversation (per-conversation)');
+function resolveScope(username?: string, conversationId?: string): { scope: MemoryScope; scopeId: string } {
+  if (username && conversationId) {
+    throw new Error('Provide either username or conversationId, not both.');
+  }
+  if (username) {
+    return { scope: 'user', scopeId: username }; // placeholder — resolved to userId below
+  }
+  if (conversationId) {
+    return { scope: 'conversation', scopeId: conversationId };
+  }
+  return { scope: 'global', scopeId: '_' };
+}
 
 /** Register memory tools on the MCP server. */
 export function registerMemoryTools(server: McpServer, app: NewioApp): void {
   const agentId = app.identity.userId;
 
+  /** Resolve username to userId if scope is user. */
+  async function resolveScopeId(
+    username?: string,
+    conversationId?: string,
+  ): Promise<{ scope: MemoryScope; scopeId: string }> {
+    const { scope, scopeId } = resolveScope(username, conversationId);
+    if (scope === 'user') {
+      const userId = await app.resolveUsername(scopeId);
+      return { scope, scopeId: userId };
+    }
+    return { scope, scopeId };
+  }
+
   server.registerTool(
-    'memory_get_scope',
+    'get_memory',
     {
       description:
-        'Load memory for a specific scope (user or conversation). Use this to retrieve context about a person or conversation that was not pre-loaded at session start.',
+        'Load memory about a person or conversation. Use this to retrieve context that was not pre-loaded at session start (e.g., a new participant joined).',
       inputSchema: {
-        scope: scopeEnum,
-        scopeId: z.string().describe('The userId or conversationId. Use "_" for global scope.'),
+        username: z.string().optional().describe('Username of the person (for user-scoped memory)'),
+        conversationId: z.string().optional().describe('Conversation ID (for conversation-scoped memory)'),
       },
     },
-    async ({ scope, scopeId }) => {
-      const result = await app.client.getMemory({ agentId, scope: scope as MemoryScope, scopeId });
-      return json(result.data);
+    async ({ username, conversationId }) => {
+      const { scope, scopeId } = await resolveScopeId(username, conversationId);
+      const result = await app.client.getMemory({ agentId, scope, scopeId });
+      return yaml(result.data);
     },
   );
 
   server.registerTool(
-    'memory_add',
+    'add_memory',
     {
       description:
-        'Add a new fact to memory. Facts must be self-contained, third-person statements. Group related information about the same entity into one fact.',
+        'Store a new fact in memory. Facts must be self-contained, third-person statements (15-50 words). Group related information about the same entity into one fact.',
       inputSchema: {
-        scope: scopeEnum,
-        scopeId: z.string().describe('The userId or conversationId. Use "_" for global scope.'),
-        text: z.string().describe('The fact to store (self-contained, third-person, 15-50 words)'),
+        text: z.string().describe('The fact to store (self-contained, third-person)'),
+        username: z.string().optional().describe('Username of the person this fact is about'),
+        conversationId: z.string().optional().describe('Conversation ID this fact is about'),
       },
     },
-    async ({ scope, scopeId, text: factText }) => {
+    async ({ text: factText, username, conversationId }) => {
+      const { scope, scopeId } = await resolveScopeId(username, conversationId);
       const result = await app.client.batchUpdateMemory({
         agentId,
-        operations: [{ op: 'add', scope: scope as MemoryScope, scopeId, text: factText }],
+        operations: [{ op: 'add', scope, scopeId, text: factText }],
       });
-      return json({ stored: true, applied: result.applied });
+      return yaml({ stored: true, applied: result.applied });
     },
   );
 
   server.registerTool(
-    'memory_update',
+    'update_memory',
     {
-      description: 'Update an existing memory fact. Use when information has materially changed. Preserves the factId.',
+      description:
+        'Update an existing memory fact. Use when information has materially changed — not for cosmetic rewording.',
       inputSchema: {
-        scope: scopeEnum,
-        scopeId: z.string().describe('The userId or conversationId. Use "_" for global scope.'),
         factId: z.string().describe('The ID of the fact to update'),
         text: z.string().describe('The updated fact text'),
+        username: z.string().optional().describe('Username of the person this fact is about'),
+        conversationId: z.string().optional().describe('Conversation ID this fact is about'),
       },
     },
-    async ({ scope, scopeId, factId, text: factText }) => {
+    async ({ factId, text: factText, username, conversationId }) => {
+      const { scope, scopeId } = await resolveScopeId(username, conversationId);
       const result = await app.client.batchUpdateMemory({
         agentId,
-        operations: [{ op: 'update', scope: scope as MemoryScope, scopeId, factId, text: factText }],
+        operations: [{ op: 'update', scope, scopeId, factId, text: factText }],
       });
-      return json({ updated: true, applied: result.applied });
+      return yaml({ updated: true, applied: result.applied });
     },
   );
 
   server.registerTool(
-    'memory_delete',
+    'delete_memory',
     {
       description: 'Delete a memory fact. Use when information is contradicted or no longer relevant.',
       inputSchema: {
-        scope: scopeEnum,
-        scopeId: z.string().describe('The userId or conversationId. Use "_" for global scope.'),
         factId: z.string().describe('The ID of the fact to delete'),
+        username: z.string().optional().describe('Username of the person this fact is about'),
+        conversationId: z.string().optional().describe('Conversation ID this fact is about'),
       },
     },
-    async ({ scope, scopeId, factId }) => {
+    async ({ factId, username, conversationId }) => {
+      const { scope, scopeId } = await resolveScopeId(username, conversationId);
       const result = await app.client.batchUpdateMemory({
         agentId,
-        operations: [{ op: 'delete', scope: scope as MemoryScope, scopeId, factId }],
+        operations: [{ op: 'delete', scope, scopeId, factId }],
       });
-      return json({ deleted: true, applied: result.applied });
+      return yaml({ deleted: true, applied: result.applied });
     },
   );
 
   server.registerTool(
-    'memory_update_summary',
+    'update_memory_summary',
     {
       description:
-        'Update the summary for a memory scope. Summaries are always loaded at session start and should be a concise overview (max 10 lines for user/conversation, unlimited for global).',
+        'Update the summary for a memory scope. Summaries are always loaded at session start — keep them concise (max 10 lines for user/conversation).',
       inputSchema: {
-        scope: scopeEnum,
-        scopeId: z.string().describe('The userId or conversationId. Use "_" for global scope.'),
         text: z.string().describe('The new summary text'),
+        username: z.string().optional().describe('Username of the person this summary is about'),
+        conversationId: z.string().optional().describe('Conversation ID this summary is about'),
       },
     },
-    async ({ scope, scopeId, text: summaryText }) => {
+    async ({ text: summaryText, username, conversationId }) => {
+      const { scope, scopeId } = await resolveScopeId(username, conversationId);
       const result = await app.client.batchUpdateMemory({
         agentId,
-        operations: [{ op: 'update_summary', scope: scope as MemoryScope, scopeId, text: summaryText }],
+        operations: [{ op: 'update_summary', scope, scopeId, text: summaryText }],
       });
-      return json({ updated: true, applied: result.applied });
+      return yaml({ updated: true, applied: result.applied });
     },
   );
 }
