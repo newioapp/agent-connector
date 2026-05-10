@@ -1,10 +1,7 @@
 /**
- * SessionStore — SQLite-backed mapping between Newio session IDs and
- * agent-platform-specific correlation IDs.
+ * SessionStore — SQLite-backed persistence for cron jobs.
  *
- * One database for the entire app. The `newioSessionId` is globally unique
- * (currently the conversationId, will become a real session ID when the
- * backend adds session support).
+ * One database for the entire app.
  */
 import Database from 'better-sqlite3';
 import { Logger } from './logger';
@@ -20,24 +17,12 @@ export interface CronJobRow {
   readonly payload?: unknown;
 }
 
-export interface SessionMetadata {
-  readonly correlationId: string;
-  readonly promptFormatterVersion: string;
-}
-
 export class SessionStore {
   private readonly db: Database.Database;
 
   constructor(dbPath: string) {
     this.db = new Database(dbPath);
     this.db.pragma('journal_mode = WAL');
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS session_mapping (
-        newioSessionId TEXT PRIMARY KEY,
-        correlationId TEXT NOT NULL,
-        promptFormatterVersion TEXT NOT NULL
-      )
-    `);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS cron_jobs (
         cronId TEXT PRIMARY KEY,
@@ -49,31 +34,6 @@ export class SessionStore {
       )
     `);
     log.info(`Opened session store: ${dbPath}`);
-  }
-
-  /** Get the session metadata for a Newio session. */
-  get(newioSessionId: string): SessionMetadata | undefined {
-    const row = this.db
-      .prepare('SELECT correlationId, promptFormatterVersion FROM session_mapping WHERE newioSessionId = ?')
-      .get(newioSessionId) as { correlationId: string; promptFormatterVersion: string } | undefined;
-    if (!row) {
-      return undefined;
-    }
-    return { correlationId: row.correlationId, promptFormatterVersion: row.promptFormatterVersion };
-  }
-
-  /** Store a mapping. */
-  set(newioSessionId: string, correlationId: string, promptFormatterVersion: string): void {
-    this.db
-      .prepare(
-        'INSERT OR REPLACE INTO session_mapping (newioSessionId, correlationId, promptFormatterVersion) VALUES (?, ?, ?)',
-      )
-      .run(newioSessionId, correlationId, promptFormatterVersion);
-  }
-
-  /** Remove a mapping. */
-  delete(newioSessionId: string): void {
-    this.db.prepare('DELETE FROM session_mapping WHERE newioSessionId = ?').run(newioSessionId);
   }
 
   // ---------------------------------------------------------------------------

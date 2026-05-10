@@ -320,9 +320,26 @@ Cron trigger example:
   }
 
   buildMemoryUpdatePrompt(): string {
-    return `Update your memory now. Your session will continue after this.
+    return `Update your memory now. Your session will continue after this.\n\n${this.memoryUpdateRules()}`;
+  }
 
-Before making changes, use \`get_memory\` to check what you already know about relevant users and this conversation.
+  buildSessionEndPrompt(): string {
+    return `Your session is ending. Update your memory and produce a handoff note.
+
+## Step 1: Update memory
+
+${this.memoryUpdateRules()}
+
+## Step 2: Handoff note
+
+After updating memory, output a brief handoff note (2-4 sentences) describing what was happening in this session so the next session can pick up context. This should capture the current state of work, not durable facts (those go in memory).
+
+Output the handoff note as your final message, prefixed with exactly "HANDOFF:" on its own line.`;
+  }
+
+  /** Shared memory update instructions used by both mid-session and session-end prompts. */
+  private memoryUpdateRules(): string {
+    return `Before making changes, use \`get_memory\` to check what you already know about relevant users and this conversation.
 
 For each piece of durable information from this session:
 
@@ -342,39 +359,6 @@ Rules:
 - Summaries: max 8 lines. Keep them high-level overviews.
 - Do NOT store: transient task status, verbatim conversation, or anything stale tomorrow.
 - Omit username and conversationId to store facts about yourself (global scope).`;
-  }
-
-  buildSessionEndPrompt(): string {
-    return `Your session is ending. Update your memory and produce a handoff note.
-
-## Step 1: Update memory
-
-Before making changes, use \`get_memory\` to check what you already know about relevant users and this conversation.
-
-For each piece of durable information from this session:
-
-1. **Future Utility** — Will this matter in future interactions?
-2. **Novelty** — Is this already captured in your current memory?
-3. **Factual** — Is this a fact, preference, or decision (not ephemeral chatter)?
-4. **Safe** — No sensitive credentials or PII?
-
-Actions:
-- New fact → \`add_memory\` with the appropriate username or conversationId
-- Update existing → \`update_memory\` with the factId
-- Obsolete → \`delete_memory\` with the factId
-- Summary needs refresh → \`update_memory_summary\`
-
-Rules:
-- Facts: self-contained, third-person, no pronouns.
-- Summaries: max 8 lines.
-- Do NOT store: transient task status, verbatim conversation, or anything stale tomorrow.
-- Omit username and conversationId to store facts about yourself (global scope).
-
-## Step 2: Handoff note
-
-After updating memory, output a brief handoff note (2-4 sentences) describing what was happening in this session so the next session can pick up context. This should capture the current state of work, not durable facts (those go in memory).
-
-Output the handoff note as your final message, prefixed with exactly "HANDOFF:" on its own line.`;
   }
 
   // ---------------------------------------------------------------------------

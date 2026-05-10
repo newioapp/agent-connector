@@ -299,46 +299,6 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     return session;
   }
 
-  protected async resumeSession(
-    sessionKey: string,
-    correlationId: string,
-    promptFormatterVersion: string,
-  ): Promise<AgentSession> {
-    const config = this.config.acp;
-    if (!config) {
-      throw new Error('ACP config missing');
-    }
-
-    log.info(`${this.logTag} Resuming ACP session: ${correlationId}`);
-    const conn = this.getConnection();
-
-    const loadResult = await conn.loadSession({
-      sessionId: correlationId,
-      cwd: config.cwd,
-      mcpServers: buildMcpServers(this.mcpSocketPath),
-    });
-
-    if (!this.app.identity.ownerId) {
-      throw new Error('Cannot resume session: ownerId is not set');
-    }
-    const session = new AcpAgentSession({
-      sessionId: sessionKey,
-      promptFormatterVersion,
-      correlationId,
-      connection: conn,
-      client: this.app.client,
-      ownerId: this.app.identity.ownerId,
-      sessionResponse: loadResult,
-      disposable: this.supportsClose,
-      username: this.config.newio?.username,
-      isSkipPrefix: (text) => this.promptManager.isSkipPrefix(promptFormatterVersion, text),
-    });
-    this.registerSession(correlationId, session);
-    log.info(`${this.logTag} Session resumed: ${correlationId}`);
-
-    return session;
-  }
-
   // ---------------------------------------------------------------------------
   // Memory & handoff
   // ---------------------------------------------------------------------------
@@ -374,15 +334,6 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       // Endpoint may not exist yet — graceful fallback
       return null;
     }
-  }
-
-  /** Persist a handoff note for a conversation (graceful fallback if endpoint doesn't exist). */
-  protected onHandoffGenerated(conversationId: string, summary: string): void {
-    this.app.client
-      .putHandoffNote({ agentId: this.app.identity.userId, conversationId, text: summary })
-      .catch((err: unknown) => {
-        log.warn(`${this.logTag} Failed to persist handoff note for ${conversationId}`, err);
-      });
   }
 
   /** Register a session and replay any buffered updates received during initialization. */
