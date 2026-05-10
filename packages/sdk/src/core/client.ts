@@ -63,6 +63,7 @@ import type {
   RemoveMemberResponse,
   UpdateMemberRoleRequest,
   UpdateMemberRoleResponse,
+  UpdateAgentMemberConfigRequest,
   MarkReadRequest,
   MarkReadResponse,
   UpdateNotifyLevelRequest,
@@ -104,12 +105,6 @@ import type {
   ReportAgentInfoRequest,
   ReportAgentInfoResponse,
 
-  // Sessions
-  GetSessionRequest,
-  GetSessionResponse,
-  UpdateSessionRequest,
-  UpdateSessionResponse,
-
   // Memory
   GetMemoryRequest,
   GetMemoryResponse,
@@ -119,6 +114,9 @@ import type {
   TouchMemoryScopeResponse,
   LoadSessionMemoryRequest,
   LoadSessionMemoryResponse,
+  GetHandoffNoteRequest,
+  GetHandoffNoteResponse,
+  PutHandoffNoteRequest,
 } from './types.js';
 
 /**
@@ -347,6 +345,15 @@ export class NewioClient {
     );
   }
 
+  /** Update the agent's own member config (acpModel, acpMode). */
+  async updateAgentMember(input: UpdateAgentMemberConfigRequest): Promise<void> {
+    const { conversationId, ...body } = input;
+    await this.http.request(`/conversations/${encodeURIComponent(conversationId)}/members/me`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  }
+
   /** Mark a conversation as read up to a timestamp. */
   async markRead(input: MarkReadRequest): Promise<MarkReadResponse> {
     return this.http.request(`/conversations/${encodeURIComponent(input.conversationId)}/read`, {
@@ -504,20 +511,6 @@ export class NewioClient {
   // Sessions
   // ---------------------------------------------------------------------------
 
-  /** Get a session by ID. */
-  async getSession(input: GetSessionRequest): Promise<GetSessionResponse> {
-    return this.http.request(`/sessions/${input.sessionId}`, { method: 'GET' });
-  }
-
-  /** Update a session (name, acpModel, acpMode). */
-  async updateSession(input: UpdateSessionRequest): Promise<UpdateSessionResponse> {
-    const { sessionId, ...body } = input;
-    return this.http.request(`/sessions/${sessionId}`, {
-      method: 'PUT',
-      body: JSON.stringify(body),
-    });
-  }
-
   // ---------------------------------------------------------------------------
   // Memory
   // ---------------------------------------------------------------------------
@@ -554,6 +547,21 @@ export class NewioClient {
       params.set('participantIds', input.participantIds.join(','));
     }
     return this.http.request(`/agents/${encodeURIComponent(input.agentId)}/memory/session?${params}`);
+  }
+
+  /** Get the handoff note for a conversation. */
+  async getHandoffNote(input: GetHandoffNoteRequest): Promise<GetHandoffNoteResponse> {
+    return this.http.request(
+      `/agents/${encodeURIComponent(input.agentId)}/conversations/${encodeURIComponent(input.conversationId)}/handoff`,
+    );
+  }
+
+  /** Save or overwrite the handoff note for a conversation. */
+  async putHandoffNote(input: PutHandoffNoteRequest): Promise<void> {
+    await this.http.request(
+      `/agents/${encodeURIComponent(input.agentId)}/conversations/${encodeURIComponent(input.conversationId)}/handoff`,
+      { method: 'PUT', body: JSON.stringify({ text: input.text }) },
+    );
   }
 
   // ---------------------------------------------------------------------------

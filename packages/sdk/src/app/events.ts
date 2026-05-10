@@ -99,10 +99,6 @@ export function wireEvents(
       return;
     }
 
-    if (self.sessionId) {
-      store.setSessionId(conversationId, self.sessionId);
-    }
-
     if (!store.hasConversation(conversationId)) {
       log.info(`Added to unknown conversation ${conversationId} — loading details.`);
       void loadConversation(store, client, identity, conversationId);
@@ -126,9 +122,6 @@ export function wireEvents(
       log.debug(`Event conversation.member_updated (self): ${event.payload.conversationId}`);
       if (event.payload.changes.notifyLevel) {
         store.setNotifyLevel(event.payload.conversationId, event.payload.changes.notifyLevel);
-      }
-      if (event.payload.changes.sessionId) {
-        store.setSessionId(event.payload.conversationId, event.payload.changes.sessionId);
       }
     }
     // App handler fires for all member updates
@@ -371,9 +364,6 @@ async function loadConversation(
     if (self) {
       if (self.notifyLevel) {
         store.setNotifyLevel(conversationId, self.notifyLevel);
-      }
-      if (self.sessionId) {
-        store.setSessionId(conversationId, self.sessionId);
       }
     }
     log.debug(`Loaded conversation ${conversationId} (${conv.members.length} members).`);

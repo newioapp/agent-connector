@@ -218,14 +218,7 @@ export type {
 export type { ReportAgentHostInfo, ReportAgentInfoRequest, ReportAgentInfoResponse } from './core/types.js';
 
 // Types — Sessions
-export type {
-  SessionRecord,
-  SessionConfigUpdate,
-  GetSessionRequest,
-  GetSessionResponse,
-  UpdateSessionRequest,
-  UpdateSessionResponse,
-} from './core/types.js';
+export type { SessionRecord, SessionConfigUpdate, UpdateAgentMemberConfigRequest } from './core/types.js';
 
 // Types — Memory
 export type {
@@ -242,6 +235,9 @@ export type {
   TouchMemoryScopeResponse,
   LoadSessionMemoryRequest,
   LoadSessionMemoryResponse,
+  GetHandoffNoteRequest,
+  GetHandoffNoteResponse,
+  PutHandoffNoteRequest,
 } from './core/types.js';
 
 // Types — Signals (typed payloads)

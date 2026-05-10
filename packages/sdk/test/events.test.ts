@@ -85,15 +85,13 @@ describe('wireEvents', () => {
     pendingActions = new PendingActions();
     processor = { handleMessageNew: vi.fn().mockResolvedValue(undefined) } as unknown as MessageProcessor;
     signalHandlers = {
-      liveSessionInfo: vi
-        .fn()
-        .mockReturnValue({
-          sessionId: 's1',
-          availableModels: [],
-          availableModes: [],
-          canCancel: true,
-          canCompact: false,
-        }),
+      liveSessionInfo: vi.fn().mockReturnValue({
+        sessionId: 's1',
+        availableModels: [],
+        availableModes: [],
+        canCancel: true,
+        canCompact: false,
+      }),
       cancelSession: vi.fn().mockResolvedValue({ success: true }),
       compactSession: vi.fn().mockResolvedValue({ success: true }),
     };
@@ -187,16 +185,6 @@ describe('wireEvents', () => {
     expect(store.getMembers('c1')?.has('u2')).toBe(true);
   });
 
-  it('sets sessionId when self is added with sessionId', () => {
-    store.setMembers('c1', []);
-    ws.fire('conversation.member_added', {
-      type: 'conversation.member_added',
-      timestamp: ts,
-      payload: { conversationId: 'c1', addedBy: 'u1', members: [{ userId: 'me', sessionId: 's99' }] },
-    });
-    expect(store.getSessionId('c1')).toBe('s99');
-  });
-
   it('loads conversation when self is added to unknown conversation', async () => {
     ws.fire('conversation.member_added', {
       type: 'conversation.member_added',
@@ -234,14 +222,13 @@ describe('wireEvents', () => {
   // conversation.member_updated
   // -----------------------------------------------------------------------
 
-  it('updates notifyLevel and sessionId for self', () => {
+  it('updates notifyLevel for self', () => {
     ws.fire('conversation.member_updated', {
       type: 'conversation.member_updated',
       timestamp: ts,
-      payload: { conversationId: 'c1', userId: 'me', changes: { notifyLevel: 'nothing', sessionId: 's2' } },
+      payload: { conversationId: 'c1', userId: 'me', changes: { notifyLevel: 'nothing' } },
     });
     expect(store.getNotifyLevel('c1')).toBe('nothing');
-    expect(store.getSessionId('c1')).toBe('s2');
   });
 
   it('ignores member_updated for other users', () => {

@@ -75,16 +75,6 @@ async function createConnectedClient(app: NewioApp): Promise<Client> {
   return client;
 }
 
-async function createConnectedClientWithSession(app: NewioApp, sessionId: string): Promise<Client> {
-  const server = new NewioMcpServer(app);
-  server.setSessionIdGetter(() => sessionId);
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  await server.connect(serverTransport);
-  const client = new Client({ name: 'test-client', version: '1.0.0' });
-  await client.connect(clientTransport);
-  return client;
-}
-
 describe('MCP Server', () => {
   it('lists all tools', async () => {
     const client = await createConnectedClient(mockApp());
@@ -159,26 +149,24 @@ describe('MCP Server', () => {
     expect(app.acceptFriendRequestByUsername).toHaveBeenCalledWith('bob');
   });
 
-  it('create_work_session throws when sessionId is not set', async () => {
+  it('create_work_session calls app.createWorkSession', async () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
-    const result = await client.callTool({
+    await client.callTool({
       name: 'create_work_session',
       arguments: { name: 'Sprint Planning', usernames: ['alice', 'bob'] },
     });
-    expect(result.isError).toBe(true);
-    expect((result.content[0] as { text: string }).text).toContain('no session ID');
+    expect(app.createWorkSession).toHaveBeenCalledWith('Sprint Planning', ['alice', 'bob']);
   });
 
-  it('create_group throws when sessionId is not set', async () => {
+  it('create_group calls app.createGroup', async () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
-    const result = await client.callTool({
+    await client.callTool({
       name: 'create_group',
       arguments: { usernames: ['alice', 'bob'], name: 'Team' },
     });
-    expect(result.isError).toBe(true);
-    expect((result.content[0] as { text: string }).text).toContain('no session ID');
+    expect(app.createGroup).toHaveBeenCalledWith('Team', ['alice', 'bob']);
   });
 
   it('send_message supports file attachments', async () => {
@@ -249,24 +237,38 @@ describe('MCP Server', () => {
     expect(parsed).toHaveLength(1);
   });
 
-  it('create_work_session passes sessionId when set', async () => {
+  it('schedule_cron calls app.scheduleCron', async () => {
     const app = mockApp();
-    const client = await createConnectedClientWithSession(app, 'session-123');
-    await client.callTool({
-      name: 'create_work_session',
-      arguments: { name: 'Sprint', usernames: ['alice'] },
+    const client = await createConnectedClient(app);
+    const result = await client.callTool({
+      name: 'schedule_cron',
+      arguments: { expression: 'every 30m', label: 'Check deadlines' },
     });
-    expect(app.createWorkSession).toHaveBeenCalledWith('Sprint', ['alice'], 'session-123');
+    expect(app.scheduleCron).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expression: 'every 30m',
+        label: 'Check deadlines',
+      }),
+    );
+    expect((result.content[0] as { text: string }).text).toContain('Cron scheduled');
   });
 
-  it('create_group passes sessionId when set', async () => {
+  it('cancel_cron calls app.cancelCron', async () => {
     const app = mockApp();
-    const client = await createConnectedClientWithSession(app, 'session-456');
-    await client.callTool({
-      name: 'create_group',
-      arguments: { name: 'Team', usernames: ['alice'] },
-    });
-    expect(app.createGroup).toHaveBeenCalledWith('Team', ['alice'], 'session-456');
+    const client = await createConnectedClient(app);
+    await client.callTool({ name: 'cancel_cron', arguments: { cronId: 'cron_abc' } });
+    expect(app.cancelCron).toHaveBeenCalledWith('cron_abc');
+  });
+
+  it('list_crons returns active cron jobs', async () => {
+    const app = mockApp();
+    (app.listCrons as ReturnType<typeof vi.fn>).mockReturnValue([
+      { cronId: 'cron_1', expression: 'every 1h', label: 'Hourly check' },
+    ]);
+    const client = await createConnectedClient(app);
+    const result = await client.callTool({ name: 'list_crons', arguments: {} });
+    const parsed = JSON.parse((result.content[0] as { text: string }).text) as unknown[];
+    expect(parsed).toHaveLength(1);
   });
 
   it('list_incoming_friend_requests returns summaries', async () => {
@@ -278,52 +280,6 @@ describe('MCP Server', () => {
     expect(parsed[0]).toHaveProperty('username', 'bob');
     expect(parsed[0]).not.toHaveProperty('userId');
     expect(parsed[0]).not.toHaveProperty('contactId');
-  });
-
-  it('schedule_cron calls app.scheduleCron with sessionId', async () => {
-    const app = mockApp();
-    const client = await createConnectedClientWithSession(app, 'session-789');
-    const result = await client.callTool({
-      name: 'schedule_cron',
-      arguments: { expression: 'every 30m', label: 'Check deadlines' },
-    });
-    expect(app.scheduleCron).toHaveBeenCalledWith(
-      expect.objectContaining({
-        expression: 'every 30m',
-        newioSessionId: 'session-789',
-        label: 'Check deadlines',
-      }),
-    );
-    expect((result.content[0] as { text: string }).text).toContain('Cron scheduled');
-  });
-
-  it('schedule_cron errors when no session context', async () => {
-    const app = mockApp();
-    const client = await createConnectedClient(app);
-    const result = await client.callTool({
-      name: 'schedule_cron',
-      arguments: { expression: 'every 1h', label: 'Test' },
-    });
-    expect((result.content[0] as { text: string }).text).toContain('no session context');
-    expect(app.scheduleCron).not.toHaveBeenCalled();
-  });
-
-  it('cancel_cron calls app.cancelCron', async () => {
-    const app = mockApp();
-    const client = await createConnectedClientWithSession(app, 'session-1');
-    await client.callTool({ name: 'cancel_cron', arguments: { cronId: 'cron_abc' } });
-    expect(app.cancelCron).toHaveBeenCalledWith('cron_abc', 'session-1');
-  });
-
-  it('list_crons returns active cron jobs', async () => {
-    const app = mockApp();
-    (app.listCrons as ReturnType<typeof vi.fn>).mockReturnValue([
-      { cronId: 'cron_1', expression: 'every 1h', newioSessionId: 's1', label: 'Hourly check' },
-    ]);
-    const client = await createConnectedClientWithSession(app, 's1');
-    const result = await client.callTool({ name: 'list_crons', arguments: {} });
-    const parsed = JSON.parse((result.content[0] as { text: string }).text) as unknown[];
-    expect(parsed).toHaveLength(1);
   });
 
   it('reject_friend_request calls app method by username', async () => {
@@ -440,22 +396,6 @@ describe('MCP Server', () => {
       size: 1024,
       s3Key: 'media/doc.pdf',
     });
-  });
-
-  it('create_work_session returns error when no session ID getter is set', async () => {
-    const client = await createConnectedClient(mockApp());
-    const result = await client.callTool({
-      name: 'create_work_session',
-      arguments: { name: 'test', usernames: ['bot'] },
-    });
-    expect(result.isError).toBe(true);
-  });
-
-  it('create_work_session succeeds when session ID getter is wired', async () => {
-    const app = mockApp();
-    const client = await createConnectedClientWithSession(app, 'session-1');
-    await client.callTool({ name: 'create_work_session', arguments: { name: 'test', usernames: ['bot'] } });
-    expect(app.createWorkSession).toHaveBeenCalled();
   });
 
   // ── Memory tools ──

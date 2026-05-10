@@ -4,7 +4,7 @@
  * Each session maps to one context window on the agent platform side.
  * A single agent instance manages multiple sessions.
  */
-import type { SessionStreamSegment, SessionStatusListener, PermissionHandler } from './types';
+import type { SessionStreamSegment, SessionStatusListener, PermissionHandler, SessionType } from './types';
 import type {
   LiveSessionInfoRequest,
   LiveSessionInfoResponse,
@@ -16,8 +16,9 @@ import type {
 } from '@newio/agent-sdk';
 
 export interface AgentSession {
-  /** Newio platform assigned session ID. */
-  readonly sessionId: string;
+  readonly type: SessionType;
+  /** ConversationId, __contact__, cron id job */
+  readonly externalReferenceId: string;
 
   /** Semver version of the prompt formatter used when this session was created. */
   readonly promptFormatterVersion: string;
@@ -38,6 +39,9 @@ export interface AgentSession {
   onStatus(listener: SessionStatusListener): void;
 
   onPermissionRequest(handler: PermissionHandler): void;
+
+  /** Register a one-shot callback for context pressure (80% usage). */
+  onContextPressure(cb: () => void): void;
 
   /** Dispose the session (kill process, free resources). */
   dispose(): Promise<void>;

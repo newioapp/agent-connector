@@ -3,9 +3,9 @@
  *
  * Uses NewioApp for all Newio interactions. Manages multiple sessions per agent,
  * routing incoming events by type:
- * - Messages: routed by conversationId → newioSessionId
- * - Contact events: routed to the owner DM session
- * - Cron triggers: routed to the session that created the cron job
+ * - Messages: routed by conversationId (one session per conversation)
+ * - Contact events: routed to a dedicated contact session
+ * - Cron triggers: routed by cronId (one session per cron job)
  *
  * Each session processes its own event queue concurrently.
  * Subclasses implement session creation and greeting logic.
@@ -17,7 +17,7 @@ import type { Server } from 'net';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type { AgentConfigManager } from './agent-config-manager';
-import type { AgentRuntimeStatus, AgentConfig } from './types';
+import type { AgentRuntimeStatus, AgentConfig, SessionType } from './types';
 import { DEFAULT_SESSION_IDLE_TIMEOUT_MS, resolveCommand, extractErrorMessage } from './types';
 import type { AgentInfo, PermissionRequestOption, ConversationFlags } from './types';
 import type { AgentInstance, AgentInstanceListener } from './agent-instance';
@@ -52,8 +52,12 @@ type InboundEvent =
   | { readonly type: 'contact'; readonly event: ContactEvent }
   | { readonly type: 'cron'; readonly event: CronTriggerEvent };
 
+/** Session slot type. */
 /** A session slot — queue is created eagerly, session is attached once ready. */
 interface SessionSlot {
+  readonly type: SessionType;
+  /** ConversationId, __contact__, cron id job */
+  readonly externalReferenceId: string;
   readonly queue: EventQueue;
   session: AgentSession | undefined;
   readonly sessionPromise: Promise<AgentSession>;
@@ -74,8 +78,12 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private _promptManager?: PromptManager;
   private _ownerDmConversationId?: string;
 
-  /** newioSessionId → session slot (queue created eagerly, session attached lazily) */
-  private readonly slots = new Map<string, SessionSlot>();
+  /** conversationId → session slot for conversation sessions. */
+  private readonly conversationSlots = new Map<string, SessionSlot>();
+  /** Dedicated session slot for contact events. */
+  private contactSlot: SessionSlot | undefined;
+  /** cronId → session slot for cron job sessions. */
+  private readonly cronSlots = new Map<string, SessionSlot>();
   /** Per-conversation flags toggled by the owner (e.g. show_tool_call, show_thoughts). */
   private readonly conversationFlags = new Map<string, ConversationFlags>();
   /** Inbound event buffer — events captured synchronously, routed serially. */
@@ -173,21 +181,21 @@ export abstract class BaseAgentInstance implements AgentInstance {
       app.on('message.new', (msg) => {
         if (!msg.isOwnMessage && !abortController.signal.aborted) {
           this.inbound.push({ type: 'message', msg });
-          void this.drainInbound();
+          this.drainInbound();
         }
       });
 
       app.on('contact.event', (event) => {
         if (!abortController.signal.aborted) {
           this.inbound.push({ type: 'contact', event });
-          void this.drainInbound();
+          this.drainInbound();
         }
       });
 
       app.on('cron.triggered', (event) => {
         if (!abortController.signal.aborted) {
           this.inbound.push({ type: 'cron', event });
-          void this.drainInbound();
+          this.drainInbound();
         }
       });
 
@@ -323,14 +331,32 @@ export abstract class BaseAgentInstance implements AgentInstance {
     this.conversationFlags.clear();
 
     // Close all session slots
-    for (const [newioSessionId, slot] of this.slots) {
-      log.debug(`${this.logTag} Disposing session slot: ${newioSessionId}`);
+    for (const [id, slot] of this.conversationSlots) {
+      log.debug(`${this.logTag} Disposing conversation slot: ${id}`);
       slot.queue.close();
       if (slot.session) {
         await slot.session.dispose();
       }
     }
-    this.slots.clear();
+    this.conversationSlots.clear();
+
+    if (this.contactSlot) {
+      log.debug(`${this.logTag} Disposing contact slot`);
+      this.contactSlot.queue.close();
+      if (this.contactSlot.session) {
+        await this.contactSlot.session.dispose();
+      }
+      this.contactSlot = undefined;
+    }
+
+    for (const [id, slot] of this.cronSlots) {
+      log.debug(`${this.logTag} Disposing cron slot: ${id}`);
+      slot.queue.close();
+      if (slot.session) {
+        await slot.session.dispose();
+      }
+    }
+    this.cronSlots.clear();
 
     if (this.udsServer) {
       this.udsServer.close();
@@ -371,7 +397,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   // ---------------------------------------------------------------------------
 
   /** Drain the inbound queue serially. Events are routed one at a time to preserve order. */
-  private async drainInbound(): Promise<void> {
+  private drainInbound(): void {
     if (this.draining) {
       return;
     }
@@ -383,7 +409,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
           break;
         }
         try {
-          await this.routeInboundEvent(event);
+          this.routeInboundEvent(event);
         } catch (err: unknown) {
           log.error(`${this.logTag} Failed to route inbound event`, err);
         }
@@ -394,25 +420,20 @@ export abstract class BaseAgentInstance implements AgentInstance {
   }
 
   /** Resolve session and enqueue to the per-session EventQueue (created eagerly). */
-  private async routeInboundEvent(event: InboundEvent): Promise<void> {
+  private routeInboundEvent(event: InboundEvent): void {
     switch (event.type) {
       case 'message': {
-        const slot = await this.getOrCreateSlot(event.msg.conversationId);
+        const slot = this.getOrCreateConversationSlot(event.msg.conversationId);
         slot.queue.enqueueMessage(event.msg);
         break;
       }
       case 'contact': {
-        const convId = await this.app.getOwnerDmConversationId();
-        if (!convId) {
-          log.warn(`${this.logTag} Cannot route contact event — no owner DM conversation`);
-          return;
-        }
-        const slot = await this.getOrCreateSlot(convId);
+        const slot = this.getOrCreateContactSlot();
         slot.queue.enqueueContact(event.event);
         break;
       }
       case 'cron': {
-        const slot = this.getOrCreateSlotBySessionId(event.event.newioSessionId);
+        const slot = this.getOrCreateCronSlot(event.event.cronId);
         slot.queue.enqueueCron(event.event);
         break;
       }
@@ -423,91 +444,125 @@ export abstract class BaseAgentInstance implements AgentInstance {
   // Session slot management
   // ---------------------------------------------------------------------------
 
-  /**
-   * Get or create a SessionSlot for a conversation.
-   * Resolves conversationId → newioSessionId, then delegates to getOrCreateSlotBySessionId.
-   */
-  private async getOrCreateSlot(conversationId: string): Promise<SessionSlot> {
-    const newioSessionId = await this.app.resolveSessionId(conversationId);
-    return this.getOrCreateSlotBySessionId(newioSessionId);
-  }
-
-  /**
-   * Get or create a SessionSlot by newioSessionId.
-   * The queue is created eagerly. Session creation happens in the background.
-   */
-  private getOrCreateSlotBySessionId(newioSessionId: string): SessionSlot {
-    const existing = this.slots.get(newioSessionId);
+  /** Get or create a SessionSlot for a conversation. */
+  private getOrCreateConversationSlot(conversationId: string): SessionSlot {
+    const existing = this.conversationSlots.get(conversationId);
     if (existing) {
       existing.lastActivityAt = Date.now();
       return existing;
     }
+    const slot = this.createSlot('conversation', conversationId);
+    this.conversationSlots.set(conversationId, slot);
+    return slot;
+  }
 
+  /** Get or create the dedicated contact event session slot. */
+  private getOrCreateContactSlot(): SessionSlot {
+    if (this.contactSlot) {
+      this.contactSlot.lastActivityAt = Date.now();
+      return this.contactSlot;
+    }
+    const slot = this.createSlot('contact', '__contact__');
+    this.contactSlot = slot;
+    return slot;
+  }
+
+  /** Get or create a SessionSlot for a cron job. */
+  private getOrCreateCronSlot(cronId: string): SessionSlot {
+    const existing = this.cronSlots.get(cronId);
+    if (existing) {
+      existing.lastActivityAt = Date.now();
+      return existing;
+    }
+    const slot = this.createSlot('cron', cronId);
+    this.cronSlots.set(cronId, slot);
+    return slot;
+  }
+
+  /** Create a new session slot — shared logic for all slot types. */
+  private createSlot(type: SessionType, externalReferenceId: string): SessionSlot {
     const queue = new EventQueue();
-    const sessionPromise = this.enqueueLaunch(newioSessionId);
+    const sessionPromise = this.enqueueLaunch(type, externalReferenceId);
 
     const slot: SessionSlot = {
+      type,
+      externalReferenceId,
       queue,
       session: undefined,
       sessionPromise,
       lastActivityAt: Date.now(),
     };
-    this.slots.set(newioSessionId, slot);
 
-    // Start the processing loop once the session is ready
     void sessionPromise.then(
       (session) => {
         slot.session = session;
-        void this.runSessionLoop(newioSessionId, slot);
+        void this.runSessionLoop(slot);
       },
       (err: unknown) => {
-        log.error(`${this.logTag} Session creation failed for ${newioSessionId}, closing slot`, err);
+        log.error(`${this.logTag} Session creation failed for ${type}:${externalReferenceId}, closing slot`, err);
         queue.close();
-        this.slots.delete(newioSessionId);
+        this.removeSlot(slot);
       },
     );
 
     return slot;
   }
 
+  /** Remove a slot from its owning collection. */
+  private removeSlot(slot: SessionSlot): void {
+    switch (slot.type) {
+      case 'conversation':
+        this.conversationSlots.delete(slot.externalReferenceId);
+        break;
+      case 'contact':
+        this.contactSlot = undefined;
+        break;
+      case 'cron':
+        this.cronSlots.delete(slot.externalReferenceId);
+        break;
+    }
+  }
+
+  private getSlot(type: SessionType, externalReferenceId: string): SessionSlot | undefined {
+    switch (type) {
+      case 'conversation':
+        return this.conversationSlots.get(externalReferenceId);
+      case 'contact':
+        return this.contactSlot;
+      case 'cron':
+        return this.cronSlots.get(externalReferenceId);
+    }
+  }
+
   /**
    * Enqueue a session launch so only one runs at a time.
    * This ensures the MCP bridge that connects during launch is correctly
-   * wired to the right newioSessionId via `latestMcpServer`.
+   * wired to the right session via `latestMcpServer`.
    */
-  private enqueueLaunch(newioSessionId: string): Promise<AgentSession> {
-    const launch = this.launchQueue.then(() => this.launchSession(newioSessionId));
+  private enqueueLaunch(type: SessionType, externalReferenceId: string): Promise<AgentSession> {
+    const launch = this.launchQueue.then(() => this.launchSession(type, externalReferenceId));
     this.launchQueue = launch.then(
       () => {},
       (err: unknown) => {
-        log.error(`${this.logTag} Session launch failed for ${newioSessionId}`, err);
+        log.error(`${this.logTag} Session launch failed for ${type} ${externalReferenceId}`, err);
       },
     );
     return launch;
   }
 
-  /** Launch a session — create or resume, wire MCP and status hooks. */
-  private async launchSession(newioSessionId: string): Promise<AgentSession> {
+  /** Launch a session — always creates a fresh session, wire MCP and status hooks. */
+  private async launchSession(type: SessionType, externalReferenceId: string): Promise<AgentSession> {
     if (this.abortController.signal.aborted) {
       throw new Error('Agent is stopping — session launch aborted');
     }
 
-    const existingSessionMetadata = this.sessionStore.get(newioSessionId);
-
-    const session = existingSessionMetadata
-      ? await this.resumeOrCreateSession(
-          newioSessionId,
-          existingSessionMetadata.correlationId,
-          existingSessionMetadata.promptFormatterVersion,
-        )
-      : await this.createAndStoreSession(newioSessionId);
+    const session = await this.createSessionWithErrorHandling(type, externalReferenceId);
 
     // Wire MCP sessionId
     if (this.pendingMcpServer) {
-      this.pendingMcpServer.setSessionIdGetter(() => session.sessionId);
       this.pendingMcpServer.setCurrentConversationIdGetter(() => session.currentConversationId);
       this.pendingMcpServer = undefined;
-      log.debug(`${this.logTag} Wired sessionId ${newioSessionId} to pending MCP server`);
+      log.debug(`${this.logTag} Wired externalReferenceId ${type}:${externalReferenceId} to pending MCP server`);
     }
 
     // Wire status listener
@@ -525,40 +580,22 @@ export abstract class BaseAgentInstance implements AgentInstance {
       this.handlePermissionRequest(title, options, conversationId),
     );
 
-    log.info(`${this.logTag} Session ready: newio=${newioSessionId} → correlation=${session.correlationId}`);
+    // Wire context pressure — triggers session rotation
+    session.onContextPressure(() => {
+      void this.rotateSession(type, externalReferenceId);
+    });
 
-    // Apply persisted acpModel/acpMode from the backend
-    void this.applyPersistedSessionConfig(newioSessionId, session);
+    log.info(`${this.logTag} Session ready: key=${type}/${externalReferenceId} → correlation=${session.correlationId}`);
+
+    // Apply persisted acpModel/acpMode from the backend (conversation sessions only)
+    void this.applyPersistedSessionConfig(type, externalReferenceId, session);
 
     return session;
   }
 
-  /** Resume an existing session, falling back to a new session on failure. */
-  private async resumeOrCreateSession(
-    newioSessionId: string,
-    correlationId: string,
-    promptFormatterVersion: string,
-  ): Promise<AgentSession> {
-    log.info(`${this.logTag} Resuming session: correlation=${correlationId}`);
+  private async createSessionWithErrorHandling(type: SessionType, externalReferenceId: string): Promise<AgentSession> {
     try {
-      // If this throws, session resume will fail and a new session will be created.
-      this.promptManager.assertPromptFormatterVersion(promptFormatterVersion);
-      return await this.resumeSession(newioSessionId, correlationId, promptFormatterVersion);
-    } catch (err) {
-      log.warn(`${this.logTag} Failed to resume session ${correlationId}, falling back to new session`, err);
-      if (this.pendingMcpServer) {
-        log.debug(`${this.logTag} Clearing pending MCP server after session resume failure`);
-        this.pendingMcpServer = undefined;
-      }
-      return this.createAndStoreSession(newioSessionId);
-    }
-  }
-
-  /** Create a new session and persist its correlation ID. */
-  private async createAndStoreSession(newioSessionId: string): Promise<AgentSession> {
-    try {
-      const session = await this.createSession(newioSessionId);
-      this.sessionStore.set(newioSessionId, session.correlationId, session.promptFormatterVersion);
+      const session = await this.createSession(type, externalReferenceId);
       return session;
     } catch (err) {
       if (this.pendingMcpServer) {
@@ -569,20 +606,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
   }
 
-  /** Get a live session by its correlation ID, if running. */
-  protected getLiveSession(correlationId: string): AgentSession | undefined {
-    for (const slot of this.slots.values()) {
-      if (slot.session?.correlationId === correlationId) {
-        return slot.session;
-      }
-    }
-    return undefined;
-  }
-
   /** Get or create a session for a conversation. Used by subclasses (e.g., greeting). */
-  protected async getOrCreateSession(conversationId: string): Promise<AgentSession> {
-    const newioSessionId = await this.app.resolveSessionId(conversationId);
-    const slot = this.getOrCreateSlotBySessionId(newioSessionId);
+  protected async getOrCreateConversationSession(conversationId: string): Promise<AgentSession> {
+    const slot = this.getOrCreateConversationSlot(conversationId);
     return slot.sessionPromise;
   }
 
@@ -591,14 +617,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   // ---------------------------------------------------------------------------
 
   /** Create a new agent-type-specific session. */
-  protected abstract createSession(newioSessionId: string): Promise<AgentSession>;
-
-  /** Resume a previously idle-killed session by its correlation ID. */
-  protected abstract resumeSession(
-    newioSessionId: string,
-    correlationId: string,
-    promptFormatterVersion: string,
-  ): Promise<AgentSession>;
+  protected abstract createSession(type: SessionType, externalReferenceId: string): Promise<AgentSession>;
 
   /** Runtime agent info — available after initialization. */
   abstract getAgentInfo(): AgentInfo | undefined;
@@ -615,16 +634,26 @@ export abstract class BaseAgentInstance implements AgentInstance {
   }
 
   // ---------------------------------------------------------------------------
-  // Session config — apply persisted acpModel/acpMode from session.updated events
+  // Session config — apply persisted acpModel/acpMode from conversation member
   // ---------------------------------------------------------------------------
 
-  /** Read persisted acpModel/acpMode from the backend and apply on session launch. */
-  private async applyPersistedSessionConfig(newioSessionId: string, session: AgentSession): Promise<void> {
+  /** Read persisted acpModel/acpMode from the conversation member and apply on session launch. */
+  private async applyPersistedSessionConfig(
+    type: SessionType,
+    externalReferenceId: string,
+    session: AgentSession,
+  ): Promise<void> {
+    if (type !== 'conversation') {
+      return;
+    }
     try {
-      const { session: record } = await this.app.client.getSession({ sessionId: newioSessionId });
-      await session.applySessionConfig(record);
+      const members = this.app.store.getMembers(externalReferenceId);
+      const self = members?.get(this.app.identity.userId);
+      if (self) {
+        await session.applySessionConfig(self);
+      }
     } catch (err: unknown) {
-      log.warn(`${this.logTag} Failed to apply persisted session config for ${newioSessionId}`, err);
+      log.warn(`${this.logTag} Failed to apply persisted session config for ${type}/${externalReferenceId}`, err);
     }
   }
 
@@ -633,7 +662,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
     newioSessionId: string,
     changes: { acpModel?: string | null; acpMode?: string | null },
   ): Promise<void> {
-    const slot = this.slots.get(newioSessionId);
+    // Search conversation slots for a matching session (sessionId from backend = newioSessionId)
+    const slot = this.conversationSlots.get(newioSessionId);
     if (!slot?.session) {
       log.debug(`${this.logTag} session.updated for ${newioSessionId} — session not active, ignoring`);
       return;
@@ -726,7 +756,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   // ---------------------------------------------------------------------------
 
   /** Process events for a single session. Runs until the queue is closed. */
-  private async runSessionLoop(newioSessionId: string, slot: SessionSlot): Promise<void> {
+  private async runSessionLoop(slot: SessionSlot): Promise<void> {
     const session = slot.session;
     if (!session) {
       return;
@@ -735,7 +765,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       slot.lastActivityAt = Date.now();
       await this.processEvent(event, session);
     }
-    log.debug(`${this.logTag} Session loop ended: ${newioSessionId}`);
+    log.debug(`${this.logTag} Session loop ended: ${slot.type}:${slot.externalReferenceId}`);
   }
 
   /** Dispatch an event to the appropriate handler. */
@@ -798,7 +828,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   private async processContactBatch(session: AgentSession, events: readonly ContactEvent[]): Promise<void> {
     const userText = this.promptManager.formatContactPrompt(session.promptFormatterVersion, events);
-    log.debug(`${this.logTag} Processing ${String(events.length)} contact event(s) in session ${session.sessionId}`);
+    log.debug(`${this.logTag} Processing ${String(events.length)} contact event(s)`);
 
     try {
       for await (const segment of session.prompt(userText)) {
@@ -819,7 +849,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   private async processCronTrigger(session: AgentSession, job: CronTriggerEvent): Promise<void> {
     const userText = this.promptManager.formatCronPrompt(session.promptFormatterVersion, job);
-    log.debug(`${this.logTag} Processing cron ${job.cronId} ("${job.label}") in session ${session.sessionId}`);
+    log.debug(`${this.logTag} Processing cron ${job.cronId} ("${job.label}")`);
 
     try {
       for await (const segment of session.prompt(userText)) {
@@ -852,10 +882,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** Get live session info for a session. */
   private getLiveSessionInfo(request: LiveSessionInfoRequest): LiveSessionInfoResponse {
-    const slot = this.slots.get(request.sessionId);
+    const slot = this.getSlot(request.sessionType, request.externalReferenceId);
     if (!slot?.session) {
       return {
-        sessionId: request.sessionId,
+        sessionType: request.sessionType,
+        externalReferenceId: request.externalReferenceId,
         isLive: false,
         availableModels: [],
         availableModes: [],
@@ -868,7 +899,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** Handle cancel session signal. */
   private async handleCancelSession(request: CancelSessionRequest): Promise<CancelSessionResponse> {
-    const slot = this.slots.get(request.sessionId);
+    const slot = this.getSlot(request.sessionType, request.externalReferenceId);
     if (!slot?.session) {
       return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
     }
@@ -877,7 +908,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** Handle compact session signal. */
   private async handleCompactSession(request: CompactSessionRequest): Promise<CompactSessionResponse> {
-    const slot = this.slots.get(request.sessionId);
+    const slot = this.getSlot(request.sessionType, request.externalReferenceId);
     if (!slot?.session) {
       return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
     }
@@ -886,8 +917,10 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** Handle start session signal. Launches the session if not already running. */
   private async handleStartSession(request: StartSessionRequest): Promise<StartSessionResponse> {
-    const sessionId = request.sessionId;
-    const slot = this.getOrCreateSlotBySessionId(sessionId);
+    if (request.sessionType !== 'conversation') {
+      return { success: false, error: 'Can only start conversation session ondemand' };
+    }
+    const slot = this.getOrCreateConversationSlot(request.externalReferenceId);
     try {
       await slot.sessionPromise;
     } catch (err: unknown) {
@@ -896,7 +929,10 @@ export abstract class BaseAgentInstance implements AgentInstance {
     if (!slot.session) {
       return { success: false, error: 'Session launch failed' };
     }
-    const info = slot.session.getLiveSessionInfo({ sessionId });
+    const info = slot.session.getLiveSessionInfo({
+      sessionType: request.sessionType,
+      externalReferenceId: request.externalReferenceId,
+    });
     return { success: true, info };
   }
   // ---------------------------------------------------------------------------
@@ -919,23 +955,99 @@ export abstract class BaseAgentInstance implements AgentInstance {
       const timeout = this.config.sessionIdleTimeoutMs ?? DEFAULT_SESSION_IDLE_TIMEOUT_MS;
       const now = Date.now();
 
-      for (const [newioSessionId, slot] of this.slots) {
-        if (!slot.session?.disposable) {
-          continue;
-        }
-        if (now - slot.lastActivityAt > timeout) {
+      // Conversation slots
+      for (const [conversationId, slot] of this.conversationSlots) {
+        if (now - slot.lastActivityAt > timeout && slot.session) {
           log.info(
-            `${this.logTag} Idle session cleanup: ${newioSessionId} (idle ${Math.round((now - slot.lastActivityAt) / 1000)}s)`,
+            `${this.logTag} Idle session cleanup: conversation ${conversationId} (idle ${Math.round((now - slot.lastActivityAt) / 1000)}s)`,
           );
-          slot.queue.close();
-          await slot.session.dispose();
-          this.onSessionDisposed(slot.session.correlationId);
-          this.slots.delete(newioSessionId);
+          await this.endSession(slot);
+        }
+      }
+
+      // Contact slot
+      if (this.contactSlot?.session && now - this.contactSlot.lastActivityAt > timeout) {
+        log.info(`${this.logTag} Idle session cleanup: contact session`);
+        await this.endSession(this.contactSlot);
+      }
+
+      // Cron slots
+      for (const [cronId, slot] of this.cronSlots) {
+        if (now - slot.lastActivityAt > timeout && slot.session) {
+          log.info(`${this.logTag} Idle session cleanup: cron ${cronId}`);
+          await this.endSession(slot);
         }
       }
     } finally {
       this.cleaningUpIdleSessions = false;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Session rotation & memory update
+  // ---------------------------------------------------------------------------
+
+  /** Rotate a session: trigger session-end prompt, dispose, remove slot. */
+  private async rotateSession(type: SessionType, externalReferenceId: string): Promise<void> {
+    log.info(`${this.logTag} Rotating session for ${type}:${externalReferenceId} due to context pressure`);
+    // Find the slot across all collections
+    const slot = this.getSlot(type, externalReferenceId);
+    if (slot) {
+      await this.endSession(slot);
+    }
+  }
+
+  /**
+   * End a session: inject session-end prompt (for conversation sessions),
+   * close queue, dispose if possible, remove from collection.
+   */
+  private async endSession(slot: SessionSlot): Promise<void> {
+    const session = slot.session;
+    if (!session) {
+      slot.queue.close();
+      this.removeSlot(slot);
+      return;
+    }
+
+    // For conversation sessions, run session-end prompt to capture handoff
+    if (slot.type === 'conversation') {
+      const prompt = this.promptManager.buildSessionEndPrompt(session.promptFormatterVersion);
+      try {
+        const parts: string[] = [];
+        for await (const segment of session.prompt(prompt)) {
+          if (segment.type === 'agent_message_chunk') {
+            parts.push(segment.text);
+          }
+        }
+        const fullOutput = parts.join('');
+        const handoffMatch = fullOutput.match(/HANDOFF:\s*([\s\S]+)/i);
+        if (handoffMatch) {
+          const summary = handoffMatch[1].trim();
+          this.persistHandoffNote(slot.externalReferenceId, summary);
+          log.info(
+            `${this.logTag} Captured handoff for ${slot.type}:${slot.externalReferenceId} (${summary.length} chars)`,
+          );
+        }
+      } catch (err: unknown) {
+        log.warn(`${this.logTag} Session-end prompt failed for ${slot.type}:${slot.externalReferenceId}`, err);
+      }
+    }
+
+    slot.queue.close();
+    if (session.disposable) {
+      await session.dispose();
+    }
+    this.onSessionDisposed(session.correlationId);
+    this.removeSlot(slot);
+  }
+
+  /** Persist a handoff note for a conversation via the backend API. */
+  private persistHandoffNote(conversationId: string, text: string): void {
+    this.app.client
+      .putHandoffNote({ agentId: this.app.identity.userId, conversationId, text })
+      .catch((err: unknown) => {
+        log.warn(`${this.logTag} Failed to persist handoff note for ${conversationId}`, err);
+      });
   }
 
   // ---------------------------------------------------------------------------

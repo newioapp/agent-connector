@@ -9,7 +9,7 @@ import type { ClientSideConnection } from '@agentclientprotocol/sdk';
 import type * as acp from '@agentclientprotocol/sdk';
 import type { CompactSessionResponse } from '@newio/agent-sdk';
 import { Logger } from './logger';
-import { extractErrorMessage } from './types';
+import { extractErrorMessage, SessionType } from './types';
 
 const log = new Logger('acp-slash-command-handler');
 
@@ -27,7 +27,9 @@ export class AcpSlashCommandHandler {
   private useKiroExt = false;
 
   constructor(
-    private readonly sessionId: string,
+    private readonly sessionType: SessionType,
+    private readonly externalReferenceId: string,
+    private readonly correlationId: string,
     private readonly connection: ClientSideConnection,
   ) {}
 
@@ -57,16 +59,16 @@ export class AcpSlashCommandHandler {
     try {
       if (this.useKiroExt) {
         await this.connection.extMethod('_kiro.dev/commands/execute', {
-          sessionId: this.sessionId,
+          sessionId: this.correlationId,
           command: { command: commandName, args: {} },
         });
       } else {
         await this.connection.prompt({
-          sessionId: this.sessionId,
+          sessionId: this.correlationId,
           prompt: [{ type: 'text', text: `/${commandName}` }],
         });
       }
-      log.info(`[${this.sessionId}] Compact completed`);
+      log.info(`[${this.sessionType}/${this.externalReferenceId}] Compact completed`);
       return { success: true };
     } catch (err: unknown) {
       return { success: false, error: extractErrorMessage(err) };
@@ -83,7 +85,9 @@ export class AcpSlashCommandHandler {
       description: cmd.description,
       inputHint: cmd.input?.hint ?? undefined,
     }));
-    log.info(`[${this.sessionId}] Available commands updated: ${this.commands.map((c) => c.name).join(', ')}`);
+    log.info(
+      `[${this.sessionType}/${this.externalReferenceId}] Available commands updated: ${this.commands.map((c) => c.name).join(', ')}`,
+    );
     return true;
   }
 
@@ -105,6 +109,8 @@ export class AcpSlashCommandHandler {
       const inputHint = meta && typeof meta.hint === 'string' ? meta.hint : undefined;
       return { name, description, inputHint };
     });
-    log.info(`[${this.sessionId}] Kiro commands updated: ${this.commands.map((c) => c.name).join(', ')}`);
+    log.info(
+      `[${this.sessionType}/${this.externalReferenceId}] Kiro commands updated: ${this.commands.map((c) => c.name).join(', ')}`,
+    );
   }
 }

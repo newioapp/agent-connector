@@ -17,7 +17,7 @@ import type { McpServer as AcpMcpServer } from '@agentclientprotocol/sdk';
 import { BaseAgentInstance } from './base-agent-instance';
 import { AcpAgentSession } from './acp-agent-session';
 import type { AgentSession } from './agent-session';
-import type { SessionStreamSegment } from './types';
+import type { SessionStreamSegment, SessionType } from './types';
 import { resolveCommand, extractErrorMessage } from './types';
 import type { AgentInfo } from './types';
 import { Logger } from './logger';
@@ -241,11 +241,27 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
   // Session factory
   // ---------------------------------------------------------------------------
 
-  protected async createSession(newioSessionId: string): Promise<AgentSession> {
+  protected async createSession(type: SessionType, externalReferenceId: string): Promise<AgentSession> {
     const config = this.config.acp;
     if (!config) {
       throw new Error('ACP config missing');
     }
+
+    log.info(`${this.logTag} Preparing memory`);
+    const instruction = this.promptManager.buildNewioInstruction();
+    if (!this.app.identity.ownerId) {
+      throw new Error('Cannot create session: ownerId is not set');
+    }
+
+    // Load memory for conversation sessions
+    const memory = await this.loadMemoryForSession(type === 'conversation' ? externalReferenceId : undefined);
+    let handoffNote: string | null = null;
+    if (type === 'conversation') {
+      handoffNote = await this.loadHandoffNote(externalReferenceId);
+    }
+
+    const memoryContext = this.promptManager.formatMemoryContext(instruction.version, memory, handoffNote ?? undefined);
+    const fullInstruction = memoryContext ? `${instruction.prompt}\n\n${memoryContext}` : instruction.prompt;
 
     log.info(`${this.logTag} Creating new ACP session...`);
     const conn = this.getConnection();
@@ -255,12 +271,9 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       mcpServers: buildMcpServers(this.mcpSocketPath),
     });
 
-    const instruction = this.promptManager.buildNewioInstruction();
-    if (!this.app.identity.ownerId) {
-      throw new Error('Cannot create session: ownerId is not set');
-    }
     const session = new AcpAgentSession({
-      sessionId: newioSessionId,
+      type: type,
+      externalReferenceId: externalReferenceId,
       promptFormatterVersion: instruction.version,
       correlationId: result.sessionId,
       connection: conn,
@@ -274,11 +287,11 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     this.registerSession(result.sessionId, session);
     log.info(`${this.logTag} Session created: ${result.sessionId}`);
 
-    // Send Newio instruction as the first prompt so the session has context
+    // Send Newio instruction (+ memory context if available) as the first prompt
     log.debug(`${this.logTag} [${result.sessionId}] Sending Newio instruction to new session`);
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    for await (const _ of session.prompt(instruction.prompt)) {
+    for await (const _ of session.prompt(fullInstruction)) {
       // discard
     }
     log.debug(`${this.logTag} [${result.sessionId}] Newio instruction delivered`);
@@ -286,44 +299,44 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     return session;
   }
 
-  protected async resumeSession(
-    newioSessionId: string,
-    correlationId: string,
-    promptFormatterVersion: string,
-  ): Promise<AgentSession> {
-    const config = this.config.acp;
-    if (!config) {
-      throw new Error('ACP config missing');
+  // ---------------------------------------------------------------------------
+  // Memory & handoff
+  // ---------------------------------------------------------------------------
+
+  /** Load memory for a conversation session. */
+  private async loadMemoryForSession(conversationId?: string) {
+    const agentId = this.app.identity.userId;
+
+    let participantIds: string[] | undefined = undefined;
+    if (typeof conversationId === 'string') {
+      const conv = this.app.store.getConversation(conversationId);
+      const members = this.app.store.getMembers(conversationId);
+      // For DMs, load full memory for the other participant
+      participantIds = [];
+      if (conv?.type === 'dm' && members) {
+        for (const [userId] of members) {
+          if (userId !== agentId) {
+            participantIds.push(userId);
+          }
+        }
+      }
     }
 
-    log.info(`${this.logTag} Resuming ACP session: ${correlationId}`);
-    const conn = this.getConnection();
+    return this.app.client.loadSessionMemory({ agentId, conversationId, participantIds });
+  }
 
-    const loadResult = await conn.loadSession({
-      sessionId: correlationId,
-      cwd: config.cwd,
-      mcpServers: buildMcpServers(this.mcpSocketPath),
-    });
-
-    if (!this.app.identity.ownerId) {
-      throw new Error('Cannot resume session: ownerId is not set');
+  /** Load the handoff note for a conversation (graceful fallback if endpoint doesn't exist). */
+  private async loadHandoffNote(conversationId: string): Promise<string | null> {
+    try {
+      const result = await this.app.client.getHandoffNote({
+        agentId: this.app.identity.userId,
+        conversationId,
+      });
+      return result.text;
+    } catch {
+      // Endpoint may not exist yet — graceful fallback
+      return null;
     }
-    const session = new AcpAgentSession({
-      sessionId: newioSessionId,
-      promptFormatterVersion,
-      correlationId,
-      connection: conn,
-      client: this.app.client,
-      ownerId: this.app.identity.ownerId,
-      sessionResponse: loadResult,
-      disposable: this.supportsClose,
-      username: this.config.newio?.username,
-      isSkipPrefix: (text) => this.promptManager.isSkipPrefix(promptFormatterVersion, text),
-    });
-    this.registerSession(correlationId, session);
-    log.info(`${this.logTag} Session resumed: ${correlationId}`);
-
-    return session;
   }
 
   /** Register a session and replay any buffered updates received during initialization. */
@@ -434,7 +447,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     log.debug(`${this.logTag} Owner DM conversation: ${ownerDmConversationId}`);
 
     this.setStatus('greeting');
-    const session = await this.getOrCreateSession(ownerDmConversationId);
+    const session = await this.getOrCreateConversationSession(ownerDmConversationId);
     log.debug(`${this.logTag} [${session.correlationId}] Generating greeting for owner...`);
 
     let greeting: string | undefined;

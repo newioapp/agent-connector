@@ -5,7 +5,7 @@
  * Each session stores the formatter version it was created with; on resume the
  * manager routes to a compatible formatter (same major version) or throws.
  */
-import type { IncomingMessage, ContactEvent, CronTriggerEvent } from '@newio/agent-sdk';
+import type { IncomingMessage, ContactEvent, CronTriggerEvent, LoadSessionMemoryResponse } from '@newio/agent-sdk';
 import type { Instruction, PromptFormatter } from './prompt-formatter';
 
 export class UnsupportedPromptFormatterVersion extends Error {
@@ -69,6 +69,18 @@ export class PromptManager {
 
   assertPromptFormatterVersion(version: string): void {
     this.findCompatiblePromptFormatter(version);
+  }
+
+  formatMemoryContext(promptVersion: string, memory: LoadSessionMemoryResponse, handoffNote?: string): string {
+    return this.findCompatiblePromptFormatter(promptVersion).formatMemoryContext(memory, handoffNote);
+  }
+
+  buildMemoryUpdatePrompt(promptVersion: string): string {
+    return this.findCompatiblePromptFormatter(promptVersion).buildMemoryUpdatePrompt();
+  }
+
+  buildSessionEndPrompt(promptVersion: string): string {
+    return this.findCompatiblePromptFormatter(promptVersion).buildSessionEndPrompt();
   }
 
   /** Find a formatter whose major version matches the requested version. */

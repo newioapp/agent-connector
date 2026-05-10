@@ -80,6 +80,8 @@ export interface MemberRecord {
   readonly sessionId?: string;
   readonly showToolCalls?: boolean;
   readonly showThoughts?: boolean;
+  readonly acpModel?: string;
+  readonly acpMode?: string;
   readonly joinedAt: string;
   readonly username?: string;
   readonly displayName?: string;
@@ -660,6 +662,12 @@ export interface UpdateMemberRoleResponse {
   readonly avatarUrl?: string;
 }
 
+export interface UpdateAgentMemberConfigRequest {
+  readonly conversationId: string;
+  readonly acpModel?: string | null;
+  readonly acpMode?: string | null;
+}
+
 export interface MarkReadRequest {
   readonly conversationId: string;
   readonly readUntil: string;
@@ -926,24 +934,7 @@ export interface SessionConfigUpdate {
   readonly acpMode?: string | null;
 }
 
-export interface GetSessionRequest {
-  readonly sessionId: string;
-}
-
-export interface GetSessionResponse {
-  readonly session: SessionRecord;
-}
-
-export interface UpdateSessionRequest {
-  readonly sessionId: string;
-  readonly name?: string;
-  readonly acpModel?: string | null;
-  readonly acpMode?: string | null;
-}
-
-export interface UpdateSessionResponse {
-  readonly session: SessionRecord;
-}
+export type SessionType = 'conversation' | 'contact' | 'cron';
 
 // ---------------------------------------------------------------------------
 // Capabilities — agent remote control
@@ -975,11 +966,13 @@ export interface ModeOption {
 }
 
 export interface LiveSessionInfoRequest {
-  readonly sessionId: string;
+  readonly sessionType: SessionType;
+  readonly externalReferenceId: string;
 }
 
 export interface LiveSessionInfoResponse {
-  readonly sessionId: string;
+  readonly sessionType: SessionType;
+  readonly externalReferenceId: string;
   readonly isLive: boolean;
   readonly availableModels: ReadonlyArray<ModelOption>;
   readonly currentModel?: string;
@@ -992,7 +985,8 @@ export interface LiveSessionInfoResponse {
 }
 
 export interface CancelSessionRequest {
-  readonly sessionId: string;
+  readonly sessionType: SessionType;
+  readonly externalReferenceId: string;
 }
 
 export interface CancelSessionResponse {
@@ -1002,7 +996,8 @@ export interface CancelSessionResponse {
 }
 
 export interface CompactSessionRequest {
-  readonly sessionId: string;
+  readonly sessionType: SessionType;
+  readonly externalReferenceId: string;
 }
 
 export interface CompactSessionResponse {
@@ -1012,7 +1007,8 @@ export interface CompactSessionResponse {
 }
 
 export interface StartSessionRequest {
-  readonly sessionId: string;
+  readonly sessionType: SessionType;
+  readonly externalReferenceId: string;
 }
 
 /** Returns the full session info on success, or an error on failure. */
@@ -1023,7 +1019,8 @@ export interface StartSessionResponse {
 }
 
 export interface ContextWindowUpdatePayload {
-  readonly sessionId: string;
+  readonly sessionType: SessionType;
+  readonly externalReferenceId: string;
   readonly contextWindowSize: number;
   readonly contextWindowUsed: number;
 }
@@ -1105,4 +1102,21 @@ export interface LoadSessionMemoryResponse {
   readonly conversation: MemoryScopeData;
   readonly topUsers: ReadonlyArray<MemoryScopeSummary>;
   readonly topConversations: ReadonlyArray<MemoryScopeSummary>;
+}
+
+// ── Handoff notes ──
+
+export interface GetHandoffNoteRequest {
+  readonly agentId: string;
+  readonly conversationId: string;
+}
+
+export interface GetHandoffNoteResponse {
+  readonly text: string | null;
+}
+
+export interface PutHandoffNoteRequest {
+  readonly agentId: string;
+  readonly conversationId: string;
+  readonly text: string;
 }

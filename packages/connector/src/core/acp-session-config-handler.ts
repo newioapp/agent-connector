@@ -10,6 +10,7 @@ import type * as acp from '@agentclientprotocol/sdk';
 import type { AgentSessionConfig } from './agent-instance';
 import type { NewioClient, SessionConfigUpdate } from '@newio/agent-sdk';
 import { Logger } from './logger';
+import { SessionType } from './types';
 
 const log = new Logger('acp-session-config-handler');
 
@@ -18,8 +19,9 @@ export class AcpSessionConfigHandler {
   private modeConfig: AgentSessionConfig | undefined;
 
   constructor(
-    private readonly sessionId: string,
-    private readonly newioSessionId: string,
+    private readonly sessionType: SessionType,
+    private readonly externalReferenceId: string,
+    private readonly correlationId: string,
     private readonly connection: ClientSideConnection,
     private readonly client: NewioClient,
     sessionResponse: NewSessionResponse | LoadSessionResponse,
@@ -55,26 +57,26 @@ export class AcpSessionConfigHandler {
 
   private async setModel(modelId: string): Promise<void> {
     try {
-      await this.connection.unstable_setSessionModel({ sessionId: this.sessionId, modelId });
+      await this.connection.unstable_setSessionModel({ sessionId: this.correlationId, modelId });
     } catch (err: unknown) {
       throw new Error(extractAcpErrorMessage(err, `Failed to set model to "${modelId}"`));
     }
     if (this.modelConfig) {
       this.modelConfig = { ...this.modelConfig, selectedId: modelId };
     }
-    log.info(`[${this.sessionId}] Model set to: ${modelId}`);
+    log.info(`[${this.sessionType}/${this.externalReferenceId}] Model set to: ${modelId}`);
   }
 
   private async setMode(modeId: string): Promise<void> {
     try {
-      await this.connection.setSessionMode({ sessionId: this.sessionId, modeId });
+      await this.connection.setSessionMode({ sessionId: this.correlationId, modeId });
     } catch (err: unknown) {
       throw new Error(extractAcpErrorMessage(err, `Failed to set mode to "${modeId}"`));
     }
     if (this.modeConfig) {
       this.modeConfig = { ...this.modeConfig, selectedId: modeId };
     }
-    log.info(`[${this.sessionId}] Mode set to: ${modeId}`);
+    log.info(`[${this.sessionType}/${this.externalReferenceId}] Mode set to: ${modeId}`);
   }
 
   listModels(): AgentSessionConfig | undefined {
@@ -91,7 +93,7 @@ export class AcpSessionConfigHandler {
       case 'current_mode_update': {
         if (this.modeConfig) {
           this.modeConfig = { ...this.modeConfig, selectedId: update.currentModeId };
-          log.info(`[${this.sessionId}] Mode updated to: ${update.currentModeId}`);
+          log.info(`[${this.sessionType}/${this.externalReferenceId}] Mode updated to: ${update.currentModeId}`);
         }
         return true;
       }
@@ -105,13 +107,13 @@ export class AcpSessionConfigHandler {
               options: flattenSelectOptions(opt.options),
               selectedId: opt.currentValue,
             };
-            log.info(`[${this.sessionId}] Model config updated via config_option_update`);
+            log.info(`[${this.sessionType}/${this.externalReferenceId}] Model config updated via config_option_update`);
           } else if (opt.category === 'mode') {
             this.modeConfig = {
               options: flattenSelectOptions(opt.options),
               selectedId: opt.currentValue,
             };
-            log.info(`[${this.sessionId}] Mode config updated via config_option_update`);
+            log.info(`[${this.sessionType}/${this.externalReferenceId}] Mode config updated via config_option_update`);
           }
         }
         return true;
@@ -131,7 +133,7 @@ export class AcpSessionConfigHandler {
       try {
         await this.setModel(config.acpModel);
       } catch {
-        log.warn(`[${this.sessionId}] Model ${config.acpModel} not available`);
+        log.warn(`[${this.sessionType}/${this.externalReferenceId}] Model ${config.acpModel} not available`);
         needsReport = true;
       }
     }
@@ -140,7 +142,7 @@ export class AcpSessionConfigHandler {
       try {
         await this.setMode(config.acpMode);
       } catch {
-        log.warn(`[${this.sessionId}] Mode ${config.acpMode} not available`);
+        log.warn(`[${this.sessionType}/${this.externalReferenceId}] Mode ${config.acpMode} not available`);
         needsReport = true;
       }
     }
@@ -152,15 +154,20 @@ export class AcpSessionConfigHandler {
 
   /** Report the current model/mode back to the backend (corrects stale persisted values). */
   async reportCurrentConfig(): Promise<void> {
+    if (this.sessionType !== 'conversation') {
+      return;
+    }
     try {
-      await this.client.updateSession({
-        sessionId: this.newioSessionId,
+      await this.client.updateAgentMember({
+        conversationId: this.externalReferenceId,
         acpModel: this.modelConfig?.selectedId ?? null,
         acpMode: this.modeConfig?.selectedId ?? null,
       });
-      log.info(`[${this.sessionId}] Reported corrected config for session ${this.newioSessionId}`);
+      log.info(
+        `[${this.sessionType}/${this.externalReferenceId}] Reported corrected config for session ${this.correlationId}`,
+      );
     } catch (err: unknown) {
-      log.warn(`[${this.sessionId}] Failed to report corrected session config`, err);
+      log.warn(`[${this.sessionType}/${this.externalReferenceId}] Failed to report corrected session config`, err);
     }
   }
 }

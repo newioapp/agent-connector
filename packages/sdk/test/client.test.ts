@@ -514,5 +514,19 @@ describe('NewioClient', () => {
       await createClient().loadSessionMemory({ agentId: 'a1', conversationId: 'c1', participantIds: ['u1'] });
       expect(fetchCalls[0]?.url).toContain('/agents/a1/memory/session?conversationId=c1&participantIds=u1');
     });
+
+    it('getHandoffNote calls GET /agents/:id/conversations/:convId/handoff', async () => {
+      mockFetch([{ status: 200, body: { text: 'Was debugging auth flow' } }]);
+      const result = await createClient().getHandoffNote({ agentId: 'a1', conversationId: 'c1' });
+      expect(fetchCalls[0]?.url).toContain('/agents/a1/conversations/c1/handoff');
+      expect(result.text).toBe('Was debugging auth flow');
+    });
+
+    it('putHandoffNote calls PUT /agents/:id/conversations/:convId/handoff', async () => {
+      mockFetch([{ status: 200, body: {} }]);
+      await createClient().putHandoffNote({ agentId: 'a1', conversationId: 'c1', text: 'Left off at token refresh' });
+      expect(fetchCalls[0]?.url).toContain('/agents/a1/conversations/c1/handoff');
+      expect(fetchCalls[0]?.method).toBe('PUT');
+    });
   });
 });

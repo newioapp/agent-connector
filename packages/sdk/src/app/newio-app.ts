@@ -12,7 +12,6 @@ import { join } from 'path';
 import { AuthManager } from '../core/auth.js';
 import { NewioClient } from '../core/client.js';
 import { NewioWebSocket } from '../core/websocket.js';
-import { NewioError } from '../core/errors.js';
 import { getLogger } from '../core/logger.js';
 import { ActivityThrottle } from '../core/activity-throttle.js';
 import { NewioAppStore } from './store.js';
@@ -165,7 +164,8 @@ export class NewioApp {
 
   private readonly eventHandlers: Partial<AppEventHandlers> = {};
   private liveSessionInfoHandler: LiveSessionInfoHandler = (request) => ({
-    sessionId: request.sessionId,
+    sessionType: request.sessionType,
+    externalReferenceId: request.externalReferenceId,
     isLive: false,
     availableModels: [],
     availableModes: [],
@@ -446,13 +446,13 @@ export class NewioApp {
   }
 
   /** Cancel a scheduled cron job within a session. Returns 'success' | 'not_found'. */
-  cancelCron(cronId: string, sessionId: string): 'success' | 'not_found' {
-    return this.cronScheduler.cancel(cronId, sessionId);
+  cancelCron(cronId: string): 'success' | 'not_found' {
+    return this.cronScheduler.cancel(cronId);
   }
 
   /** List active cron jobs for a session. */
-  listCrons(sessionId: string): readonly CronJobDef[] {
-    return this.cronScheduler.list(sessionId);
+  listCrons(): readonly CronJobDef[] {
+    return this.cronScheduler.list();
   }
 
   // ---------------------------------------------------------------------------
@@ -615,11 +615,6 @@ export class NewioApp {
     return this.store.getRecentMessages(conversationId);
   }
 
-  /** Get the backend session ID for a conversation, if known. */
-  getSessionId(conversationId: string): string | undefined {
-    return this.store.getSessionId(conversationId);
-  }
-
   private toContactSummary(c: ContactRecord): ContactSummary {
     const owner = c.friendAccountType === 'agent' && c.ownerId ? this.store.getOwnerProfile(c.ownerId) : undefined;
     return {
@@ -629,27 +624,6 @@ export class NewioApp {
       ...(owner?.username ? { ownerUsername: owner.username } : {}),
       ...(owner?.displayName ? { ownerDisplayName: owner.displayName } : {}),
     };
-  }
-
-  /**
-   * Resolve the backend session ID for a conversation.
-   * Returns the cached session ID if known, otherwise fetches from the backend.
-   * Throws if no session ID exists for this conversation.
-   */
-  async resolveSessionId(conversationId: string): Promise<string> {
-    const cached = this.store.getSessionId(conversationId);
-    if (cached) {
-      log.debug(`Resolved sessionId for ${conversationId} → ${cached} (cache)`);
-      return cached;
-    }
-    log.debug(`Fetching sessionId for ${conversationId} from API`);
-    const conv = await this.client.getConversation({ conversationId });
-    const self = conv.members.find((m) => m.userId === this.identity.userId);
-    if (self?.sessionId) {
-      this.store.setSessionId(conversationId, self.sessionId);
-      return self.sessionId;
-    }
-    throw new NewioError(`No session ID found for conversation ${conversationId}`);
   }
 
   /** Get members of a conversation as agent-friendly summaries. */
@@ -726,16 +700,14 @@ export class NewioApp {
   }
 
   /** Create a work session (temp_group) conversation. If `sessionId` is provided, the agent joins under that session. */
-  async createWorkSession(name: string, memberUsernames: readonly string[], sessionId?: string): Promise<string> {
+  async createWorkSession(name: string, memberUsernames: readonly string[]): Promise<string> {
     const filtered = memberUsernames.filter((u) => u.toLowerCase() !== this.identity.username.toLowerCase());
     log.info(`Creating work session "${name}" with ${filtered.length} members`);
     const memberIds = await Promise.all(filtered.map((u) => this.resolveUsername(u)));
-    const agentSettings = sessionId ? { [this.identity.userId]: { sessionId } } : undefined;
     const resp = await this.client.createConversation({
       type: 'temp_group',
       name,
       memberIds,
-      agentSettings,
     });
     this.store.setConversation({
       conversationId: resp.conversationId,

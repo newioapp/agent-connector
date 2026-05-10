@@ -96,12 +96,11 @@ describe('NewioAppStore', () => {
 
   describe('conversations', () => {
     it('stores and retrieves conversations', () => {
-      const conv = makeConversation({ conversationId: 'c1', notifyLevel: 'mentions', sessionId: 's1' });
+      const conv = makeConversation({ conversationId: 'c1', notifyLevel: 'mentions' });
       store.setConversation(conv);
       expect(store.getConversation('c1')).toEqual(conv);
       expect(store.hasConversation('c1')).toBe(true);
       expect(store.getNotifyLevel('c1')).toBe('mentions');
-      expect(store.getSessionId('c1')).toBe('s1');
     });
 
     it('removes a conversation and its members', () => {
@@ -165,14 +164,6 @@ describe('NewioAppStore', () => {
     it('stores and retrieves', () => {
       store.setSequenceNumber('c1', 42);
       expect(store.getSequenceNumber('c1')).toBe(42);
-    });
-  });
-
-  describe('session IDs', () => {
-    it('stores and retrieves', () => {
-      store.setSessionId('c1', 's1');
-      expect(store.getSessionId('c1')).toBe('s1');
-      expect(store.getSessionId('unknown')).toBeUndefined();
     });
   });
 
