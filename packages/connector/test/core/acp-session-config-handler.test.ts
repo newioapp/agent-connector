@@ -30,8 +30,9 @@ describe('AcpSessionConfigHandler', () => {
   describe('constructor — config extraction', () => {
     it('extracts model/mode from configOptions (preferred over legacy)', () => {
       const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
         'sess-1',
-        'newio-sess-1',
         mockConnection(),
         mockClient(),
         makeSessionResponse({
@@ -75,8 +76,9 @@ describe('AcpSessionConfigHandler', () => {
 
     it('falls back to legacy models/modes when configOptions is null', () => {
       const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
         'sess-1',
-        'newio-sess-1',
         mockConnection(),
         mockClient(),
         makeSessionResponse({
@@ -109,8 +111,9 @@ describe('AcpSessionConfigHandler', () => {
 
     it('returns undefined for models/modes when nothing is provided', () => {
       const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
         'sess-1',
-        'newio-sess-1',
         mockConnection(),
         mockClient(),
         makeSessionResponse(),
@@ -122,8 +125,9 @@ describe('AcpSessionConfigHandler', () => {
 
     it('flattens grouped configOptions', () => {
       const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
         'sess-1',
-        'newio-sess-1',
         mockConnection(),
         mockClient(),
         makeSessionResponse({
@@ -156,8 +160,9 @@ describe('AcpSessionConfigHandler', () => {
 
     it('ignores non-select configOptions', () => {
       const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
         'sess-1',
-        'newio-sess-1',
         mockConnection(),
         mockClient(),
         makeSessionResponse({
@@ -173,8 +178,9 @@ describe('AcpSessionConfigHandler', () => {
     it('calls connection.unstable_setSessionModel and updates local state', async () => {
       const conn = mockConnection();
       const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
         'sess-1',
-        'newio-sess-1',
         conn,
         mockClient(),
         makeSessionResponse({
@@ -196,8 +202,9 @@ describe('AcpSessionConfigHandler', () => {
         unstable_setSessionModel: vi.fn().mockRejectedValue({ data: { details: 'Model not found' } }),
       } as never);
       const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
         'sess-1',
-        'newio-sess-1',
         conn,
         mockClient(),
         makeSessionResponse({
@@ -212,7 +219,14 @@ describe('AcpSessionConfigHandler', () => {
       const conn = mockConnection({
         unstable_setSessionModel: vi.fn().mockRejectedValue(new Error('connection lost')),
       } as never);
-      const handler = new AcpSessionConfigHandler('sess-1', 'newio-sess-1', conn, mockClient(), makeSessionResponse());
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        conn,
+        mockClient(),
+        makeSessionResponse(),
+      );
 
       await expect(handler.setModel('x')).rejects.toThrow('connection lost');
     });
@@ -221,7 +235,14 @@ describe('AcpSessionConfigHandler', () => {
       const conn = mockConnection({
         unstable_setSessionModel: vi.fn().mockRejectedValue({ code: 42 }),
       } as never);
-      const handler = new AcpSessionConfigHandler('sess-1', 'newio-sess-1', conn, mockClient(), makeSessionResponse());
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        conn,
+        mockClient(),
+        makeSessionResponse(),
+      );
 
       await expect(handler.setModel('x')).rejects.toThrow('Failed to set model to "x"');
     });
@@ -231,8 +252,9 @@ describe('AcpSessionConfigHandler', () => {
     it('calls connection.setSessionMode and updates local state', async () => {
       const conn = mockConnection();
       const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
         'sess-1',
-        'newio-sess-1',
         conn,
         mockClient(),
         makeSessionResponse({
@@ -250,7 +272,14 @@ describe('AcpSessionConfigHandler', () => {
       const conn = mockConnection({
         setSessionMode: vi.fn().mockRejectedValue({ message: 'invalid mode' }),
       } as never);
-      const handler = new AcpSessionConfigHandler('sess-1', 'newio-sess-1', conn, mockClient(), makeSessionResponse());
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        conn,
+        mockClient(),
+        makeSessionResponse(),
+      );
 
       await expect(handler.setMode('bad')).rejects.toThrow('invalid mode');
     });
@@ -259,8 +288,9 @@ describe('AcpSessionConfigHandler', () => {
   describe('handleSessionUpdate', () => {
     it('handles current_mode_update', () => {
       const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
         'sess-1',
-        'newio-sess-1',
         mockConnection(),
         mockClient(),
         makeSessionResponse({
@@ -279,8 +309,9 @@ describe('AcpSessionConfigHandler', () => {
 
     it('current_mode_update is no-op when modeConfig is undefined', () => {
       const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
         'sess-1',
-        'newio-sess-1',
         mockConnection(),
         mockClient(),
         makeSessionResponse(),
@@ -297,8 +328,9 @@ describe('AcpSessionConfigHandler', () => {
 
     it('handles config_option_update for model', () => {
       const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
         'sess-1',
-        'newio-sess-1',
         mockConnection(),
         mockClient(),
         makeSessionResponse(),
@@ -324,8 +356,9 @@ describe('AcpSessionConfigHandler', () => {
 
     it('handles config_option_update for mode', () => {
       const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
         'sess-1',
-        'newio-sess-1',
         mockConnection(),
         mockClient(),
         makeSessionResponse(),
@@ -351,8 +384,9 @@ describe('AcpSessionConfigHandler', () => {
 
     it('skips non-select config options in config_option_update', () => {
       const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
         'sess-1',
-        'newio-sess-1',
         mockConnection(),
         mockClient(),
         makeSessionResponse(),
@@ -368,8 +402,9 @@ describe('AcpSessionConfigHandler', () => {
 
     it('returns false for unrecognized update types', () => {
       const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
         'sess-1',
-        'newio-sess-1',
         mockConnection(),
         mockClient(),
         makeSessionResponse(),
@@ -387,8 +422,9 @@ describe('AcpSessionConfigHandler', () => {
       });
       const client = mockClient();
       const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
         'sess-1',
-        'newio-sess-1',
         conn,
         client,
         makeSessionResponse({
@@ -400,7 +436,8 @@ describe('AcpSessionConfigHandler', () => {
 
       expect(conn.unstable_setSessionModel).toHaveBeenCalledWith({ sessionId: 'sess-1', modelId: 'unavailable-model' });
       expect(client.updateSession).toHaveBeenCalledWith({
-        sessionId: 'newio-sess-1',
+        type: 'conversation',
+        externalReferenceId: 'conv-1',
         acpModel: 'fallback',
         acpMode: null,
       });
@@ -409,8 +446,9 @@ describe('AcpSessionConfigHandler', () => {
     it('does not report when setModel succeeds', async () => {
       const client = mockClient();
       const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
         'sess-1',
-        'newio-sess-1',
         mockConnection(),
         client,
         makeSessionResponse({

@@ -926,8 +926,10 @@ export interface SessionConfigUpdate {
   readonly acpMode?: string | null;
 }
 
+export type SessionType = 'conversation' | 'contact' | 'cron';
 export interface GetSessionRequest {
-  readonly sessionId: string;
+  readonly type: SessionType;
+  readonly externalReferenceId: string;
 }
 
 export interface GetSessionResponse {
@@ -935,7 +937,8 @@ export interface GetSessionResponse {
 }
 
 export interface UpdateSessionRequest {
-  readonly sessionId: string;
+  readonly type: SessionType;
+  readonly externalReferenceId: string;
   readonly name?: string;
   readonly acpModel?: string | null;
   readonly acpMode?: string | null;
@@ -975,11 +978,13 @@ export interface ModeOption {
 }
 
 export interface LiveSessionInfoRequest {
-  readonly sessionId: string;
+  readonly sessionType: SessionType;
+  readonly externalReferenceId: string;
 }
 
 export interface LiveSessionInfoResponse {
-  readonly sessionId: string;
+  readonly sessionType: SessionType;
+  readonly externalReferenceId: string;
   readonly isLive: boolean;
   readonly availableModels: ReadonlyArray<ModelOption>;
   readonly currentModel?: string;
@@ -992,7 +997,8 @@ export interface LiveSessionInfoResponse {
 }
 
 export interface CancelSessionRequest {
-  readonly sessionId: string;
+  readonly sessionType: SessionType;
+  readonly externalReferenceId: string;
 }
 
 export interface CancelSessionResponse {
@@ -1002,7 +1008,8 @@ export interface CancelSessionResponse {
 }
 
 export interface CompactSessionRequest {
-  readonly sessionId: string;
+  readonly sessionType: SessionType;
+  readonly externalReferenceId: string;
 }
 
 export interface CompactSessionResponse {
@@ -1012,7 +1019,8 @@ export interface CompactSessionResponse {
 }
 
 export interface StartSessionRequest {
-  readonly sessionId: string;
+  readonly sessionType: SessionType;
+  readonly externalReferenceId: string;
 }
 
 /** Returns the full session info on success, or an error on failure. */
@@ -1023,7 +1031,8 @@ export interface StartSessionResponse {
 }
 
 export interface ContextWindowUpdatePayload {
-  readonly sessionId: string;
+  readonly sessionType: SessionType;
+  readonly externalReferenceId: string;
   readonly contextWindowSize: number;
   readonly contextWindowUsed: number;
 }

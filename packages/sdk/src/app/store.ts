@@ -66,8 +66,6 @@ export class NewioAppStore {
   private readonly sequenceNumbers = new Map<string, number>();
   /** conversationId → notification preference (missing = 'all') */
   private readonly notifyLevels = new Map<string, NotifyLevel>();
-  /** conversationId → backend session ID (for agent members) */
-  private readonly sessionIds = new Map<string, string>();
   /** conversationId → ULID-sorted message list (recent cache, evicted by TTL) */
   private readonly messageCache = new Map<string, IncomingMessage[]>();
   /** contactId → pending incoming friend request */
@@ -144,9 +142,6 @@ export class NewioAppStore {
     if (conv.notifyLevel) {
       this.notifyLevels.set(conv.conversationId, conv.notifyLevel);
     }
-    if (conv.sessionId) {
-      this.sessionIds.set(conv.conversationId, conv.sessionId);
-    }
     this.persistence?.saveConversation(conv);
   }
 
@@ -217,20 +212,6 @@ export class NewioAppStore {
   /** Set the sequence number for a conversation. */
   setSequenceNumber(conversationId: string, seq: number): void {
     this.sequenceNumbers.set(conversationId, seq);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Session IDs & notify levels
-  // ---------------------------------------------------------------------------
-
-  /** Get the backend session ID for a conversation. */
-  getSessionId(conversationId: string): string | undefined {
-    return this.sessionIds.get(conversationId);
-  }
-
-  /** Set the backend session ID for a conversation. */
-  setSessionId(conversationId: string, sessionId: string): void {
-    this.sessionIds.set(conversationId, sessionId);
   }
 
   /** Get the notification level for a conversation. */

@@ -4,13 +4,12 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NewioApp } from '@newio/agent-sdk';
-import { IdGetter } from '../types';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
 
 /** Register cron scheduling tools on the MCP server. */
-export function registerCronTools(server: McpServer, app: NewioApp, getSessionId: IdGetter): void {
+export function registerCronTools(server: McpServer, app: NewioApp): void {
   server.registerTool(
     'schedule_cron',
     {
@@ -33,12 +32,8 @@ export function registerCronTools(server: McpServer, app: NewioApp, getSessionId
       },
     },
     ({ expression, label, payload }) => {
-      const sessionId = getSessionId();
-      if (!sessionId) {
-        return text('Error: no session context — cannot schedule cron');
-      }
       const cronId = `cron_${Date.now().toString(36)}`;
-      app.scheduleCron({ cronId, expression, newioSessionId: sessionId, label, payload });
+      app.scheduleCron({ cronId, expression, label, payload });
       return text(`Cron scheduled: ${cronId} — "${label}" (${expression})`);
     },
   );
@@ -52,11 +47,7 @@ export function registerCronTools(server: McpServer, app: NewioApp, getSessionId
       },
     },
     ({ cronId }) => {
-      const sessionId = getSessionId();
-      if (!sessionId) {
-        return text('Error: no session context — cannot cancel cron');
-      }
-      const status = app.cancelCron(cronId, sessionId);
+      const status = app.cancelCron(cronId);
       if (status === 'not_found') {
         return text(`Cron not found: ${cronId}`);
       }
@@ -65,10 +56,6 @@ export function registerCronTools(server: McpServer, app: NewioApp, getSessionId
   );
 
   server.registerTool('list_crons', { description: 'List all active cron jobs for this agent' }, () => {
-    const sessionId = getSessionId();
-    if (!sessionId) {
-      return text('Error: no session context — cannot list crons');
-    }
-    return json(app.listCrons(sessionId));
+    return json(app.listCrons());
   });
 }

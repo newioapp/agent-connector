@@ -69,7 +69,6 @@ export interface ContactEvent {
 export interface CronJobDef {
   readonly cronId: string;
   readonly expression: string;
-  readonly newioSessionId: string;
   readonly label: string;
   readonly payload?: unknown;
 }
@@ -77,7 +76,6 @@ export interface CronJobDef {
 /** Event emitted when a cron job triggers. */
 export interface CronTriggerEvent {
   readonly cronId: string;
-  readonly newioSessionId: string;
   readonly label: string;
   readonly payload?: unknown;
   readonly triggeredAt: string;

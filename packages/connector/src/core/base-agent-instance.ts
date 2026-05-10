@@ -17,7 +17,7 @@ import type { Server } from 'net';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type { AgentConfigManager } from './agent-config-manager';
-import type { AgentRuntimeStatus, AgentConfig } from './types';
+import type { AgentRuntimeStatus, AgentConfig, SessionType } from './types';
 import { DEFAULT_SESSION_IDLE_TIMEOUT_MS, resolveCommand, extractErrorMessage } from './types';
 import type { AgentInfo, PermissionRequestOption, ConversationFlags } from './types';
 import type { AgentInstance, AgentInstanceListener } from './agent-instance';
@@ -53,12 +53,11 @@ type InboundEvent =
   | { readonly type: 'cron'; readonly event: CronTriggerEvent };
 
 /** Session slot type. */
-type SessionSlotType = 'conversation' | 'contact' | 'cron';
-
 /** A session slot — queue is created eagerly, session is attached once ready. */
 interface SessionSlot {
-  readonly type: SessionSlotType;
-  readonly key: string;
+  readonly type: SessionType;
+  /** ConversationId, __contact__, cron id job */
+  readonly externalReferenceId: string;
   readonly queue: EventQueue;
   session: AgentSession | undefined;
   readonly sessionPromise: Promise<AgentSession>;
@@ -481,13 +480,13 @@ export abstract class BaseAgentInstance implements AgentInstance {
   }
 
   /** Create a new session slot — shared logic for all slot types. */
-  private createSlot(type: SessionSlotType, key: string): SessionSlot {
+  private createSlot(type: SessionType, externalReferenceId: string): SessionSlot {
     const queue = new EventQueue();
-    const sessionPromise = this.enqueueLaunch(key);
+    const sessionPromise = this.enqueueLaunch(type, externalReferenceId);
 
     const slot: SessionSlot = {
       type,
-      key,
+      externalReferenceId,
       queue,
       session: undefined,
       sessionPromise,
@@ -500,7 +499,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         void this.runSessionLoop(slot);
       },
       (err: unknown) => {
-        log.error(`${this.logTag} Session creation failed for ${type}:${key}, closing slot`, err);
+        log.error(`${this.logTag} Session creation failed for ${type}:${externalReferenceId}, closing slot`, err);
         queue.close();
         this.removeSlot(slot);
       },
@@ -513,14 +512,25 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private removeSlot(slot: SessionSlot): void {
     switch (slot.type) {
       case 'conversation':
-        this.conversationSlots.delete(slot.key);
+        this.conversationSlots.delete(slot.externalReferenceId);
         break;
       case 'contact':
         this.contactSlot = undefined;
         break;
       case 'cron':
-        this.cronSlots.delete(slot.key);
+        this.cronSlots.delete(slot.externalReferenceId);
         break;
+    }
+  }
+
+  private getSlot(type: SessionType, externalReferenceId: string): SessionSlot | undefined {
+    switch (type) {
+      case 'conversation':
+        return this.conversationSlots.get(externalReferenceId);
+      case 'contact':
+        return this.contactSlot;
+      case 'cron':
+        return this.cronSlots.get(externalReferenceId);
     }
   }
 
@@ -529,31 +539,30 @@ export abstract class BaseAgentInstance implements AgentInstance {
    * This ensures the MCP bridge that connects during launch is correctly
    * wired to the right session via `latestMcpServer`.
    */
-  private enqueueLaunch(sessionKey: string): Promise<AgentSession> {
-    const launch = this.launchQueue.then(() => this.launchSession(sessionKey));
+  private enqueueLaunch(type: SessionType, externalReferenceId: string): Promise<AgentSession> {
+    const launch = this.launchQueue.then(() => this.launchSession(type, externalReferenceId));
     this.launchQueue = launch.then(
       () => {},
       (err: unknown) => {
-        log.error(`${this.logTag} Session launch failed for ${sessionKey}`, err);
+        log.error(`${this.logTag} Session launch failed for ${type} ${externalReferenceId}`, err);
       },
     );
     return launch;
   }
 
   /** Launch a session — always creates a fresh session, wire MCP and status hooks. */
-  private async launchSession(sessionKey: string): Promise<AgentSession> {
+  private async launchSession(type: SessionType, externalReferenceId: string): Promise<AgentSession> {
     if (this.abortController.signal.aborted) {
       throw new Error('Agent is stopping — session launch aborted');
     }
 
-    const session = await this.createSession(sessionKey);
+    const session = await this.createSessionWithErrorHandling(type, externalReferenceId);
 
     // Wire MCP sessionId
     if (this.pendingMcpServer) {
-      this.pendingMcpServer.setSessionIdGetter(() => session.sessionId);
       this.pendingMcpServer.setCurrentConversationIdGetter(() => session.currentConversationId);
       this.pendingMcpServer = undefined;
-      log.debug(`${this.logTag} Wired sessionId ${sessionKey} to pending MCP server`);
+      log.debug(`${this.logTag} Wired externalReferenceId ${type}:${externalReferenceId} to pending MCP server`);
     }
 
     // Wire status listener
@@ -573,40 +582,32 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
     // Wire context pressure — triggers session rotation
     session.onContextPressure(() => {
-      void this.rotateSession(sessionKey);
+      void this.rotateSession(type, externalReferenceId);
     });
 
-    log.info(`${this.logTag} Session ready: key=${sessionKey} → correlation=${session.correlationId}`);
+    log.info(`${this.logTag} Session ready: key=${type}/${externalReferenceId} → correlation=${session.correlationId}`);
 
     // Apply persisted acpModel/acpMode from the backend (conversation sessions only)
-    void this.applyPersistedSessionConfig(sessionKey, session);
+    void this.applyPersistedSessionConfig(type, externalReferenceId, session);
 
     return session;
   }
 
-  /** Create a new agent-type-specific session. */
-  protected abstract createSession(sessionKey: string): Promise<AgentSession>;
-
-  /** Get a live session by its correlation ID, if running. */
-  protected getLiveSession(correlationId: string): AgentSession | undefined {
-    for (const slot of this.conversationSlots.values()) {
-      if (slot.session?.correlationId === correlationId) {
-        return slot.session;
+  private async createSessionWithErrorHandling(type: SessionType, externalReferenceId: string): Promise<AgentSession> {
+    try {
+      const session = await this.createSession(type, externalReferenceId);
+      return session;
+    } catch (err) {
+      if (this.pendingMcpServer) {
+        log.debug(`${this.logTag} Clearing pending MCP server after session creation failure`);
+        this.pendingMcpServer = undefined;
       }
+      throw err;
     }
-    if (this.contactSlot?.session?.correlationId === correlationId) {
-      return this.contactSlot.session;
-    }
-    for (const slot of this.cronSlots.values()) {
-      if (slot.session?.correlationId === correlationId) {
-        return slot.session;
-      }
-    }
-    return undefined;
   }
 
   /** Get or create a session for a conversation. Used by subclasses (e.g., greeting). */
-  protected async getOrCreateSession(conversationId: string): Promise<AgentSession> {
+  protected async getOrCreateConversationSession(conversationId: string): Promise<AgentSession> {
     const slot = this.getOrCreateConversationSlot(conversationId);
     return slot.sessionPromise;
   }
@@ -616,7 +617,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   // ---------------------------------------------------------------------------
 
   /** Create a new agent-type-specific session. */
-  protected abstract createSession(sessionKey: string): Promise<AgentSession>;
+  protected abstract createSession(type: SessionType, externalReferenceId: string): Promise<AgentSession>;
 
   /** Runtime agent info — available after initialization. */
   abstract getAgentInfo(): AgentInfo | undefined;
@@ -638,14 +639,22 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** Read persisted acpModel/acpMode from the backend and apply on session launch. */
   /** Read persisted acpModel/acpMode from the backend and apply on session launch. */
-  private async applyPersistedSessionConfig(sessionKey: string, session: AgentSession): Promise<void> {
+  private async applyPersistedSessionConfig(
+    type: SessionType,
+    externalReferenceId: string,
+    session: AgentSession,
+  ): Promise<void> {
+    if (type !== 'conversation') {
+      return;
+    }
     try {
-      // Only conversation sessions have backend-persisted config
-      const backendSessionId = await this.app.resolveSessionId(sessionKey);
-      const { session: record } = await this.app.client.getSession({ sessionId: backendSessionId });
+      const { session: record } = await this.app.client.getSession({
+        type: type,
+        externalReferenceId: externalReferenceId,
+      });
       await session.applySessionConfig(record);
     } catch (err: unknown) {
-      log.warn(`${this.logTag} Failed to apply persisted session config for ${sessionKey}`, err);
+      log.warn(`${this.logTag} Failed to apply persisted session config for ${type}/${externalReferenceId}`, err);
     }
   }
 
@@ -757,7 +766,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       slot.lastActivityAt = Date.now();
       await this.processEvent(event, session);
     }
-    log.debug(`${this.logTag} Session loop ended: ${slot.type}:${slot.key}`);
+    log.debug(`${this.logTag} Session loop ended: ${slot.type}:${slot.externalReferenceId}`);
   }
 
   /** Dispatch an event to the appropriate handler. */
@@ -820,7 +829,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   private async processContactBatch(session: AgentSession, events: readonly ContactEvent[]): Promise<void> {
     const userText = this.promptManager.formatContactPrompt(session.promptFormatterVersion, events);
-    log.debug(`${this.logTag} Processing ${String(events.length)} contact event(s) in session ${session.sessionId}`);
+    log.debug(`${this.logTag} Processing ${String(events.length)} contact event(s)`);
 
     try {
       for await (const segment of session.prompt(userText)) {
@@ -841,7 +850,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   private async processCronTrigger(session: AgentSession, job: CronTriggerEvent): Promise<void> {
     const userText = this.promptManager.formatCronPrompt(session.promptFormatterVersion, job);
-    log.debug(`${this.logTag} Processing cron ${job.cronId} ("${job.label}") in session ${session.sessionId}`);
+    log.debug(`${this.logTag} Processing cron ${job.cronId} ("${job.label}")`);
 
     try {
       for await (const segment of session.prompt(userText)) {
@@ -874,10 +883,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** Get live session info for a session. */
   private getLiveSessionInfo(request: LiveSessionInfoRequest): LiveSessionInfoResponse {
-    const session = this.findSlotSession(request.sessionId);
-    if (!session) {
+    const slot = this.getSlot(request.sessionType, request.externalReferenceId);
+    if (!slot?.session) {
       return {
-        sessionId: request.sessionId,
+        sessionType: request.sessionType,
+        externalReferenceId: request.externalReferenceId,
         isLive: false,
         availableModels: [],
         availableModes: [],
@@ -885,30 +895,33 @@ export abstract class BaseAgentInstance implements AgentInstance {
         canCompact: false,
       };
     }
-    return session.getLiveSessionInfo(request);
+    return slot.session.getLiveSessionInfo(request);
   }
 
   /** Handle cancel session signal. */
   private async handleCancelSession(request: CancelSessionRequest): Promise<CancelSessionResponse> {
-    const session = this.findSlotSession(request.sessionId);
-    if (!session) {
+    const slot = this.getSlot(request.sessionType, request.externalReferenceId);
+    if (!slot?.session) {
       return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
     }
-    return session.handleCancelSession(request);
+    return slot.session.handleCancelSession(request);
   }
 
   /** Handle compact session signal. */
   private async handleCompactSession(request: CompactSessionRequest): Promise<CompactSessionResponse> {
-    const session = this.findSlotSession(request.sessionId);
-    if (!session) {
+    const slot = this.getSlot(request.sessionType, request.externalReferenceId);
+    if (!slot?.session) {
       return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
     }
-    return session.handleCompactSession(request);
+    return slot.session.handleCompactSession(request);
   }
 
   /** Handle start session signal. Launches the session if not already running. */
   private async handleStartSession(request: StartSessionRequest): Promise<StartSessionResponse> {
-    const slot = this.getOrCreateConversationSlot(request.sessionId);
+    if (request.sessionType !== 'conversation') {
+      return { success: false, error: 'Can only start conversation session ondemand' };
+    }
+    const slot = this.getOrCreateConversationSlot(request.externalReferenceId);
     try {
       await slot.sessionPromise;
     } catch (err: unknown) {
@@ -917,23 +930,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
     if (!slot.session) {
       return { success: false, error: 'Session launch failed' };
     }
-    const info = slot.session.getLiveSessionInfo({ sessionId: request.sessionId });
+    const info = slot.session.getLiveSessionInfo({
+      sessionType: request.sessionType,
+      externalReferenceId: request.externalReferenceId,
+    });
     return { success: true, info };
-  }
-
-  /** Find a live session across all slot types by its sessionId (used by signal handlers). */
-  private findSlotSession(sessionId: string): AgentSession | undefined {
-    const convSlot = this.conversationSlots.get(sessionId);
-    if (convSlot?.session) {
-      return convSlot.session;
-    }
-    // Also check by correlationId for backward compat with signals
-    for (const slot of this.conversationSlots.values()) {
-      if (slot.session?.correlationId === sessionId) {
-        return slot.session;
-      }
-    }
-    return undefined;
   }
   // ---------------------------------------------------------------------------
   // Idle cleanup
@@ -988,13 +989,10 @@ export abstract class BaseAgentInstance implements AgentInstance {
   // ---------------------------------------------------------------------------
 
   /** Rotate a session: trigger session-end prompt, dispose, remove slot. */
-  private async rotateSession(sessionKey: string): Promise<void> {
-    log.info(`${this.logTag} Rotating session ${sessionKey} due to context pressure`);
+  private async rotateSession(type: SessionType, externalReferenceId: string): Promise<void> {
+    log.info(`${this.logTag} Rotating session for ${type}:${externalReferenceId} due to context pressure`);
     // Find the slot across all collections
-    const slot =
-      this.conversationSlots.get(sessionKey) ??
-      (this.contactSlot?.key === sessionKey ? this.contactSlot : undefined) ??
-      this.cronSlots.get(sessionKey);
+    const slot = this.getSlot(type, externalReferenceId);
     if (slot) {
       await this.endSession(slot);
     }
@@ -1026,11 +1024,13 @@ export abstract class BaseAgentInstance implements AgentInstance {
         const handoffMatch = fullOutput.match(/HANDOFF:\s*([\s\S]+)/i);
         if (handoffMatch) {
           const summary = handoffMatch[1].trim();
-          this.persistHandoffNote(slot.key, summary);
-          log.info(`${this.logTag} Captured handoff for ${slot.key} (${summary.length} chars)`);
+          this.persistHandoffNote(slot.externalReferenceId, summary);
+          log.info(
+            `${this.logTag} Captured handoff for ${slot.type}:${slot.externalReferenceId} (${summary.length} chars)`,
+          );
         }
       } catch (err: unknown) {
-        log.warn(`${this.logTag} Session-end prompt failed for ${slot.key}`, err);
+        log.warn(`${this.logTag} Session-end prompt failed for ${slot.type}:${slot.externalReferenceId}`, err);
       }
     }
 

@@ -509,13 +509,13 @@ export class NewioClient {
 
   /** Get a session by ID. */
   async getSession(input: GetSessionRequest): Promise<GetSessionResponse> {
-    return this.http.request(`/sessions/${input.sessionId}`, { method: 'GET' });
+    return this.http.request(`/sessions/${input.type}/${input.externalReferenceId}`, { method: 'GET' });
   }
 
   /** Update a session (name, acpModel, acpMode). */
   async updateSession(input: UpdateSessionRequest): Promise<UpdateSessionResponse> {
-    const { sessionId, ...body } = input;
-    return this.http.request(`/sessions/${sessionId}`, {
+    const { type, externalReferenceId, ...body } = input;
+    return this.http.request(`/sessions/${type}/${externalReferenceId}`, {
       method: 'PUT',
       body: JSON.stringify(body),
     });

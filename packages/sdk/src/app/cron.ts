@@ -34,9 +34,8 @@ export class CronScheduler {
   /** Schedule a cron job. Replaces any existing job with the same cronId. */
   schedule(def: CronJobDef): void {
     if (this.jobs.has(def.cronId)) {
-      const existing = this.jobs.get(def.cronId);
       log.warn(`Cron job ${def.cronId} already exists — replacing.`);
-      this.cancel(def.cronId, existing?.def.newioSessionId ?? def.newioSessionId);
+      this.cancel(def.cronId);
     }
 
     const parsed = parseCronExpression(def.expression);
@@ -44,7 +43,6 @@ export class CronScheduler {
     const fire = (): void => {
       const event: CronTriggerEvent = {
         cronId: def.cronId,
-        newioSessionId: def.newioSessionId,
         label: def.label,
         payload: def.payload,
         triggeredAt: new Date().toISOString(),
@@ -64,7 +62,7 @@ export class CronScheduler {
       );
       const timer = setTimeout(() => {
         fire();
-        this.cancel(def.cronId, def.newioSessionId);
+        this.cancel(def.cronId);
       }, delayMs);
       this.jobs.set(def.cronId, { def, timer, isInterval: false });
     } else {
@@ -77,9 +75,9 @@ export class CronScheduler {
   }
 
   /** Cancel a scheduled cron job within a session. Returns 'success' | 'not_found'. */
-  cancel(cronId: string, sessionId: string): 'success' | 'not_found' {
+  cancel(cronId: string): 'success' | 'not_found' {
     const entry = this.jobs.get(cronId);
-    if (!entry || entry.def.newioSessionId !== sessionId) {
+    if (!entry) {
       return 'not_found';
     }
     if (entry.isInterval) {
@@ -94,8 +92,8 @@ export class CronScheduler {
   }
 
   /** List active cron jobs for a session. */
-  list(sessionId: string): readonly CronJobDef[] {
-    return [...this.jobs.values()].filter((e) => e.def.newioSessionId === sessionId).map((e) => e.def);
+  list(): readonly CronJobDef[] {
+    return [...this.jobs.values()].map((e) => e.def);
   }
 
   /** Cancel all jobs. Call on shutdown. */

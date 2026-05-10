@@ -87,11 +87,9 @@ function mockClient(contacts: ContactRecord[] = [], conversations: ConversationL
     rejectFriendRequest: vi.fn().mockResolvedValue({}),
     removeFriend: vi.fn().mockResolvedValue(undefined),
     getUserSummaries: vi.fn().mockResolvedValue({ users: [] }),
-    getMemory: vi
-      .fn()
-      .mockResolvedValue({
-        data: { summary: null, facts: [{ factId: 'f1', text: 'Test', createdAt: 't', updatedAt: 't' }] },
-      }),
+    getMemory: vi.fn().mockResolvedValue({
+      data: { summary: null, facts: [{ factId: 'f1', text: 'Test', createdAt: 't', updatedAt: 't' }] },
+    }),
     batchUpdateMemory: vi.fn().mockResolvedValue({ applied: 1 }),
     touchMemoryScope: vi.fn().mockResolvedValue({}),
   } as unknown as NewioClient;
@@ -335,14 +333,14 @@ describe('NewioApp', () => {
       const triggered: string[] = [];
       app.on('cron.triggered', (e) => triggered.push(e.cronId));
 
-      app.scheduleCron({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'Test' });
-      expect(app.listCrons('s1')).toHaveLength(1);
+      app.scheduleCron({ cronId: 'c1', expression: 'every 1s', label: 'Test' });
+      expect(app.listCrons()).toHaveLength(1);
 
       await vi.advanceTimersByTimeAsync(1100);
       expect(triggered).toEqual(['c1']);
 
-      app.cancelCron('c1', 's1');
-      expect(app.listCrons('s1')).toHaveLength(0);
+      app.cancelCron('c1');
+      expect(app.listCrons()).toHaveLength(0);
       vi.useRealTimers();
     });
   });
@@ -559,47 +557,6 @@ describe('NewioApp', () => {
     });
   });
 
-  describe('getSessionId', () => {
-    it('returns undefined for unknown conversation', async () => {
-      const { app } = await createApp();
-      expect(app.getSessionId('unknown')).toBeUndefined();
-    });
-  });
-
-  describe('resolveSessionId', () => {
-    it('returns cached sessionId', async () => {
-      const conv = makeConversation({ conversationId: 'c1', sessionId: 's1' });
-      const { app } = await createApp([], [conv]);
-
-      const sessionId = await app.resolveSessionId('c1');
-      expect(sessionId).toBe('s1');
-    });
-
-    it('fetches from API when not cached', async () => {
-      const { app, client } = await createApp();
-      (client.getConversation as ReturnType<typeof vi.fn>).mockResolvedValue({
-        conversationId: 'c2',
-        type: 'dm',
-        members: [{ userId: 'me', sessionId: 's-from-api' }],
-      });
-
-      const sessionId = await app.resolveSessionId('c2');
-      expect(sessionId).toBe('s-from-api');
-      expect(client.getConversation).toHaveBeenCalledWith({ conversationId: 'c2' });
-    });
-
-    it('throws when no sessionId exists', async () => {
-      const { app, client } = await createApp();
-      (client.getConversation as ReturnType<typeof vi.fn>).mockResolvedValue({
-        conversationId: 'c3',
-        type: 'dm',
-        members: [{ userId: 'me' }],
-      });
-
-      await expect(app.resolveSessionId('c3')).rejects.toThrow('No session ID found');
-    });
-  });
-
   describe('getMembers', () => {
     it('returns member summaries with contact info', async () => {
       const contact = makeContact({ contactId: 'user-alice', friendUsername: 'alice', friendDisplayName: 'Alice' });
@@ -723,7 +680,7 @@ describe('NewioApp', () => {
     it('cancels cron jobs and disconnects', async () => {
       vi.useFakeTimers();
       const { app, ws } = await createApp();
-      app.scheduleCron({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'Test' });
+      app.scheduleCron({ cronId: 'c1', expression: 'every 1s', label: 'Test' });
 
       app.dispose();
 
@@ -769,9 +726,12 @@ describe('NewioApp', () => {
 
     it('default liveSessionInfo handler returns empty info', async () => {
       const { app } = await createApp();
-      const result = app._getSignalHandlers().liveSessionInfo({ sessionId: 's1' });
+      const result = app
+        ._getSignalHandlers()
+        .liveSessionInfo({ sessionType: 'conversation', externalReferenceId: 'c1' });
       expect(result).toEqual({
-        sessionId: 's1',
+        sessionType: 'conversation',
+        externalReferenceId: 'c1',
         isLive: false,
         availableModels: [],
         availableModes: [],

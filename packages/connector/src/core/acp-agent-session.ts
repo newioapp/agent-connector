@@ -10,7 +10,7 @@ import type { ClientSideConnection, NewSessionResponse, LoadSessionResponse } fr
 import type * as acp from '@agentclientprotocol/sdk';
 import type { AgentSession } from './agent-session';
 import { AcpSessionStream } from './acp-session-stream';
-import type { PermissionHandler, SessionStatusListener, SessionStreamSegment } from './types';
+import type { PermissionHandler, SessionStatusListener, SessionStreamSegment, SessionType } from './types';
 import { AcpSessionConfigHandler } from './acp-session-config-handler';
 import { AcpSessionContextWindowHandler } from './acp-session-context-window-handler';
 import { AcpSlashCommandHandler } from './acp-slash-command-handler';
@@ -32,7 +32,9 @@ import { extractErrorMessage } from './types';
 const log = new Logger('acp-agent-session');
 
 export interface AcpAgentSessionInit {
-  readonly sessionId: string;
+  readonly type: SessionType;
+  /** ConversationId, __contact__, cron id job */
+  readonly externalReferenceId: string;
   readonly promptFormatterVersion: string;
   readonly correlationId: string;
   readonly connection: ClientSideConnection;
@@ -48,7 +50,10 @@ export interface AcpAgentSessionInit {
 export interface AcpAgentSessionInterface extends AgentSession {}
 
 export class AcpAgentSession implements AcpAgentSessionInterface {
-  readonly sessionId: string;
+  readonly type: SessionType;
+
+  readonly externalReferenceId: string;
+
   readonly promptFormatterVersion: string;
 
   readonly correlationId: string;
@@ -67,7 +72,8 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
   private _currentConversationId: string | undefined = undefined;
 
   constructor(init: AcpAgentSessionInit) {
-    this.sessionId = init.sessionId;
+    this.type = init.type;
+    this.externalReferenceId = init.externalReferenceId;
     this.promptFormatterVersion = init.promptFormatterVersion;
     this.correlationId = init.correlationId;
     this.disposable = init.disposable;
@@ -75,14 +81,25 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
     this.logTag = init.username ? `[${init.username}]` : '';
     this._isSkipPrefix = init.isSkipPrefix;
     this.configHandler = new AcpSessionConfigHandler(
+      init.type,
+      init.externalReferenceId,
       init.correlationId,
-      init.sessionId,
       init.connection,
       init.client,
       init.sessionResponse,
     );
-    this.contextWindowHandler = new AcpSessionContextWindowHandler(init.sessionId, init.ownerId, init.client);
-    this.slashCommandHandler = new AcpSlashCommandHandler(init.correlationId, init.connection);
+    this.contextWindowHandler = new AcpSessionContextWindowHandler(
+      init.type,
+      init.externalReferenceId,
+      init.ownerId,
+      init.client,
+    );
+    this.slashCommandHandler = new AcpSlashCommandHandler(
+      init.type,
+      init.externalReferenceId,
+      init.correlationId,
+      init.connection,
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -143,7 +160,7 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
     await this.connection.cancel({ sessionId: this.correlationId });
   }
 
-  getLiveSessionInfo(request: LiveSessionInfoRequest): LiveSessionInfoResponse {
+  getLiveSessionInfo(_request: LiveSessionInfoRequest): LiveSessionInfoResponse {
     const availableModels: ModelOption[] = [];
     const availableModes: ModeOption[] = [];
     let currentModel: string | undefined;
@@ -166,7 +183,8 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
     }
 
     return {
-      sessionId: request.sessionId,
+      sessionType: this.type,
+      externalReferenceId: this.externalReferenceId,
       isLive: true,
       availableModels,
       currentModel,

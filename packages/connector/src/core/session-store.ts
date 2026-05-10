@@ -12,7 +12,6 @@ const log = new Logger('session-store');
 export interface CronJobRow {
   readonly cronId: string;
   readonly expression: string;
-  readonly newioSessionId: string;
   readonly label: string;
   readonly payload?: unknown;
 }
@@ -50,7 +49,7 @@ export class SessionStore {
         def.cronId,
         agentId,
         def.expression,
-        def.newioSessionId,
+        '_deprecated',
         def.label,
         def.payload ? JSON.stringify(def.payload) : null,
       );
@@ -86,7 +85,6 @@ export class SessionStore {
       result.push({
         cronId: r.cronId,
         expression: r.expression,
-        newioSessionId: r.newioSessionId,
         label: r.label,
         ...(r.payload ? { payload: JSON.parse(r.payload) as unknown } : {}),
       });

@@ -8,6 +8,8 @@ export type UpdateMode = 'auto' | 'manual' | 'disabled';
 
 export type UpdateChannel = 'latest' | 'beta';
 
+export type SessionType = 'conversation' | 'contact' | 'cron';
+
 // ---------------------------------------------------------------------------
 // Agent types
 // ---------------------------------------------------------------------------

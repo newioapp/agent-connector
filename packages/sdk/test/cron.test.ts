@@ -71,7 +71,7 @@ describe('CronScheduler', () => {
       onCancelled: noop,
     });
 
-    scheduler.schedule({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'Test' });
+    scheduler.schedule({ cronId: 'c1', expression: 'every 1s', label: 'Test' });
 
     await vi.advanceTimersByTimeAsync(3100);
     expect(triggered).toEqual(['c1', 'c1', 'c1']);
@@ -88,7 +88,7 @@ describe('CronScheduler', () => {
     });
 
     const future = new Date(Date.now() + 2000).toISOString();
-    scheduler.schedule({ cronId: 'c1', expression: `at ${future}`, newioSessionId: 's1', label: 'Once' });
+    scheduler.schedule({ cronId: 'c1', expression: `at ${future}`, label: 'Once' });
 
     await vi.advanceTimersByTimeAsync(2100);
     expect(triggered).toEqual(['c1']);
@@ -100,7 +100,7 @@ describe('CronScheduler', () => {
   it('skips one-shot with past trigger time', () => {
     const scheduler = new CronScheduler({ onTriggered: noop, onScheduled: noop, onCancelled: noop });
     const past = new Date(Date.now() - 1000).toISOString();
-    scheduler.schedule({ cronId: 'c1', expression: `at ${past}`, newioSessionId: 's1', label: 'Past' });
+    scheduler.schedule({ cronId: 'c1', expression: `at ${past}`, label: 'Past' });
     expect(scheduler.list('s1')).toHaveLength(0);
     scheduler.dispose();
   });
@@ -113,8 +113,8 @@ describe('CronScheduler', () => {
       onCancelled: noop,
     });
 
-    scheduler.schedule({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'First' });
-    scheduler.schedule({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'Second' });
+    scheduler.schedule({ cronId: 'c1', expression: 'every 1s', label: 'First' });
+    scheduler.schedule({ cronId: 'c1', expression: 'every 1s', label: 'Second' });
 
     await vi.advanceTimersByTimeAsync(1100);
     expect(triggered).toEqual(['Second']);
@@ -130,7 +130,7 @@ describe('CronScheduler', () => {
       onCancelled: noop,
     });
 
-    scheduler.schedule({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'Test' });
+    scheduler.schedule({ cronId: 'c1', expression: 'every 1s', label: 'Test' });
     expect(scheduled).toEqual(['c1']);
 
     scheduler.dispose();
@@ -144,7 +144,7 @@ describe('CronScheduler', () => {
       onCancelled: (id) => cancelled.push(id),
     });
 
-    scheduler.schedule({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'Test' });
+    scheduler.schedule({ cronId: 'c1', expression: 'every 1s', label: 'Test' });
     scheduler.cancel('c1', 's1');
     expect(cancelled).toEqual(['c1']);
 
@@ -165,8 +165,8 @@ describe('CronScheduler', () => {
       onCancelled: noop,
     });
 
-    scheduler.schedule({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'A' });
-    scheduler.schedule({ cronId: 'c2', expression: 'every 1s', newioSessionId: 's1', label: 'B' });
+    scheduler.schedule({ cronId: 'c1', expression: 'every 1s', label: 'A' });
+    scheduler.schedule({ cronId: 'c2', expression: 'every 1s', label: 'B' });
 
     scheduler.dispose();
     await vi.advanceTimersByTimeAsync(2000);
@@ -176,8 +176,8 @@ describe('CronScheduler', () => {
 
   it('list returns all active jobs', () => {
     const scheduler = new CronScheduler({ onTriggered: noop, onScheduled: noop, onCancelled: noop });
-    scheduler.schedule({ cronId: 'c1', expression: 'every 1s', newioSessionId: 's1', label: 'A' });
-    scheduler.schedule({ cronId: 'c2', expression: 'every 2s', newioSessionId: 's1', label: 'B' });
+    scheduler.schedule({ cronId: 'c1', expression: 'every 1s', label: 'A' });
+    scheduler.schedule({ cronId: 'c2', expression: 'every 2s', label: 'B' });
 
     const jobs = scheduler.list('s1');
     expect(jobs).toHaveLength(2);
@@ -186,7 +186,7 @@ describe('CronScheduler', () => {
     scheduler.dispose();
   });
 
-  it('includes payload and newioSessionId in triggered event', async () => {
+  it('includes payload in triggered event', async () => {
     let event: unknown;
     const scheduler = new CronScheduler({
       onTriggered: (e) => {
@@ -199,7 +199,6 @@ describe('CronScheduler', () => {
     scheduler.schedule({
       cronId: 'c1',
       expression: 'every 1s',
-      newioSessionId: 'session-42',
       label: 'With Payload',
       payload: { key: 'value' },
     });
@@ -208,7 +207,6 @@ describe('CronScheduler', () => {
     expect(event).toEqual(
       expect.objectContaining({
         cronId: 'c1',
-        newioSessionId: 'session-42',
         label: 'With Payload',
         payload: { key: 'value' },
         triggeredAt: expect.any(String),

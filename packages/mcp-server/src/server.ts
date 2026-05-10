@@ -23,21 +23,15 @@ import { IdGetter } from './types.js';
 /**
  * MCP server that exposes Newio tools to agent sessions.
  *
- * The `sessionId` is set after construction — conversation-creation tools
- * read it lazily at call time so the value is always up to date.
- *
  * @example
  * ```ts
  * const mcpServer = new NewioMcpServer(app);
  * await mcpServer.connect(transport);
- * // Later, after the agent session is launched:
- * mcpServer.setSessionId('session-abc');
  * ```
  */
 
 export class NewioMcpServer {
   private readonly server: McpServer;
-  private getSessionId: IdGetter;
   private getCurrentConversationId: IdGetter;
 
   constructor(app: NewioApp) {
@@ -47,21 +41,15 @@ export class NewioMcpServer {
     });
 
     this.getCurrentConversationId = () => undefined;
-    this.getSessionId = () => undefined;
-
     registerContactsTools(this.server, app);
-    registerConversationsTools(this.server, app, () => this.getSessionId());
-    registerCronTools(this.server, app, () => this.getSessionId());
+    registerConversationsTools(this.server, app);
+    registerCronTools(this.server, app);
     registerMessagingTools(this.server, app);
     registerUsersTools(this.server, app);
     registerMediaTools(this.server, app, () => this.getCurrentConversationId());
     registerMemoryTools(this.server, app);
   }
 
-  /** Set the Newio session ID for this MCP connection. */
-  setSessionIdGetter(idGetter: IdGetter): void {
-    this.getSessionId = idGetter;
-  }
   setCurrentConversationIdGetter(idGetter: IdGetter): void {
     this.getCurrentConversationId = idGetter;
   }
