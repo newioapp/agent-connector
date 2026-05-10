@@ -35,6 +35,7 @@ describe('AcpSessionConfigHandler', () => {
         'sess-1',
         mockConnection(),
         mockClient(),
+        'agent-1',
         makeSessionResponse({
           configOptions: [
             {
@@ -81,6 +82,7 @@ describe('AcpSessionConfigHandler', () => {
         'sess-1',
         mockConnection(),
         mockClient(),
+        'agent-1',
         makeSessionResponse({
           models: {
             availableModels: [
@@ -116,6 +118,7 @@ describe('AcpSessionConfigHandler', () => {
         'sess-1',
         mockConnection(),
         mockClient(),
+        'agent-1',
         makeSessionResponse(),
       );
 
@@ -130,6 +133,7 @@ describe('AcpSessionConfigHandler', () => {
         'sess-1',
         mockConnection(),
         mockClient(),
+        'agent-1',
         makeSessionResponse({
           configOptions: [
             {
@@ -165,6 +169,7 @@ describe('AcpSessionConfigHandler', () => {
         'sess-1',
         mockConnection(),
         mockClient(),
+        'agent-1',
         makeSessionResponse({
           configOptions: [{ type: 'toggle', category: 'model', currentValue: true }] as never,
         }),
@@ -183,6 +188,7 @@ describe('AcpSessionConfigHandler', () => {
         'sess-1',
         conn,
         mockClient(),
+        'agent-1',
         makeSessionResponse({
           models: {
             availableModels: [{ modelId: 'a', name: 'A' }],
@@ -207,6 +213,7 @@ describe('AcpSessionConfigHandler', () => {
         'sess-1',
         conn,
         mockClient(),
+        'agent-1',
         makeSessionResponse({
           models: { availableModels: [{ modelId: 'a', name: 'A' }], currentModelId: 'a' },
         }),
@@ -225,6 +232,7 @@ describe('AcpSessionConfigHandler', () => {
         'sess-1',
         conn,
         mockClient(),
+        'agent-1',
         makeSessionResponse(),
       );
 
@@ -241,6 +249,7 @@ describe('AcpSessionConfigHandler', () => {
         'sess-1',
         conn,
         mockClient(),
+        'agent-1',
         makeSessionResponse(),
       );
 
@@ -257,6 +266,7 @@ describe('AcpSessionConfigHandler', () => {
         'sess-1',
         conn,
         mockClient(),
+        'agent-1',
         makeSessionResponse({
           modes: { availableModes: [{ id: 'fast', name: 'Fast' }], currentModeId: 'fast' },
         }),
@@ -278,6 +288,7 @@ describe('AcpSessionConfigHandler', () => {
         'sess-1',
         conn,
         mockClient(),
+        'agent-1',
         makeSessionResponse(),
       );
 
@@ -293,6 +304,7 @@ describe('AcpSessionConfigHandler', () => {
         'sess-1',
         mockConnection(),
         mockClient(),
+        'agent-1',
         makeSessionResponse({
           modes: { availableModes: [{ id: 'a', name: 'A' }], currentModeId: 'a' },
         }),
@@ -314,6 +326,7 @@ describe('AcpSessionConfigHandler', () => {
         'sess-1',
         mockConnection(),
         mockClient(),
+        'agent-1',
         makeSessionResponse(),
       );
 
@@ -333,6 +346,7 @@ describe('AcpSessionConfigHandler', () => {
         'sess-1',
         mockConnection(),
         mockClient(),
+        'agent-1',
         makeSessionResponse(),
       );
 
@@ -361,6 +375,7 @@ describe('AcpSessionConfigHandler', () => {
         'sess-1',
         mockConnection(),
         mockClient(),
+        'agent-1',
         makeSessionResponse(),
       );
 
@@ -389,6 +404,7 @@ describe('AcpSessionConfigHandler', () => {
         'sess-1',
         mockConnection(),
         mockClient(),
+        'agent-1',
         makeSessionResponse(),
       );
 
@@ -407,6 +423,7 @@ describe('AcpSessionConfigHandler', () => {
         'sess-1',
         mockConnection(),
         mockClient(),
+        'agent-1',
         makeSessionResponse(),
       );
 
@@ -427,6 +444,7 @@ describe('AcpSessionConfigHandler', () => {
         'sess-1',
         conn,
         client,
+        'agent-1',
         makeSessionResponse({
           models: { availableModels: [{ modelId: 'fallback', name: 'Fallback' }], currentModelId: 'fallback' },
         }),
@@ -437,6 +455,7 @@ describe('AcpSessionConfigHandler', () => {
       expect(conn.unstable_setSessionModel).toHaveBeenCalledWith({ sessionId: 'sess-1', modelId: 'unavailable-model' });
       expect(client.updateAgentMember).toHaveBeenCalledWith({
         conversationId: 'conv-1',
+        targetUserId: 'agent-1',
         acpModel: 'fallback',
         acpMode: null,
       });
@@ -450,6 +469,7 @@ describe('AcpSessionConfigHandler', () => {
         'sess-1',
         mockConnection(),
         client,
+        'agent-1',
         makeSessionResponse({
           models: { availableModels: [{ modelId: 'a', name: 'A' }], currentModelId: 'a' },
         }),

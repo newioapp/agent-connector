@@ -278,6 +278,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
       correlationId: result.sessionId,
       connection: conn,
       client: this.app.client,
+      agentUserId: this.app.identity.userId,
       ownerId: this.app.identity.ownerId,
       sessionResponse: result,
       disposable: this.supportsClose,

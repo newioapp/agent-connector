@@ -24,6 +24,7 @@ export class AcpSessionConfigHandler {
     private readonly correlationId: string,
     private readonly connection: ClientSideConnection,
     private readonly client: NewioClient,
+    private readonly agentUserId: string,
     sessionResponse: NewSessionResponse | LoadSessionResponse,
   ) {
     const { configOptions, models, modes } = sessionResponse;
@@ -160,6 +161,7 @@ export class AcpSessionConfigHandler {
     try {
       await this.client.updateAgentMember({
         conversationId: this.externalReferenceId,
+        targetUserId: this.agentUserId,
         acpModel: this.modelConfig?.selectedId ?? null,
         acpMode: this.modeConfig?.selectedId ?? null,
       });
