@@ -39,6 +39,7 @@ export interface AcpAgentSessionInit {
   readonly correlationId: string;
   readonly connection: ClientSideConnection;
   readonly client: NewioClient;
+  readonly agentUserId: string;
   readonly ownerId: string;
   readonly sessionResponse: NewSessionResponse | LoadSessionResponse;
   readonly disposable: boolean;
@@ -86,6 +87,7 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
       init.correlationId,
       init.connection,
       init.client,
+      init.agentUserId,
       init.sessionResponse,
     );
     this.contextWindowHandler = new AcpSessionContextWindowHandler(

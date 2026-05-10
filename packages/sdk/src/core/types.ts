@@ -664,6 +664,7 @@ export interface UpdateMemberRoleResponse {
 
 export interface UpdateAgentMemberConfigRequest {
   readonly conversationId: string;
+  readonly targetUserId: string;
   readonly acpModel?: string | null;
   readonly acpMode?: string | null;
 }

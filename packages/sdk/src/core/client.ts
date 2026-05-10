@@ -347,11 +347,14 @@ export class NewioClient {
 
   /** Update the agent's own member config (acpModel, acpMode). */
   async updateAgentMember(input: UpdateAgentMemberConfigRequest): Promise<void> {
-    const { conversationId, ...body } = input;
-    await this.http.request(`/conversations/${encodeURIComponent(conversationId)}/members/me`, {
-      method: 'PUT',
-      body: JSON.stringify(body),
-    });
+    const { conversationId, targetUserId, ...body } = input;
+    await this.http.request(
+      `/conversations/${encodeURIComponent(conversationId)}/members/${encodeURIComponent(targetUserId)}/agent-settings`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      },
+    );
   }
 
   /** Mark a conversation as read up to a timestamp. */
