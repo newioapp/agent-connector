@@ -154,10 +154,12 @@ export class AcpSessionConfigHandler {
 
   /** Report the current model/mode back to the backend (corrects stale persisted values). */
   async reportCurrentConfig(): Promise<void> {
+    if (this.sessionType !== 'conversation') {
+      return;
+    }
     try {
-      await this.client.updateSession({
-        type: this.sessionType,
-        externalReferenceId: this.externalReferenceId,
+      await this.client.updateAgentMember({
+        conversationId: this.externalReferenceId,
         acpModel: this.modelConfig?.selectedId ?? null,
         acpMode: this.modeConfig?.selectedId ?? null,
       });

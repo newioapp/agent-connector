@@ -80,6 +80,8 @@ export interface MemberRecord {
   readonly sessionId?: string;
   readonly showToolCalls?: boolean;
   readonly showThoughts?: boolean;
+  readonly acpModel?: string;
+  readonly acpMode?: string;
   readonly joinedAt: string;
   readonly username?: string;
   readonly displayName?: string;
@@ -660,6 +662,12 @@ export interface UpdateMemberRoleResponse {
   readonly avatarUrl?: string;
 }
 
+export interface UpdateAgentMemberConfigRequest {
+  readonly conversationId: string;
+  readonly acpModel?: string | null;
+  readonly acpMode?: string | null;
+}
+
 export interface MarkReadRequest {
   readonly conversationId: string;
   readonly readUntil: string;
@@ -927,26 +935,6 @@ export interface SessionConfigUpdate {
 }
 
 export type SessionType = 'conversation' | 'contact' | 'cron';
-export interface GetSessionRequest {
-  readonly type: SessionType;
-  readonly externalReferenceId: string;
-}
-
-export interface GetSessionResponse {
-  readonly session: SessionRecord;
-}
-
-export interface UpdateSessionRequest {
-  readonly type: SessionType;
-  readonly externalReferenceId: string;
-  readonly name?: string;
-  readonly acpModel?: string | null;
-  readonly acpMode?: string | null;
-}
-
-export interface UpdateSessionResponse {
-  readonly session: SessionRecord;
-}
 
 // ---------------------------------------------------------------------------
 // Capabilities — agent remote control

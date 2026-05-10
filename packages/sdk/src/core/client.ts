@@ -63,6 +63,7 @@ import type {
   RemoveMemberResponse,
   UpdateMemberRoleRequest,
   UpdateMemberRoleResponse,
+  UpdateAgentMemberConfigRequest,
   MarkReadRequest,
   MarkReadResponse,
   UpdateNotifyLevelRequest,
@@ -103,12 +104,6 @@ import type {
   SendSignalResponse,
   ReportAgentInfoRequest,
   ReportAgentInfoResponse,
-
-  // Sessions
-  GetSessionRequest,
-  GetSessionResponse,
-  UpdateSessionRequest,
-  UpdateSessionResponse,
 
   // Memory
   GetMemoryRequest,
@@ -350,6 +345,15 @@ export class NewioClient {
     );
   }
 
+  /** Update the agent's own member config (acpModel, acpMode). */
+  async updateAgentMember(input: UpdateAgentMemberConfigRequest): Promise<void> {
+    const { conversationId, ...body } = input;
+    await this.http.request(`/conversations/${encodeURIComponent(conversationId)}/members/me`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  }
+
   /** Mark a conversation as read up to a timestamp. */
   async markRead(input: MarkReadRequest): Promise<MarkReadResponse> {
     return this.http.request(`/conversations/${encodeURIComponent(input.conversationId)}/read`, {
@@ -506,20 +510,6 @@ export class NewioClient {
   // ---------------------------------------------------------------------------
   // Sessions
   // ---------------------------------------------------------------------------
-
-  /** Get a session by ID. */
-  async getSession(input: GetSessionRequest): Promise<GetSessionResponse> {
-    return this.http.request(`/sessions/${input.type}/${input.externalReferenceId}`, { method: 'GET' });
-  }
-
-  /** Update a session (name, acpModel, acpMode). */
-  async updateSession(input: UpdateSessionRequest): Promise<UpdateSessionResponse> {
-    const { type, externalReferenceId, ...body } = input;
-    return this.http.request(`/sessions/${type}/${externalReferenceId}`, {
-      method: 'PUT',
-      body: JSON.stringify(body),
-    });
-  }
 
   // ---------------------------------------------------------------------------
   // Memory

@@ -634,11 +634,10 @@ export abstract class BaseAgentInstance implements AgentInstance {
   }
 
   // ---------------------------------------------------------------------------
-  // Session config — apply persisted acpModel/acpMode from session.updated events
+  // Session config — apply persisted acpModel/acpMode from conversation member
   // ---------------------------------------------------------------------------
 
-  /** Read persisted acpModel/acpMode from the backend and apply on session launch. */
-  /** Read persisted acpModel/acpMode from the backend and apply on session launch. */
+  /** Read persisted acpModel/acpMode from the conversation member and apply on session launch. */
   private async applyPersistedSessionConfig(
     type: SessionType,
     externalReferenceId: string,
@@ -648,11 +647,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
       return;
     }
     try {
-      const { session: record } = await this.app.client.getSession({
-        type: type,
-        externalReferenceId: externalReferenceId,
-      });
-      await session.applySessionConfig(record);
+      const members = this.app.store.getMembers(externalReferenceId);
+      const self = members?.get(this.app.identity.userId);
+      if (self) {
+        await session.applySessionConfig(self);
+      }
     } catch (err: unknown) {
       log.warn(`${this.logTag} Failed to apply persisted session config for ${type}/${externalReferenceId}`, err);
     }

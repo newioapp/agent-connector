@@ -13,7 +13,7 @@ function mockConnection(overrides?: Partial<ClientSideConnection>): ClientSideCo
 }
 
 function mockClient(): NewioClient {
-  return { updateSession: vi.fn().mockResolvedValue(undefined) } as unknown as NewioClient;
+  return { updateAgentMember: vi.fn().mockResolvedValue(undefined) } as unknown as NewioClient;
 }
 
 function makeSessionResponse(overrides?: Partial<NewSessionResponse>): NewSessionResponse {
@@ -435,9 +435,8 @@ describe('AcpSessionConfigHandler', () => {
       await handler.applySessionConfig({ acpModel: 'unavailable-model' });
 
       expect(conn.unstable_setSessionModel).toHaveBeenCalledWith({ sessionId: 'sess-1', modelId: 'unavailable-model' });
-      expect(client.updateSession).toHaveBeenCalledWith({
-        type: 'conversation',
-        externalReferenceId: 'conv-1',
+      expect(client.updateAgentMember).toHaveBeenCalledWith({
+        conversationId: 'conv-1',
         acpModel: 'fallback',
         acpMode: null,
       });
@@ -458,7 +457,7 @@ describe('AcpSessionConfigHandler', () => {
 
       await handler.applySessionConfig({ acpModel: 'a' });
 
-      expect(client.updateSession).not.toHaveBeenCalled();
+      expect(client.updateAgentMember).not.toHaveBeenCalled();
     });
   });
 });
