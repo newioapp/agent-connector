@@ -243,6 +243,7 @@ export type {
 // Types — Signals (typed payloads)
 export type {
   SignalType,
+  SignalErrorCode,
   ModelOption,
   ModeOption,
   LiveSessionInfoRequest,
@@ -253,6 +254,10 @@ export type {
   CompactSessionResponse,
   StartSessionRequest,
   StartSessionResponse,
+  UpdateMemoryRequest,
+  UpdateMemoryResponse,
+  RotateSessionRequest,
+  RotateSessionResponse,
   ContextWindowUpdatePayload,
 } from './core/types.js';
 

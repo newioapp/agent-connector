@@ -751,6 +751,40 @@ describe('NewioApp', () => {
       const result = await app._getSignalHandlers().compactSession({ sessionId: 's1' });
       expect(result).toEqual({ success: false, errorCode: 'not_implemented', error: 'No handler registered' });
     });
+
+    it('onUpdateMemory registers handler accessible via _getSignalHandlers', async () => {
+      const { app } = await createApp();
+      const handler = vi.fn().mockResolvedValue({ success: true });
+      app.onUpdateMemory(handler);
+      const handlers = app._getSignalHandlers();
+      await handlers.updateMemory({ sessionType: 'conversation', externalReferenceId: 'c1' });
+      expect(handler).toHaveBeenCalledWith({ sessionType: 'conversation', externalReferenceId: 'c1' });
+    });
+
+    it('default updateMemory handler returns error', async () => {
+      const { app } = await createApp();
+      const result = await app
+        ._getSignalHandlers()
+        .updateMemory({ sessionType: 'conversation', externalReferenceId: 'c1' });
+      expect(result).toEqual({ success: false, errorCode: 'not_implemented', error: 'No handler registered' });
+    });
+
+    it('onRotateSession registers handler accessible via _getSignalHandlers', async () => {
+      const { app } = await createApp();
+      const handler = vi.fn().mockResolvedValue({ success: true });
+      app.onRotateSession(handler);
+      const handlers = app._getSignalHandlers();
+      await handlers.rotateSession({ sessionType: 'conversation', externalReferenceId: 'c1' });
+      expect(handler).toHaveBeenCalledWith({ sessionType: 'conversation', externalReferenceId: 'c1' });
+    });
+
+    it('default rotateSession handler returns error', async () => {
+      const { app } = await createApp();
+      const result = await app
+        ._getSignalHandlers()
+        .rotateSession({ sessionType: 'conversation', externalReferenceId: 'c1' });
+      expect(result).toEqual({ success: false, errorCode: 'not_implemented', error: 'No handler registered' });
+    });
   });
 
   describe('memory', () => {

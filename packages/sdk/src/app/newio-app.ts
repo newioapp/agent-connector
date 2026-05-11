@@ -51,6 +51,8 @@ import type {
   CancelSessionHandler,
   CompactSessionHandler,
   StartSessionHandler,
+  UpdateMemoryHandler,
+  RotateSessionHandler,
 } from './types.js';
 
 const log = getLogger('newio-app');
@@ -178,6 +180,10 @@ export class NewioApp {
     Promise.resolve({ success: false, errorCode: 'not_implemented', error: 'No handler registered' });
   private startSessionHandler: StartSessionHandler = () =>
     Promise.resolve({ success: false, error: 'No handler registered' });
+  private updateMemoryHandler: UpdateMemoryHandler = () =>
+    Promise.resolve({ success: false, errorCode: 'not_implemented', error: 'No handler registered' });
+  private rotateSessionHandler: RotateSessionHandler = () =>
+    Promise.resolve({ success: false, errorCode: 'not_implemented', error: 'No handler registered' });
 
   private constructor(
     identity: NewioIdentity,
@@ -362,18 +368,32 @@ export class NewioApp {
     this.startSessionHandler = handler;
   }
 
+  /** Register a handler for when the owner requests a mid-session memory update. */
+  onUpdateMemory(handler: UpdateMemoryHandler): void {
+    this.updateMemoryHandler = handler;
+  }
+
+  /** Register a handler for when the owner rotates the current session (ends it, next event starts fresh). */
+  onRotateSession(handler: RotateSessionHandler): void {
+    this.rotateSessionHandler = handler;
+  }
+
   /** @internal Returns signal handlers for wireEvents. */
   _getSignalHandlers(): {
     liveSessionInfo: LiveSessionInfoHandler;
     cancelSession: CancelSessionHandler;
     compactSession: CompactSessionHandler;
     startSession: StartSessionHandler;
+    updateMemory: UpdateMemoryHandler;
+    rotateSession: RotateSessionHandler;
   } {
     return {
       liveSessionInfo: this.liveSessionInfoHandler,
       cancelSession: this.cancelSessionHandler,
       compactSession: this.compactSessionHandler,
       startSession: this.startSessionHandler,
+      updateMemory: this.updateMemoryHandler,
+      rotateSession: this.rotateSessionHandler,
     };
   }
 
