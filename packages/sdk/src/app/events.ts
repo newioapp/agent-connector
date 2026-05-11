@@ -13,6 +13,8 @@ import type {
   CancelSessionRequest,
   CompactSessionRequest,
   StartSessionRequest,
+  UpdateMemoryRequest,
+  RotateSessionRequest,
   SignalPayload,
 } from '../core/types.js';
 import type { NewioAppStore } from './store.js';
@@ -23,6 +25,8 @@ import type {
   CancelSessionHandler,
   CompactSessionHandler,
   StartSessionHandler,
+  UpdateMemoryHandler,
+  RotateSessionHandler,
 } from './types.js';
 import type { PendingActions } from './pending-actions.js';
 import type { MessageProcessor } from './message-processor.js';
@@ -43,6 +47,8 @@ export function wireEvents(
     cancelSession: CancelSessionHandler;
     compactSession: CompactSessionHandler;
     startSession: StartSessionHandler;
+    updateMemory: UpdateMemoryHandler;
+    rotateSession: RotateSessionHandler;
   },
 ): void {
   /** Per-conversation queue to serialize message processing and prevent duplicate backfills. */
@@ -326,6 +332,28 @@ export function wireEvents(
         }))
         .then((response) => {
           sendResponse('start_session_response', response as SignalPayload);
+        });
+    } else if (type === 'update_memory') {
+      const request = payload as unknown as UpdateMemoryRequest;
+      void handlers
+        .updateMemory(request)
+        .catch((err: unknown): { success: boolean; error: string } => ({
+          success: false,
+          error: err instanceof Error ? err.message : 'Unknown error',
+        }))
+        .then((response) => {
+          sendResponse('update_memory_response', response);
+        });
+    } else if (type === 'rotate_session') {
+      const request = payload as unknown as RotateSessionRequest;
+      void handlers
+        .rotateSession(request)
+        .catch((err: unknown): { success: boolean; error: string } => ({
+          success: false,
+          error: err instanceof Error ? err.message : 'Unknown error',
+        }))
+        .then((response) => {
+          sendResponse('rotate_session_response', response);
         });
     } else {
       log.warn(`Unknown signal request type: ${type}`);

@@ -37,6 +37,10 @@ import type {
   CompactSessionResponse,
   StartSessionRequest,
   StartSessionResponse,
+  UpdateMemoryRequest,
+  UpdateMemoryResponse,
+  RotateSessionRequest,
+  RotateSessionResponse,
 } from '@newio/agent-sdk';
 import WebSocket from 'ws';
 import { PromptFormatterImpl } from './prompt-formatter';
@@ -63,6 +67,10 @@ interface SessionSlot {
   session: AgentSession | undefined;
   readonly sessionPromise: Promise<AgentSession>;
   lastActivityAt: number;
+  /** Non-null while the session loop is processing a turn (message/contact/cron). */
+  inFlightTurn: Promise<void> | null;
+  /** Non-null while an owner-initiated lifecycle operation is running. */
+  pendingOwnerOp: { readonly type: string; readonly promise: Promise<unknown> } | null;
 }
 
 export abstract class BaseAgentInstance implements AgentInstance {
@@ -493,6 +501,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
       session: undefined,
       sessionPromise,
       lastActivityAt: Date.now(),
+      inFlightTurn: null,
+      pendingOwnerOp: null,
     };
 
     void sessionPromise.then(
@@ -765,9 +775,50 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
     for await (const event of slot.queue.events()) {
       slot.lastActivityAt = Date.now();
-      await this.processEvent(event, session);
+      await this.withTurnTracking(slot, () => this.processEvent(event, session));
     }
     log.debug(`${this.logTag} Session loop ended: ${slot.type}:${slot.externalReferenceId}`);
+  }
+
+  /** Track an in-flight turn on the slot so signal handlers can detect busy state. */
+  private async withTurnTracking(slot: SessionSlot, fn: () => Promise<void>): Promise<void> {
+    const p = fn();
+    slot.inFlightTurn = p.then(
+      () => undefined,
+      () => undefined,
+    );
+    try {
+      await p;
+    } finally {
+      slot.inFlightTurn = null;
+    }
+  }
+
+  /** Run an owner-initiated operation with dedup and conflict detection. */
+  private withOwnerOp<T>(slot: SessionSlot, opType: string, fn: () => Promise<T>): Promise<T> {
+    if (slot.pendingOwnerOp) {
+      if (slot.pendingOwnerOp.type === opType) {
+        return slot.pendingOwnerOp.promise as Promise<T>;
+      }
+      return Promise.resolve({
+        success: false,
+        errorCode: 'operation_in_progress',
+        error: 'Another operation is running',
+      } as T);
+    }
+    if (slot.inFlightTurn) {
+      return Promise.resolve({
+        success: false,
+        errorCode: 'session_busy',
+        error: 'Session is processing a message',
+      } as T);
+    }
+    const promise = fn();
+    slot.pendingOwnerOp = { type: opType, promise };
+    void promise.finally(() => {
+      slot.pendingOwnerOp = null;
+    });
+    return promise;
   }
 
   /** Dispatch an event to the appropriate handler. */
@@ -880,6 +931,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
     app.onCancelSession((request) => this.handleCancelSession(request));
     app.onCompactSession((request) => this.handleCompactSession(request));
     app.onStartSession((request) => this.handleStartSession(request));
+    app.onUpdateMemory((request) => this.handleUpdateMemory(request));
+    app.onRotateSession((request) => this.handleRotateSession(request));
   }
 
   /** Get live session info for a session. */
@@ -914,7 +967,13 @@ export abstract class BaseAgentInstance implements AgentInstance {
     if (!slot?.session) {
       return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
     }
-    return slot.session.handleCompactSession(request);
+    return this.withOwnerOp(slot, 'compact_session', async () => {
+      const session = slot.session;
+      if (!session) {
+        return { success: false, errorCode: 'session_not_live', error: 'Session ended' };
+      }
+      return session.handleCompactSession(request);
+    });
   }
 
   /** Handle start session signal. Launches the session if not already running. */
@@ -937,6 +996,46 @@ export abstract class BaseAgentInstance implements AgentInstance {
     });
     return { success: true, info };
   }
+
+  /** Handle update_memory signal — run the mid-session memory-update prompt. */
+  private async handleUpdateMemory(request: UpdateMemoryRequest): Promise<UpdateMemoryResponse> {
+    const slot = this.getSlot(request.sessionType, request.externalReferenceId);
+    if (!slot?.session) {
+      return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
+    }
+    return this.withOwnerOp(slot, 'update_memory', async () => {
+      const session = slot.session;
+      if (!session) {
+        return { success: false, errorCode: 'session_not_live', error: 'Session ended' };
+      }
+      const prompt = this.promptManager.buildMemoryUpdatePrompt(session.promptFormatterVersion);
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        for await (const _ of session.prompt(prompt)) {
+          // Drain output — memory updates happen via MCP tool calls within the prompt
+        }
+        return { success: true };
+      } catch (err: unknown) {
+        return { success: false, error: extractErrorMessage(err) };
+      }
+    });
+  }
+
+  /** Handle rotate_session signal — end current session (with handoff note), next event starts fresh. */
+  private async handleRotateSession(request: RotateSessionRequest): Promise<RotateSessionResponse> {
+    if (request.sessionType !== 'conversation') {
+      return { success: false, errorCode: 'invalid_session_type', error: 'Can only rotate conversation sessions' };
+    }
+    const slot = this.getSlot(request.sessionType, request.externalReferenceId);
+    if (!slot?.session) {
+      return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
+    }
+    return this.withOwnerOp(slot, 'rotate_session', async () => {
+      await this.rotateSession(request.sessionType, request.externalReferenceId);
+      return { success: true };
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // Idle cleanup
   // ---------------------------------------------------------------------------
@@ -959,7 +1058,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
       // Conversation slots
       for (const [conversationId, slot] of this.conversationSlots) {
-        if (now - slot.lastActivityAt > timeout && slot.session) {
+        if (now - slot.lastActivityAt > timeout && slot.session && !slot.inFlightTurn && !slot.pendingOwnerOp) {
           log.info(
             `${this.logTag} Idle session cleanup: conversation ${conversationId} (idle ${Math.round((now - slot.lastActivityAt) / 1000)}s)`,
           );
@@ -968,14 +1067,19 @@ export abstract class BaseAgentInstance implements AgentInstance {
       }
 
       // Contact slot
-      if (this.contactSlot?.session && now - this.contactSlot.lastActivityAt > timeout) {
+      if (
+        this.contactSlot?.session &&
+        now - this.contactSlot.lastActivityAt > timeout &&
+        !this.contactSlot.inFlightTurn &&
+        !this.contactSlot.pendingOwnerOp
+      ) {
         log.info(`${this.logTag} Idle session cleanup: contact session`);
         await this.endSession(this.contactSlot);
       }
 
       // Cron slots
       for (const [cronId, slot] of this.cronSlots) {
-        if (now - slot.lastActivityAt > timeout && slot.session) {
+        if (now - slot.lastActivityAt > timeout && slot.session && !slot.inFlightTurn && !slot.pendingOwnerOp) {
           log.info(`${this.logTag} Idle session cleanup: cron ${cronId}`);
           await this.endSession(slot);
         }

@@ -13,6 +13,10 @@ import type {
   CompactSessionResponse,
   StartSessionRequest,
   StartSessionResponse,
+  UpdateMemoryRequest,
+  UpdateMemoryResponse,
+  RotateSessionRequest,
+  RotateSessionResponse,
 } from '../core/types.js';
 
 /** A processed incoming message with sender metadata resolved from caches. */
@@ -183,3 +187,9 @@ export type CompactSessionHandler = (request: CompactSessionRequest) => Promise<
 
 /** Handler for owner's start_session signal. Starts an idle session and returns full info. */
 export type StartSessionHandler = (request: StartSessionRequest) => Promise<StartSessionResponse>;
+
+/** Handler for owner's update_memory signal. Runs the mid-session memory-update prompt. */
+export type UpdateMemoryHandler = (request: UpdateMemoryRequest) => Promise<UpdateMemoryResponse>;
+
+/** Handler for owner's rotate_session signal. Ends the current session (with handoff). */
+export type RotateSessionHandler = (request: RotateSessionRequest) => Promise<RotateSessionResponse>;

@@ -29,4 +29,6 @@ export type {
   CancelSessionHandler,
   CompactSessionHandler,
   StartSessionHandler,
+  UpdateMemoryHandler,
+  RotateSessionHandler,
 } from './types.js';

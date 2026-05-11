@@ -954,7 +954,28 @@ export type SignalType =
   | 'compact_session_response'
   | 'start_session'
   | 'start_session_response'
+  | 'update_memory'
+  | 'update_memory_response'
+  | 'rotate_session'
+  | 'rotate_session_response'
   | 'context_window_update';
+
+/**
+ * Well-known `errorCode` values returned by session-lifecycle signal responses
+ * (cancel_session, compact_session, update_memory, rotate_session).
+ *
+ * - `session_not_live`: No active session for the given sessionType/externalReferenceId.
+ * - `session_busy`: The session is currently processing a turn (e.g. responding to a message).
+ * - `operation_in_progress`: A different owner-initiated lifecycle operation is already running on this slot.
+ * - `invalid_session_type`: The operation does not support the given sessionType (e.g. rotate_session on contact/cron).
+ * - `not_implemented`: No handler is registered on the agent side.
+ */
+export type SignalErrorCode =
+  | 'session_not_live'
+  | 'session_busy'
+  | 'operation_in_progress'
+  | 'invalid_session_type'
+  | 'not_implemented';
 
 export interface ModelOption {
   readonly value: string;
@@ -992,7 +1013,7 @@ export interface CancelSessionRequest {
 
 export interface CancelSessionResponse {
   readonly success: boolean;
-  readonly errorCode?: string;
+  readonly errorCode?: SignalErrorCode;
   readonly error?: string;
 }
 
@@ -1003,7 +1024,7 @@ export interface CompactSessionRequest {
 
 export interface CompactSessionResponse {
   readonly success: boolean;
-  readonly errorCode?: string;
+  readonly errorCode?: SignalErrorCode;
   readonly error?: string;
 }
 
@@ -1016,6 +1037,40 @@ export interface StartSessionRequest {
 export interface StartSessionResponse {
   readonly success: boolean;
   readonly info?: LiveSessionInfoResponse;
+  readonly error?: string;
+}
+
+/**
+ * UpdateMemory — owner requests the agent run its memory-update prompt
+ * (the mid-session variant). The session is expected to continue afterwards.
+ */
+export interface UpdateMemoryRequest {
+  readonly sessionType: SessionType;
+  readonly externalReferenceId: string;
+}
+
+export interface UpdateMemoryResponse {
+  readonly success: boolean;
+  readonly errorCode?: SignalErrorCode;
+  readonly error?: string;
+}
+
+/**
+ * RotateSession — owner ends the current session (triggering the session-end
+ * prompt, which produces a handoff note). The next inbound event for the same
+ * slot creates a fresh session with memory + handoff loaded.
+ *
+ * Only supported for `sessionType === 'conversation'` (contact/cron sessions
+ * are stateless — there is no handoff note to generate).
+ */
+export interface RotateSessionRequest {
+  readonly sessionType: SessionType;
+  readonly externalReferenceId: string;
+}
+
+export interface RotateSessionResponse {
+  readonly success: boolean;
+  readonly errorCode?: SignalErrorCode;
   readonly error?: string;
 }
 
