@@ -59,6 +59,9 @@ type InboundEvent =
 
 /** Session slot type. */
 /** A session slot — queue is created eagerly, session is attached once ready. */
+/** Owner-initiated lifecycle operations that can run on a slot. */
+type OwnerOpType = 'compact_session' | 'update_memory' | 'rotate_session';
+
 interface SessionSlot {
   readonly type: SessionType;
   /** ConversationId, __contact__, cron id job */
@@ -70,7 +73,7 @@ interface SessionSlot {
   /** Non-null while the session loop is processing a turn (message/contact/cron). */
   inFlightTurn: Promise<void> | null;
   /** Non-null while an owner-initiated lifecycle operation is running. */
-  pendingOwnerOp: { readonly type: string; readonly promise: Promise<unknown> } | null;
+  pendingOwnerOp: { readonly type: OwnerOpType; readonly promise: Promise<unknown> } | null;
 }
 
 export abstract class BaseAgentInstance implements AgentInstance {
@@ -795,7 +798,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   }
 
   /** Run an owner-initiated operation with dedup and conflict detection. */
-  private withOwnerOp<T>(slot: SessionSlot, opType: string, fn: () => Promise<T>): Promise<T> {
+  private withOwnerOp<T>(slot: SessionSlot, opType: OwnerOpType, fn: () => Promise<T>): Promise<T> {
     if (slot.pendingOwnerOp) {
       if (slot.pendingOwnerOp.type === opType) {
         return slot.pendingOwnerOp.promise as Promise<T>;

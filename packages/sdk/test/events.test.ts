@@ -11,6 +11,9 @@ import type {
   LiveSessionInfoHandler,
   CancelSessionHandler,
   CompactSessionHandler,
+  StartSessionHandler,
+  UpdateMemoryHandler,
+  RotateSessionHandler,
 } from '../src/app/types.js';
 import type { MessageProcessor } from '../src/app/message-processor.js';
 import type { ContactRecord } from '../src/core/types.js';
@@ -75,6 +78,9 @@ describe('wireEvents', () => {
     liveSessionInfo: LiveSessionInfoHandler;
     cancelSession: CancelSessionHandler;
     compactSession: CompactSessionHandler;
+    startSession: StartSessionHandler;
+    updateMemory: UpdateMemoryHandler;
+    rotateSession: RotateSessionHandler;
   };
 
   beforeEach(() => {
@@ -94,6 +100,9 @@ describe('wireEvents', () => {
       }),
       cancelSession: vi.fn().mockResolvedValue({ success: true }),
       compactSession: vi.fn().mockResolvedValue({ success: true }),
+      startSession: vi.fn().mockResolvedValue({ success: true, info: null }),
+      updateMemory: vi.fn().mockResolvedValue({ success: true }),
+      rotateSession: vi.fn().mockResolvedValue({ success: true }),
     };
 
     wireEvents(
@@ -574,6 +583,74 @@ describe('wireEvents', () => {
         requestId: 'req-2',
         intent: 'response',
         type: 'cancel_session_response',
+      }),
+    );
+  });
+
+  it('dispatches update_memory to handler and sends response', async () => {
+    const sendSignal = vi.fn().mockResolvedValue({ requestId: 'req-4' });
+    (client as unknown as Record<string, unknown>).sendSignal = sendSignal;
+
+    ws.fire('signal', {
+      type: 'signal',
+      timestamp: ts,
+      payload: {
+        senderId: 'owner-1',
+        requestId: 'req-4',
+        intent: 'request',
+        type: 'update_memory',
+        payload: { sessionType: 'conversation', externalReferenceId: 'conv-1' },
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(sendSignal).toHaveBeenCalled();
+    });
+
+    expect(signalHandlers.updateMemory).toHaveBeenCalledWith({
+      sessionType: 'conversation',
+      externalReferenceId: 'conv-1',
+    });
+    expect(sendSignal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetUserId: 'owner-1',
+        requestId: 'req-4',
+        intent: 'response',
+        type: 'update_memory_response',
+      }),
+    );
+  });
+
+  it('dispatches rotate_session to handler and sends response', async () => {
+    const sendSignal = vi.fn().mockResolvedValue({ requestId: 'req-5' });
+    (client as unknown as Record<string, unknown>).sendSignal = sendSignal;
+
+    ws.fire('signal', {
+      type: 'signal',
+      timestamp: ts,
+      payload: {
+        senderId: 'owner-1',
+        requestId: 'req-5',
+        intent: 'request',
+        type: 'rotate_session',
+        payload: { sessionType: 'conversation', externalReferenceId: 'conv-1' },
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(sendSignal).toHaveBeenCalled();
+    });
+
+    expect(signalHandlers.rotateSession).toHaveBeenCalledWith({
+      sessionType: 'conversation',
+      externalReferenceId: 'conv-1',
+    });
+    expect(sendSignal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetUserId: 'owner-1',
+        requestId: 'req-5',
+        intent: 'response',
+        type: 'rotate_session_response',
       }),
     );
   });
