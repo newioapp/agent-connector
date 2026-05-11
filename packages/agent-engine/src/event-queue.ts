@@ -6,14 +6,34 @@
  * - Messages: batched by conversationId (multiple messages to the same conversation grouped)
  * - Contact events: all pending contact events batched into one group
  * - Cron events: no batching, yielded individually
+ * - Owner ops: no batching, yielded individually with promise tracking
  */
-import type { IncomingMessage, ContactEvent, CronTriggerEvent } from '@newio/agent-sdk';
+import type {
+  IncomingMessage,
+  ContactEvent,
+  CronTriggerEvent,
+  CompactSessionResponse,
+  UpdateMemoryResponse,
+  RotateSessionResponse,
+} from '@newio/agent-sdk';
+
+/** Owner-initiated lifecycle operations that can run on a slot. */
+export type OwnerOpType = 'compact_session' | 'update_memory' | 'rotate_session';
+
+/** Result type for owner-initiated operations. */
+export type OwnerOpResult = CompactSessionResponse | UpdateMemoryResponse | RotateSessionResponse;
 
 /** Union of all event types that flow through the queue. */
 export type AgentEvent =
   | { readonly type: 'messages'; readonly conversationId: string; readonly messages: readonly IncomingMessage[] }
   | { readonly type: 'contact'; readonly events: readonly ContactEvent[] }
-  | { readonly type: 'cron'; readonly job: CronTriggerEvent };
+  | { readonly type: 'cron'; readonly job: CronTriggerEvent }
+  | {
+      readonly type: 'owner_op';
+      readonly opType: OwnerOpType;
+      readonly resolve: (result: OwnerOpResult) => void;
+      readonly reject: (err: Error) => void;
+    };
 
 /** Sentinel value used to signal the consumer to stop. */
 const CLOSED = Symbol('closed');
@@ -23,8 +43,8 @@ export class EventQueue {
   private readonly messageBatches = new Map<string, IncomingMessage[]>();
   /** Pending contact events (batched together). */
   private contactEvents: ContactEvent[] = [];
-  /** FIFO order of pending keys: conversationId strings, 'contact', or CronTriggerEvent objects. */
-  private readonly pending: Array<string | CronTriggerEvent> = [];
+  /** FIFO order of pending keys: conversationId strings, 'contact', CronTriggerEvent objects, or OwnerOpEntry objects. */
+  private readonly pending: Array<string | CronTriggerEvent | OwnerOpEntry> = [];
   private resolve: ((value: typeof CLOSED | undefined) => void) | null = null;
   private closed = false;
 
@@ -65,6 +85,30 @@ export class EventQueue {
     this.wake();
   }
 
+  /**
+   * Enqueue an owner-initiated operation. Returns a promise that resolves/rejects
+   * when the session loop processes the op.
+   */
+  enqueueOwnerOp(opType: OwnerOpType): Promise<OwnerOpResult> {
+    if (this.closed) {
+      return Promise.reject(new Error('Queue is closed'));
+    }
+    const existing = this.getPendingOwnerOp(opType);
+    if (existing) {
+      return existing;
+    }
+    let resolve!: (result: OwnerOpResult) => void;
+    let reject!: (err: Error) => void;
+    const promise = new Promise<OwnerOpResult>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    const entry: OwnerOpEntry = { kind: 'owner_op', opType, resolve, reject, promise };
+    this.pending.push(entry);
+    this.wake();
+    return promise;
+  }
+
   /** Async generator that yields AgentEvent items as they become available. */
   async *events(): AsyncGenerator<AgentEvent> {
     for (;;) {
@@ -83,6 +127,12 @@ export class EventQueue {
 
       const key = this.pending.shift();
       if (key === undefined) {
+        continue;
+      }
+
+      // Owner op entry
+      if (isOwnerOpEntry(key)) {
+        yield { type: 'owner_op', opType: key.opType, resolve: key.resolve, reject: key.reject };
         continue;
       }
 
@@ -111,9 +161,37 @@ export class EventQueue {
     }
   }
 
+  /** Get the promise of a pending owner op of the given type, if one exists. */
+  getPendingOwnerOp(opType: OwnerOpType): Promise<OwnerOpResult> | undefined {
+    const entry = this.pending.find((e) => isOwnerOpEntry(e) && e.opType === opType) as OwnerOpEntry | undefined;
+    return entry?.promise;
+  }
+
+  /**
+   * Reset the queue — clears all pending events and rejects pending owner op promises.
+   * Does NOT close the queue; the session loop continues waiting for new events.
+   */
+  reset(): void {
+    // Reject all pending owner ops
+    for (const entry of this.pending) {
+      if (isOwnerOpEntry(entry)) {
+        entry.reject(new Error('Operation cancelled'));
+      }
+    }
+    this.pending.length = 0;
+    this.messageBatches.clear();
+    this.contactEvents = [];
+  }
+
   /** Close the queue — clears pending events and terminates the events() generator. */
   close(): void {
     this.closed = true;
+    // Reject pending owner ops before clearing
+    for (const entry of this.pending) {
+      if (isOwnerOpEntry(entry)) {
+        entry.reject(new Error('Queue closed'));
+      }
+    }
     this.messageBatches.clear();
     this.contactEvents = [];
     this.pending.length = 0;
@@ -124,4 +202,19 @@ export class EventQueue {
   private wake(): void {
     this.resolve?.(undefined);
   }
+}
+
+/** Internal entry type for owner ops in the pending array. */
+interface OwnerOpEntry {
+  readonly kind: 'owner_op';
+  readonly opType: OwnerOpType;
+  readonly resolve: (result: OwnerOpResult) => void;
+  readonly reject: (err: Error) => void;
+  readonly promise: Promise<OwnerOpResult>;
+}
+
+function isOwnerOpEntry(value: unknown): value is OwnerOpEntry {
+  return (
+    typeof value === 'object' && value !== null && 'kind' in value && (value as { kind: unknown }).kind === 'owner_op'
+  );
 }
