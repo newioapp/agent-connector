@@ -14,7 +14,7 @@ vi.mock('electron-log/main', () => ({
 }));
 
 import log from 'electron-log/main';
-import { Logger, setLogLevel, initElectronLog } from '../../src/core/logger';
+import { Logger, setLogLevel, initElectronLog } from '../../src/main/logger';
 
 describe('Logger', () => {
   beforeEach(() => {

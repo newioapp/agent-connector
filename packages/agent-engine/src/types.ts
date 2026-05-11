@@ -1,12 +1,6 @@
 /**
- * Shared types used across main, preload, and renderer processes.
+ * Shared types used across the engine.
  */
-
-export type ThemeSource = 'system' | 'light' | 'dark';
-
-export type UpdateMode = 'auto' | 'manual' | 'disabled';
-
-export type UpdateChannel = 'latest' | 'beta';
 
 export type SessionType = 'conversation' | 'contact' | 'cron';
 

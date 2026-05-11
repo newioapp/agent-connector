@@ -30,7 +30,7 @@ export default defineConfig({
     build: {
       rollupOptions: {
         external: [
-          '@newio/mcp-server',
+          '@newio/agent-engine',
           'better-sqlite3',
           'electron-log',
           'electron-log/main',

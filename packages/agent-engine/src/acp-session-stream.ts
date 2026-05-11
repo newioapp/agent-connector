@@ -8,9 +8,9 @@
  */
 import type * as acp from '@agentclientprotocol/sdk';
 import type { SegmentType, SessionStreamSegment, SessionStatusListener } from './types';
-import { Logger } from './logger';
+import { getLogger } from '@newio/agent-sdk';
 
-const log = new Logger('acp-session-stream');
+const log = getLogger('acp-session-stream');
 
 export class AcpSessionStream {
   private currentType: SegmentType | undefined;
@@ -182,10 +182,11 @@ function parseToolCallUpdate(update: acp.SessionUpdate): ToolCallParsed | undefi
 /** Extract a human-readable purpose from rawInput (__tool_use_purpose for kiro-cli, description for claude). */
 function extractRawInputPurpose(rawInput: unknown): string | undefined {
   if (typeof rawInput === 'object' && rawInput !== null) {
-    if (typeof rawInput['__tool_use_purpose'] === 'string' && rawInput['__tool_use_purpose'].length > 0) {
-      return trim(rawInput['__tool_use_purpose']);
-    } else if (typeof rawInput['description'] === 'string' && rawInput['description'].length > 0) {
-      return trim(rawInput['description']);
+    const obj = rawInput as Record<string, unknown>;
+    if (typeof obj['__tool_use_purpose'] === 'string' && obj['__tool_use_purpose'].length > 0) {
+      return trim(obj['__tool_use_purpose']);
+    } else if (typeof obj['description'] === 'string' && obj['description'].length > 0) {
+      return trim(obj['description']);
     }
   }
   return undefined;

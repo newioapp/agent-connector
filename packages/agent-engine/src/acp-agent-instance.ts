@@ -20,9 +20,9 @@ import type { AgentSession } from './agent-session';
 import type { SessionStreamSegment, SessionType } from './types';
 import { resolveCommand, extractErrorMessage } from './types';
 import type { AgentInfo } from './types';
-import { Logger } from './logger';
+import { getLogger } from '@newio/agent-sdk';
 
-const log = new Logger('acp-agent-instance');
+const log = getLogger('acp-agent-instance');
 
 /**
  * Awaitable spawn — resolves with the child process once the OS has successfully
@@ -165,7 +165,7 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
 
     const initResult = await conn.initialize({
       protocolVersion: PROTOCOL_VERSION,
-      clientInfo: { name: __APP_DISPLAY_NAME__, version: __APP_VERSION__ },
+      clientInfo: { name: this.engineConfig.appDisplayName, version: this.engineConfig.appVersion },
       clientCapabilities: {
         fs: { readTextFile: true, writeTextFile: true },
       },
@@ -503,7 +503,7 @@ function buildMcpServers(mcpSocketPath?: string): AcpMcpServer[] {
   if (!mcpSocketPath) {
     return [];
   }
-  const bridgePath = require.resolve('@newio/mcp-server/bridge').replace('app.asar', 'app.asar.unpacked');
+  const bridgePath = require.resolve('@newio/agent-engine/mcp-bridge').replace('app.asar', 'app.asar.unpacked');
   log.debug(`MCP bridge path: ${bridgePath}`);
   return [
     {

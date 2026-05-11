@@ -1,13 +1,8 @@
 /**
- * File-based agent config manager — persists agent configs and tokens to ~/.newio/connector/.
+ * File-based agent config manager — persists agent configs and tokens to a data directory.
  *
  * Platform-agnostic (pure node:fs + node:os). Used by both the Electron desktop app
  * and a future CLI.
- *
- * The directory is environment-aware:
- *   ~/.newio/connector/       (prod)
- *   ~/.newio-dev/connector/   (dev)
- *   ~/.newio-integ/connector/ (integ)
  *
  * Files:
  *   config.json  — AgentConfig[]
@@ -15,48 +10,34 @@
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
 import { randomUUID } from 'crypto';
 import type { AgentConfig, AddAgentInput, UpdateAgentInput, NewioIdentity } from './types';
 import type { AgentConfigManager, AgentTokens } from './agent-config-manager';
-import { Logger } from './logger';
+import { getLogger } from '@newio/agent-sdk';
 
-const log = new Logger('file-agent-config-manager');
-
-/** Shared data directory for all Newio connector apps (desktop + CLI). */
-const NEWIO_HOME = __NEWIO_STAGE__ === 'prod' ? '.newio' : `.newio-${__NEWIO_STAGE__}`;
-export const NEWIO_DIR = join(homedir(), NEWIO_HOME, 'connector');
-
-const CONFIG_PATH = join(NEWIO_DIR, 'config.json');
-const TOKENS_PATH = join(NEWIO_DIR, 'tokens.json');
-
-/** Create the data directory if it doesn't exist. */
-export function ensureNewioDir(): void {
-  if (!existsSync(NEWIO_DIR)) {
-    mkdirSync(NEWIO_DIR, { recursive: true, mode: 0o700 });
-    log.info(`Created ${NEWIO_DIR}`);
-  }
-}
-
-function readJson<T>(path: string, fallback: T): T {
-  try {
-    return JSON.parse(readFileSync(path, 'utf8')) as T;
-  } catch (err) {
-    if (existsSync(path)) {
-      log.warn(`Failed to parse ${path}, using fallback`, err);
-    }
-    return fallback;
-  }
-}
-
-function writeJson(path: string, data: unknown, mode?: number): void {
-  ensureNewioDir();
-  writeFileSync(path, JSON.stringify(data, null, 2) + '\n', { encoding: 'utf8', mode: mode ?? 0o644 });
-}
+const log = getLogger('file-agent-config-manager');
 
 export class FileAgentConfigManager implements AgentConfigManager {
+  private readonly configPath: string;
+  private readonly tokensPath: string;
+  private readonly dataDir: string;
+
+  constructor(dataDir: string) {
+    this.dataDir = dataDir;
+    this.configPath = join(dataDir, 'config.json');
+    this.tokensPath = join(dataDir, 'tokens.json');
+    this.ensureDir();
+  }
+
+  private ensureDir(): void {
+    if (!existsSync(this.dataDir)) {
+      mkdirSync(this.dataDir, { recursive: true, mode: 0o700 });
+      log.info(`Created ${this.dataDir}`);
+    }
+  }
+
   list(): AgentConfig[] {
-    return readJson<AgentConfig[]>(CONFIG_PATH, []);
+    return this.readJson<AgentConfig[]>(this.configPath, []);
   }
 
   get(agentId: string): AgentConfig | undefined {
@@ -76,7 +57,7 @@ export class FileAgentConfigManager implements AgentConfigManager {
       ...(input.acp ? { acp: input.acp } : {}),
     };
     const agents = this.list();
-    writeJson(CONFIG_PATH, [...agents, config]);
+    this.writeJson(this.configPath, [...agents, config]);
     return config;
   }
 
@@ -104,7 +85,7 @@ export class FileAgentConfigManager implements AgentConfigManager {
     };
     const copy = [...agents];
     copy[index] = updated;
-    writeJson(CONFIG_PATH, copy);
+    this.writeJson(this.configPath, copy);
 
     if (usernameChanged) {
       this.clearTokens(agentId);
@@ -119,7 +100,7 @@ export class FileAgentConfigManager implements AgentConfigManager {
     if (filtered.length === agents.length) {
       throw new Error(`Agent ${agentId} not found.`);
     }
-    writeJson(CONFIG_PATH, filtered);
+    this.writeJson(this.configPath, filtered);
     this.clearTokens(agentId);
   }
 
@@ -132,26 +113,42 @@ export class FileAgentConfigManager implements AgentConfigManager {
     const updated: AgentConfig = { ...agents[index], newio: identity };
     const copy = [...agents];
     copy[index] = updated;
-    writeJson(CONFIG_PATH, copy);
+    this.writeJson(this.configPath, copy);
     return updated;
   }
 
   getTokens(agentId: string): AgentTokens | undefined {
-    const all = readJson<Record<string, AgentTokens>>(TOKENS_PATH, {});
+    const all = this.readJson<Record<string, AgentTokens>>(this.tokensPath, {});
     return agentId in all ? all[agentId] : undefined;
   }
 
   setTokens(agentId: string, tokens: AgentTokens): void {
-    const all = readJson<Record<string, AgentTokens>>(TOKENS_PATH, {});
-    writeJson(TOKENS_PATH, { ...all, [agentId]: tokens }, 0o600);
+    const all = this.readJson<Record<string, AgentTokens>>(this.tokensPath, {});
+    this.writeJson(this.tokensPath, { ...all, [agentId]: tokens }, 0o600);
   }
 
   clearTokens(agentId: string): void {
-    const all = readJson<Record<string, AgentTokens>>(TOKENS_PATH, {});
+    const all = this.readJson<Record<string, AgentTokens>>(this.tokensPath, {});
     if (agentId in all) {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure to omit key
       const { [agentId]: _removed, ...rest } = all;
-      writeJson(TOKENS_PATH, rest, 0o600);
+      this.writeJson(this.tokensPath, rest, 0o600);
     }
+  }
+
+  private readJson<T>(path: string, fallback: T): T {
+    try {
+      return JSON.parse(readFileSync(path, 'utf8')) as T;
+    } catch (err) {
+      if (existsSync(path)) {
+        log.warn(`Failed to parse ${path}, using fallback`, err);
+      }
+      return fallback;
+    }
+  }
+
+  private writeJson(path: string, data: unknown, mode?: number): void {
+    this.ensureDir();
+    writeFileSync(path, JSON.stringify(data, null, 2) + '\n', { encoding: 'utf8', mode: mode ?? 0o644 });
   }
 }

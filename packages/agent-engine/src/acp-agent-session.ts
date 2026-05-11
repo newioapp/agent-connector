@@ -14,7 +14,7 @@ import type { PermissionHandler, SessionStatusListener, SessionStreamSegment, Se
 import { AcpSessionConfigHandler } from './acp-session-config-handler';
 import { AcpSessionContextWindowHandler } from './acp-session-context-window-handler';
 import { AcpSlashCommandHandler } from './acp-slash-command-handler';
-import { Logger } from './logger';
+import { getLogger } from '@newio/agent-sdk';
 import type {
   LiveSessionInfoRequest,
   LiveSessionInfoResponse,
@@ -29,7 +29,7 @@ import type {
 } from '@newio/agent-sdk';
 import { extractErrorMessage } from './types';
 
-const log = new Logger('acp-agent-session');
+const log = getLogger('acp-agent-session');
 
 export interface AcpAgentSessionInit {
   readonly type: SessionType;

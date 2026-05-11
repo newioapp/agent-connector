@@ -7,10 +7,10 @@
  */
 import type * as acp from '@agentclientprotocol/sdk';
 import type { NewioClient } from '@newio/agent-sdk';
-import { Logger } from './logger';
+import { getLogger } from '@newio/agent-sdk';
 import { SessionType } from './types';
 
-const log = new Logger('acp-session-context-window-handler');
+const log = getLogger('acp-session-context-window-handler');
 
 const MIN_INTERVAL_MS = 5_000;
 const MIN_PERCENTAGE_CHANGE = 1;
