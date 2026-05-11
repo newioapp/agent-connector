@@ -198,10 +198,10 @@ Cron trigger example:
 
   /** Format a batch of incoming messages into a prompt string. */
   formatMessagePrompt(messages: readonly IncomingMessage[]): string {
-    if (messages.length === 0) {
+    const first = messages[0];
+    if (!first) {
       return '';
     }
-    const first = messages[0];
     const isGroup = first.conversationType === 'group' || first.conversationType === 'temp_group';
     if (isGroup) {
       return this.formatGroupBatch(first.conversationId, first.groupName, messages);
@@ -376,6 +376,9 @@ Rules:
 
   private formatDmBatch(conversationId: string, messages: readonly IncomingMessage[]): string {
     const first = messages[0];
+    if (!first) {
+      return '';
+    }
     const lines = [`conversationId: ${conversationId}`, `type: dm`, `from:`, this.formatSender(first), `messages:`];
     for (const m of messages) {
       lines.push(`  - message: ${m.text}`);

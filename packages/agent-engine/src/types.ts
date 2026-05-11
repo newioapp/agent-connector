@@ -42,11 +42,11 @@ export function resolveCommand(
     throw new Error('No executable path configured for custom agent type');
   }
   const parts = config.executablePath.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) {
+  const command = parts[0];
+  if (command === undefined) {
     throw new Error('No executable path configured for custom agent type');
   }
-  const [command, ...rest] = parts;
-  return { command, args: rest };
+  return { command, args: parts.slice(1) };
 }
 
 export type AgentRuntimeStatus =

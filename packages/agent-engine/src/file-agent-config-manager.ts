@@ -64,10 +64,10 @@ export class FileAgentConfigManager implements AgentConfigManager {
   update(agentId: string, updates: UpdateAgentInput): AgentConfig {
     const agents = this.list();
     const index = agents.findIndex((a) => a.id === agentId);
-    if (index === -1) {
+    const existing = agents[index];
+    if (!existing) {
       throw new Error(`Agent ${agentId} not found.`);
     }
-    const existing = agents[index];
     const usernameChanged = updates.newioUsername !== undefined && updates.newioUsername !== existing.newio?.username;
     const displayName = updates.displayName ?? existing.newio?.displayName;
     let newio = existing.newio;
@@ -107,10 +107,11 @@ export class FileAgentConfigManager implements AgentConfigManager {
   setNewioIdentity(agentId: string, identity: NewioIdentity): AgentConfig {
     const agents = this.list();
     const index = agents.findIndex((a) => a.id === agentId);
-    if (index === -1) {
+    const existing = agents[index];
+    if (!existing) {
       throw new Error(`Agent ${agentId} not found.`);
     }
-    const updated: AgentConfig = { ...agents[index], newio: identity };
+    const updated: AgentConfig = { ...existing, newio: identity };
     const copy = [...agents];
     copy[index] = updated;
     this.writeJson(this.configPath, copy);

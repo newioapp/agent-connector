@@ -1023,7 +1023,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         }
         const fullOutput = parts.join('');
         const handoffMatch = fullOutput.match(/HANDOFF:\s*([\s\S]+)/i);
-        if (handoffMatch) {
+        if (handoffMatch && handoffMatch[1]) {
           const summary = handoffMatch[1].trim();
           this.persistHandoffNote(slot.externalReferenceId, summary);
           log.info(
