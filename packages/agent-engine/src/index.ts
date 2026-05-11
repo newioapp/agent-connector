@@ -45,7 +45,7 @@ export { FileAgentConfigManager } from './file-agent-config-manager.js';
 
 // Event queue
 export { EventQueue } from './event-queue.js';
-export type { AgentEvent } from './event-queue.js';
+export type { AgentEvent, OwnerOpType, OwnerOpResult } from './event-queue.js';
 
 // Prompt system
 export { PromptManager, UnsupportedPromptFormatterVersion } from './prompt-manager.js';
