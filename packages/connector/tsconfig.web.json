@@ -5,6 +5,9 @@
     "src/preload/*.d.ts",
     "src/shared/**/*"
   ],
+  "exclude": [
+    "src/shared/logger.ts"
+  ],
   "compilerOptions": {
     "composite": true,
     "jsx": "react-jsx",

@@ -8,10 +8,10 @@
 import type { ClientSideConnection } from '@agentclientprotocol/sdk';
 import type * as acp from '@agentclientprotocol/sdk';
 import type { CompactSessionResponse } from '@newio/agent-sdk';
-import { Logger } from './logger';
+import { getLogger } from '@newio/agent-sdk';
 import { extractErrorMessage, SessionType } from './types';
 
-const log = new Logger('acp-slash-command-handler');
+const log = getLogger('acp-slash-command-handler');
 
 /** Known command names that map to "compact" across different ACP agents. */
 const COMPACT_COMMAND_NAMES = ['compact'] as const;

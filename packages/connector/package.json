@@ -28,8 +28,8 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.17.1",
     "@electron-toolkit/utils": "^4.0.0",
+    "@newio/agent-engine": "workspace:*",
     "@newio/agent-sdk": "workspace:*",
-    "@newio/mcp-server": "workspace:*",
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
     "atomically": "^2.1.1",

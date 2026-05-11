@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AcpSessionConfigHandler } from '../../src/core/acp-session-config-handler';
+import { AcpSessionConfigHandler } from '../../src/acp-session-config-handler';
 import type { ClientSideConnection, NewSessionResponse } from '@agentclientprotocol/sdk';
 import type { NewioClient } from '@newio/agent-sdk';
 

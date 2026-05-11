@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { AcpSlashCommandHandler } from '../../src/core/acp-slash-command-handler';
+import { AcpSlashCommandHandler } from '../../src/acp-slash-command-handler';
 import type * as acp from '@agentclientprotocol/sdk';
 
 function makeUpdate(commands: acp.AvailableCommand[]): acp.SessionUpdate {

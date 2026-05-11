@@ -1,16 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AgentRuntimeManager } from '../../src/core/agent-runtime-manager';
-import type { StatusListener } from '../../src/core/agent-runtime-manager';
-import type { AgentConfigManager } from '../../src/core/agent-config-manager';
-import type { SessionStore } from '../../src/core/session-store';
-import type { AgentConfig } from '../../src/core/types';
+import { AgentRuntimeManager } from '../../src/agent-runtime-manager';
+import type { StatusListener } from '../../src/agent-runtime-manager';
+import type { AgentConfigManager } from '../../src/agent-config-manager';
+import type { CronStore } from '../../src/cron-store';
+import type { AgentConfig } from '../../src/types';
+import type { EngineConfig } from '../../src/engine-config';
 
 // Mock AcpAgentInstance — the only concrete implementation created by the manager
-vi.mock('../../src/core/acp-agent-instance', () => ({
+vi.mock('../../src/acp-agent-instance', () => ({
   AcpAgentInstance: vi.fn(),
 }));
 
-import { AcpAgentInstance } from '../../src/core/acp-agent-instance';
+import { AcpAgentInstance } from '../../src/acp-agent-instance';
 
 const MockAcpAgentInstance = vi.mocked(AcpAgentInstance);
 
@@ -39,9 +40,18 @@ function mockConfigManager(configs: AgentConfig[]): AgentConfigManager {
   };
 }
 
-function mockSessionStore(): SessionStore {
-  return {} as SessionStore;
+function mockCronStore(): CronStore {
+  return {} as CronStore;
 }
+
+const mockEngineConfig: EngineConfig = {
+  apiBaseUrl: 'https://api.test.newio.app',
+  wsUrl: 'wss://ws.test.newio.app',
+  stage: 'dev',
+  appDisplayName: 'Test Connector',
+  appVersion: '0.0.1',
+  dataDir: '/tmp/newio-test',
+};
 
 function mockListener(): StatusListener {
   return {
@@ -55,16 +65,16 @@ function mockListener(): StatusListener {
 
 describe('AgentRuntimeManager', () => {
   let configManager: AgentConfigManager;
-  let sessionStore: SessionStore;
+  let sessionStore: CronStore;
   let listener: StatusListener;
   let manager: AgentRuntimeManager;
 
   beforeEach(() => {
     vi.clearAllMocks();
     configManager = mockConfigManager([makeConfig('agent-1', 'alice'), makeConfig('agent-2', 'bob')]);
-    sessionStore = mockSessionStore();
+    sessionStore = mockCronStore();
     listener = mockListener();
-    manager = new AgentRuntimeManager(configManager, sessionStore, listener);
+    manager = new AgentRuntimeManager(configManager, sessionStore, listener, mockEngineConfig);
 
     // Default mock instance behavior
     MockAcpAgentInstance.mockImplementation(() => {
@@ -133,7 +143,7 @@ describe('AgentRuntimeManager', () => {
         makeConfig('agent-1', 'alice'),
         makeConfig('agent-2', 'alice'), // same username
       ]);
-      manager = new AgentRuntimeManager(configManager, sessionStore, listener);
+      manager = new AgentRuntimeManager(configManager, sessionStore, listener, mockEngineConfig);
 
       manager.start('agent-1');
       expect(() => manager.start('agent-2')).toThrow('already running with username @alice');
@@ -141,7 +151,7 @@ describe('AgentRuntimeManager', () => {
 
     it('allows same username if the other agent is stopped', async () => {
       configManager = mockConfigManager([makeConfig('agent-1', 'alice'), makeConfig('agent-2', 'alice')]);
-      manager = new AgentRuntimeManager(configManager, sessionStore, listener);
+      manager = new AgentRuntimeManager(configManager, sessionStore, listener, mockEngineConfig);
 
       manager.start('agent-1');
       await manager.stop('agent-1');

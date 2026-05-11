@@ -12,7 +12,7 @@
  */
 import { ApprovalTimeoutError, ConnectionRejectedError, NewioApp, NotFoundApiError } from '@newio/agent-sdk';
 import type { IncomingMessage, ContactEvent, CronTriggerEvent, ActionOption, ActionRequest } from '@newio/agent-sdk';
-import { NewioMcpServer, startUdsServer } from '@newio/mcp-server';
+import { NewioMcpServer, startUdsServer } from './mcp/index.js';
 import type { Server } from 'net';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -22,11 +22,12 @@ import { DEFAULT_SESSION_IDLE_TIMEOUT_MS, resolveCommand, extractErrorMessage } 
 import type { AgentInfo, PermissionRequestOption, ConversationFlags } from './types';
 import type { AgentInstance, AgentInstanceListener } from './agent-instance';
 import type { AgentSession } from './agent-session';
-import type { SessionStore } from './session-store';
+import type { CronStore } from './cron-store';
+import type { EngineConfig } from './engine-config';
 import { EventQueue } from './event-queue';
 import type { AgentEvent } from './event-queue';
 import { PromptManager } from './prompt-manager';
-import { Logger } from './logger';
+import { getLogger } from '@newio/agent-sdk';
 import type {
   LiveSessionInfoRequest,
   LiveSessionInfoResponse,
@@ -40,7 +41,7 @@ import type {
 import WebSocket from 'ws';
 import { PromptFormatterImpl } from './prompt-formatter';
 
-const log = new Logger('base-agent-instance');
+const log = getLogger('base-agent-instance');
 
 function isErrnoException(err: unknown): err is NodeJS.ErrnoException {
   return err instanceof Error && 'code' in err;
@@ -105,8 +106,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
   constructor(
     protected readonly config: AgentConfig,
     protected readonly configManager: AgentConfigManager,
-    protected readonly sessionStore: SessionStore,
+    protected readonly cronStore: CronStore,
     protected readonly listener: AgentInstanceListener,
+    protected readonly engineConfig: EngineConfig,
   ) {}
 
   async start(): Promise<void> {
@@ -132,8 +134,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
         agentId: this.config.newio?.agentId,
         username: this.config.newio?.username,
         name: this.config.newio?.displayName ?? 'Agent',
-        apiBaseUrl: __API_BASE_URL__,
-        wsUrl: __WS_BASE_URL__,
+        apiBaseUrl: this.engineConfig.apiBaseUrl,
+        wsUrl: this.engineConfig.wsUrl,
         wsFactory: (url) => new WebSocket(url) as never,
         tokens: storedTokens,
         signal: abortController.signal,
@@ -165,7 +167,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       this.listener.onConfigUpdated();
 
       this.setStatus('initializing');
-      const stageInfix = __NEWIO_STAGE__ === 'prod' ? '' : `-${__NEWIO_STAGE__}`;
+      const stageInfix = this.engineConfig.stage === 'prod' ? '' : `-${this.engineConfig.stage}`;
       const mcpSocketPath = join(tmpdir(), `newio-connector${stageInfix}-mcp-${username}.sock`);
       this.mcpSocketPath = mcpSocketPath;
 
@@ -200,11 +202,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
       });
 
       app.on('cron.scheduled', (def) => {
-        this.sessionStore.saveCron(this.config.id, def);
+        this.cronStore.saveCron(this.config.id, def);
       });
 
       app.on('cron.cancelled', (cronId) => {
-        this.sessionStore.deleteCron(cronId);
+        this.cronStore.deleteCron(cronId);
       });
 
       // React to persisted showToolCalls/showThoughts changes from the owner
@@ -236,14 +238,14 @@ export abstract class BaseAgentInstance implements AgentInstance {
       });
 
       // Reload persisted cron jobs
-      const savedCrons = this.sessionStore.listCrons(this.config.id);
+      const savedCrons = this.cronStore.listCrons(this.config.id);
       for (const cron of savedCrons) {
         try {
           app.scheduleCron(cron);
           log.info(`${this.logTag} Restored cron ${cron.cronId}: "${cron.label}"`);
         } catch (err: unknown) {
           log.warn(`${this.logTag} Failed to restore cron ${cron.cronId}`, err);
-          this.sessionStore.deleteCron(cron.cronId);
+          this.cronStore.deleteCron(cron.cronId);
         }
       }
 

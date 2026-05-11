@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { BaseAgentInstance } from '../../src/core/base-agent-instance';
-import type { AgentSession } from '../../src/core/agent-session';
-import type { AgentConfigManager } from '../../src/core/agent-config-manager';
-import type { AgentInstanceListener } from '../../src/core/agent-instance';
-import type { AgentConfig, AgentInfo } from '../../src/core/types';
-import type { SessionStore } from '../../src/core/session-store';
+import { BaseAgentInstance } from '../../src/base-agent-instance';
+import type { AgentSession } from '../../src/agent-session';
+import type { AgentConfigManager } from '../../src/agent-config-manager';
+import type { AgentInstanceListener } from '../../src/agent-instance';
+import type { AgentConfig, AgentInfo } from '../../src/types';
+import type { CronStore } from '../../src/cron-store';
+import type { EngineConfig } from '../../src/engine-config';
 import type { NewioApp, NewioAppStore, ActionRequest, MemberRecord, ConversationListItem } from '@newio/agent-sdk';
 
 // ---------------------------------------------------------------------------
@@ -84,7 +85,15 @@ function createMockApp(
 function createInstance(): TestAgentInstance {
   const config: AgentConfig = { id: 'agent-1', type: 'kiro-cli' };
   const configManager = {} as AgentConfigManager;
-  const sessionStore = {} as SessionStore;
+  const cronStore = {} as CronStore;
+  const engineConfig = {
+    apiBaseUrl: '',
+    wsUrl: '',
+    stage: 'dev',
+    appDisplayName: 'Test',
+    appVersion: '0.0.1',
+    dataDir: '/tmp',
+  } as EngineConfig;
   const listener = {
     onStatusChanged: vi.fn(),
     onApprovalUrl: vi.fn(),
@@ -93,7 +102,7 @@ function createInstance(): TestAgentInstance {
     onAgentInfo: vi.fn(),
   } satisfies AgentInstanceListener;
 
-  return new TestAgentInstance(config, configManager, sessionStore, listener);
+  return new TestAgentInstance(config, configManager, cronStore, listener, engineConfig);
 }
 
 // ---------------------------------------------------------------------------

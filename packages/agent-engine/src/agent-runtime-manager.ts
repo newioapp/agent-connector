@@ -5,13 +5,14 @@
  * delegates start/stop to the instance, and relays status events to the UI.
  */
 import type { AgentConfigManager } from './agent-config-manager';
-import type { SessionStore } from './session-store';
+import type { CronStore } from './cron-store';
+import type { EngineConfig } from './engine-config';
 import type { AgentRuntimeStatus, AgentInfo } from './types';
 import type { AgentInstance } from './agent-instance';
 import { AcpAgentInstance } from './acp-agent-instance';
-import { Logger } from './logger';
+import { getLogger } from '@newio/agent-sdk';
 
-const log = new Logger('agent-runtime-manager');
+const log = getLogger('agent-runtime-manager');
 
 export interface StatusListener {
   onStatusChanged(agentId: string, status: AgentRuntimeStatus, error?: string): void;
@@ -24,13 +25,20 @@ export interface StatusListener {
 export class AgentRuntimeManager {
   private readonly instances = new Map<string, AgentInstance>();
   private readonly configManager: AgentConfigManager;
-  private readonly sessionStore: SessionStore;
+  private readonly cronStore: CronStore;
   private readonly listener: StatusListener;
+  private readonly engineConfig: EngineConfig;
 
-  constructor(configManager: AgentConfigManager, sessionStore: SessionStore, listener: StatusListener) {
+  constructor(
+    configManager: AgentConfigManager,
+    cronStore: CronStore,
+    listener: StatusListener,
+    engineConfig: EngineConfig,
+  ) {
     this.configManager = configManager;
-    this.sessionStore = sessionStore;
+    this.cronStore = cronStore;
     this.listener = listener;
+    this.engineConfig = engineConfig;
   }
 
   getStatus(agentId: string): { status: AgentRuntimeStatus; error?: string } {
@@ -82,7 +90,13 @@ export class AgentRuntimeManager {
       },
     };
 
-    const instance = new AcpAgentInstance(config, this.configManager, this.sessionStore, instanceListener);
+    const instance = new AcpAgentInstance(
+      config,
+      this.configManager,
+      this.cronStore,
+      instanceListener,
+      this.engineConfig,
+    );
 
     this.instances.set(agentId, instance);
     log.info(`Starting agent ${agentId} (${username ?? 'no username'})`);

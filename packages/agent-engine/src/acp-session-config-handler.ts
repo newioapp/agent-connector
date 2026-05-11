@@ -9,10 +9,10 @@ import type { ClientSideConnection, NewSessionResponse, LoadSessionResponse } fr
 import type * as acp from '@agentclientprotocol/sdk';
 import type { AgentSessionConfig } from './agent-instance';
 import type { NewioClient, SessionConfigUpdate } from '@newio/agent-sdk';
-import { Logger } from './logger';
+import { getLogger } from '@newio/agent-sdk';
 import { SessionType } from './types';
 
-const log = new Logger('acp-session-config-handler');
+const log = getLogger('acp-session-config-handler');
 
 export class AcpSessionConfigHandler {
   private modelConfig: AgentSessionConfig | undefined;

@@ -1,12 +1,15 @@
 import { app, BrowserWindow, Menu, nativeTheme, shell } from 'electron';
 import { join } from 'path';
+import { mkdirSync, existsSync } from 'fs';
+import { homedir } from 'os';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
 import { setLogHandler } from '@newio/agent-sdk';
 import { createStore } from './store';
 import { MainWindowManager } from './main-window';
-import { FileAgentConfigManager, NEWIO_DIR, ensureNewioDir } from '../core/file-agent-config-manager';
-import { AgentRuntimeManager } from '../core/agent-runtime-manager';
-import { SessionStore } from '../core/session-store';
+import { FileAgentConfigManager } from '@newio/agent-engine';
+import { AgentRuntimeManager } from '@newio/agent-engine';
+import type { EngineConfig } from '@newio/agent-engine';
+import { SqliteCronStore } from './sqlite-cron-store';
 import { IpcHandler } from './ipc-handler';
 import { registerIpcHandlers } from './ipc-registry';
 import { EVENT_CHANNELS } from '../shared/ipc-events';
@@ -57,31 +60,55 @@ void app.whenReady().then(async () => {
 
   const store = createStore();
   const mainWindowManager = new MainWindowManager(store);
-  const agentConfigManager = new FileAgentConfigManager();
-  ensureNewioDir();
-  const sessionStore = new SessionStore(join(NEWIO_DIR, 'sessions.db'));
 
-  const agentRuntimeManager = new AgentRuntimeManager(agentConfigManager, sessionStore, {
-    onStatusChanged(agentId, status, error) {
-      mainWindowManager.send(EVENT_CHANNELS['agent-status-changed'], { agentId, status, error });
+  const dataDir = (() => {
+    const stage = __NEWIO_STAGE__;
+    const home = stage === 'prod' ? '.newio' : `.newio-${stage}`;
+    const dir = join(homedir(), home, 'connector');
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+    }
+    return dir;
+  })();
+
+  const engineConfig: EngineConfig = {
+    apiBaseUrl: __API_BASE_URL__,
+    wsUrl: __WS_BASE_URL__,
+    stage: __NEWIO_STAGE__,
+    appDisplayName: __APP_DISPLAY_NAME__,
+    appVersion: __APP_VERSION__,
+    dataDir,
+  };
+
+  const agentConfigManager = new FileAgentConfigManager(dataDir);
+  const cronStore = new SqliteCronStore(join(dataDir, 'cron.db'));
+
+  const agentRuntimeManager = new AgentRuntimeManager(
+    agentConfigManager,
+    cronStore,
+    {
+      onStatusChanged(agentId, status, error) {
+        mainWindowManager.send(EVENT_CHANNELS['agent-status-changed'], { agentId, status, error });
+      },
+      onApprovalUrl(agentId, approvalUrl) {
+        mainWindowManager.send(EVENT_CHANNELS['agent-approval-url'], { agentId, approvalUrl });
+        void shell.openExternal(approvalUrl);
+      },
+      onPollAttempt(agentId) {
+        mainWindowManager.send(EVENT_CHANNELS['agent-poll-attempt'], { agentId });
+      },
+      onConfigUpdated(agentId) {
+        const config = agentConfigManager.get(agentId);
+        if (config) {
+          mainWindowManager.send(EVENT_CHANNELS['agent-config-updated'], { agentId, config });
+        }
+      },
+      onAgentInfo(agentId, info) {
+        mainWindowManager.send(EVENT_CHANNELS['agent-acp-info'], { agentId, info });
+      },
     },
-    onApprovalUrl(agentId, approvalUrl) {
-      mainWindowManager.send(EVENT_CHANNELS['agent-approval-url'], { agentId, approvalUrl });
-      void shell.openExternal(approvalUrl);
-    },
-    onPollAttempt(agentId) {
-      mainWindowManager.send(EVENT_CHANNELS['agent-poll-attempt'], { agentId });
-    },
-    onConfigUpdated(agentId) {
-      const config = agentConfigManager.get(agentId);
-      if (config) {
-        mainWindowManager.send(EVENT_CHANNELS['agent-config-updated'], { agentId, config });
-      }
-    },
-    onAgentInfo(agentId, info) {
-      mainWindowManager.send(EVENT_CHANNELS['agent-acp-info'], { agentId, info });
-    },
-  });
+    engineConfig,
+  );
 
   // Apply persisted theme
   nativeTheme.themeSource = store.get('themeSource');
@@ -107,7 +134,7 @@ void app.whenReady().then(async () => {
     agentRuntimeManager
       .stopAll()
       .catch(() => {})
-      .then(() => sessionStore.close());
+      .then(() => cronStore.close());
 
   app.on('before-quit', (event) => {
     if (!cleanedUp) {
