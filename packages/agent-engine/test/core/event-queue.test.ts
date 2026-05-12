@@ -3,6 +3,10 @@ import { EventQueue } from '../../src/event-queue';
 import type { AgentEvent } from '../../src/event-queue';
 import type { IncomingMessage, ContactEvent, CronTriggerEvent } from '@newio/agent-sdk';
 
+function createQueue(): EventQueue {
+  return new EventQueue('conversation', 'conv-test');
+}
+
 function makeMsg(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
   return {
     messageId: 'msg-1',
@@ -35,7 +39,6 @@ function makeContactEvent(overrides: Partial<ContactEvent> = {}): ContactEvent {
 function makeCronEvent(overrides: Partial<CronTriggerEvent> = {}): CronTriggerEvent {
   return {
     cronId: 'cron-1',
-    newioSessionId: 'session-1',
     label: 'Test cron',
     triggeredAt: '2026-04-05T09:00:00Z',
     ...overrides,
@@ -65,7 +68,7 @@ describe('EventQueue', () => {
 
   describe('message batching', () => {
     it('batches messages by conversationId', async () => {
-      const queue = new EventQueue();
+      const queue = createQueue();
       queue.enqueueMessage(makeMsg({ conversationId: 'conv-1', text: 'first' }));
       queue.enqueueMessage(makeMsg({ conversationId: 'conv-1', text: 'second', messageId: 'msg-2' }));
 
@@ -80,7 +83,7 @@ describe('EventQueue', () => {
     });
 
     it('yields separate batches for different conversations', async () => {
-      const queue = new EventQueue();
+      const queue = createQueue();
       queue.enqueueMessage(makeMsg({ conversationId: 'conv-1' }));
       queue.enqueueMessage(makeMsg({ conversationId: 'conv-2', messageId: 'msg-2' }));
 
@@ -102,7 +105,7 @@ describe('EventQueue', () => {
 
   describe('contact batching', () => {
     it('batches all pending contact events together', async () => {
-      const queue = new EventQueue();
+      const queue = createQueue();
       queue.enqueueContact(makeContactEvent({ type: 'contact.request_received', username: 'alice' }));
       queue.enqueueContact(makeContactEvent({ type: 'contact.request_accepted', username: 'bob' }));
 
@@ -124,7 +127,7 @@ describe('EventQueue', () => {
 
   describe('cron events', () => {
     it('yields cron events individually', async () => {
-      const queue = new EventQueue();
+      const queue = createQueue();
       queue.enqueueCron(makeCronEvent({ cronId: 'cron-1' }));
       queue.enqueueCron(makeCronEvent({ cronId: 'cron-2' }));
 
@@ -146,7 +149,7 @@ describe('EventQueue', () => {
 
   describe('FIFO ordering', () => {
     it('preserves insertion order across event types', async () => {
-      const queue = new EventQueue();
+      const queue = createQueue();
       queue.enqueueMessage(makeMsg({ conversationId: 'conv-1' }));
       queue.enqueueContact(makeContactEvent());
       queue.enqueueCron(makeCronEvent());
@@ -166,7 +169,7 @@ describe('EventQueue', () => {
 
   describe('close', () => {
     it('terminates the events generator', async () => {
-      const queue = new EventQueue();
+      const queue = createQueue();
       queue.enqueueMessage(makeMsg());
       queue.close();
 
@@ -178,7 +181,7 @@ describe('EventQueue', () => {
     });
 
     it('ignores enqueues after close', async () => {
-      const queue = new EventQueue();
+      const queue = createQueue();
       queue.close();
       queue.enqueueMessage(makeMsg());
       queue.enqueueContact(makeContactEvent());
@@ -198,7 +201,7 @@ describe('EventQueue', () => {
 
   describe('async wake', () => {
     it('wakes consumer when event is enqueued after consumer starts waiting', async () => {
-      const queue = new EventQueue();
+      const queue = createQueue();
 
       // Start consuming (will block waiting for events)
       const eventPromise = collectEvents(queue, 1, 2000);

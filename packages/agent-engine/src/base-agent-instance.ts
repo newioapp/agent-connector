@@ -25,7 +25,7 @@ import type { AgentSession } from './agent-session';
 import type { CronStore } from './cron-store';
 import type { EngineConfig } from './engine-config';
 import { EventQueue } from './event-queue';
-import type { AgentEvent, OwnerOpType, OwnerOpResult } from './event-queue';
+import type { AgentEvent, OwnerOpCallback } from './event-queue';
 import { PromptManager } from './prompt-manager';
 import { getLogger } from '@newio/agent-sdk';
 import type {
@@ -57,14 +57,6 @@ type InboundEvent =
   | { readonly type: 'contact'; readonly event: ContactEvent }
   | { readonly type: 'cron'; readonly event: CronTriggerEvent };
 
-/** Session slot type. */
-/** Tracks what the session loop is currently processing. */
-type InFlightEvent =
-  | { readonly kind: 'messages'; readonly promise: Promise<void> }
-  | { readonly kind: 'contact'; readonly promise: Promise<void> }
-  | { readonly kind: 'cron'; readonly promise: Promise<void> }
-  | { readonly kind: 'owner_op'; readonly opType: OwnerOpType; readonly promise: Promise<OwnerOpResult> };
-
 interface SessionSlot {
   readonly type: SessionType;
   /** ConversationId, __contact__, cron id job */
@@ -74,7 +66,7 @@ interface SessionSlot {
   readonly sessionPromise: Promise<AgentSession>;
   lastActivityAt: number;
   /** Non-null while the session loop is processing any event. */
-  inFlight: InFlightEvent | null;
+  inFlight: 'messages' | 'contact' | 'cron' | 'compact_session' | 'rotate_session' | 'update_memory' | null;
 }
 
 export abstract class BaseAgentInstance implements AgentInstance {
@@ -495,7 +487,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** Create a new session slot — shared logic for all slot types. */
   private createSlot(type: SessionType, externalReferenceId: string): SessionSlot {
-    const queue = new EventQueue();
+    const queue = new EventQueue(type, externalReferenceId);
     const sessionPromise = this.enqueueLaunch(type, externalReferenceId);
 
     const slot: SessionSlot = {
@@ -778,25 +770,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
     for await (const event of slot.queue.events()) {
       slot.lastActivityAt = Date.now();
-      if (event.type === 'owner_op') {
-        const resultPromise = this.executeOwnerOp(event.opType, slot);
-        slot.inFlight = { kind: 'owner_op', opType: event.opType, promise: resultPromise };
-        try {
-          const result = await resultPromise;
-          event.resolve(result);
-        } catch (err: unknown) {
-          event.reject(err instanceof Error ? err : new Error(String(err)));
-        } finally {
-          slot.inFlight = null;
-        }
-      } else {
-        const promise = this.processEvent(event, session);
-        slot.inFlight = { kind: event.type, promise };
-        try {
-          await promise;
-        } finally {
-          slot.inFlight = null;
-        }
+      slot.inFlight = event.type;
+      try {
+        await this.processEvent(event, session);
+      } finally {
+        slot.inFlight = null;
       }
     }
     log.debug(`${this.logTag} Session loop ended: ${slot.type}:${slot.externalReferenceId}`);
@@ -814,32 +792,15 @@ export abstract class BaseAgentInstance implements AgentInstance {
       case 'cron':
         await this.processCronTrigger(session, event.job);
         break;
-    }
-  }
-
-  /** Execute the actual owner op logic. */
-  private async executeOwnerOp(opType: OwnerOpType, slot: SessionSlot): Promise<OwnerOpResult> {
-    const session = slot.session;
-    if (!session) {
-      throw new Error('Session ended');
-    }
-    switch (opType) {
       case 'compact_session':
-        return session.handleCompactSession({
-          sessionType: slot.type,
-          externalReferenceId: slot.externalReferenceId,
-        });
-      case 'update_memory': {
-        const prompt = this.promptManager.buildMemoryUpdatePrompt(session.promptFormatterVersion);
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        for await (const _ of session.prompt(prompt)) {
-          // Drain output — memory updates happen via MCP tool calls within the prompt
-        }
-        return { success: true };
-      }
+        await this.processSessionCompaction(session, event.callbacks);
+        break;
       case 'rotate_session':
-        await this.rotateSession(slot.type, slot.externalReferenceId);
-        return { success: true };
+        await this.processSessionRotation(event.sessionType, event.externalReferenceId, event.callbacks);
+        break;
+      case 'update_memory':
+        await this.processSessionMemoryUpdate(session, event.callbacks);
+        break;
     }
   }
 
@@ -928,6 +889,44 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
   }
 
+  private async processSessionCompaction(session: AgentSession, callbacks: readonly OwnerOpCallback[]): Promise<void> {
+    try {
+      const result = await session.handleCompactSession();
+      callbacks.forEach((callback) => callback.resolve(result));
+    } catch (err: unknown) {
+      callbacks.forEach((callback) => callback.reject(err));
+    }
+  }
+
+  private async processSessionRotation(
+    sessionType: SessionType,
+    externalReferenceId: string,
+    callbacks: readonly OwnerOpCallback[],
+  ): Promise<void> {
+    try {
+      await this.rotateSession(sessionType, externalReferenceId);
+      callbacks.forEach((callback) => callback.resolve({ success: true }));
+    } catch (err: unknown) {
+      callbacks.forEach((callback) => callback.reject(err));
+    }
+  }
+
+  private async processSessionMemoryUpdate(
+    session: AgentSession,
+    callbacks: readonly OwnerOpCallback[],
+  ): Promise<void> {
+    const prompt = this.promptManager.buildMemoryUpdatePrompt(session.promptFormatterVersion);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      for await (const _ of session.prompt(prompt)) {
+        // Drain output — memory updates happen via MCP tool calls within the prompt
+      }
+      callbacks.forEach((callback) => callback.resolve({ success: true }));
+    } catch (err: unknown) {
+      callbacks.forEach((callback) => callback.reject(err));
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Capability management
   // ---------------------------------------------------------------------------
@@ -956,7 +955,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         canCompact: false,
       };
     }
-    return slot.session.getLiveSessionInfo(request);
+    return slot.session.getLiveSessionInfo();
   }
 
   /** Handle cancel session signal. */
@@ -965,7 +964,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
     if (!slot?.session) {
       return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
     }
-    const result = await slot.session.handleCancelSession(request);
+    const result = await slot.session.handleCancelSession();
     slot.queue.reset();
     return result;
   }
@@ -976,14 +975,13 @@ export abstract class BaseAgentInstance implements AgentInstance {
     if (!slot?.session) {
       return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
     }
-    if (slot.inFlight?.kind === 'owner_op' && slot.inFlight.opType === 'compact_session') {
-      return (await slot.inFlight.promise) as CompactSessionResponse;
-    }
     if (slot.inFlight) {
       return { success: false, errorCode: 'session_busy', error: 'Session is processing a message' };
     }
     try {
-      return (await slot.queue.enqueueOwnerOp('compact_session')) as CompactSessionResponse;
+      return await new Promise<CompactSessionResponse>((resolve, reject) => {
+        slot.queue.enqueueOwnerOp('compact_session', { resolve, reject });
+      });
     } catch {
       return { success: false, error: 'Operation cancelled' };
     }
@@ -1003,10 +1001,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
     if (!slot.session) {
       return { success: false, error: 'Session launch failed' };
     }
-    const info = slot.session.getLiveSessionInfo({
-      sessionType: request.sessionType,
-      externalReferenceId: request.externalReferenceId,
-    });
+    const info = slot.session.getLiveSessionInfo();
     return { success: true, info };
   }
 
@@ -1016,14 +1011,13 @@ export abstract class BaseAgentInstance implements AgentInstance {
     if (!slot?.session) {
       return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
     }
-    if (slot.inFlight?.kind === 'owner_op' && slot.inFlight.opType === 'update_memory') {
-      return (await slot.inFlight.promise) as UpdateMemoryResponse;
-    }
     if (slot.inFlight) {
       return { success: false, errorCode: 'session_busy', error: 'Session is processing a message' };
     }
     try {
-      return (await slot.queue.enqueueOwnerOp('update_memory')) as UpdateMemoryResponse;
+      return await new Promise<UpdateMemoryResponse>((resolve, reject) => {
+        slot.queue.enqueueOwnerOp('update_memory', { resolve, reject });
+      });
     } catch {
       return { success: false, error: 'Operation cancelled' };
     }
@@ -1038,14 +1032,13 @@ export abstract class BaseAgentInstance implements AgentInstance {
     if (!slot?.session) {
       return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
     }
-    if (slot.inFlight?.kind === 'owner_op' && slot.inFlight.opType === 'rotate_session') {
-      return (await slot.inFlight.promise) as RotateSessionResponse;
-    }
     if (slot.inFlight) {
       return { success: false, errorCode: 'session_busy', error: 'Session is processing a message' };
     }
     try {
-      return (await slot.queue.enqueueOwnerOp('rotate_session')) as RotateSessionResponse;
+      return await new Promise<RotateSessionResponse>((resolve, reject) => {
+        slot.queue.enqueueOwnerOp('rotate_session', { resolve, reject });
+      });
     } catch {
       return { success: false, error: 'Operation cancelled' };
     }
@@ -1139,7 +1132,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
         const handoffMatch = fullOutput.match(/HANDOFF:\s*([\s\S]+)/i);
         if (handoffMatch && handoffMatch[1]) {
           const summary = handoffMatch[1].trim();
-          this.persistHandoffNote(slot.externalReferenceId, summary);
+          await this.app.client.putHandoffNote({
+            agentId: this.app.identity.userId,
+            conversationId: slot.externalReferenceId,
+            text: summary,
+          });
           log.info(
             `${this.logTag} Captured handoff for ${slot.type}:${slot.externalReferenceId} (${summary.length} chars)`,
           );
@@ -1155,15 +1152,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
     this.onSessionDisposed(session.correlationId);
     this.removeSlot(slot);
-  }
-
-  /** Persist a handoff note for a conversation via the backend API. */
-  private persistHandoffNote(conversationId: string, text: string): void {
-    this.app.client
-      .putHandoffNote({ agentId: this.app.identity.userId, conversationId, text })
-      .catch((err: unknown) => {
-        log.warn(`${this.logTag} Failed to persist handoff note for ${conversationId}`, err);
-      });
   }
 
   // ---------------------------------------------------------------------------
