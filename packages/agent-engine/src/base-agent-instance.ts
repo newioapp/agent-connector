@@ -25,7 +25,7 @@ import type { AgentSession } from './agent-session';
 import type { CronStore } from './cron-store';
 import type { EngineConfig } from './engine-config';
 import { EventQueue } from './event-queue';
-import type { AgentEvent, Callback } from './event-queue';
+import type { AgentEvent, OwnerOpCallback } from './event-queue';
 import { PromptManager } from './prompt-manager';
 import { getLogger } from '@newio/agent-sdk';
 import type {
@@ -889,7 +889,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
   }
 
-  private async processSessionCompaction(session: AgentSession, callbacks: readonly Callback[]): Promise<void> {
+  private async processSessionCompaction(session: AgentSession, callbacks: readonly OwnerOpCallback[]): Promise<void> {
     try {
       const result = await session.handleCompactSession();
       callbacks.forEach((callback) => callback.resolve(result));
@@ -901,7 +901,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private async processSessionRotation(
     sessionType: SessionType,
     externalReferenceId: string,
-    callbacks: readonly Callback[],
+    callbacks: readonly OwnerOpCallback[],
   ): Promise<void> {
     try {
       await this.rotateSession(sessionType, externalReferenceId);
@@ -911,7 +911,10 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
   }
 
-  private async processSessionMemoryUpdate(session: AgentSession, callbacks: readonly Callback[]): Promise<void> {
+  private async processSessionMemoryUpdate(
+    session: AgentSession,
+    callbacks: readonly OwnerOpCallback[],
+  ): Promise<void> {
     const prompt = this.promptManager.buildMemoryUpdatePrompt(session.promptFormatterVersion);
     try {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
