@@ -39,7 +39,6 @@ function makeContactEvent(overrides: Partial<ContactEvent> = {}): ContactEvent {
 function makeCronEvent(overrides: Partial<CronTriggerEvent> = {}): CronTriggerEvent {
   return {
     cronId: 'cron-1',
-    newioSessionId: 'session-1',
     label: 'Test cron',
     triggeredAt: '2026-04-05T09:00:00Z',
     ...overrides,
