@@ -186,7 +186,7 @@ describe('AcpSessionStream', () => {
 
     await consumer;
     expect(segments).toHaveLength(1);
-    expect(segments[0].text).toBe('delayed');
+    expect(segments[0]!.text).toBe('delayed');
   });
 
   it('returns false for unknown session update types', () => {

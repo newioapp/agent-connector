@@ -104,7 +104,7 @@ describe('AgentRuntimeManager', () => {
       manager.start('agent-1');
 
       expect(MockAcpAgentInstance).toHaveBeenCalledOnce();
-      const instance = MockAcpAgentInstance.mock.results[0].value;
+      const instance = MockAcpAgentInstance.mock.results[0]!.value;
       expect(instance.start).toHaveBeenCalledOnce();
     });
 
@@ -164,7 +164,7 @@ describe('AgentRuntimeManager', () => {
       manager.start('agent-1');
 
       // Grab the instanceListener passed to the constructor
-      const instanceListener = MockAcpAgentInstance.mock.calls[0][3];
+      const instanceListener = MockAcpAgentInstance.mock.calls[0]![3];
 
       instanceListener.onStatusChanged('running');
       expect(listener.onStatusChanged).toHaveBeenCalledWith('agent-1', 'running', undefined);
@@ -187,7 +187,7 @@ describe('AgentRuntimeManager', () => {
   describe('stop', () => {
     it('calls instance.stop and removes from map', async () => {
       manager.start('agent-1');
-      const instance = MockAcpAgentInstance.mock.results[0].value;
+      const instance = MockAcpAgentInstance.mock.results[0]!.value;
 
       await manager.stop('agent-1');
 

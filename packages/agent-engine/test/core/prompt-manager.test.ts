@@ -35,6 +35,9 @@ function mockFormatter(version: string): PromptFormatter {
     formatMessagePrompt: vi.fn().mockReturnValue(`messages-${version}`),
     formatContactPrompt: vi.fn().mockReturnValue(`contacts-${version}`),
     formatCronPrompt: vi.fn().mockReturnValue(`cron-${version}`),
+    formatMemoryContext: vi.fn().mockReturnValue(`memory-${version}`),
+    buildMemoryUpdatePrompt: vi.fn().mockReturnValue(`memory-update-${version}`),
+    buildSessionEndPrompt: vi.fn().mockReturnValue(`session-end-${version}`),
   };
 }
 
@@ -126,7 +129,6 @@ describe('PromptManager', () => {
       const pm = new PromptManager([v1], v1);
       const job: CronTriggerEvent = {
         cronId: 'c1',
-        newioSessionId: 's1',
         label: 'test',
         triggeredAt: '2026-01-01T00:00:00Z',
       };

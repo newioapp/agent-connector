@@ -3,6 +3,12 @@ import { AcpSessionConfigHandler } from '../../src/acp-session-config-handler';
 import type { ClientSideConnection, NewSessionResponse } from '@agentclientprotocol/sdk';
 import type { NewioClient } from '@newio/agent-sdk';
 
+/** Expose private methods for testing. */
+interface TestableConfigHandler {
+  setModel(modelId: string): Promise<void>;
+  setMode(modeId: string): Promise<void>;
+}
+
 /** Minimal mock connection — only setSessionMode and unstable_setSessionModel are used. */
 function mockConnection(overrides?: Partial<ClientSideConnection>): ClientSideConnection {
   return {
@@ -197,7 +203,7 @@ describe('AcpSessionConfigHandler', () => {
         }),
       );
 
-      await handler.setModel('b');
+      await (handler as unknown as TestableConfigHandler).setModel('b');
 
       expect(conn.unstable_setSessionModel).toHaveBeenCalledWith({ sessionId: 'sess-1', modelId: 'b' });
       expect(handler.listModels()?.selectedId).toBe('b');
@@ -219,7 +225,7 @@ describe('AcpSessionConfigHandler', () => {
         }),
       );
 
-      await expect(handler.setModel('bad')).rejects.toThrow('Model not found');
+      await expect((handler as unknown as TestableConfigHandler).setModel('bad')).rejects.toThrow('Model not found');
     });
 
     it('throws with error.message when no data.details', async () => {
@@ -236,7 +242,7 @@ describe('AcpSessionConfigHandler', () => {
         makeSessionResponse(),
       );
 
-      await expect(handler.setModel('x')).rejects.toThrow('connection lost');
+      await expect((handler as unknown as TestableConfigHandler).setModel('x')).rejects.toThrow('connection lost');
     });
 
     it('throws fallback message for non-Error objects without details', async () => {
@@ -253,7 +259,9 @@ describe('AcpSessionConfigHandler', () => {
         makeSessionResponse(),
       );
 
-      await expect(handler.setModel('x')).rejects.toThrow('Failed to set model to "x"');
+      await expect((handler as unknown as TestableConfigHandler).setModel('x')).rejects.toThrow(
+        'Failed to set model to "x"',
+      );
     });
   });
 
@@ -272,7 +280,7 @@ describe('AcpSessionConfigHandler', () => {
         }),
       );
 
-      await handler.setMode('slow');
+      await (handler as unknown as TestableConfigHandler).setMode('slow');
 
       expect(conn.setSessionMode).toHaveBeenCalledWith({ sessionId: 'sess-1', modeId: 'slow' });
       expect(handler.listModes()?.selectedId).toBe('slow');
@@ -292,7 +300,7 @@ describe('AcpSessionConfigHandler', () => {
         makeSessionResponse(),
       );
 
-      await expect(handler.setMode('bad')).rejects.toThrow('invalid mode');
+      await expect((handler as unknown as TestableConfigHandler).setMode('bad')).rejects.toThrow('invalid mode');
     });
   });
 
