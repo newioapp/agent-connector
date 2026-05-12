@@ -6,11 +6,8 @@
  */
 import type { SessionStreamSegment, SessionStatusListener, PermissionHandler, SessionType } from './types';
 import type {
-  LiveSessionInfoRequest,
   LiveSessionInfoResponse,
-  CancelSessionRequest,
   CancelSessionResponse,
-  CompactSessionRequest,
   CompactSessionResponse,
   SessionConfigUpdate,
 } from '@newio/agent-sdk';
@@ -50,13 +47,13 @@ export interface AgentSession {
   cancel(): Promise<void>;
 
   /** Get live session info (models, modes, cancel/compact availability). */
-  getLiveSessionInfo(request: LiveSessionInfoRequest): LiveSessionInfoResponse;
+  getLiveSessionInfo(): LiveSessionInfoResponse;
 
   /** Handle cancel session signal. */
-  handleCancelSession(request: CancelSessionRequest): Promise<CancelSessionResponse>;
+  handleCancelSession(): Promise<CancelSessionResponse>;
 
   /** Handle compact session signal. */
-  handleCompactSession(request: CompactSessionRequest): Promise<CompactSessionResponse>;
+  handleCompactSession(): Promise<CompactSessionResponse>;
 
   /** Apply session config (acpModel/acpMode) from the backend. Reports corrected values on failure. */
   applySessionConfig(config: SessionConfigUpdate): Promise<void>;

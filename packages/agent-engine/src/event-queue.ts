@@ -16,6 +16,7 @@ import type {
   UpdateMemoryResponse,
   RotateSessionResponse,
 } from '@newio/agent-sdk';
+import { SessionType } from './types';
 
 /** Owner-initiated lifecycle operations that can run on a slot. */
 export type OwnerOpType = 'compact_session' | 'update_memory' | 'rotate_session';
@@ -23,16 +24,23 @@ export type OwnerOpType = 'compact_session' | 'update_memory' | 'rotate_session'
 /** Result type for owner-initiated operations. */
 export type OwnerOpResult = CompactSessionResponse | UpdateMemoryResponse | RotateSessionResponse;
 
+export interface Callback {
+  readonly resolve: (result: OwnerOpResult) => void;
+  readonly reject: (err: unknown) => void;
+}
+
 /** Union of all event types that flow through the queue. */
 export type AgentEvent =
   | { readonly type: 'messages'; readonly conversationId: string; readonly messages: readonly IncomingMessage[] }
   | { readonly type: 'contact'; readonly events: readonly ContactEvent[] }
   | { readonly type: 'cron'; readonly job: CronTriggerEvent }
+  | { readonly type: 'compact_session'; readonly callbacks: readonly Callback[] }
+  | { readonly type: 'update_memory'; readonly callbacks: readonly Callback[] }
   | {
-      readonly type: 'owner_op';
-      readonly opType: OwnerOpType;
-      readonly resolve: (result: OwnerOpResult) => void;
-      readonly reject: (err: Error) => void;
+      readonly type: 'rotate_session';
+      readonly sessionType: SessionType;
+      readonly externalReferenceId: string;
+      readonly callbacks: readonly Callback[];
     };
 
 /** Sentinel value used to signal the consumer to stop. */
@@ -43,10 +51,21 @@ export class EventQueue {
   private readonly messageBatches = new Map<string, IncomingMessage[]>();
   /** Pending contact events (batched together). */
   private contactEvents: ContactEvent[] = [];
+  private compactSessionCallbacks: Callback[] = [];
+  private updateMemoryCallbacks: Callback[] = [];
+  private rotateSessionCallbacks: Callback[] = [];
+
   /** FIFO order of pending keys: conversationId strings, 'contact', CronTriggerEvent objects, or OwnerOpEntry objects. */
-  private readonly pending: Array<string | CronTriggerEvent | OwnerOpEntry> = [];
+  private readonly pending: Array<
+    `conv:${string}` | 'contact' | 'compact_session' | `update_memory` | `rotate_session` | CronTriggerEvent
+  > = [];
   private resolve: ((value: typeof CLOSED | undefined) => void) | null = null;
   private closed = false;
+
+  constructor(
+    readonly sessionType: SessionType,
+    readonly externalReferenceId: string,
+  ) {}
 
   /** Add a message to the queue. */
   enqueueMessage(msg: IncomingMessage): void {
@@ -58,7 +77,7 @@ export class EventQueue {
       existing.push(msg);
     } else {
       this.messageBatches.set(msg.conversationId, [msg]);
-      this.pending.push(msg.conversationId);
+      this.pending.push(`conv:${msg.conversationId}`);
     }
     this.wake();
   }
@@ -89,24 +108,24 @@ export class EventQueue {
    * Enqueue an owner-initiated operation. Returns a promise that resolves/rejects
    * when the session loop processes the op.
    */
-  enqueueOwnerOp(opType: OwnerOpType): Promise<OwnerOpResult> {
+  enqueueOwnerOp(type: OwnerOpType, callback: Callback): void {
     if (this.closed) {
-      return Promise.reject(new Error('Queue is closed'));
+      return callback.reject(new Error('Queue is closed'));
     }
-    const existing = this.getPendingOwnerOp(opType);
-    if (existing) {
-      return existing;
+    if (type === 'compact_session') {
+      this.compactSessionCallbacks.push(callback);
+    } else if (type === 'rotate_session') {
+      this.rotateSessionCallbacks.push(callback);
+    } else {
+      this.updateMemoryCallbacks.push(callback);
     }
-    let resolve!: (result: OwnerOpResult) => void;
-    let reject!: (err: Error) => void;
-    const promise = new Promise<OwnerOpResult>((res, rej) => {
-      resolve = res;
-      reject = rej;
-    });
-    const entry: OwnerOpEntry = { kind: 'owner_op', opType, resolve, reject, promise };
-    this.pending.push(entry);
+    const existing = this.pending.findIndex((p) => p === type);
+    if (existing !== -1) {
+      this.wake();
+      return;
+    }
+    this.pending.push(type);
     this.wake();
-    return promise;
   }
 
   /** Async generator that yields AgentEvent items as they become available. */
@@ -131,8 +150,41 @@ export class EventQueue {
       }
 
       // Owner op entry
-      if (isOwnerOpEntry(key)) {
-        yield { type: 'owner_op', opType: key.opType, resolve: key.resolve, reject: key.reject };
+      if (key === 'compact_session') {
+        const callbacks = this.compactSessionCallbacks;
+        this.compactSessionCallbacks = [];
+        yield { type: 'compact_session', callbacks: callbacks };
+        continue;
+      } else if (key === 'rotate_session') {
+        const callbacks = this.rotateSessionCallbacks;
+        this.rotateSessionCallbacks = [];
+        yield {
+          type: 'rotate_session',
+          callbacks: callbacks,
+          sessionType: this.sessionType,
+          externalReferenceId: this.externalReferenceId,
+        };
+        continue;
+      } else if (key === 'update_memory') {
+        const callbacks = this.updateMemoryCallbacks;
+        this.updateMemoryCallbacks = [];
+        yield { type: 'update_memory', callbacks: callbacks };
+        continue;
+      } else if (key === 'contact') {
+        const events = this.contactEvents;
+        this.contactEvents = [];
+        if (events.length > 0) {
+          yield { type: 'contact', events };
+        }
+        continue;
+      } else if (typeof key === 'string' && key.startsWith('conv:')) {
+        // Message batch (key is conversationId)
+        const conversationId = key.slice('conv:'.length);
+        const messages = this.messageBatches.get(conversationId);
+        this.messageBatches.delete(conversationId);
+        if (messages && messages.length > 0) {
+          yield { type: 'messages', conversationId: conversationId, messages };
+        }
         continue;
       }
 
@@ -141,30 +193,7 @@ export class EventQueue {
         yield { type: 'cron', job: key };
         continue;
       }
-
-      // Contact batch
-      if (key === 'contact') {
-        const events = this.contactEvents;
-        this.contactEvents = [];
-        if (events.length > 0) {
-          yield { type: 'contact', events };
-        }
-        continue;
-      }
-
-      // Message batch (key is conversationId)
-      const messages = this.messageBatches.get(key);
-      this.messageBatches.delete(key);
-      if (messages && messages.length > 0) {
-        yield { type: 'messages', conversationId: key, messages };
-      }
     }
-  }
-
-  /** Get the promise of a pending owner op of the given type, if one exists. */
-  getPendingOwnerOp(opType: OwnerOpType): Promise<OwnerOpResult> | undefined {
-    const entry = this.pending.find((e) => isOwnerOpEntry(e) && e.opType === opType) as OwnerOpEntry | undefined;
-    return entry?.promise;
   }
 
   /**
@@ -173,27 +202,30 @@ export class EventQueue {
    */
   reset(): void {
     // Reject all pending owner ops
-    for (const entry of this.pending) {
-      if (isOwnerOpEntry(entry)) {
-        entry.reject(new Error('Operation cancelled'));
-      }
-    }
+
+    this.compactSessionCallbacks.forEach((callback) => callback.reject(new Error('Operation cancelled')));
+    this.updateMemoryCallbacks.forEach((callback) => callback.reject(new Error('Operation cancelled')));
+    this.rotateSessionCallbacks.forEach((callback) => callback.reject(new Error('Operation cancelled')));
     this.pending.length = 0;
     this.messageBatches.clear();
     this.contactEvents = [];
+    this.compactSessionCallbacks = [];
+    this.updateMemoryCallbacks = [];
+    this.rotateSessionCallbacks = [];
   }
 
   /** Close the queue — clears pending events and terminates the events() generator. */
   close(): void {
     this.closed = true;
-    // Reject pending owner ops before clearing
-    for (const entry of this.pending) {
-      if (isOwnerOpEntry(entry)) {
-        entry.reject(new Error('Queue closed'));
-      }
-    }
+
+    this.compactSessionCallbacks.forEach((callback) => callback.reject(new Error('Queue closed')));
+    this.updateMemoryCallbacks.forEach((callback) => callback.reject(new Error('Queue closed')));
+    this.rotateSessionCallbacks.forEach((callback) => callback.reject(new Error('Queue closed')));
     this.messageBatches.clear();
     this.contactEvents = [];
+    this.compactSessionCallbacks = [];
+    this.updateMemoryCallbacks = [];
+    this.rotateSessionCallbacks = [];
     this.pending.length = 0;
     this.resolve?.(CLOSED);
     this.resolve = null;
@@ -202,19 +234,4 @@ export class EventQueue {
   private wake(): void {
     this.resolve?.(undefined);
   }
-}
-
-/** Internal entry type for owner ops in the pending array. */
-interface OwnerOpEntry {
-  readonly kind: 'owner_op';
-  readonly opType: OwnerOpType;
-  readonly resolve: (result: OwnerOpResult) => void;
-  readonly reject: (err: Error) => void;
-  readonly promise: Promise<OwnerOpResult>;
-}
-
-function isOwnerOpEntry(value: unknown): value is OwnerOpEntry {
-  return (
-    typeof value === 'object' && value !== null && 'kind' in value && (value as { kind: unknown }).kind === 'owner_op'
-  );
 }

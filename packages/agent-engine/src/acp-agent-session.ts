@@ -16,11 +16,8 @@ import { AcpSessionContextWindowHandler } from './acp-session-context-window-han
 import { AcpSlashCommandHandler } from './acp-slash-command-handler';
 import { getLogger } from '@newio/agent-sdk';
 import type {
-  LiveSessionInfoRequest,
   LiveSessionInfoResponse,
-  CancelSessionRequest,
   CancelSessionResponse,
-  CompactSessionRequest,
   CompactSessionResponse,
   ModelOption,
   ModeOption,
@@ -162,7 +159,7 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
     await this.connection.cancel({ sessionId: this.correlationId });
   }
 
-  getLiveSessionInfo(_request: LiveSessionInfoRequest): LiveSessionInfoResponse {
+  getLiveSessionInfo(): LiveSessionInfoResponse {
     const availableModels: ModelOption[] = [];
     const availableModes: ModeOption[] = [];
     let currentModel: string | undefined;
@@ -199,7 +196,7 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
     };
   }
 
-  async handleCancelSession(_request: CancelSessionRequest): Promise<CancelSessionResponse> {
+  async handleCancelSession(): Promise<CancelSessionResponse> {
     try {
       await this.cancel();
       return { success: true };
@@ -208,7 +205,7 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
     }
   }
 
-  async handleCompactSession(_request: CompactSessionRequest): Promise<CompactSessionResponse> {
+  async handleCompactSession(): Promise<CompactSessionResponse> {
     return this.slashCommandHandler.compact();
   }
 
