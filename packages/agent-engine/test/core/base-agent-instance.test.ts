@@ -66,7 +66,6 @@ class TestAgentInstance extends BaseAgentInstance {
     updatedBy?: string;
     changes: Record<string, unknown>;
   }): void {
-    const handler = (this as unknown as Record<string, Function>)['applySessionConfigChange'];
     // Replicate the logic from the event handler
     const { conversationId, userId, updatedBy, changes } = event;
     const app = this.app;
@@ -77,6 +76,7 @@ class TestAgentInstance extends BaseAgentInstance {
       return;
     }
     if (changes.acpModel !== undefined || changes.acpMode !== undefined) {
+      const handler = (this as unknown as Record<string, Function>)['applySessionConfigChange']!;
       void handler.call(this, conversationId, {
         acpModel: changes.acpModel,
         acpMode: changes.acpMode,
