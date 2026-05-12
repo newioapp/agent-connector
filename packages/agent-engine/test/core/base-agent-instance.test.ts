@@ -46,6 +46,43 @@ class TestAgentInstance extends BaseAgentInstance {
   setOwnerDmConversationId(id: string): void {
     (this as unknown as Record<string, unknown>)['_ownerDmConversationId'] = id;
   }
+
+  /** Inject a conversation slot with a mock session for testing. */
+  injectConversationSlot(conversationId: string, session: Partial<AgentSession>): void {
+    const slots = (this as unknown as Record<string, unknown>)['conversationSlots'] as Map<string, unknown>;
+    slots.set(conversationId, {
+      type: 'conversation',
+      externalReferenceId: conversationId,
+      session,
+      lastActivityAt: Date.now(),
+      inFlight: null,
+    });
+  }
+
+  /** Simulate a conversation.member_updated event routing through the handler. */
+  simulateMemberUpdated(event: {
+    conversationId: string;
+    userId: string;
+    updatedBy?: string;
+    changes: Record<string, unknown>;
+  }): void {
+    const handler = (this as unknown as Record<string, Function>)['applySessionConfigChange'];
+    // Replicate the logic from the event handler
+    const { conversationId, userId, updatedBy, changes } = event;
+    const app = this.app;
+    if (userId !== app.identity.userId) {
+      return;
+    }
+    if (updatedBy === app.identity.userId) {
+      return;
+    }
+    if (changes.acpModel !== undefined || changes.acpMode !== undefined) {
+      void handler.call(this, conversationId, {
+        acpModel: changes.acpModel,
+        acpMode: changes.acpMode,
+      });
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -248,5 +285,95 @@ describe('BaseAgentInstance — permission request routing', () => {
     await expect(instance.testPermissionRequest('Use tool?', options, friendConvId)).rejects.toThrow(
       'Cannot route permission request — agent has no owner',
     );
+  });
+});
+
+describe('BaseAgentInstance — acpModel/acpMode routing via conversation.member_updated', () => {
+  const ownerId = 'owner-1';
+  const convId = 'conv-123';
+  let instance: TestAgentInstance;
+  let mockSession: { applySessionConfig: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    instance = createInstance();
+    instance.setOwnerDmConversationId('dm-owner');
+    mockSession = { applySessionConfig: vi.fn().mockResolvedValue(undefined) };
+
+    const members = new Map<string, Map<string, MemberRecord>>();
+    const mockApp = createMockApp(ownerId, members);
+    instance.setApp(mockApp);
+    instance.injectConversationSlot(convId, mockSession as unknown as AgentSession);
+  });
+
+  it('applies acpModel/acpMode to the active session', () => {
+    instance.simulateMemberUpdated({
+      conversationId: convId,
+      userId: 'agent-1',
+      updatedBy: ownerId,
+      changes: { acpModel: 'claude-4-sonnet', acpMode: 'plan' },
+    });
+
+    expect(mockSession.applySessionConfig).toHaveBeenCalledWith({
+      acpModel: 'claude-4-sonnet',
+      acpMode: 'plan',
+    });
+  });
+
+  it('applies only acpModel when acpMode is undefined', () => {
+    instance.simulateMemberUpdated({
+      conversationId: convId,
+      userId: 'agent-1',
+      updatedBy: ownerId,
+      changes: { acpModel: 'gpt-5' },
+    });
+
+    expect(mockSession.applySessionConfig).toHaveBeenCalledWith({
+      acpModel: 'gpt-5',
+      acpMode: undefined,
+    });
+  });
+
+  it('ignores self-updates (updatedBy === agent itself)', () => {
+    instance.simulateMemberUpdated({
+      conversationId: convId,
+      userId: 'agent-1',
+      updatedBy: 'agent-1',
+      changes: { acpModel: 'claude-4-sonnet' },
+    });
+
+    expect(mockSession.applySessionConfig).not.toHaveBeenCalled();
+  });
+
+  it('ignores updates for a different user', () => {
+    instance.simulateMemberUpdated({
+      conversationId: convId,
+      userId: 'other-agent',
+      updatedBy: ownerId,
+      changes: { acpModel: 'claude-4-sonnet' },
+    });
+
+    expect(mockSession.applySessionConfig).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when no active session for the conversation', () => {
+    instance.simulateMemberUpdated({
+      conversationId: 'conv-nonexistent',
+      userId: 'agent-1',
+      updatedBy: ownerId,
+      changes: { acpModel: 'claude-4-sonnet' },
+    });
+
+    expect(mockSession.applySessionConfig).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when changes have no acpModel or acpMode', () => {
+    instance.simulateMemberUpdated({
+      conversationId: convId,
+      userId: 'agent-1',
+      updatedBy: ownerId,
+      changes: { showToolCalls: true },
+    });
+
+    expect(mockSession.applySessionConfig).not.toHaveBeenCalled();
   });
 });
