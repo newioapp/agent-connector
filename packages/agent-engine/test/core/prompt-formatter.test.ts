@@ -209,7 +209,6 @@ describe('PromptFormatterImpl', () => {
       const pf = new PromptFormatterImpl(mockApp());
       const job: CronTriggerEvent = {
         cronId: 'cron_abc123',
-        newioSessionId: 'session-1',
         label: 'Send daily standup reminder',
         triggeredAt: '2026-04-05T09:00:00Z',
       };
@@ -224,7 +223,6 @@ describe('PromptFormatterImpl', () => {
       const pf = new PromptFormatterImpl(mockApp());
       const job: CronTriggerEvent = {
         cronId: 'cron_xyz',
-        newioSessionId: 'session-1',
         label: 'Check deadlines',
         payload: { conversationId: 'conv-123' },
         triggeredAt: '2026-04-05T09:00:00Z',
@@ -237,7 +235,6 @@ describe('PromptFormatterImpl', () => {
       const pf = new PromptFormatterImpl(mockApp());
       const job: CronTriggerEvent = {
         cronId: 'cron_xyz',
-        newioSessionId: 'session-1',
         label: 'Simple task',
         triggeredAt: '2026-04-05T09:00:00Z',
       };

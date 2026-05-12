@@ -4,6 +4,12 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { NewioMcpServer } from '../../src/mcp/server.js';
 import type { NewioApp, ContactSummary, ConversationSummary, FriendRequestSummary } from '@newio/agent-sdk';
 
+/** Extract text from MCP callTool result (handles unknown content type). */
+function getResultText(result: Awaited<ReturnType<Client['callTool']>>): string {
+  const content = result.content as Array<{ text: string }>;
+  return content[0]!.text;
+}
+
 function mockApp(
   contacts: ContactSummary[] = [{ username: 'alice', displayName: 'Alice', accountType: 'human' }],
   conversations: ConversationSummary[] = [
@@ -117,7 +123,7 @@ describe('MCP Server', () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
     const result = await client.callTool({ name: 'list_conversations', arguments: {} });
-    const parsed = JSON.parse((result.content[0] as { text: string }).text) as unknown[];
+    const parsed = JSON.parse(getResultText(result)) as unknown[];
     expect(parsed).toHaveLength(1);
     expect(app.getAllConversations).toHaveBeenCalled();
   });
@@ -129,7 +135,7 @@ describe('MCP Server', () => {
     ];
     const client = await createConnectedClient(mockApp(contacts));
     const result = await client.callTool({ name: 'list_friends', arguments: {} });
-    const parsed = JSON.parse((result.content[0] as { text: string }).text) as Record<string, unknown>[];
+    const parsed = JSON.parse(getResultText(result)) as Record<string, unknown>[];
     expect(parsed).toHaveLength(2);
     expect(parsed[0]).toHaveProperty('username', 'alice');
     expect(parsed[0]).not.toHaveProperty('userId');
@@ -194,7 +200,7 @@ describe('MCP Server', () => {
       arguments: { conversationId: 'conv-1', s3Key: 'media/photo.jpg', fileName: 'photo.jpg' },
     });
     expect(app.downloadAttachment).toHaveBeenCalledWith('conv-1', 'media/photo.jpg', 'photo.jpg');
-    expect((result.content[0] as { text: string }).text).toContain('photo.jpg');
+    expect(getResultText(result)).toContain('photo.jpg');
   });
 
   it('upload_attachment_to_current_conversation returns error when no conversation getter is set', async () => {
@@ -225,7 +231,7 @@ describe('MCP Server', () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
     const result = await client.callTool({ name: 'list_messages', arguments: { conversationId: 'conv-1' } });
-    const parsed = JSON.parse((result.content[0] as { text: string }).text) as unknown[];
+    const parsed = JSON.parse(getResultText(result)) as unknown[];
     expect(parsed).toHaveLength(1);
   });
 
@@ -233,7 +239,7 @@ describe('MCP Server', () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
     const result = await client.callTool({ name: 'search_users', arguments: { query: 'alice' } });
-    const parsed = JSON.parse((result.content[0] as { text: string }).text) as unknown[];
+    const parsed = JSON.parse(getResultText(result)) as unknown[];
     expect(parsed).toHaveLength(1);
   });
 
@@ -250,7 +256,7 @@ describe('MCP Server', () => {
         label: 'Check deadlines',
       }),
     );
-    expect((result.content[0] as { text: string }).text).toContain('Cron scheduled');
+    expect(getResultText(result)).toContain('Cron scheduled');
   });
 
   it('cancel_cron calls app.cancelCron', async () => {
@@ -267,7 +273,7 @@ describe('MCP Server', () => {
     ]);
     const client = await createConnectedClient(app);
     const result = await client.callTool({ name: 'list_crons', arguments: {} });
-    const parsed = JSON.parse((result.content[0] as { text: string }).text) as unknown[];
+    const parsed = JSON.parse(getResultText(result)) as unknown[];
     expect(parsed).toHaveLength(1);
   });
 
@@ -275,7 +281,7 @@ describe('MCP Server', () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
     const result = await client.callTool({ name: 'list_incoming_friend_requests', arguments: {} });
-    const parsed = JSON.parse((result.content[0] as { text: string }).text) as FriendRequestSummary[];
+    const parsed = JSON.parse(getResultText(result)) as FriendRequestSummary[];
     expect(parsed).toHaveLength(1);
     expect(parsed[0]).toHaveProperty('username', 'bob');
     expect(parsed[0]).not.toHaveProperty('userId');
@@ -300,7 +306,7 @@ describe('MCP Server', () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
     const result = await client.callTool({ name: 'get_conversation', arguments: { conversationId: 'conv-1' } });
-    const parsed = JSON.parse((result.content[0] as { text: string }).text) as Record<string, unknown>;
+    const parsed = JSON.parse(getResultText(result)) as Record<string, unknown>;
     expect(parsed).toHaveProperty('conversationId', 'conv-1');
     expect(app.client.getConversation).toHaveBeenCalledWith({ conversationId: 'conv-1' });
   });
@@ -341,7 +347,7 @@ describe('MCP Server', () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
     const result = await client.callTool({ name: 'get_my_profile', arguments: {} });
-    const parsed = JSON.parse((result.content[0] as { text: string }).text) as Record<string, unknown>;
+    const parsed = JSON.parse(getResultText(result)) as Record<string, unknown>;
     expect(parsed).toHaveProperty('username', 'myagent');
     expect(app.client.getMe).toHaveBeenCalled();
   });
@@ -350,7 +356,7 @@ describe('MCP Server', () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
     const result = await client.callTool({ name: 'get_user_profile', arguments: { username: 'alice' } });
-    const parsed = JSON.parse((result.content[0] as { text: string }).text) as Record<string, unknown>;
+    const parsed = JSON.parse(getResultText(result)) as Record<string, unknown>;
     expect(parsed).toHaveProperty('username', 'alice');
     expect(app.client.getUserByUsername).toHaveBeenCalledWith({ username: 'alice' });
   });
@@ -386,9 +392,9 @@ describe('MCP Server', () => {
     });
     const client = await createConnectedClient(app);
     const result = await client.callTool({ name: 'list_messages', arguments: { conversationId: 'conv-1' } });
-    const parsed = JSON.parse((result.content[0] as { text: string }).text) as Record<string, unknown>[];
+    const parsed = JSON.parse(getResultText(result)) as Record<string, unknown>[];
     expect(parsed[0]).toHaveProperty('attachments');
-    const attachments = parsed[0].attachments as Record<string, unknown>[];
+    const attachments = parsed[0]!.attachments as Record<string, unknown>[];
     expect(attachments).toHaveLength(1);
     expect(attachments[0]).toEqual({
       fileName: 'doc.pdf',
@@ -405,7 +411,7 @@ describe('MCP Server', () => {
     const client = await createConnectedClient(app);
     const result = await client.callTool({ name: 'get_memory', arguments: { username: 'alice' } });
     expect(app.getContactMemory).toHaveBeenCalledWith('alice');
-    const content = (result.content[0] as { text: string }).text;
+    const content = getResultText(result);
     expect(content).toContain('Likes Python');
   });
 
@@ -413,7 +419,7 @@ describe('MCP Server', () => {
     const app = mockApp();
     const client = await createConnectedClient(app);
     const result = await client.callTool({ name: 'get_memory', arguments: {} });
-    const content = (result.content[0] as { text: string }).text;
+    const content = getResultText(result);
     expect(content).toContain('Provide either a username or conversationId');
     expect(result.isError).toBe(true);
   });
@@ -440,7 +446,7 @@ describe('MCP Server', () => {
       arguments: { text: 'I am smart.', username: 'myagent' },
     });
     expect(result.isError).toBe(true);
-    const content = (result.content[0] as { text: string }).text;
+    const content = getResultText(result);
     expect(content).toContain('omit the username');
   });
 

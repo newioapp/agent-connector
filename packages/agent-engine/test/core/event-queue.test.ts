@@ -74,10 +74,10 @@ describe('EventQueue', () => {
 
       const events = await collectEvents(queue, 1);
       expect(events).toHaveLength(1);
-      expect(events[0].type).toBe('messages');
-      if (events[0].type === 'messages') {
-        expect(events[0].conversationId).toBe('conv-1');
-        expect(events[0].messages).toHaveLength(2);
+      expect(events[0]!.type).toBe('messages');
+      if (events[0]!.type === 'messages') {
+        expect(events[0]!.conversationId).toBe('conv-1');
+        expect(events[0]!.messages).toHaveLength(2);
       }
       queue.close();
     });
@@ -89,11 +89,11 @@ describe('EventQueue', () => {
 
       const events = await collectEvents(queue, 2);
       expect(events).toHaveLength(2);
-      expect(events[0].type).toBe('messages');
-      expect(events[1].type).toBe('messages');
-      if (events[0].type === 'messages' && events[1].type === 'messages') {
-        expect(events[0].conversationId).toBe('conv-1');
-        expect(events[1].conversationId).toBe('conv-2');
+      expect(events[0]!.type).toBe('messages');
+      expect(events[1]!.type).toBe('messages');
+      if (events[0]!.type === 'messages' && events[1]!.type === 'messages') {
+        expect(events[0]!.conversationId).toBe('conv-1');
+        expect(events[1]!.conversationId).toBe('conv-2');
       }
       queue.close();
     });
@@ -111,11 +111,11 @@ describe('EventQueue', () => {
 
       const events = await collectEvents(queue, 1);
       expect(events).toHaveLength(1);
-      expect(events[0].type).toBe('contact');
-      if (events[0].type === 'contact') {
-        expect(events[0].events).toHaveLength(2);
-        expect(events[0].events[0].username).toBe('alice');
-        expect(events[0].events[1].username).toBe('bob');
+      expect(events[0]!.type).toBe('contact');
+      if (events[0]!.type === 'contact') {
+        expect(events[0]!.events).toHaveLength(2);
+        expect(events[0]!.events[0]!.username).toBe('alice');
+        expect(events[0]!.events[1]!.username).toBe('bob');
       }
       queue.close();
     });
@@ -133,11 +133,11 @@ describe('EventQueue', () => {
 
       const events = await collectEvents(queue, 2);
       expect(events).toHaveLength(2);
-      expect(events[0].type).toBe('cron');
-      expect(events[1].type).toBe('cron');
-      if (events[0].type === 'cron' && events[1].type === 'cron') {
-        expect(events[0].job.cronId).toBe('cron-1');
-        expect(events[1].job.cronId).toBe('cron-2');
+      expect(events[0]!.type).toBe('cron');
+      expect(events[1]!.type).toBe('cron');
+      if (events[0]!.type === 'cron' && events[1]!.type === 'cron') {
+        expect(events[0]!.job.cronId).toBe('cron-1');
+        expect(events[1]!.job.cronId).toBe('cron-2');
       }
       queue.close();
     });
@@ -156,9 +156,9 @@ describe('EventQueue', () => {
 
       const events = await collectEvents(queue, 3);
       expect(events).toHaveLength(3);
-      expect(events[0].type).toBe('messages');
-      expect(events[1].type).toBe('contact');
-      expect(events[2].type).toBe('cron');
+      expect(events[0]!.type).toBe('messages');
+      expect(events[1]!.type).toBe('contact');
+      expect(events[2]!.type).toBe('cron');
       queue.close();
     });
   });
@@ -213,7 +213,7 @@ describe('EventQueue', () => {
 
       const events = await eventPromise;
       expect(events).toHaveLength(1);
-      expect(events[0].type).toBe('messages');
+      expect(events[0]!.type).toBe('messages');
       queue.close();
     });
   });

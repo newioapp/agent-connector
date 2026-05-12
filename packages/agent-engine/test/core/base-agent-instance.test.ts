@@ -34,7 +34,7 @@ class TestAgentInstance extends BaseAgentInstance {
     options: ReadonlyArray<{ optionId: string; name: string }>,
     conversationId?: string,
   ): Promise<string> {
-    return (this as unknown as Record<string, Function>)['handlePermissionRequest'](title, options, conversationId);
+    return (this as unknown as Record<string, Function>)['handlePermissionRequest']!(title, options, conversationId);
   }
 
   /** Inject a mock NewioApp. */
@@ -83,7 +83,7 @@ function createMockApp(
 }
 
 function createInstance(): TestAgentInstance {
-  const config: AgentConfig = { id: 'agent-1', type: 'kiro-cli' };
+  const config: AgentConfig = { id: 'agent-1', type: 'kiro-cli', envVars: {} };
   const configManager = {} as AgentConfigManager;
   const cronStore = {} as CronStore;
   const engineConfig = {
