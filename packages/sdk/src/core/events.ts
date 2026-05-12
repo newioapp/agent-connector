@@ -124,6 +124,8 @@ export interface ConversationMemberUpdatedEvent extends WebSocketEvent {
       readonly sessionId?: string;
       readonly showToolCalls?: boolean;
       readonly showThoughts?: boolean;
+      readonly acpModel?: string | null;
+      readonly acpMode?: string | null;
     };
   };
 }

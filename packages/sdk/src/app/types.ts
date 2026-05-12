@@ -108,6 +108,8 @@ export interface AppEventHandlers {
       sessionId?: string;
       notifyLevel?: string;
       canSend?: boolean;
+      acpModel?: string | null;
+      acpMode?: string | null;
     };
   }) => void;
   'session.updated': (event: {

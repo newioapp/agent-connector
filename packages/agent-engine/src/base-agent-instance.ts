@@ -213,10 +213,17 @@ export abstract class BaseAgentInstance implements AgentInstance {
         this.cronStore.deleteCron(cronId);
       });
 
-      // React to persisted showToolCalls/showThoughts changes from the owner
+      // React to persisted changes from the owner on this agent's member record:
+      // - showToolCalls/showThoughts → conversation flags
+      // - acpModel/acpMode → apply to live session
+      // (session.updated is deprecated; acpModel/acpMode now flow through conversation.member_updated)
       app.on('conversation.member_updated', (event) => {
-        const { conversationId, userId, changes } = event;
+        const { conversationId, userId, updatedBy, changes } = event;
         if (userId !== app.identity.userId) {
+          return;
+        }
+        // Ignore self-updates — the agent already applied the change locally
+        if (updatedBy === app.identity.userId) {
           return;
         }
         if (changes.showToolCalls !== undefined || changes.showThoughts !== undefined) {
@@ -229,16 +236,12 @@ export abstract class BaseAgentInstance implements AgentInstance {
             `${this.logTag} Updated conversation flags for ${conversationId}: showToolCalls=${changes.showToolCalls ?? prev.showToolCalls}, showThoughts=${changes.showThoughts ?? prev.showThoughts}`,
           );
         }
-      });
-
-      // React to persisted acpModel/acpMode changes from the owner
-      app.on('session.updated', (event) => {
-        const { sessionId, agentId, updatedBy, changes } = event;
-        // Ignore events not meant for this agent or triggered by self
-        if (agentId !== app.identity.userId || updatedBy === app.identity.userId) {
-          return;
+        if (changes.acpModel !== undefined || changes.acpMode !== undefined) {
+          void this.applySessionConfigChange(conversationId, {
+            acpModel: changes.acpModel,
+            acpMode: changes.acpMode,
+          });
         }
-        void this.applySessionConfigChange(sessionId, changes);
       });
 
       // Reload persisted cron jobs
@@ -664,15 +667,14 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
   }
 
-  /** Apply model/mode changes from a session.updated event to the live session. */
+  /** Apply acpModel/acpMode changes from conversation.member_updated to the live session. */
   private async applySessionConfigChange(
-    newioSessionId: string,
+    conversationId: string,
     changes: { acpModel?: string | null; acpMode?: string | null },
   ): Promise<void> {
-    // Search conversation slots for a matching session (sessionId from backend = newioSessionId)
-    const slot = this.conversationSlots.get(newioSessionId);
+    const slot = this.conversationSlots.get(conversationId);
     if (!slot?.session) {
-      log.debug(`${this.logTag} session.updated for ${newioSessionId} — session not active, ignoring`);
+      log.debug(`${this.logTag} acpModel/acpMode change for ${conversationId} — session not active, ignoring`);
       return;
     }
     await slot.session.applySessionConfig(changes);
