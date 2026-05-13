@@ -47,7 +47,7 @@ import { PromptFormatterImpl } from './prompt-formatter';
 import { AcpSessionFactory, SessionFactory } from './acp-session-factory.js';
 import { collectAgentMessage } from './utils.js';
 
-const log = getLogger('base-agent-instance');
+const log = getLogger('agent-instance');
 
 function isErrnoException(err: unknown): err is NodeJS.ErrnoException {
   return err instanceof Error && 'code' in err;
