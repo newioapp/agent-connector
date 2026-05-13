@@ -1269,19 +1269,6 @@ export class AgentInstanceImpl implements AgentInstance {
       }
     }
 
-    // Persist handoff before launch so self-recovery path can load it from backend
-    if (handoffNote) {
-      try {
-        await this.app.client.putHandoffNote({
-          agentId: this.app.identity.userId,
-          conversationId: externalReferenceId,
-          text: handoffNote,
-        });
-      } catch (err: unknown) {
-        log.warn(`${this.logTag} Failed to persist handoff note for ${externalReferenceId}`, err);
-      }
-    }
-
     // End old session
     slot.session = undefined;
     await this.sessionFactory.endSession(oldSession.correlationId);
@@ -1293,6 +1280,12 @@ export class AgentInstanceImpl implements AgentInstance {
       log.info(`${this.logTag} Session rotated: ${type}:${externalReferenceId} → ${newSession.correlationId}`);
     } catch (err: unknown) {
       log.error(`${this.logTag} Failed to launch replacement session for ${type}:${externalReferenceId}`, err);
+      // Persist handoff so the self-recovery path can load it from backend
+      if (handoffNote) {
+        this.app.client
+          .putHandoffNote({ agentId: this.app.identity.userId, conversationId: externalReferenceId, text: handoffNote })
+          .catch((e: unknown) => log.warn(`${this.logTag} Failed to persist handoff note`, e));
+      }
       slot.queue.close();
       this.removeSlot(slot);
     }
