@@ -631,8 +631,8 @@ export class AgentInstanceImpl implements AgentInstance {
    * This ensures the MCP bridge that connects during launch is correctly
    * wired to the right session via `latestMcpServer`.
    */
-  private enqueueLaunch(type: SessionType, externalReferenceId: string): Promise<AgentSession> {
-    const launch = this.launchQueue.then(() => this.launchSession(type, externalReferenceId));
+  private enqueueLaunch(type: SessionType, externalReferenceId: string, handoffNote?: string): Promise<AgentSession> {
+    const launch = this.launchQueue.then(() => this.launchSession(type, externalReferenceId, handoffNote));
     this.launchQueue = launch.then(
       () => {},
       (err: unknown) => {
@@ -1263,17 +1263,22 @@ export class AgentInstanceImpl implements AgentInstance {
         if (handoffMatch && handoffMatch[1]) {
           handoffNote = handoffMatch[1].trim();
           log.info(`${this.logTag} Captured handoff for ${type}:${externalReferenceId} (${handoffNote.length} chars)`);
-          // Persist to backend fire-and-forget (survives connector restarts)
-          this.app.client
-            .putHandoffNote({
-              agentId: this.app.identity.userId,
-              conversationId: externalReferenceId,
-              text: handoffNote,
-            })
-            .catch((err: unknown) => log.warn(`${this.logTag} Failed to persist handoff note`, err));
         }
       } catch (err: unknown) {
         log.warn(`${this.logTag} Session-end prompt failed for ${type}:${externalReferenceId}`, err);
+      }
+    }
+
+    // Persist handoff before launch so self-recovery path can load it from backend
+    if (handoffNote) {
+      try {
+        await this.app.client.putHandoffNote({
+          agentId: this.app.identity.userId,
+          conversationId: externalReferenceId,
+          text: handoffNote,
+        });
+      } catch (err: unknown) {
+        log.warn(`${this.logTag} Failed to persist handoff note for ${externalReferenceId}`, err);
       }
     }
 
@@ -1283,7 +1288,7 @@ export class AgentInstanceImpl implements AgentInstance {
 
     // Launch new session (serialized through launch queue) and assign to slot
     try {
-      const newSession = await this.enqueueLaunchWithHandoff(type, externalReferenceId, handoffNote);
+      const newSession = await this.enqueueLaunch(type, externalReferenceId, handoffNote);
       slot.session = newSession;
       log.info(`${this.logTag} Session rotated: ${type}:${externalReferenceId} → ${newSession.correlationId}`);
     } catch (err: unknown) {
@@ -1291,22 +1296,6 @@ export class AgentInstanceImpl implements AgentInstance {
       slot.queue.close();
       this.removeSlot(slot);
     }
-  }
-
-  /** Enqueue a session launch with an in-memory handoff note (used during rotation). */
-  private enqueueLaunchWithHandoff(
-    type: SessionType,
-    externalReferenceId: string,
-    handoffNote?: string,
-  ): Promise<AgentSession> {
-    const launch = this.launchQueue.then(() => this.launchSession(type, externalReferenceId, handoffNote));
-    this.launchQueue = launch.then(
-      () => {},
-      (err: unknown) => {
-        log.error(`${this.logTag} Session launch failed for ${type} ${externalReferenceId}`, err);
-      },
-    );
-    return launch;
   }
 
   /**
