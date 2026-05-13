@@ -10,19 +10,18 @@ import { spawn } from 'child_process';
 import type { ChildProcess, SpawnOptions } from 'child_process';
 import { Writable, Readable } from 'stream';
 import * as fs from 'fs/promises';
-import { hostname } from 'os';
 import { ClientSideConnection, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk';
 import type * as acp from '@agentclientprotocol/sdk';
 import type { McpServer as AcpMcpServer } from '@agentclientprotocol/sdk';
-import { BaseAgentInstance } from './base-agent-instance';
 import { AcpAgentSession } from './acp-agent-session';
 import type { AgentSession } from './agent-session';
-import type { SessionStreamSegment, SessionType } from './types';
-import { resolveCommand, extractErrorMessage } from './types';
+import type { AgentConfig, SessionType } from './types';
+import { resolveCommand } from './types';
 import type { AgentInfo } from './types';
-import { getLogger } from '@newio/agent-sdk';
+import { getLogger, NewioClient } from '@newio/agent-sdk';
+import { EngineConfig } from './engine-config';
 
-const log = getLogger('acp-agent-instance');
+const log = getLogger('acp-session-factory');
 
 /**
  * Awaitable spawn — resolves with the child process once the OS has successfully
@@ -44,9 +43,32 @@ function spawnAsync(command: string, args: readonly string[], options: SpawnOpti
   });
 }
 
-export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
+export interface CreateSessionInput {
+  readonly type: SessionType;
+  readonly externalReferenceId: string;
+  readonly promptFormatterVersion: string;
+  readonly mcpSocketPath: string;
+  readonly skipToken: string;
+}
+
+export interface SessionFactory {
+  init(): Promise<void>;
+
+  getAgentInfo(): AgentInfo | undefined;
+
+  createSession(input: CreateSessionInput): Promise<AgentSession>;
+
+  endSession(correlationId: string): Promise<void>;
+
+  terminate(): Promise<void>;
+
+  onAbnormalTermination(abnormalTerminationHandler: (details: string) => void): void;
+}
+
+export class AcpSessionFactory implements acp.Client, SessionFactory {
   private childProcess?: ChildProcess;
   private connection?: ClientSideConnection;
+  private abnormalTerminationHandler?: (details: string) => void;
 
   /** correlationId → live session, for routing acp.Client callbacks. */
   private readonly acpSessions = new Map<string, AcpAgentSession>();
@@ -66,11 +88,20 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
   /** Set to true when stop/kill is intentional — prevents the exit handler from treating it as unexpected. */
   private stopping = false;
 
+  constructor(
+    private readonly client: NewioClient,
+    private readonly config: AgentConfig,
+    private readonly engineConfig: EngineConfig,
+    private readonly agentId: string,
+    private readonly ownerId: string,
+    private readonly logTag: string,
+  ) {}
+
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
 
-  protected async onConnected(ownerDmConversationId: string): Promise<void> {
+  async init(): Promise<void> {
     log.info(`${this.logTag} ACP agent instance connected, spawning ACP process...`);
     if (!this.config.acp) {
       throw new Error('ACP config missing');
@@ -78,10 +109,9 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
 
     await assertNodeAvailable(this.config.envVars);
     await this.spawnAndInit();
-    await this.sendGreeting(ownerDmConversationId);
   }
 
-  protected async onStopped(): Promise<void> {
+  async terminate(): Promise<void> {
     log.info(`${this.logTag} ACP agent instance stopping...`);
     this.stopping = true;
     this.acpSessions.clear();
@@ -91,8 +121,8 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     await this.killProcess();
   }
 
-  protected onSessionDisposed(correlationId: string): void {
-    this.acpSessions.delete(correlationId);
+  onAbnormalTermination(abnormalTerminationHandler: (details: string) => void): void {
+    this.abnormalTerminationHandler = abnormalTerminationHandler;
   }
 
   // ---------------------------------------------------------------------------
@@ -140,14 +170,9 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
         this.connection = undefined;
         const stderr = stderrChunks.join('\n').trim();
         const detail = stderr || `code=${String(code)}, signal=${String(signal)}`;
-        this.pendingCleanup = this.cleanup()
-          .then(() => this.onStopped())
-          .then(() => {
-            this.setStatus('error', `Agent process exited unexpectedly.\n\n${detail}`);
-          })
-          .finally(() => {
-            this.pendingCleanup = undefined;
-          });
+        if (this.abnormalTerminationHandler) {
+          this.abnormalTerminationHandler(`Agent process exited unexpectedly.\n\n${detail}`);
+        }
       }
     });
 
@@ -186,8 +211,6 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
     log.debug(`${this.logTag} ACP init result`, JSON.stringify(initResult));
 
     this.agentInfo = buildAgentInfo(initResult);
-    this.listener.onAgentInfo(this.agentInfo);
-    this.reportAgentInfoToBackend(this.agentInfo);
   }
 
   private async killProcess(): Promise<void> {
@@ -241,103 +264,38 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
   // Session factory
   // ---------------------------------------------------------------------------
 
-  protected async createSession(type: SessionType, externalReferenceId: string): Promise<AgentSession> {
+  async createSession(input: CreateSessionInput): Promise<AgentSession> {
     const config = this.config.acp;
     if (!config) {
       throw new Error('ACP config missing');
     }
-
-    log.info(`${this.logTag} Preparing memory`);
-    const instruction = this.promptManager.buildNewioInstruction();
-    if (!this.app.identity.ownerId) {
-      throw new Error('Cannot create session: ownerId is not set');
-    }
-
-    // Load memory for conversation sessions
-    const memory = await this.loadMemoryForSession(type === 'conversation' ? externalReferenceId : undefined);
-    let handoffNote: string | null = null;
-    if (type === 'conversation') {
-      handoffNote = await this.loadHandoffNote(externalReferenceId);
-    }
-
-    const memoryContext = this.promptManager.formatMemoryContext(instruction.version, memory, handoffNote ?? undefined);
-    const fullInstruction = memoryContext ? `${instruction.prompt}\n\n${memoryContext}` : instruction.prompt;
 
     log.info(`${this.logTag} Creating new ACP session...`);
     const conn = this.getConnection();
 
     const result = await conn.newSession({
       cwd: config.cwd,
-      mcpServers: buildMcpServers(this.mcpSocketPath),
+      mcpServers: buildMcpServers(input.mcpSocketPath),
     });
 
     const session = new AcpAgentSession({
-      type: type,
-      externalReferenceId: externalReferenceId,
-      promptFormatterVersion: instruction.version,
+      type: input.type,
+      externalReferenceId: input.externalReferenceId,
+      promptFormatterVersion: input.promptFormatterVersion,
       correlationId: result.sessionId,
       connection: conn,
-      client: this.app.client,
-      agentUserId: this.app.identity.userId,
-      ownerId: this.app.identity.ownerId,
+      client: this.client,
+      agentUserId: this.agentId,
+      ownerId: this.ownerId,
       sessionResponse: result,
       disposable: this.supportsClose,
       username: this.config.newio?.username,
-      isSkipPrefix: (text) => this.promptManager.isSkipPrefix(instruction.version, text),
+      skipToken: input.skipToken,
     });
     this.registerSession(result.sessionId, session);
     log.info(`${this.logTag} Session created: ${result.sessionId}`);
 
-    // Send Newio instruction (+ memory context if available) as the first prompt
-    log.debug(`${this.logTag} [${result.sessionId}] Sending Newio instruction to new session`);
-
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    for await (const _ of session.prompt(fullInstruction)) {
-      // discard
-    }
-    log.debug(`${this.logTag} [${result.sessionId}] Newio instruction delivered`);
-
     return session;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Memory & handoff
-  // ---------------------------------------------------------------------------
-
-  /** Load memory for a conversation session. */
-  private async loadMemoryForSession(conversationId?: string) {
-    const agentId = this.app.identity.userId;
-
-    let participantIds: string[] | undefined = undefined;
-    if (typeof conversationId === 'string') {
-      const conv = this.app.store.getConversation(conversationId);
-      const members = this.app.store.getMembers(conversationId);
-      // For DMs, load full memory for the other participant
-      participantIds = [];
-      if (conv?.type === 'dm' && members) {
-        for (const [userId] of members) {
-          if (userId !== agentId) {
-            participantIds.push(userId);
-          }
-        }
-      }
-    }
-
-    return this.app.client.loadSessionMemory({ agentId, conversationId, participantIds });
-  }
-
-  /** Load the handoff note for a conversation (graceful fallback if endpoint doesn't exist). */
-  private async loadHandoffNote(conversationId: string): Promise<string | null> {
-    try {
-      const result = await this.app.client.getHandoffNote({
-        agentId: this.app.identity.userId,
-        conversationId,
-      });
-      return result.text;
-    } catch {
-      // Endpoint may not exist yet — graceful fallback
-      return null;
-    }
   }
 
   /** Register a session and replay any buffered updates received during initialization. */
@@ -364,6 +322,14 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
         }
       }
       log.debug(`${this.logTag} Replayed buffered extNotification(s) for ${correlationId}`);
+    }
+  }
+
+  async endSession(correlationId: string): Promise<void> {
+    const session = this.acpSessions.get(correlationId);
+    this.acpSessions.delete(correlationId);
+    if (session && session.disposable) {
+      await session.dispose();
     }
   }
 
@@ -439,64 +405,6 @@ export class AcpAgentInstance extends BaseAgentInstance implements acp.Client {
 
     return Promise.resolve();
   }
-
-  // ---------------------------------------------------------------------------
-  // Greeting
-  // ---------------------------------------------------------------------------
-
-  private async sendGreeting(ownerDmConversationId: string): Promise<void> {
-    log.debug(`${this.logTag} Owner DM conversation: ${ownerDmConversationId}`);
-
-    this.setStatus('greeting');
-    const session = await this.getOrCreateConversationSession(ownerDmConversationId);
-    log.debug(`${this.logTag} [${session.correlationId}] Generating greeting for owner...`);
-
-    let greeting: string | undefined;
-    try {
-      greeting = await collectAgentMessage(
-        session.prompt(this.promptManager.buildGreetingPrompt(session.promptFormatterVersion), ownerDmConversationId),
-      );
-    } catch (err: unknown) {
-      const message = extractErrorMessage(err);
-      log.error(`${this.logTag} [${session.correlationId}] Greeting prompt failed: ${message}`);
-      throw new Error(`ACP agent connection test failed: ${message}`);
-    }
-
-    if (!greeting || greeting.trim().length === 0) {
-      log.error(`${this.logTag} [${session.correlationId}] Agent returned empty greeting`);
-      throw new Error('ACP agent test failed: agent returned an empty response');
-    }
-
-    await this.app.sendMessage(ownerDmConversationId, greeting.trim());
-    log.info(`${this.logTag} [${session.correlationId}] Greeting sent to owner`);
-  }
-
-  /** Best-effort report of agent info to the backend after ACP init. */
-  private reportAgentInfoToBackend(agentInfo: AgentInfo): void {
-    this.app.client
-      .reportAgentInfo({
-        agentProtocol: agentInfo.protocol,
-        agentVendor: agentInfo.agentName ?? this.config.type,
-        agentVendorVersion: agentInfo.agentVersion,
-        host: {
-          hostname: hostname(),
-          workingDirectory: this.config.acp?.cwd,
-        },
-      })
-      .then(() => log.info(`${this.logTag} Agent info reported`))
-      .catch((err: unknown) => log.warn(`${this.logTag} Failed to report agent info`, err));
-  }
-}
-
-/** Drain a prompt generator and return concatenated agent_message text. */
-async function collectAgentMessage(gen: AsyncGenerator<SessionStreamSegment>): Promise<string | undefined> {
-  const parts: string[] = [];
-  for await (const segment of gen) {
-    if (segment.type === 'agent_message_chunk') {
-      parts.push(segment.text);
-    }
-  }
-  return parts.length > 0 ? parts.join('') : undefined;
 }
 
 function buildMcpServers(mcpSocketPath?: string): AcpMcpServer[] {
