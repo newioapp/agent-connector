@@ -12,15 +12,6 @@ function makeUpdate(type: string, text?: string) {
 
 const SKIP_TOKEN = '_skip';
 
-/** Default isSkipPrefix matching PromptFormatterImpl behavior. */
-function defaultIsSkipPrefix(text: string): boolean {
-  const lower = text.toLowerCase();
-  if (lower.length === 0) {
-    return true;
-  }
-  return SKIP_TOKEN.startsWith(lower);
-}
-
 describe('AcpSessionStream', () => {
   let statusListener: SessionStatusListener;
   let statuses: string[];
@@ -31,7 +22,7 @@ describe('AcpSessionStream', () => {
   });
 
   it('aggregates consecutive chunks of the same type', async () => {
-    const stream = new AcpSessionStream(statusListener, defaultIsSkipPrefix);
+    const stream = new AcpSessionStream(statusListener, SKIP_TOKEN);
 
     stream.handleSessionUpdate(makeUpdate('agent_message_chunk', 'Hello '));
     stream.handleSessionUpdate(makeUpdate('agent_message_chunk', 'world'));
@@ -48,7 +39,7 @@ describe('AcpSessionStream', () => {
   });
 
   it('flushes when type changes', async () => {
-    const stream = new AcpSessionStream(statusListener, defaultIsSkipPrefix);
+    const stream = new AcpSessionStream(statusListener, SKIP_TOKEN);
 
     stream.handleSessionUpdate(makeUpdate('agent_thought_chunk', 'thinking...'));
     stream.handleSessionUpdate(makeUpdate('agent_message_chunk', 'result'));
@@ -75,7 +66,7 @@ describe('AcpSessionStream', () => {
   });
 
   it('handles updates without text content', async () => {
-    const stream = new AcpSessionStream(statusListener, defaultIsSkipPrefix);
+    const stream = new AcpSessionStream(statusListener, SKIP_TOKEN);
 
     stream.handleSessionUpdate(makeUpdate('tool_call'));
     stream.handleSessionUpdate(makeUpdate('agent_message_chunk', 'done'));
@@ -95,7 +86,7 @@ describe('AcpSessionStream', () => {
   });
 
   it('emits status changes based on update type', () => {
-    const stream = new AcpSessionStream(statusListener, defaultIsSkipPrefix);
+    const stream = new AcpSessionStream(statusListener, SKIP_TOKEN);
 
     stream.handleSessionUpdate(makeUpdate('agent_message_chunk', 'hi'));
     stream.handleSessionUpdate(makeUpdate('agent_thought_chunk', 'hmm'));
@@ -107,7 +98,7 @@ describe('AcpSessionStream', () => {
   });
 
   it('finish is idempotent', async () => {
-    const stream = new AcpSessionStream(statusListener, defaultIsSkipPrefix);
+    const stream = new AcpSessionStream(statusListener, SKIP_TOKEN);
 
     stream.handleSessionUpdate(makeUpdate('agent_message_chunk', 'hi'));
     stream.finish();
@@ -121,7 +112,7 @@ describe('AcpSessionStream', () => {
   });
 
   it('yields nothing when no updates before finish', async () => {
-    const stream = new AcpSessionStream(statusListener, defaultIsSkipPrefix);
+    const stream = new AcpSessionStream(statusListener, SKIP_TOKEN);
     stream.finish();
 
     const segments = [];
@@ -132,7 +123,7 @@ describe('AcpSessionStream', () => {
   });
 
   it('handles non-text content gracefully', async () => {
-    const stream = new AcpSessionStream(statusListener, defaultIsSkipPrefix);
+    const stream = new AcpSessionStream(statusListener, SKIP_TOKEN);
 
     stream.handleSessionUpdate({
       sessionUpdate: 'agent_message_chunk',
@@ -150,7 +141,7 @@ describe('AcpSessionStream', () => {
   });
 
   it('handles content with non-string text gracefully', async () => {
-    const stream = new AcpSessionStream(statusListener, defaultIsSkipPrefix);
+    const stream = new AcpSessionStream(statusListener, SKIP_TOKEN);
 
     stream.handleSessionUpdate({
       sessionUpdate: 'agent_message_chunk',
@@ -168,7 +159,7 @@ describe('AcpSessionStream', () => {
   });
 
   it('segments() awaits when no data is ready', async () => {
-    const stream = new AcpSessionStream(statusListener, defaultIsSkipPrefix);
+    const stream = new AcpSessionStream(statusListener, SKIP_TOKEN);
 
     const segments: { type: string; text: string }[] = [];
     const consumer = (async () => {
@@ -190,7 +181,7 @@ describe('AcpSessionStream', () => {
   });
 
   it('returns false for unknown session update types', () => {
-    const stream = new AcpSessionStream(statusListener, defaultIsSkipPrefix);
+    const stream = new AcpSessionStream(statusListener, SKIP_TOKEN);
 
     expect(stream.handleSessionUpdate(makeUpdate('current_mode_update'))).toBe(false);
     expect(stream.handleSessionUpdate(makeUpdate('config_option_update'))).toBe(false);
@@ -200,7 +191,7 @@ describe('AcpSessionStream', () => {
   it('passes conversationId to status listener', () => {
     const calls: { status: string; conversationId?: string }[] = [];
     const listener: SessionStatusListener = (s, cid) => calls.push({ status: s, conversationId: cid });
-    const stream = new AcpSessionStream(listener, defaultIsSkipPrefix, 'conv-123');
+    const stream = new AcpSessionStream(listener, SKIP_TOKEN, 'conv-123');
 
     stream.handleSessionUpdate(makeUpdate('agent_message_chunk', 'hi'));
     stream.handleSessionUpdate(makeUpdate('tool_call'));
@@ -212,7 +203,7 @@ describe('AcpSessionStream', () => {
   });
 
   it('suppresses typing status when response is _skip', () => {
-    const stream = new AcpSessionStream(statusListener, defaultIsSkipPrefix);
+    const stream = new AcpSessionStream(statusListener, SKIP_TOKEN);
 
     stream.handleSessionUpdate(makeUpdate('agent_message_chunk', '_skip'));
     stream.finish();
@@ -221,7 +212,7 @@ describe('AcpSessionStream', () => {
   });
 
   it('suppresses typing status for incremental _skip chunks', () => {
-    const stream = new AcpSessionStream(statusListener, defaultIsSkipPrefix);
+    const stream = new AcpSessionStream(statusListener, SKIP_TOKEN);
 
     stream.handleSessionUpdate(makeUpdate('agent_message_chunk', '_s'));
     stream.handleSessionUpdate(makeUpdate('agent_message_chunk', 'kip'));
@@ -231,7 +222,7 @@ describe('AcpSessionStream', () => {
   });
 
   it('emits typing once text diverges from _skip prefix', () => {
-    const stream = new AcpSessionStream(statusListener, defaultIsSkipPrefix);
+    const stream = new AcpSessionStream(statusListener, SKIP_TOKEN);
 
     stream.handleSessionUpdate(makeUpdate('agent_message_chunk', '_s'));
     expect(statuses).toHaveLength(0);
@@ -243,7 +234,7 @@ describe('AcpSessionStream', () => {
   });
 
   it('emits typing for text that is not a _skip prefix', () => {
-    const stream = new AcpSessionStream(statusListener, defaultIsSkipPrefix);
+    const stream = new AcpSessionStream(statusListener, SKIP_TOKEN);
 
     stream.handleSessionUpdate(makeUpdate('agent_message_chunk', 'Hello'));
     expect(statuses).toEqual(['typing']);
@@ -252,7 +243,7 @@ describe('AcpSessionStream', () => {
   });
 
   it('resets typing suppression between segment runs', () => {
-    const stream = new AcpSessionStream(statusListener, defaultIsSkipPrefix);
+    const stream = new AcpSessionStream(statusListener, SKIP_TOKEN);
 
     // First run: _skip (suppressed)
     stream.handleSessionUpdate(makeUpdate('agent_message_chunk', '_skip'));

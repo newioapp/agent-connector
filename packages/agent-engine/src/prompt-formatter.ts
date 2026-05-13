@@ -22,8 +22,6 @@ export interface PromptFormatter {
   readonly version: string;
   /** The token the agent uses to indicate "no reply needed". */
   readonly skipToken: string;
-  /** Returns true if the trimmed, lowercased text could still become the skip token. */
-  isSkipPrefix(text: string): boolean;
   /** Returns true if the trimmed, lowercased text is exactly the skip token. */
   isSkip(text: string): boolean;
   buildNewioInstruction(customInstructions?: string): Instruction;
@@ -46,14 +44,6 @@ export class PromptFormatterImpl implements PromptFormatter {
 
   constructor(app: NewioApp) {
     this.app = app;
-  }
-
-  isSkipPrefix(text: string): boolean {
-    const lower = text.toLowerCase();
-    if (lower.length === 0) {
-      return true;
-    }
-    return this.skipToken.startsWith(lower);
   }
 
   isSkip(text: string): boolean {

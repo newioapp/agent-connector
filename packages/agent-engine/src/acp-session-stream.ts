@@ -26,7 +26,7 @@ export class AcpSessionStream {
 
   constructor(
     private readonly statusListener: SessionStatusListener,
-    private readonly isSkipPrefix: (text: string) => boolean,
+    private readonly skipToken: string,
     private readonly conversationId?: string,
   ) {}
 
@@ -56,7 +56,7 @@ export class AcpSessionStream {
       text =
         update.content.type === 'text' && typeof update.content.text === 'string' ? update.content.text : undefined;
       this.pushText('agent_message_chunk', text);
-      if (!this.typingStatusEmitted && !this.isSkipPrefix(this.currentText)) {
+      if (!this.typingStatusEmitted && !isSkipPrefix(this.skipToken, this.currentText)) {
         this.typingStatusEmitted = true;
         this.statusListener('typing', this.conversationId);
       }
@@ -198,4 +198,12 @@ function trim(text: string | undefined | null): string | undefined {
   }
   text = text.trim();
   return text.length > 0 ? text : undefined;
+}
+
+function isSkipPrefix(skipToken: string, text: string): boolean {
+  const lower = text.toLowerCase();
+  if (lower.length === 0) {
+    return true;
+  }
+  return skipToken.startsWith(lower);
 }

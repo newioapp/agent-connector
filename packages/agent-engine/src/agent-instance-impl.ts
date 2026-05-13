@@ -14,7 +14,7 @@ import { ApprovalTimeoutError, ConnectionRejectedError, NewioApp, NotFoundApiErr
 import type { IncomingMessage, ContactEvent, CronTriggerEvent, ActionOption, ActionRequest } from '@newio/agent-sdk';
 import { NewioMcpServer, startUdsServer } from './mcp/index.js';
 import type { Server } from 'net';
-import { tmpdir } from 'os';
+import { hostname, tmpdir } from 'os';
 import { join } from 'path';
 import type { AgentConfigManager } from './agent-config-manager';
 import type { AgentRuntimeStatus, AgentConfig, SessionType } from './types';
@@ -44,6 +44,8 @@ import type {
 } from '@newio/agent-sdk';
 import WebSocket from 'ws';
 import { PromptFormatterImpl } from './prompt-formatter';
+import { AcpSessionFactory, SessionFactory } from './acp-session-factory.js';
+import { collectAgentMessage } from './utils.js';
 
 const log = getLogger('base-agent-instance');
 
@@ -69,7 +71,7 @@ interface SessionSlot {
   inFlight: 'messages' | 'contact' | 'cron' | 'compact_session' | 'rotate_session' | 'update_memory' | null;
 }
 
-export abstract class BaseAgentInstance implements AgentInstance {
+export class AgentInstanceImpl implements AgentInstance {
   status: AgentRuntimeStatus = 'stopped';
   error?: string;
 
@@ -82,6 +84,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private _app?: NewioApp;
   private _promptManager?: PromptManager;
   private _ownerDmConversationId?: string;
+  private _sessionFactory?: SessionFactory;
+  /** Socket path for the MCP UDS server. Set after auth in start(). */
+  protected _mcpSocketPath?: string;
 
   /** conversationId → session slot for conversation sessions. */
   private readonly conversationSlots = new Map<string, SessionSlot>();
@@ -104,9 +109,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
   /** Most recently created MCP server awaiting a sessionId to be wired. */
   private pendingMcpServer?: NewioMcpServer;
 
-  /** Socket path for the MCP UDS server. Set after auth in start(). */
-  protected mcpSocketPath?: string;
-
   constructor(
     protected readonly config: AgentConfig,
     protected readonly configManager: AgentConfigManager,
@@ -114,6 +116,10 @@ export abstract class BaseAgentInstance implements AgentInstance {
     protected readonly listener: AgentInstanceListener,
     protected readonly engineConfig: EngineConfig,
   ) {}
+
+  getAgentInfo(): AgentInfo | undefined {
+    return this._sessionFactory?.getAgentInfo();
+  }
 
   async start(): Promise<void> {
     // Wait for any in-flight cleanup (e.g. from an unexpected process exit) before starting
@@ -173,7 +179,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       this.setStatus('initializing');
       const stageInfix = this.engineConfig.stage === 'prod' ? '' : `-${this.engineConfig.stage}`;
       const mcpSocketPath = join(tmpdir(), `newio-connector${stageInfix}-mcp-${username}.sock`);
-      this.mcpSocketPath = mcpSocketPath;
+      this._mcpSocketPath = mcpSocketPath;
 
       await app.init();
 
@@ -276,16 +282,47 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
       this.startIdleCleanup();
 
-      const ownerDmConversationId = await this.getOwnerDmOrThrow();
-      this._ownerDmConversationId = ownerDmConversationId;
-      await this.onConnected(ownerDmConversationId);
+      const ownerId = this.app.identity.ownerId;
+      if (!ownerId) {
+        throw new Error('Cannot create session: ownerId is not set');
+      }
+
+      this._sessionFactory = new AcpSessionFactory(
+        app.client,
+        this.config,
+        this.engineConfig,
+        app.identity.userId,
+        ownerId,
+        `[${app.identity.username}]`,
+      );
+      this.sessionFactory.onAbnormalTermination((message) => {
+        this.pendingCleanup = this.cleanup()
+          .then(() => this.sessionFactory.terminate())
+          .then(() => {
+            this.setStatus('error', message);
+          })
+          .finally(() => {
+            this.pendingCleanup = undefined;
+          });
+      });
+
+      await this._sessionFactory.init();
+      const agentInfo = this._sessionFactory.getAgentInfo();
+      if (agentInfo) {
+        this.listener.onAgentInfo(agentInfo);
+        this.reportAgentInfoToBackend(agentInfo);
+      }
+
       this.wireCapabilityHandlers(app);
+
+      await this.sendGreeting();
+
       log.info(`${this.logTag} Agent running`);
       this.setStatus('running');
     } catch (err: unknown) {
       const wasAborted = abortController.signal.aborted;
       await this.cleanup();
-      await this.onStopped();
+      await this._sessionFactory?.terminate();
 
       if (wasAborted) {
         log.info(`${this.logTag} Start aborted`);
@@ -317,11 +354,42 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
   }
 
+  private async sendGreeting() {
+    const ownerDmConversationId = await this.getOwnerDmOrThrow();
+    this._ownerDmConversationId = ownerDmConversationId;
+    log.debug(`${this.logTag} Owner DM conversation: ${ownerDmConversationId}`);
+
+    this.setStatus('greeting');
+    const slot = this.getOrCreateConversationSlot(ownerDmConversationId);
+    const session = await slot.sessionPromise;
+
+    log.debug(`${this.logTag} [${session.correlationId}] Generating greeting for owner...`);
+
+    let greeting: string | undefined;
+    try {
+      greeting = await collectAgentMessage(
+        session.prompt(this.promptManager.buildGreetingPrompt(session.promptFormatterVersion), ownerDmConversationId),
+      );
+    } catch (err: unknown) {
+      const message = extractErrorMessage(err);
+      log.error(`${this.logTag} [${session.correlationId}] Greeting prompt failed: ${message}`);
+      throw new Error(`ACP agent connection test failed: ${message}`);
+    }
+
+    if (!greeting || greeting.trim().length === 0) {
+      log.error(`${this.logTag} [${session.correlationId}] Agent returned empty greeting`);
+      throw new Error('ACP agent test failed: agent returned an empty response');
+    }
+
+    await this.app.sendMessage(ownerDmConversationId, greeting.trim());
+    log.info(`${this.logTag} [${session.correlationId}] Greeting sent to owner`);
+  }
+
   async stop(): Promise<void> {
     log.info(`${this.logTag} Stopping agent`);
     this.setStatus('stopping');
     await this.cleanup();
-    await this.onStopped();
+    await this._sessionFactory?.terminate();
     this.setStatus('stopped');
     log.info(`${this.logTag} Agent stopped`);
   }
@@ -399,6 +467,20 @@ export abstract class BaseAgentInstance implements AgentInstance {
       throw new Error('Missing dmOwnerConversationId.');
     }
     return this._ownerDmConversationId;
+  }
+
+  get sessionFactory(): SessionFactory {
+    if (!this._sessionFactory) {
+      throw new Error('Missing sessionFactory.');
+    }
+    return this._sessionFactory;
+  }
+
+  get mcpSocketPath(): string {
+    if (typeof this._mcpSocketPath !== 'string') {
+      throw new Error('Missing mcpSocketPath.');
+    }
+    return this._mcpSocketPath;
   }
 
   // ---------------------------------------------------------------------------
@@ -575,6 +657,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
       log.debug(`${this.logTag} Wired externalReferenceId ${type}:${externalReferenceId} to pending MCP server`);
     }
 
+    await this.provideContext(session);
+
     // Wire status listener
     session.onStatus((status, conversationId) => {
       if (conversationId) {
@@ -605,7 +689,13 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   private async createSessionWithErrorHandling(type: SessionType, externalReferenceId: string): Promise<AgentSession> {
     try {
-      const session = await this.createSession(type, externalReferenceId);
+      const session = await this.sessionFactory.createSession({
+        type,
+        externalReferenceId,
+        promptFormatterVersion: this.promptManager.defaultVersion,
+        mcpSocketPath: this.mcpSocketPath,
+        skipToken: this.promptManager.skipToken(this.promptManager.defaultVersion),
+      });
       return session;
     } catch (err) {
       if (this.pendingMcpServer) {
@@ -616,31 +706,73 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
   }
 
-  /** Get or create a session for a conversation. Used by subclasses (e.g., greeting). */
-  protected async getOrCreateConversationSession(conversationId: string): Promise<AgentSession> {
-    const slot = this.getOrCreateConversationSlot(conversationId);
-    return slot.sessionPromise;
+  private async provideContext(session: AgentSession): Promise<void> {
+    log.info(`${this.logTag} Preparing memory`);
+    const instruction = this.promptManager.buildNewioInstruction(session.promptFormatterVersion);
+
+    // Load memory for conversation sessions
+    const memory = await this.loadMemoryForSession(
+      session.type === 'conversation' ? session.externalReferenceId : undefined,
+    );
+    let handoffNote: string | null = null;
+    if (session.type === 'conversation') {
+      handoffNote = await this.loadHandoffNote(session.externalReferenceId);
+    }
+
+    const memoryContext = this.promptManager.formatMemoryContext(instruction.version, memory, handoffNote ?? undefined);
+    const fullInstruction = memoryContext ? `${instruction.prompt}\n\n${memoryContext}` : instruction.prompt;
+
+    await collectAgentMessage(session.prompt(fullInstruction));
   }
 
-  // ---------------------------------------------------------------------------
-  // Abstract — subclass hooks
-  // ---------------------------------------------------------------------------
+  private async loadMemoryForSession(conversationId?: string) {
+    const agentId = this.app.identity.userId;
 
-  /** Create a new agent-type-specific session. */
-  protected abstract createSession(type: SessionType, externalReferenceId: string): Promise<AgentSession>;
+    let participantIds: string[] | undefined = undefined;
+    if (typeof conversationId === 'string') {
+      const conv = this.app.store.getConversation(conversationId);
+      const members = this.app.store.getMembers(conversationId);
+      // For DMs, load full memory for the other participant
+      participantIds = [];
+      if (conv?.type === 'dm' && members) {
+        for (const [userId] of members) {
+          if (userId !== agentId) {
+            participantIds.push(userId);
+          }
+        }
+      }
+    }
 
-  /** Runtime agent info — available after initialization. */
-  abstract getAgentInfo(): AgentInfo | undefined;
+    return this.app.client.loadSessionMemory({ agentId, conversationId, participantIds });
+  }
 
-  /** Called after NewioApp is ready. Subclasses add agent-specific behavior (e.g., greeting). */
-  protected abstract onConnected(ownerDmConversationId: string): Promise<void> | void;
+  /** Load the handoff note for a conversation (graceful fallback if endpoint doesn't exist). */
+  private async loadHandoffNote(conversationId: string): Promise<string | null> {
+    try {
+      const result = await this.app.client.getHandoffNote({
+        agentId: this.app.identity.userId,
+        conversationId,
+      });
+      return result.text;
+    } catch {
+      // Endpoint may not exist yet — graceful fallback
+      return null;
+    }
+  }
 
-  /** Called during stop. Subclasses clean up agent-specific resources. */
-  protected abstract onStopped(): Promise<void> | void;
-
-  /** Called when a session is disposed (idle cleanup). Subclasses clean up session-specific resources. */
-  protected onSessionDisposed(_correlationId: string): void {
-    // Default no-op — subclasses override as needed
+  private reportAgentInfoToBackend(agentInfo: AgentInfo): void {
+    this.app.client
+      .reportAgentInfo({
+        agentProtocol: agentInfo.protocol,
+        agentVendor: agentInfo.agentName ?? this.config.type,
+        agentVendorVersion: agentInfo.agentVersion,
+        host: {
+          hostname: hostname(),
+          workingDirectory: this.config.acp?.cwd,
+        },
+      })
+      .then(() => log.info(`${this.logTag} Agent info reported`))
+      .catch((err: unknown) => log.warn(`${this.logTag} Failed to report agent info`, err));
   }
 
   // ---------------------------------------------------------------------------
@@ -1149,10 +1281,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
 
     slot.queue.close();
-    if (session.disposable) {
-      await session.dispose();
-    }
-    this.onSessionDisposed(session.correlationId);
+    await this.sessionFactory.endSession(session.correlationId);
     this.removeSlot(slot);
   }
 

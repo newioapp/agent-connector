@@ -41,8 +41,12 @@ export class PromptManager {
     this.defaultFormatter = defaultFormatter;
   }
 
-  buildNewioInstruction(customInstructions?: string): Instruction {
-    return this.defaultFormatter.buildNewioInstruction(customInstructions);
+  get defaultVersion(): string {
+    return this.defaultFormatter.version;
+  }
+
+  buildNewioInstruction(promptVersion: string, customInstructions?: string): Instruction {
+    return this.findCompatiblePromptFormatter(promptVersion).buildNewioInstruction(customInstructions);
   }
 
   buildGreetingPrompt(promptVersion: string): string {
@@ -62,8 +66,8 @@ export class PromptManager {
   }
 
   /** Returns true if the trimmed, lowercased text could still become the skip token for the given prompt version. */
-  isSkipPrefix(promptVersion: string, text: string): boolean {
-    return this.findCompatiblePromptFormatter(promptVersion).isSkipPrefix(text);
+  skipToken(promptVersion: string): string {
+    return this.findCompatiblePromptFormatter(promptVersion).skipToken;
   }
 
   /** Returns true if the trimmed, lowercased text is exactly the skip token for the given prompt version. */

@@ -326,33 +326,6 @@ describe('PromptFormatterImpl', () => {
     expect(pf.version).toBe('1.0.0');
   });
 
-  describe('isSkipPrefix', () => {
-    it('returns true for empty text', () => {
-      const pf = new PromptFormatterImpl(mockApp());
-      expect(pf.isSkipPrefix('')).toBe(true);
-    });
-
-    it('returns true for valid prefixes of _skip', () => {
-      const pf = new PromptFormatterImpl(mockApp());
-      expect(pf.isSkipPrefix('_')).toBe(true);
-      expect(pf.isSkipPrefix('_s')).toBe(true);
-      expect(pf.isSkipPrefix('_ski')).toBe(true);
-      expect(pf.isSkipPrefix('_skip')).toBe(true);
-    });
-
-    it('returns false for non-matching text', () => {
-      const pf = new PromptFormatterImpl(mockApp());
-      expect(pf.isSkipPrefix('hello')).toBe(false);
-      expect(pf.isSkipPrefix('_something')).toBe(false);
-    });
-
-    it('is case-insensitive', () => {
-      const pf = new PromptFormatterImpl(mockApp());
-      expect(pf.isSkipPrefix('_SKIP')).toBe(true);
-      expect(pf.isSkipPrefix('_Skip')).toBe(true);
-    });
-  });
-
   describe('isSkip', () => {
     it('returns true for exact _skip', () => {
       const pf = new PromptFormatterImpl(mockApp());

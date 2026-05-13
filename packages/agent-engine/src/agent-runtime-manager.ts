@@ -9,8 +9,8 @@ import type { CronStore } from './cron-store';
 import type { EngineConfig } from './engine-config';
 import type { AgentRuntimeStatus, AgentInfo } from './types';
 import type { AgentInstance } from './agent-instance';
-import { AcpAgentInstance } from './acp-agent-instance';
 import { getLogger } from '@newio/agent-sdk';
+import { AgentInstanceImpl } from './agent-instance-impl';
 
 const log = getLogger('agent-runtime-manager');
 
@@ -90,7 +90,7 @@ export class AgentRuntimeManager {
       },
     };
 
-    const instance = new AcpAgentInstance(
+    const instance = new AgentInstanceImpl(
       config,
       this.configManager,
       this.cronStore,

@@ -25,10 +25,6 @@ function mockFormatter(version: string): PromptFormatter {
   return {
     version,
     skipToken: '_skip',
-    isSkipPrefix: vi.fn().mockImplementation((text: string) => {
-      const lower = text.toLowerCase();
-      return lower.length === 0 || '_skip'.startsWith(lower);
-    }),
     isSkip: vi.fn().mockImplementation((text: string) => text.trim().toLowerCase() === '_skip'),
     buildNewioInstruction: vi.fn().mockReturnValue({ prompt: `instruction-${version}`, version }),
     buildGreetingPrompt: vi.fn().mockReturnValue(`greeting-${version}`),
@@ -88,13 +84,33 @@ describe('PromptManager', () => {
     });
   });
 
-  describe('delegation', () => {
-    it('buildNewioInstruction uses default formatter', () => {
+  describe('defaultVersion', () => {
+    it('returns the default formatter version', () => {
       const v1 = mockFormatter('1.0.0');
-      const pm = new PromptManager([v1], v1);
-      const result = pm.buildNewioInstruction('custom');
+      const v2 = mockFormatter('2.0.0');
+      const pm = new PromptManager([v1, v2], v2);
+      expect(pm.defaultVersion).toBe('2.0.0');
+    });
+  });
+
+  describe('delegation', () => {
+    it('buildNewioInstruction dispatches by version', () => {
+      const v1 = mockFormatter('1.0.0');
+      const v2 = mockFormatter('2.0.0');
+      const pm = new PromptManager([v1, v2], v2);
+      const result = pm.buildNewioInstruction('1.0.0', 'custom');
       expect(v1.buildNewioInstruction).toHaveBeenCalledWith('custom');
+      expect(v2.buildNewioInstruction).not.toHaveBeenCalled();
       expect(result.version).toBe('1.0.0');
+    });
+
+    it('buildNewioInstruction uses matching formatter not just default', () => {
+      const v1 = mockFormatter('1.0.0');
+      const v2 = mockFormatter('2.0.0');
+      const pm = new PromptManager([v1, v2], v1);
+      pm.buildNewioInstruction('2.0.0');
+      expect(v2.buildNewioInstruction).toHaveBeenCalledWith(undefined);
+      expect(v1.buildNewioInstruction).not.toHaveBeenCalled();
     });
 
     it('buildGreetingPrompt dispatches by version', () => {
@@ -136,13 +152,13 @@ describe('PromptManager', () => {
       expect(v1.formatCronPrompt).toHaveBeenCalledWith(job);
     });
 
-    it('isSkipPrefix dispatches by version', () => {
+    it('skipToken returns the skip token for the given version', () => {
       const v1 = mockFormatter('1.0.0');
       const v2 = mockFormatter('2.0.0');
+      (v2 as { skipToken: string }).skipToken = '_noreply';
       const pm = new PromptManager([v1, v2], v2);
-      pm.isSkipPrefix('1.0.0', '_s');
-      expect(v1.isSkipPrefix).toHaveBeenCalledWith('_s');
-      expect(v2.isSkipPrefix).not.toHaveBeenCalled();
+      expect(pm.skipToken('1.0.0')).toBe('_skip');
+      expect(pm.skipToken('2.0.0')).toBe('_noreply');
     });
 
     it('isSkip dispatches by version', () => {
