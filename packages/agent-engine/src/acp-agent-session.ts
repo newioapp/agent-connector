@@ -41,7 +41,7 @@ export interface AcpAgentSessionInit {
   readonly sessionResponse: NewSessionResponse | LoadSessionResponse;
   readonly disposable: boolean;
   readonly username?: string;
-  /** Check whether text could still become the skip token. */
+  /** The token the agent uses to indicate "no reply needed". */
   readonly skipToken: string;
 }
 

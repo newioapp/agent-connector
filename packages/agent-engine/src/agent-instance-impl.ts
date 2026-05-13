@@ -76,7 +76,7 @@ export class AgentInstanceImpl implements AgentInstance {
   error?: string;
 
   /** Log prefix including the agent's username when available. */
-  protected get logTag(): string {
+  private get logTag(): string {
     const u = this.config.newio?.username;
     return u ? `[${u}]` : '';
   }
@@ -86,7 +86,7 @@ export class AgentInstanceImpl implements AgentInstance {
   private _ownerDmConversationId?: string;
   private _sessionFactory?: SessionFactory;
   /** Socket path for the MCP UDS server. Set after auth in start(). */
-  protected _mcpSocketPath?: string;
+  private _mcpSocketPath?: string;
 
   /** conversationId → session slot for conversation sessions. */
   private readonly conversationSlots = new Map<string, SessionSlot>();
@@ -104,17 +104,17 @@ export class AgentInstanceImpl implements AgentInstance {
   private abortController = new AbortController();
   private idleTimer?: ReturnType<typeof setInterval>;
   private cleaningUpIdleSessions = false;
-  protected pendingCleanup?: Promise<void>;
+  private pendingCleanup?: Promise<void>;
   private udsServer?: Server;
   /** Most recently created MCP server awaiting a sessionId to be wired. */
   private pendingMcpServer?: NewioMcpServer;
 
   constructor(
-    protected readonly config: AgentConfig,
-    protected readonly configManager: AgentConfigManager,
-    protected readonly cronStore: CronStore,
-    protected readonly listener: AgentInstanceListener,
-    protected readonly engineConfig: EngineConfig,
+    private readonly config: AgentConfig,
+    private readonly configManager: AgentConfigManager,
+    private readonly cronStore: CronStore,
+    private readonly listener: AgentInstanceListener,
+    private readonly engineConfig: EngineConfig,
   ) {}
 
   getAgentInfo(): AgentInfo | undefined {
@@ -295,9 +295,9 @@ export class AgentInstanceImpl implements AgentInstance {
         ownerId,
         `[${app.identity.username}]`,
       );
-      this.sessionFactory.onAbnormalTermination((message) => {
+      this._sessionFactory.onAbnormalTermination((message) => {
         this.pendingCleanup = this.cleanup()
-          .then(() => this.sessionFactory.terminate())
+          .then(() => this._sessionFactory?.terminate())
           .then(() => {
             this.setStatus('error', message);
           })
@@ -395,7 +395,7 @@ export class AgentInstanceImpl implements AgentInstance {
   }
 
   /** Shared cleanup — tears down sessions, MCP server, WebSocket, and timers. */
-  protected async cleanup(): Promise<void> {
+  private async cleanup(): Promise<void> {
     this.abortController.abort();
 
     if (this.idleTimer) {
@@ -1289,14 +1289,14 @@ export class AgentInstanceImpl implements AgentInstance {
   // Internal
   // ---------------------------------------------------------------------------
 
-  protected setStatus(status: AgentRuntimeStatus, error?: string): void {
+  private setStatus(status: AgentRuntimeStatus, error?: string): void {
     this.status = status;
     this.error = error;
     this.listener.onStatusChanged(status, error);
   }
 
   /** Get the conversation flags for a conversation (defaults to all off). */
-  protected getConversationFlags(conversationId: string): ConversationFlags {
+  private getConversationFlags(conversationId: string): ConversationFlags {
     return this.conversationFlags.get(conversationId) ?? { showToolCalls: false, showThoughts: false };
   }
 }
