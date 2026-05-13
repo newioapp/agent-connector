@@ -643,7 +643,11 @@ export class AgentInstanceImpl implements AgentInstance {
   }
 
   /** Launch a session — always creates a fresh session, wire MCP and status hooks. */
-  private async launchSession(type: SessionType, externalReferenceId: string): Promise<AgentSession> {
+  private async launchSession(
+    type: SessionType,
+    externalReferenceId: string,
+    handoffNote?: string,
+  ): Promise<AgentSession> {
     if (this.abortController.signal.aborted) {
       throw new Error('Agent is stopping — session launch aborted');
     }
@@ -657,7 +661,7 @@ export class AgentInstanceImpl implements AgentInstance {
       log.debug(`${this.logTag} Wired externalReferenceId ${type}:${externalReferenceId} to pending MCP server`);
     }
 
-    await this.provideContext(session);
+    await this.provideContext(session, handoffNote);
 
     // Wire status listener
     session.onStatus((status, conversationId) => {
@@ -706,7 +710,7 @@ export class AgentInstanceImpl implements AgentInstance {
     }
   }
 
-  private async provideContext(session: AgentSession): Promise<void> {
+  private async provideContext(session: AgentSession, handoffNote?: string): Promise<void> {
     log.info(`${this.logTag} Preparing memory`);
     const instruction = this.promptManager.buildNewioInstruction(session.promptFormatterVersion);
 
@@ -714,12 +718,17 @@ export class AgentInstanceImpl implements AgentInstance {
     const memory = await this.loadMemoryForSession(
       session.type === 'conversation' ? session.externalReferenceId : undefined,
     );
-    let handoffNote: string | null = null;
-    if (session.type === 'conversation') {
-      handoffNote = await this.loadHandoffNote(session.externalReferenceId);
+    // Use provided handoff note (in-memory from rotation) or fetch from backend
+    let resolvedHandoff: string | null = handoffNote ?? null;
+    if (!resolvedHandoff && session.type === 'conversation') {
+      resolvedHandoff = await this.loadHandoffNote(session.externalReferenceId);
     }
 
-    const memoryContext = this.promptManager.formatMemoryContext(instruction.version, memory, handoffNote ?? undefined);
+    const memoryContext = this.promptManager.formatMemoryContext(
+      instruction.version,
+      memory,
+      resolvedHandoff ?? undefined,
+    );
     const fullInstruction = memoryContext ? `${instruction.prompt}\n\n${memoryContext}` : instruction.prompt;
 
     await collectAgentMessage(session.prompt(fullInstruction));
@@ -898,11 +907,14 @@ export class AgentInstanceImpl implements AgentInstance {
 
   /** Process events for a single session. Runs until the queue is closed. */
   private async runSessionLoop(slot: SessionSlot): Promise<void> {
-    const session = slot.session;
-    if (!session) {
-      return;
-    }
     for await (const event of slot.queue.events()) {
+      const session = slot.session;
+      if (!session) {
+        log.warn(
+          `${this.logTag} Session loop has no session for ${slot.type}:${slot.externalReferenceId}, skipping event`,
+        );
+        continue;
+      }
       slot.lastActivityAt = Date.now();
       slot.inFlight = event.type;
       try {
@@ -1230,14 +1242,71 @@ export class AgentInstanceImpl implements AgentInstance {
   // Session rotation & memory update
   // ---------------------------------------------------------------------------
 
-  /** Rotate a session: trigger session-end prompt, dispose, remove slot. */
+  /** Rotate a session in-place: run session-end prompt, end old session, launch new, assign to slot. */
   private async rotateSession(type: SessionType, externalReferenceId: string): Promise<void> {
-    log.info(`${this.logTag} Rotating session for ${type}:${externalReferenceId} due to context pressure`);
-    // Find the slot across all collections
+    log.info(`${this.logTag} Rotating session in-place for ${type}:${externalReferenceId}`);
     const slot = this.getSlot(type, externalReferenceId);
-    if (slot) {
-      await this.endSession(slot);
+    if (!slot?.session) {
+      return;
     }
+
+    const oldSession = slot.session;
+    let handoffNote: string | undefined;
+
+    // For conversation sessions, run session-end prompt to capture handoff
+    if (type === 'conversation') {
+      try {
+        const fullOutput = await collectAgentMessage(
+          oldSession.prompt(this.promptManager.buildSessionEndPrompt(oldSession.promptFormatterVersion)),
+        );
+        const handoffMatch = fullOutput?.match(/HANDOFF:\s*([\s\S]+)/i);
+        if (handoffMatch && handoffMatch[1]) {
+          handoffNote = handoffMatch[1].trim();
+          log.info(`${this.logTag} Captured handoff for ${type}:${externalReferenceId} (${handoffNote.length} chars)`);
+          // Persist to backend fire-and-forget (survives connector restarts)
+          this.app.client
+            .putHandoffNote({
+              agentId: this.app.identity.userId,
+              conversationId: externalReferenceId,
+              text: handoffNote,
+            })
+            .catch((err: unknown) => log.warn(`${this.logTag} Failed to persist handoff note`, err));
+        }
+      } catch (err: unknown) {
+        log.warn(`${this.logTag} Session-end prompt failed for ${type}:${externalReferenceId}`, err);
+      }
+    }
+
+    // End old session
+    slot.session = undefined;
+    await this.sessionFactory.endSession(oldSession.correlationId);
+
+    // Launch new session (serialized through launch queue) and assign to slot
+    try {
+      const newSession = await this.enqueueLaunchWithHandoff(type, externalReferenceId, handoffNote);
+      slot.session = newSession;
+      log.info(`${this.logTag} Session rotated: ${type}:${externalReferenceId} → ${newSession.correlationId}`);
+    } catch (err: unknown) {
+      log.error(`${this.logTag} Failed to launch replacement session for ${type}:${externalReferenceId}`, err);
+      slot.queue.close();
+      this.removeSlot(slot);
+    }
+  }
+
+  /** Enqueue a session launch with an in-memory handoff note (used during rotation). */
+  private enqueueLaunchWithHandoff(
+    type: SessionType,
+    externalReferenceId: string,
+    handoffNote?: string,
+  ): Promise<AgentSession> {
+    const launch = this.launchQueue.then(() => this.launchSession(type, externalReferenceId, handoffNote));
+    this.launchQueue = launch.then(
+      () => {},
+      (err: unknown) => {
+        log.error(`${this.logTag} Session launch failed for ${type} ${externalReferenceId}`, err);
+      },
+    );
+    return launch;
   }
 
   /**
@@ -1254,16 +1323,12 @@ export class AgentInstanceImpl implements AgentInstance {
 
     // For conversation sessions, run session-end prompt to capture handoff
     if (slot.type === 'conversation') {
-      const prompt = this.promptManager.buildSessionEndPrompt(session.promptFormatterVersion);
       try {
-        const parts: string[] = [];
-        for await (const segment of session.prompt(prompt)) {
-          if (segment.type === 'agent_message_chunk') {
-            parts.push(segment.text);
-          }
-        }
-        const fullOutput = parts.join('');
-        const handoffMatch = fullOutput.match(/HANDOFF:\s*([\s\S]+)/i);
+        const fullOutput = await collectAgentMessage(
+          session.prompt(this.promptManager.buildSessionEndPrompt(session.promptFormatterVersion)),
+        );
+
+        const handoffMatch = fullOutput?.match(/HANDOFF:\s*([\s\S]+)/i);
         if (handoffMatch && handoffMatch[1]) {
           const summary = handoffMatch[1].trim();
           await this.app.client.putHandoffNote({
