@@ -130,8 +130,13 @@ export async function runScenario(
 
   // Build mock app for prompt formatting
   const mockApp = new MockNewioApp({
-    identity: { userId: 'agent_eval', username: 'eval_agent', displayName: 'Eval Agent', ownerId: 'owner_eval' },
-    owner: { username: 'eval_owner', displayName: 'Eval Owner' },
+    identity: {
+      userId: '9c7547be-8e6e-435d-a3a5-f1e776719750',
+      username: 'evalagent',
+      displayName: 'Eval Agent',
+      ownerId: '54ec54aa-f1dc-4d73-930e-6be51d6c5b6a',
+    },
+    owner: { username: 'evalowner', displayName: 'Eval Owner' },
     contacts: scenario.setup.contacts?.map((c) => ({ username: c.username, displayName: c.displayName })),
     conversations: scenario.setup.conversations?.map((c) => ({
       conversationId: c.conversationId,
@@ -141,7 +146,10 @@ export async function runScenario(
   });
 
   // Build prompt manager with the requested version
-  const formatter = new PromptFormatterImpl(mockApp as never);
+  const formatter = new PromptFormatterImpl(
+    { username: mockApp.identity.username, displayName: mockApp.identity.displayName },
+    mockApp.getOwnerInfo(),
+  );
   const promptManager = new PromptManager([formatter], formatter);
 
   const toolInterceptor = new ToolInterceptor();

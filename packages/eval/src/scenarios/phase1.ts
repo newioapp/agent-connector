@@ -8,7 +8,7 @@ import type { EvalScenario, UserProfile, ConversationSetup } from '../types.js';
 // ---------------------------------------------------------------------------
 
 const owner: UserProfile = {
-  userId: 'user_owner',
+  userId: '54ec54aa-f1dc-4d73-930e-6be51d6c5b6a',
   username: 'myowner',
   displayName: 'My Owner',
   accountType: 'human',
@@ -16,7 +16,7 @@ const owner: UserProfile = {
 };
 
 const alice: UserProfile = {
-  userId: 'user_alice',
+  userId: '56d2583a-beb7-44f3-9150-cf855b0d8611',
   username: 'alice',
   displayName: 'Alice',
   accountType: 'human',
@@ -24,7 +24,7 @@ const alice: UserProfile = {
 };
 
 const bob: UserProfile = {
-  userId: 'user_bob',
+  userId: '8ce00bb6-5942-48ea-b776-0fe85eb4a702',
   username: 'bob',
   displayName: 'Bob',
   accountType: 'human',
@@ -32,14 +32,14 @@ const bob: UserProfile = {
 };
 
 const teamChat: ConversationSetup = {
-  conversationId: 'conv_team',
+  conversationId: '49c24f14-1884-49ea-ba1e-52b2e33c8ca4',
   type: 'group',
   name: 'Team Chat',
   members: [owner, alice, bob],
 };
 
 const workSession: ConversationSetup = {
-  conversationId: 'conv_work',
+  conversationId: '15d07748-d416-4e78-a056-1f844e19b65e',
   type: 'temp_group',
   name: 'Sprint Planning',
   members: [owner, alice],
@@ -157,7 +157,7 @@ export const skipBehaviorScenarios: readonly EvalScenario[] = [
         type: 'group_message',
         conversation: teamChat,
         from: alice,
-        text: '@eval_agent what is the status of the deploy?',
+        text: '@evalagent what is the status of the deploy?',
       },
     ],
     expectations: [{ type: 'no_skip', eventIndex: 0, description: 'Agent was @mentioned — must respond' }],
