@@ -228,6 +228,16 @@ describe('MCP Server', () => {
     expect(agent.initiateConversation).toHaveBeenCalledWith('conv-1', 'Tell them I will be late');
   });
 
+  it('send_message sends to conversation in shared mode', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app, 'shared');
+    await client.callTool({
+      name: 'send_message',
+      arguments: { conversationId: 'conv-1', text: 'check this', filePaths: ['/tmp/photo.jpg'] },
+    });
+    expect(app.sendMessage).toHaveBeenCalledWith('conv-1', 'check this', ['/tmp/photo.jpg']);
+  });
+
   it('dm_owner sends message to owner', async () => {
     const app = mockApp();
     const client = await createConnectedClient(app, 'shared');
