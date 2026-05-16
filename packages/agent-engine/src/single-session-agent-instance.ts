@@ -1,14 +1,11 @@
 /**
- * Base agent instance — shared auth, WebSocket, session routing, and lifecycle logic.
+ * Single-session agent instance — all events share one ACP session.
  *
- * Uses NewioApp for all Newio interactions. Manages multiple sessions per agent,
- * routing incoming events by type:
- * - Messages: routed by conversationId (one session per conversation)
- * - Contact events: routed to a dedicated contact session
- * - Cron triggers: routed by cronId (one session per cron job)
+ * Uses NewioApp for all Newio interactions. Routes all incoming events
+ * (messages, contacts, crons) into a single shared session that processes
+ * them serially. Context accumulates across conversations within the session.
  *
- * Each session processes its own event queue concurrently.
- * Subclasses implement session creation and greeting logic.
+ * Best for agents that need cross-conversation awareness (e.g. manager role).
  */
 import { ApprovalTimeoutError, ConnectionRejectedError, NewioApp, NotFoundApiError } from '@newio/agent-sdk';
 import type { IncomingMessage, ContactEvent, CronTriggerEvent, ActionOption, ActionRequest } from '@newio/agent-sdk';
@@ -69,7 +66,7 @@ interface SessionSlot {
 }
 
 const SESSION_TYPE = 'conversation';
-const EXTERNAL_REFERNCE_ID = 'externalReferenceId';
+const EXTERNAL_REFERENCE_ID = 'externalReferenceId';
 
 export class SingleSessionAgentInstance implements AgentInstance {
   status: AgentRuntimeStatus = 'stopped';
@@ -514,7 +511,7 @@ export class SingleSessionAgentInstance implements AgentInstance {
   // Session slot management
   // ---------------------------------------------------------------------------
 
-  /** Get or create the dedicated contact event session slot. */
+  /** Get or create the single shared session slot used for all events. */
   private getOrCreateSharedSessionSlot(): SessionSlot {
     if (this.sharedSessionSlot) {
       this.sharedSessionSlot.lastActivityAt = Date.now();
@@ -527,7 +524,7 @@ export class SingleSessionAgentInstance implements AgentInstance {
 
   /** Create a new session slot — shared logic for all slot types. */
   private createSlot(): SessionSlot {
-    const queue = new EventQueue(SESSION_TYPE, EXTERNAL_REFERNCE_ID);
+    const queue = new EventQueue(SESSION_TYPE, EXTERNAL_REFERENCE_ID);
     const sessionPromise = this.enqueueLaunch();
 
     const slot: SessionSlot = {
@@ -618,7 +615,7 @@ export class SingleSessionAgentInstance implements AgentInstance {
     try {
       const session = await this.sessionFactory.createSession({
         type: SESSION_TYPE,
-        externalReferenceId: EXTERNAL_REFERNCE_ID,
+        externalReferenceId: EXTERNAL_REFERENCE_ID,
         promptFormatterVersion: this.promptManager.defaultVersion,
         mcpSocketPath: this.mcpSocketPath,
         skipToken: this.promptManager.skipToken(this.promptManager.defaultVersion),
@@ -1271,7 +1268,7 @@ export class SingleSessionAgentInstance implements AgentInstance {
         this.app.client
           .putHandoffNote({
             agentId: this.app.identity.userId,
-            conversationId: EXTERNAL_REFERNCE_ID,
+            conversationId: EXTERNAL_REFERENCE_ID,
             text: handoffNote,
           })
           .catch((e: unknown) => log.warn(`${this.logTag} Failed to persist handoff note`, e));
@@ -1303,7 +1300,7 @@ export class SingleSessionAgentInstance implements AgentInstance {
         const summary = handoffMatch[1].trim();
         await this.app.client.putHandoffNote({
           agentId: this.app.identity.userId,
-          conversationId: EXTERNAL_REFERNCE_ID,
+          conversationId: EXTERNAL_REFERENCE_ID,
           text: summary,
         });
         log.info(`${this.logTag} Captured handoff shared session (${summary.length} chars)`);

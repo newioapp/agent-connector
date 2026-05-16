@@ -53,7 +53,7 @@ export class FileAgentConfigManager implements AgentConfigManager {
         ...(input.newioUsername ? { username: input.newioUsername } : {}),
       },
       envVars: input.envVars ?? {},
-      ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
+      ...(input.sessionMode !== undefined ? { sessionMode: input.sessionMode } : {}),
       ...(input.envVarsShell ? { envVarsShell: input.envVarsShell } : {}),
       ...(input.acp ? { acp: input.acp } : {}),
     };
