@@ -1,0 +1,170 @@
+/**
+ * CLI entry point for the agent eval framework.
+ *
+ * Usage:
+ *   pnpm eval -- --agent-type kiro-cli --model claude-sonnet-4-20250514
+ *   pnpm eval -- --area tool_usage
+ *   pnpm eval -- --scenario skip-dm-always-respond --runs 5
+ */
+import { program } from 'commander';
+import type { EvalConfig, EvalScenario, EvalArea, ScenarioRunResult, ScenarioAggregateResult } from './types.js';
+import type { AgentType, SessionMode } from '@newio/agent-engine';
+import { allPhase1Scenarios } from './scenarios/phase1.js';
+import { runScenario } from './runner.js';
+import type { RunnerDeps } from './runner.js';
+
+program
+  .name('newio-eval')
+  .description('Agent evaluation framework for Newio agent-engine')
+  .option('--agent-type <type>', 'Agent type (kiro-cli, claude-code, codex, gemini, cursor, custom)', 'kiro-cli')
+  .option('--model <model>', 'Model to configure on ACP session', 'claude-sonnet-4-20250514')
+  .option('--prompt-version <version>', 'Prompt formatter version', '1.0.0')
+  .option('--session-mode <mode>', 'Session mode (isolated, shared, both)', 'shared')
+  .option('--area <area>', 'Filter by evaluation area')
+  .option('--scenario <id>', 'Run a single scenario by ID')
+  .option('--runs <n>', 'Number of runs per scenario', '3')
+  .option('--cwd <dir>', 'Working directory for the ACP agent', process.cwd())
+  .option('--executable <path>', 'Path to ACP executable (overrides agent-type default)')
+  .option('--timeout <ms>', 'Timeout per prompt in ms', '120000')
+  .parse();
+
+const opts = program.opts<{
+  agentType: string;
+  model: string;
+  promptVersion: string;
+  sessionMode: string;
+  area?: string;
+  scenario?: string;
+  runs: string;
+  cwd: string;
+  executable?: string;
+  timeout: string;
+}>();
+
+function main(): void {
+  const config: EvalConfig = {
+    agentType: opts.agentType as AgentType,
+    acp: { cwd: opts.cwd, executablePath: opts.executable },
+    model: opts.model,
+    promptVersion: opts.promptVersion,
+    sessionMode: opts.sessionMode as SessionMode | 'both',
+    judgeModel: process.env['EVAL_JUDGE_MODEL'] ?? 'claude-sonnet-4-20250514',
+    judgeApiKeyEnvVar: 'ANTHROPIC_API_KEY',
+    runsPerScenario: parseInt(opts.runs, 10),
+    area: opts.area as EvalArea | undefined,
+    scenarioId: opts.scenario,
+  };
+
+  // Filter scenarios
+  let scenarios: readonly EvalScenario[] = allPhase1Scenarios;
+  if (config.scenarioId) {
+    scenarios = scenarios.filter((s) => s.id === config.scenarioId);
+  }
+  if (config.area) {
+    scenarios = scenarios.filter((s) => s.area === config.area);
+  }
+  if (config.sessionMode !== 'both') {
+    scenarios = scenarios.filter((s) => s.sessionMode === 'both' || s.sessionMode === config.sessionMode);
+  }
+
+  if (scenarios.length === 0) {
+    console.error('No scenarios match the given filters.');
+    process.exit(1);
+  }
+
+  console.log(`\n🧪 Newio Agent Eval`);
+  console.log(`   Agent: ${config.agentType} | Model: ${config.model} | Prompt: v${config.promptVersion}`);
+  console.log(`   Scenarios: ${scenarios.length} | Runs per scenario: ${config.runsPerScenario}`);
+  console.log(`   Session mode: ${config.sessionMode}\n`);
+
+  // NOTE: Full integration requires a running ACP agent.
+  // For now, print the scenario plan and exit with instructions.
+  console.log('📋 Scenarios to run:\n');
+  for (const s of scenarios) {
+    console.log(`   [${s.area}] ${s.id}`);
+    console.log(`     ${s.description}\n`);
+  }
+
+  console.log('─'.repeat(60));
+  console.log('\n⚠️  Full execution requires an ACP agent process.');
+  console.log('   To run scenarios end-to-end, provide RunnerDeps with a real SessionFactory.');
+  console.log('   See DESIGN.md for integration details.\n');
+
+  // TODO: When ready for full execution, wire up AcpSessionFactory here:
+  // const deps = await createRunnerDeps(config);
+  // const results = await runAllScenarios(scenarios, config, deps);
+  // printReport(results);
+}
+
+// ---------------------------------------------------------------------------
+// Report formatting (used once full execution is wired)
+// ---------------------------------------------------------------------------
+
+export function printReport(aggregates: readonly ScenarioAggregateResult[]): void {
+  console.log('\n' + '═'.repeat(60));
+  console.log(' EVAL RESULTS');
+  console.log('═'.repeat(60) + '\n');
+
+  let totalPassed = 0;
+  let totalFailed = 0;
+
+  for (const agg of aggregates) {
+    const icon = agg.passRate === 1 ? '✅' : agg.passRate > 0 ? '⚠️' : '❌';
+    const pct = (agg.passRate * 100).toFixed(0);
+    console.log(`${icon} ${agg.scenarioId} — ${pct}% pass (${agg.runs.length} runs)`);
+
+    if (agg.passRate < 1) {
+      for (const run of agg.runs) {
+        const failed = run.assertions.filter((a) => !a.passed);
+        for (const f of failed) {
+          console.log(`     ❌ ${f.reason}`);
+        }
+      }
+    }
+
+    if (agg.passRate === 1) {
+      totalPassed++;
+    } else {
+      totalFailed++;
+    }
+  }
+
+  console.log('\n' + '─'.repeat(60));
+  console.log(` ✅ ${totalPassed} passed | ❌ ${totalFailed} failed | Total: ${aggregates.length}`);
+  console.log('─'.repeat(60) + '\n');
+}
+
+/** Run all scenarios with multiple runs, aggregate results. */
+export async function runAllScenarios(
+  scenarios: readonly EvalScenario[],
+  config: EvalConfig,
+  deps: RunnerDeps,
+): Promise<readonly ScenarioAggregateResult[]> {
+  const aggregates: ScenarioAggregateResult[] = [];
+
+  for (const scenario of scenarios) {
+    const runs: ScenarioRunResult[] = [];
+    console.log(`\n  Running: ${scenario.id}...`);
+
+    for (let i = 0; i < config.runsPerScenario; i++) {
+      const result = await runScenario(scenario, config, deps, i);
+      runs.push(result);
+      const icon = result.passed ? '✓' : '✗';
+      process.stdout.write(`  ${icon}`);
+    }
+    console.log();
+
+    const passRate = runs.filter((r) => r.passed).length / runs.length;
+    aggregates.push({
+      scenarioId: scenario.id,
+      scenarioName: scenario.name,
+      area: scenario.area,
+      runs,
+      passRate,
+    });
+  }
+
+  return aggregates;
+}
+
+main();

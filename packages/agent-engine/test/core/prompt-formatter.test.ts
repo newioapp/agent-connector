@@ -1,6 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { PromptFormatterImpl } from '../../src/prompt-formatter';
-import type { IncomingMessage, ContactEvent, CronTriggerEvent, NewioApp } from '@newio/agent-sdk';
+import type { PromptFormatterIdentity, PromptFormatterOwner } from '../../src/prompt-formatter';
+import type { IncomingMessage, ContactEvent, CronTriggerEvent } from '@newio/agent-sdk';
 
 function makeMsg(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
   return {
@@ -20,24 +21,25 @@ function makeMsg(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
   };
 }
 
-function mockApp(overrides: Partial<NewioApp> = {}): NewioApp {
-  return {
-    identity: { userId: 'agent-1', username: 'myagent', displayName: 'My Agent', ownerId: 'owner-1' },
-    getOwnerInfo: vi.fn().mockReturnValue({ username: 'nan', displayName: 'Nan' }),
-    getContact: vi.fn().mockReturnValue(undefined),
-    ...overrides,
-  } as unknown as NewioApp;
+const defaultIdentity: PromptFormatterIdentity = { username: 'myagent', displayName: 'My Agent' };
+const defaultOwner: PromptFormatterOwner = { username: 'nan', displayName: 'Nan' };
+
+function mockApp(
+  identity: PromptFormatterIdentity = defaultIdentity,
+  owner: PromptFormatterOwner = defaultOwner,
+): PromptFormatterImpl {
+  return new PromptFormatterImpl(identity, owner);
 }
 
 describe('PromptFormatterImpl', () => {
   describe('formatMessagePrompt', () => {
     it('returns empty string for empty array', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       expect(pf.formatMessagePrompt([])).toBe('');
     });
 
     it('formats a single DM message', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       const result = pf.formatMessagePrompt([makeMsg()]);
       expect(result).toContain('conversationId: conv-1');
       expect(result).toContain('type: dm');
@@ -50,7 +52,7 @@ describe('PromptFormatterImpl', () => {
     });
 
     it('batches multiple DM messages from same sender', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       const result = pf.formatMessagePrompt([
         makeMsg({ text: 'first' }),
         makeMsg({ text: 'second', messageId: 'msg-2' }),
@@ -62,7 +64,7 @@ describe('PromptFormatterImpl', () => {
     });
 
     it('formats group messages with per-message sender', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       const result = pf.formatMessagePrompt([
         makeMsg({ conversationType: 'group', groupName: 'Team Chat', text: 'hi' }),
         makeMsg({
@@ -81,14 +83,14 @@ describe('PromptFormatterImpl', () => {
     });
 
     it('formats temp_group as group type', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       const result = pf.formatMessagePrompt([makeMsg({ conversationType: 'temp_group', groupName: 'Sprint' })]);
       expect(result).toContain('type: group');
       expect(result).toContain('groupName: Sprint');
     });
 
     it('uses fallback for missing sender info', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       const result = pf.formatMessagePrompt([
         makeMsg({ senderUsername: undefined, senderDisplayName: undefined, senderAccountType: undefined }),
       ]);
@@ -98,7 +100,7 @@ describe('PromptFormatterImpl', () => {
     });
 
     it('uses fallback for missing group name', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       const result = pf.formatMessagePrompt([makeMsg({ conversationType: 'group', groupName: undefined })]);
       expect(result).toContain('groupName: Unnamed Group');
     });
@@ -106,12 +108,12 @@ describe('PromptFormatterImpl', () => {
 
   describe('formatContactPrompt', () => {
     it('returns empty string for empty array', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       expect(pf.formatContactPrompt([])).toBe('');
     });
 
     it('formats a single friend request received event', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       const event: ContactEvent = {
         type: 'contact.request_received',
         username: 'alice',
@@ -131,7 +133,7 @@ describe('PromptFormatterImpl', () => {
     });
 
     it('formats multiple contact events in one batch', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       const events: ContactEvent[] = [
         {
           type: 'contact.request_received',
@@ -160,7 +162,7 @@ describe('PromptFormatterImpl', () => {
     });
 
     it('includes owner info for agent contacts', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       const event: ContactEvent = {
         type: 'contact.request_accepted',
         username: 'helper_bot',
@@ -176,7 +178,7 @@ describe('PromptFormatterImpl', () => {
     });
 
     it('omits owner info for human contacts', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       const event: ContactEvent = {
         type: 'contact.removed',
         username: 'alice',
@@ -190,7 +192,7 @@ describe('PromptFormatterImpl', () => {
     });
 
     it('uses fallback for missing username/displayName', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       const event: ContactEvent = {
         type: 'contact.request_rejected',
         username: undefined,
@@ -206,7 +208,7 @@ describe('PromptFormatterImpl', () => {
 
   describe('formatCronPrompt', () => {
     it('formats a cron trigger event', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       const job: CronTriggerEvent = {
         cronId: 'cron_abc123',
         label: 'Send daily standup reminder',
@@ -220,7 +222,7 @@ describe('PromptFormatterImpl', () => {
     });
 
     it('includes payload when present', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       const job: CronTriggerEvent = {
         cronId: 'cron_xyz',
         label: 'Check deadlines',
@@ -232,7 +234,7 @@ describe('PromptFormatterImpl', () => {
     });
 
     it('omits payload when undefined', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       const job: CronTriggerEvent = {
         cronId: 'cron_xyz',
         label: 'Simple task',
@@ -245,7 +247,7 @@ describe('PromptFormatterImpl', () => {
 
   describe('buildNewioInstruction', () => {
     it('includes agent identity and returns version', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       const result = pf.buildNewioInstruction();
       expect(result.prompt).toContain('"myagent"');
       expect(result.prompt).toContain('"My Agent"');
@@ -253,29 +255,19 @@ describe('PromptFormatterImpl', () => {
     });
 
     it('includes owner info', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       const result = pf.buildNewioInstruction();
       expect(result.prompt).toContain('Your owner is "Nan" (username: nan)');
     });
 
-    it('throws when owner not in contacts', () => {
-      const app = mockApp({
-        getOwnerInfo: vi.fn().mockImplementation(() => {
-          throw new Error('Owner not found in contacts');
-        }),
-      } as unknown as Partial<NewioApp>);
-      const pf = new PromptFormatterImpl(app);
-      expect(() => pf.buildNewioInstruction()).toThrow('Owner not found in contacts');
-    });
-
     it('appends custom instructions', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       const result = pf.buildNewioInstruction('Always respond in French.');
       expect(result.prompt).toContain('Always respond in French.');
     });
 
     it('includes YAML examples and response rules', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       const result = pf.buildNewioInstruction();
       expect(result.prompt).toContain('DM example:');
       expect(result.prompt).toContain('Group example:');
@@ -284,7 +276,7 @@ describe('PromptFormatterImpl', () => {
     });
 
     it('includes contact event instructions', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       const result = pf.buildNewioInstruction();
       expect(result.prompt).toContain('Contact events:');
       expect(result.prompt).toContain('contact.request_received');
@@ -293,7 +285,7 @@ describe('PromptFormatterImpl', () => {
     });
 
     it('includes cron trigger instructions', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       const result = pf.buildNewioInstruction();
       expect(result.prompt).toContain('Cron triggers:');
       expect(result.prompt).toContain('schedule_cron');
@@ -304,38 +296,28 @@ describe('PromptFormatterImpl', () => {
 
   describe('buildGreetingPrompt', () => {
     it('includes owner name', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       const result = pf.buildGreetingPrompt();
       expect(result).toContain('Nan');
       expect(result).toContain('greeting');
     });
-
-    it('throws when owner info unavailable', () => {
-      const app = mockApp({
-        getOwnerInfo: vi.fn().mockImplementation(() => {
-          throw new Error('Owner not found in contacts');
-        }),
-      } as unknown as Partial<NewioApp>);
-      const pf = new PromptFormatterImpl(app);
-      expect(() => pf.buildGreetingPrompt()).toThrow('Owner not found in contacts');
-    });
   });
 
   it('has version 1.0.0', () => {
-    const pf = new PromptFormatterImpl(mockApp());
+    const pf = mockApp();
     expect(pf.version).toBe('1.0.0');
   });
 
   describe('isSkip', () => {
     it('returns true for exact _skip', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       expect(pf.isSkip('_skip')).toBe(true);
       expect(pf.isSkip('  _skip  ')).toBe(true);
       expect(pf.isSkip('_SKIP')).toBe(true);
     });
 
     it('returns false for non-skip text', () => {
-      const pf = new PromptFormatterImpl(mockApp());
+      const pf = mockApp();
       expect(pf.isSkip('hello')).toBe(false);
       expect(pf.isSkip('_ski')).toBe(false);
       expect(pf.isSkip('')).toBe(false);

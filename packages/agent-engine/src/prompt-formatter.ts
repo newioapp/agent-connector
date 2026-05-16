@@ -5,17 +5,23 @@
  * The {@link PromptManager} selects a compatible formatter based on the
  * major version stored with each session.
  */
-import type {
-  IncomingMessage,
-  ContactEvent,
-  CronTriggerEvent,
-  NewioApp,
-  LoadSessionMemoryResponse,
-} from '@newio/agent-sdk';
+import type { IncomingMessage, ContactEvent, CronTriggerEvent, LoadSessionMemoryResponse } from '@newio/agent-sdk';
 
 export interface Instruction {
   readonly prompt: string;
   readonly version: string;
+}
+
+/** Minimal identity info needed by the prompt formatter. */
+export interface PromptFormatterIdentity {
+  readonly username: string;
+  readonly displayName?: string;
+}
+
+/** Minimal owner info needed by the prompt formatter. */
+export interface PromptFormatterOwner {
+  readonly username: string;
+  readonly displayName: string;
 }
 
 export interface PromptFormatter {
@@ -40,12 +46,14 @@ export interface PromptFormatter {
 }
 
 export class PromptFormatterImpl implements PromptFormatter {
-  private readonly app: NewioApp;
+  private readonly identity: PromptFormatterIdentity;
+  private readonly owner: PromptFormatterOwner;
   readonly version: string = '1.0.0';
   readonly skipToken: string = '_skip';
 
-  constructor(app: NewioApp) {
-    this.app = app;
+  constructor(identity: PromptFormatterIdentity, owner: PromptFormatterOwner) {
+    this.identity = identity;
+    this.owner = owner;
   }
 
   isSkip(text: string): boolean {
@@ -53,7 +61,7 @@ export class PromptFormatterImpl implements PromptFormatter {
   }
 
   buildNewioInstruction(customInstructions?: string): Instruction {
-    const { username, displayName } = this.app.identity;
+    const { username, displayName } = this.identity;
 
     const parts: string[] = [];
 
@@ -61,7 +69,7 @@ export class PromptFormatterImpl implements PromptFormatter {
       `You are an AI agent on a messaging platform. Your username is "${username}"${displayName ? ` and your display name is "${displayName}"` : ''}. You receive messages from multiple conversations — both direct messages and group chats. Each message batch you receive is from a single conversation.`,
     );
 
-    const ownerInfo = this.app.getOwnerInfo();
+    const ownerInfo = this.owner;
     parts.push(
       `Your owner is "${ownerInfo.displayName}" (username: ${ownerInfo.username}). Treat messages from your owner with priority.`,
     );
@@ -173,7 +181,7 @@ Cron trigger example:
   }
 
   buildGreetingPrompt() {
-    const ownerName = this.app.getOwnerInfo().displayName;
+    const ownerName = this.owner.displayName;
     const prompt =
       `Context: You are running as an ACP (Agent Client Protocol) agent inside the Agent Connector. ` +
       `The connector has already handled authentication and connected you to the Newio messaging platform on your behalf — you do not need to do anything to connect. ` +

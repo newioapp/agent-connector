@@ -1,0 +1,43 @@
+{
+  "name": "@newio/eval",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agent evaluation framework for Newio agent-engine",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "newio-eval": "./dist/cli.js"
+  },
+  "engines": {
+    "node": ">=20.19.4"
+  },
+  "scripts": {
+    "build": "tsup",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "eval": "tsx src/cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@newio/agent-engine": "workspace:*",
+    "@newio/agent-sdk": "workspace:*",
+    "commander": "^12.1.0",
+    "yaml": "^2.8.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.15",
+    "tsup": "^8.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.3"
+  }
+}

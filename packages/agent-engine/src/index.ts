@@ -52,7 +52,12 @@ export type { AgentEvent, OwnerOpType, OwnerOpResult } from './event-queue.js';
 // Prompt system
 export { PromptManager, UnsupportedPromptFormatterVersion } from './prompt-manager.js';
 export { PromptFormatterImpl } from './prompt-formatter.js';
-export type { PromptFormatter, Instruction } from './prompt-formatter.js';
+export type {
+  PromptFormatter,
+  Instruction,
+  PromptFormatterIdentity,
+  PromptFormatterOwner,
+} from './prompt-formatter.js';
 
 // MCP server
 export { NewioMcpServer, startUdsServer } from './mcp/index.js';
