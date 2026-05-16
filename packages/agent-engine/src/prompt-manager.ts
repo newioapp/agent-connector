@@ -91,6 +91,10 @@ export class PromptManager {
     return this.findCompatiblePromptFormatter(promptVersion).buildSessionEndPrompt();
   }
 
+  buildInitiateConversationPrompt(promptVersion: string, context: string): string {
+    return this.findCompatiblePromptFormatter(promptVersion).buildInitiateConversationPrompt(context);
+  }
+
   /** Find a formatter whose major version matches the requested version. */
   private findCompatiblePromptFormatter(version: string): PromptFormatter {
     const formatter = this.formatterByMajor.get(parseMajor(version));

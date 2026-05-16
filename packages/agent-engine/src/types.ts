@@ -210,3 +210,12 @@ export function extractErrorMessage(err: unknown): string {
   }
   return String(err);
 }
+
+/**
+ * Session mode controls which messaging tools are available:
+ * - 'isolated': One session per conversation. Uses `initiate_conversation` for cross-conversation
+ *   delegation. `send_dm` and `dm_owner` are blocked.
+ * - 'shared': Single session serves all conversations. Uses `send_dm` and `dm_owner` directly.
+ *   `initiate_conversation` is not available.
+ */
+export type SessionMode = 'isolated' | 'shared';

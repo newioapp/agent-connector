@@ -34,6 +34,7 @@ export type AgentEvent =
   | { readonly type: 'messages'; readonly conversationId: string; readonly messages: readonly IncomingMessage[] }
   | { readonly type: 'contact'; readonly events: readonly ContactEvent[] }
   | { readonly type: 'cron'; readonly job: CronTriggerEvent }
+  | { readonly type: 'initiate_conversation'; readonly conversationId: string; readonly context: string }
   | { readonly type: 'compact_session'; readonly callbacks: readonly OwnerOpCallback[] }
   | { readonly type: 'update_memory'; readonly callbacks: readonly OwnerOpCallback[] }
   | {
@@ -46,6 +47,17 @@ export type AgentEvent =
 /** Sentinel value used to signal the consumer to stop. */
 const CLOSED = Symbol('closed');
 
+interface InitiateConversation {
+  readonly __tag: 'initiate_conversation';
+  readonly conversationId: string;
+  readonly context: string;
+}
+
+interface CronPendingKey {
+  readonly __tag: 'cron';
+  readonly job: CronTriggerEvent;
+}
+
 /** Pending key types in the FIFO array. */
 type PendingKey =
   | `conv:${string}`
@@ -53,7 +65,8 @@ type PendingKey =
   | 'compact_session'
   | 'update_memory'
   | 'rotate_session'
-  | CronTriggerEvent;
+  | CronPendingKey
+  | InitiateConversation;
 
 export class EventQueue {
   /** Pending message batches keyed by conversationId. */
@@ -107,7 +120,15 @@ export class EventQueue {
     if (this.closed) {
       return;
     }
-    this.pending.push(job);
+    this.pending.push({ __tag: 'cron', job });
+    this.wake();
+  }
+
+  enqueueInitiatingConversation(conversationId: string, context: string): void {
+    if (this.closed) {
+      return;
+    }
+    this.pending.push({ __tag: 'initiate_conversation', conversationId, context });
     this.wake();
   }
 
@@ -192,9 +213,13 @@ export class EventQueue {
         continue;
       }
 
-      // Cron event (object, not string)
+      // Tagged object types — discriminated by __tag
       if (typeof key === 'object') {
-        yield { type: 'cron', job: key };
+        if (key.__tag === 'initiate_conversation') {
+          yield { type: 'initiate_conversation', conversationId: key.conversationId, context: key.context };
+        } else {
+          yield { type: 'cron', job: key.job };
+        }
         continue;
       }
     }

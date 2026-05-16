@@ -19,13 +19,15 @@ import { registerUsersTools } from './tools/users.js';
 import { registerMediaTools } from './tools/media.js';
 import { registerMemoryTools } from './tools/memory.js';
 import { IdGetter } from './types.js';
+import { AgentInstance } from '../agent-instance.js';
+import type { SessionMode } from '../types.js';
 
 /**
  * MCP server that exposes Newio tools to agent sessions.
  *
  * @example
  * ```ts
- * const mcpServer = new NewioMcpServer(app);
+ * const mcpServer = new NewioMcpServer(app, agent, 'isolated');
  * await mcpServer.connect(transport);
  * ```
  */
@@ -34,7 +36,7 @@ export class NewioMcpServer {
   private readonly server: McpServer;
   private getCurrentConversationId: IdGetter;
 
-  constructor(app: NewioApp) {
+  constructor(app: NewioApp, agent: AgentInstance, sessionMode: SessionMode) {
     this.server = new McpServer({
       name: 'newio-mcp-server',
       version: '0.1.0',
@@ -44,7 +46,7 @@ export class NewioMcpServer {
     registerContactsTools(this.server, app);
     registerConversationsTools(this.server, app);
     registerCronTools(this.server, app);
-    registerMessagingTools(this.server, app);
+    registerMessagingTools(this.server, app, agent, () => this.getCurrentConversationId(), sessionMode);
     registerUsersTools(this.server, app);
     registerMediaTools(this.server, app, () => this.getCurrentConversationId());
     registerMemoryTools(this.server, app);

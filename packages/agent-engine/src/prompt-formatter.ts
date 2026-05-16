@@ -35,6 +35,8 @@ export interface PromptFormatter {
   buildMemoryUpdatePrompt(): string;
   /** Build the session-ending prompt: update memory + generate handoff note. */
   buildSessionEndPrompt(): string;
+  /** Build the prompt for a delegated conversation initiation from another session. */
+  buildInitiateConversationPrompt(context: string): string;
 }
 
 export class PromptFormatterImpl implements PromptFormatter {
@@ -325,6 +327,22 @@ ${this.memoryUpdateRules()}
 After updating memory, output a brief handoff note (2-4 sentences) describing what was happening in this session so the next session can pick up context. This should capture the current state of work, not durable facts (those go in memory).
 
 Output the handoff note as your final message, prefixed with exactly "HANDOFF:" on its own line.`;
+  }
+
+  buildInitiateConversationPrompt(context: string): string {
+    return `Another one of your sessions has delegated a task to this conversation.
+
+## Delegation context
+
+${context}
+
+## Instructions
+
+Based on the context above, compose an appropriate message for this conversation. Consider the relationship and tone you have with the people in this conversation.
+
+If you decide a message should be sent, output it after the keyword "MESSAGE:" on its own line. Only the text after MESSAGE: will be delivered — do not include any preamble or explanation before it.
+
+If you determine no message is needed (e.g., the context is unclear or irrelevant to this conversation), respond with exactly: ${this.skipToken}`;
   }
 
   /** Shared memory update instructions used by both mid-session and session-end prompts. */

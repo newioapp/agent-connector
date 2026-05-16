@@ -57,7 +57,8 @@ function isErrnoException(err: unknown): err is NodeJS.ErrnoException {
 type InboundEvent =
   | { readonly type: 'message'; readonly msg: IncomingMessage }
   | { readonly type: 'contact'; readonly event: ContactEvent }
-  | { readonly type: 'cron'; readonly event: CronTriggerEvent };
+  | { readonly type: 'cron'; readonly event: CronTriggerEvent }
+  | { readonly type: 'initiate_conversation'; readonly conversationId: string; readonly context: string };
 
 interface SessionSlot {
   readonly type: SessionType;
@@ -68,7 +69,15 @@ interface SessionSlot {
   readonly sessionPromise: Promise<AgentSession>;
   lastActivityAt: number;
   /** Non-null while the session loop is processing any event. */
-  inFlight: 'messages' | 'contact' | 'cron' | 'compact_session' | 'rotate_session' | 'update_memory' | null;
+  inFlight:
+    | 'messages'
+    | 'contact'
+    | 'cron'
+    | 'initiate_conversation'
+    | 'compact_session'
+    | 'rotate_session'
+    | 'update_memory'
+    | null;
 }
 
 export class AgentInstanceImpl implements AgentInstance {
@@ -273,7 +282,7 @@ export class AgentInstanceImpl implements AgentInstance {
           if (this.pendingMcpServer) {
             log.warn(`${this.logTag} New MCP connection arrived before previous one was wired to a session`);
           }
-          const mcpServer = new NewioMcpServer(app);
+          const mcpServer = new NewioMcpServer(app, this, 'isolated');
           this.pendingMcpServer = mcpServer;
           void mcpServer.connect(transport);
         },
@@ -526,6 +535,11 @@ export class AgentInstanceImpl implements AgentInstance {
       case 'cron': {
         const slot = this.getOrCreateCronSlot(event.event.cronId);
         slot.queue.enqueueCron(event.event);
+        break;
+      }
+      case 'initiate_conversation': {
+        const slot = this.getOrCreateConversationSlot(event.conversationId);
+        slot.queue.enqueueInitiatingConversation(event.conversationId, event.context);
         break;
       }
     }
@@ -947,6 +961,9 @@ export class AgentInstanceImpl implements AgentInstance {
       case 'update_memory':
         await this.processSessionMemoryUpdate(session, event.callbacks);
         break;
+      case 'initiate_conversation':
+        await this.processConversationInitiation(session, event.conversationId, event.context);
+        break;
     }
   }
 
@@ -986,8 +1003,7 @@ export class AgentInstanceImpl implements AgentInstance {
         }
       }
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : 'Unknown error';
-      log.error(`${this.logTag} Prompt/send failed for ${conversationId}: ${errMsg}`);
+      log.error(`${this.logTag} Prompt/send failed for ${conversationId}`, err);
     } finally {
       this.app.setStatus('idle', conversationId);
     }
@@ -1009,8 +1025,7 @@ export class AgentInstanceImpl implements AgentInstance {
         }
       }
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : 'Unknown error';
-      log.error(`${this.logTag} Contact event processing failed: ${errMsg}`);
+      log.error(`${this.logTag} Contact event processing failed`, err);
     }
   }
 
@@ -1030,8 +1045,7 @@ export class AgentInstanceImpl implements AgentInstance {
         }
       }
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : 'Unknown error';
-      log.error(`${this.logTag} Cron processing failed for ${job.cronId}: ${errMsg}`);
+      log.error(`${this.logTag} Cron processing failed for ${job.cronId}`, err);
     }
   }
 
@@ -1061,15 +1075,39 @@ export class AgentInstanceImpl implements AgentInstance {
     session: AgentSession,
     callbacks: readonly OwnerOpCallback[],
   ): Promise<void> {
-    const prompt = this.promptManager.buildMemoryUpdatePrompt(session.promptFormatterVersion);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      for await (const _ of session.prompt(prompt)) {
-        // Drain output — memory updates happen via MCP tool calls within the prompt
-      }
+      await collectAgentMessage(
+        session.prompt(this.promptManager.buildMemoryUpdatePrompt(session.promptFormatterVersion)),
+      );
       callbacks.forEach((callback) => callback.resolve({ success: true }));
     } catch (err: unknown) {
       callbacks.forEach((callback) => callback.reject(err));
+    }
+  }
+
+  private async processConversationInitiation(session: AgentSession, conversationId: string, context: string) {
+    try {
+      const promptText = this.promptManager.buildInitiateConversationPrompt(session.promptFormatterVersion, context);
+      const output = await collectAgentMessage(session.prompt(promptText, conversationId));
+
+      if (!output || this.promptManager.isSkip(session.promptFormatterVersion, output)) {
+        log.debug(`${this.logTag} Conversation initiation skipped for ${conversationId} (no message produced)`);
+        return;
+      }
+
+      // Extract message content after the MESSAGE: keyword
+      const messageMatch = output.match(/MESSAGE:\s*([\s\S]+)/i);
+      const message = messageMatch?.[1]?.trim();
+
+      if (!message) {
+        log.debug(`${this.logTag} Conversation initiation for ${conversationId} — no MESSAGE: keyword found, skipping`);
+        return;
+      }
+
+      await this.app.sendMessage(conversationId, message);
+      log.info(`${this.logTag} Delegated message sent to ${conversationId}`);
+    } catch (err: unknown) {
+      log.error(`${this.logTag} Conversation initiation failed for ${conversationId}`, err);
     }
   }
 
@@ -1187,6 +1225,13 @@ export class AgentInstanceImpl implements AgentInstance {
       });
     } catch {
       return { success: false, error: 'Operation cancelled' };
+    }
+  }
+
+  initiateConversation(conversationId: string, context: string): void {
+    if (!this.abortController.signal.aborted) {
+      this.inbound.push({ type: 'initiate_conversation', conversationId: conversationId, context: context });
+      this.drainInbound();
     }
   }
 
