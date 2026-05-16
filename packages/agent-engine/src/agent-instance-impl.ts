@@ -1087,12 +1087,26 @@ export class AgentInstanceImpl implements AgentInstance {
   private async processConversationInitiation(session: AgentSession, conversationId: string, context: string) {
     try {
       const promptText = this.promptManager.buildInitiateConversationPrompt(session.promptFormatterVersion, context);
-      const output = await collectAgentMessage(session.prompt(promptText));
-      // todo
-      await this.app.sendMessage(conversationId, output);
+      const output = await collectAgentMessage(session.prompt(promptText, conversationId));
+
+      if (!output || this.promptManager.isSkip(session.promptFormatterVersion, output)) {
+        log.debug(`${this.logTag} Conversation initiation skipped for ${conversationId} (no message produced)`);
+        return;
+      }
+
+      // Extract message content after the MESSAGE: keyword
+      const messageMatch = output.match(/MESSAGE:\s*([\s\S]+)/i);
+      const message = messageMatch?.[1]?.trim();
+
+      if (!message) {
+        log.debug(`${this.logTag} Conversation initiation for ${conversationId} — no MESSAGE: keyword found, skipping`);
+        return;
+      }
+
+      await this.app.sendMessage(conversationId, message);
+      log.info(`${this.logTag} Delegated message sent to ${conversationId}`);
     } catch (err: unknown) {
       log.error(`${this.logTag} Conversation initiation failed for ${conversationId}`, err);
-      return;
     }
   }
 

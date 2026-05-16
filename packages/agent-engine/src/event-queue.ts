@@ -48,6 +48,7 @@ export type AgentEvent =
 const CLOSED = Symbol('closed');
 
 interface InitiateConversation {
+  readonly __tag: 'initiate_conversation';
   readonly conversationId: string;
   readonly context: string;
 }
@@ -122,7 +123,7 @@ export class EventQueue {
     if (this.closed) {
       return;
     }
-    this.pending.push({ conversationId, context });
+    this.pending.push({ __tag: 'initiate_conversation', conversationId, context });
     this.wake();
   }
 
@@ -262,6 +263,5 @@ export class EventQueue {
 }
 
 function assertInitiateConversation(obj: unknown): obj is InitiateConversation {
-  // todo
-  return true;
+  return typeof obj === 'object' && obj !== null && '__tag' in obj && obj.__tag === 'initiate_conversation';
 }

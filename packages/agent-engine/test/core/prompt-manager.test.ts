@@ -34,6 +34,7 @@ function mockFormatter(version: string): PromptFormatter {
     formatMemoryContext: vi.fn().mockReturnValue(`memory-${version}`),
     buildMemoryUpdatePrompt: vi.fn().mockReturnValue(`memory-update-${version}`),
     buildSessionEndPrompt: vi.fn().mockReturnValue(`session-end-${version}`),
+    buildInitiateConversationPrompt: vi.fn().mockReturnValue(`initiate-conversation-${version}`),
   };
 }
 
