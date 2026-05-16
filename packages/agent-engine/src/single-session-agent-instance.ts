@@ -635,9 +635,7 @@ export class SingleSessionAgentInstance implements AgentInstance {
     const instruction = this.promptManager.buildNewioInstruction(session.promptFormatterVersion);
 
     // Load memory for conversation sessions
-    const memory = await this.loadMemoryForSession(
-      session.type === 'conversation' ? session.externalReferenceId : undefined,
-    );
+    const memory = await this.loadMemoryForSession();
     // Use provided handoff note (in-memory from rotation) or fetch from backend
     let resolvedHandoff: string | null = handoffNote ?? null;
     if (!resolvedHandoff && session.type === 'conversation') {
