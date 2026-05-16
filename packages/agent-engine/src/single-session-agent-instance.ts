@@ -920,9 +920,6 @@ export class SingleSessionAgentInstance implements AgentInstance {
       case 'update_memory':
         await this.processSessionMemoryUpdate(session, event.callbacks);
         break;
-      case 'initiate_conversation':
-        await this.processConversationInitiation(session, event.conversationId, event.context);
-        break;
     }
   }
 
@@ -1038,32 +1035,6 @@ export class SingleSessionAgentInstance implements AgentInstance {
       callbacks.forEach((callback) => callback.resolve({ success: true }));
     } catch (err: unknown) {
       callbacks.forEach((callback) => callback.reject(err));
-    }
-  }
-
-  private async processConversationInitiation(session: AgentSession, conversationId: string, context: string) {
-    try {
-      const promptText = this.promptManager.buildInitiateConversationPrompt(session.promptFormatterVersion, context);
-      const output = await collectAgentMessage(session.prompt(promptText, conversationId));
-
-      if (!output || this.promptManager.isSkip(session.promptFormatterVersion, output)) {
-        log.debug(`${this.logTag} Conversation initiation skipped for ${conversationId} (no message produced)`);
-        return;
-      }
-
-      // Extract message content after the MESSAGE: keyword
-      const messageMatch = output.match(/MESSAGE:\s*([\s\S]+)/i);
-      const message = messageMatch?.[1]?.trim();
-
-      if (!message) {
-        log.debug(`${this.logTag} Conversation initiation for ${conversationId} — no MESSAGE: keyword found, skipping`);
-        return;
-      }
-
-      await this.app.sendMessage(conversationId, message);
-      log.info(`${this.logTag} Delegated message sent to ${conversationId}`);
-    } catch (err: unknown) {
-      log.error(`${this.logTag} Conversation initiation failed for ${conversationId}`, err);
     }
   }
 
@@ -1208,13 +1179,13 @@ export class SingleSessionAgentInstance implements AgentInstance {
       const timeout = this.config.sessionIdleTimeoutMs ?? DEFAULT_SESSION_IDLE_TIMEOUT_MS;
       const now = Date.now();
 
-      // Contact slot
+      // Shared session slot
       if (
         this.sharedSessionSlot?.session &&
         now - this.sharedSessionSlot.lastActivityAt > timeout &&
         !this.sharedSessionSlot.inFlight
       ) {
-        log.info(`${this.logTag} Idle session cleanup: contact session`);
+        log.info(`${this.logTag} Idle session cleanup: shared session`);
         await this.endSession(this.sharedSessionSlot);
       }
     } finally {
