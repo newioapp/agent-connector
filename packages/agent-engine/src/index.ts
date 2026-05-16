@@ -22,6 +22,7 @@ export type {
   PermissionHandler,
   PermissionRequestOption,
   AgentStatusInfo,
+  SessionMode,
 } from './types.js';
 export { resolveCommand, extractErrorMessage, DEFAULT_SESSION_IDLE_TIMEOUT_MS } from './types.js';
 export type {

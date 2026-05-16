@@ -282,7 +282,7 @@ export class AgentInstanceImpl implements AgentInstance {
           if (this.pendingMcpServer) {
             log.warn(`${this.logTag} New MCP connection arrived before previous one was wired to a session`);
           }
-          const mcpServer = new NewioMcpServer(app, this);
+          const mcpServer = new NewioMcpServer(app, this, 'isolated');
           this.pendingMcpServer = mcpServer;
           void mcpServer.connect(transport);
         },
@@ -963,6 +963,7 @@ export class AgentInstanceImpl implements AgentInstance {
         break;
       case 'initiate_conversation':
         await this.processConversationInitiation(session, event.conversationId, event.context);
+        break;
     }
   }
 

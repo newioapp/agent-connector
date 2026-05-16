@@ -6,7 +6,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NewioApp } from '@newio/agent-sdk';
 import { AgentInstance } from '../../agent-instance';
 import { IdGetter } from '../types';
-import type { SessionMode } from '../server';
+import type { SessionMode } from '../../types';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
@@ -45,8 +45,29 @@ export function registerMessagingTools(
     );
   }
 
-  // Shared mode: send_dm and dm_owner send messages directly
+  // Shared mode: send_dm, dm_owner, and send_message send messages directly
   if (sessionMode === 'shared') {
+    server.registerTool(
+      'send_message',
+      {
+        description:
+          'Send a message to a group chat or work session, optionally with file attachments (max 5). Use @username to mention members, @everyone to notify all, or @here to notify online members. ⚠️ Only use this to send messages to a DIFFERENT conversation. If you are responding to a message in the current conversation, your reply is delivered automatically — do NOT use this tool or the message will be sent twice.',
+        inputSchema: {
+          conversationId: z.string().describe('Conversation ID to send the message to'),
+          text: z.string().describe('Message text (supports markdown)'),
+          filePaths: z
+            .array(z.string())
+            .max(5)
+            .optional()
+            .describe('Optional local file paths to attach (max 5, absolute or relative)'),
+        },
+      },
+      async ({ conversationId, text: msgText, filePaths }) => {
+        await app.sendMessage(conversationId, msgText, filePaths);
+        return text('Message sent');
+      },
+    );
+
     server.registerTool(
       'send_dm',
       {

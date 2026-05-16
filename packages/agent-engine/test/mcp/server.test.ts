@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { NewioMcpServer } from '../../src/mcp/server.js';
-import type { SessionMode } from '../../src/mcp/server.js';
+import type { SessionMode } from '../../src/types.js';
 import type { AgentInstance } from '../../src/agent-instance.js';
 import type { NewioApp, ContactSummary, ConversationSummary, FriendRequestSummary } from '@newio/agent-sdk';
 
@@ -150,6 +150,7 @@ describe('MCP Server', () => {
       'search_users',
       'send_dm',
       'send_friend_request',
+      'send_message',
       'update_memory',
       'update_memory_summary',
       'upload_attachment_to_current_conversation',
@@ -215,7 +216,7 @@ describe('MCP Server', () => {
   it('initiate_conversation delegates to agent instance', async () => {
     const app = mockApp();
     const agent = { initiateConversation: vi.fn() } as unknown as AgentInstance;
-    const server = new NewioMcpServer(app, agent);
+    const server = new NewioMcpServer(app, agent, 'isolated');
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     const client = new Client({ name: 'test-client', version: '1.0.0' });
@@ -257,7 +258,7 @@ describe('MCP Server', () => {
   it('upload_attachment_to_current_conversation sends attachment-only message', async () => {
     const app = mockApp();
     const agent = { initiateConversation: vi.fn() } as unknown as AgentInstance;
-    const server = new NewioMcpServer(app, agent);
+    const server = new NewioMcpServer(app, agent, 'isolated');
     server.setCurrentConversationIdGetter(() => 'conv-1');
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);

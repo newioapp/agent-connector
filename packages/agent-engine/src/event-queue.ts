@@ -53,6 +53,11 @@ interface InitiateConversation {
   readonly context: string;
 }
 
+interface CronPendingKey {
+  readonly __tag: 'cron';
+  readonly job: CronTriggerEvent;
+}
+
 /** Pending key types in the FIFO array. */
 type PendingKey =
   | `conv:${string}`
@@ -60,7 +65,7 @@ type PendingKey =
   | 'compact_session'
   | 'update_memory'
   | 'rotate_session'
-  | CronTriggerEvent
+  | CronPendingKey
   | InitiateConversation;
 
 export class EventQueue {
@@ -115,7 +120,7 @@ export class EventQueue {
     if (this.closed) {
       return;
     }
-    this.pending.push(job);
+    this.pending.push({ __tag: 'cron', job });
     this.wake();
   }
 
@@ -208,12 +213,12 @@ export class EventQueue {
         continue;
       }
 
-      // Cron event (object, not string)
+      // Tagged object types — discriminated by __tag
       if (typeof key === 'object') {
-        if (assertInitiateConversation(key)) {
-          yield { type: 'initiate_conversation', ...key };
+        if (key.__tag === 'initiate_conversation') {
+          yield { type: 'initiate_conversation', conversationId: key.conversationId, context: key.context };
         } else {
-          yield { type: 'cron', job: key };
+          yield { type: 'cron', job: key.job };
         }
         continue;
       }
@@ -260,8 +265,4 @@ export class EventQueue {
   private wake(): void {
     this.resolve?.(undefined);
   }
-}
-
-function assertInitiateConversation(obj: unknown): obj is InitiateConversation {
-  return typeof obj === 'object' && obj !== null && '__tag' in obj && obj.__tag === 'initiate_conversation';
 }

@@ -20,15 +20,7 @@ import { registerMediaTools } from './tools/media.js';
 import { registerMemoryTools } from './tools/memory.js';
 import { IdGetter } from './types.js';
 import { AgentInstance } from '../agent-instance.js';
-
-/**
- * Session mode controls which messaging tools are available:
- * - 'isolated': One session per conversation. Uses `initiate_conversation` for cross-conversation
- *   delegation. `send_dm` and `dm_owner` are blocked.
- * - 'shared': Single session serves all conversations. Uses `send_dm` and `dm_owner` directly.
- *   `initiate_conversation` is not available.
- */
-export type SessionMode = 'isolated' | 'shared';
+import type { SessionMode } from '../types.js';
 
 /**
  * MCP server that exposes Newio tools to agent sessions.
@@ -44,7 +36,7 @@ export class NewioMcpServer {
   private readonly server: McpServer;
   private getCurrentConversationId: IdGetter;
 
-  constructor(app: NewioApp, agent: AgentInstance, sessionMode: SessionMode = 'isolated') {
+  constructor(app: NewioApp, agent: AgentInstance, sessionMode: SessionMode) {
     this.server = new McpServer({
       name: 'newio-mcp-server',
       version: '0.1.0',
