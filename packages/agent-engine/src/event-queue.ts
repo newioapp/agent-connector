@@ -34,6 +34,7 @@ export type AgentEvent =
   | { readonly type: 'messages'; readonly conversationId: string; readonly messages: readonly IncomingMessage[] }
   | { readonly type: 'contact'; readonly events: readonly ContactEvent[] }
   | { readonly type: 'cron'; readonly job: CronTriggerEvent }
+  | { readonly type: 'initiate_conversation'; readonly conversationId: string; readonly context: string }
   | { readonly type: 'compact_session'; readonly callbacks: readonly OwnerOpCallback[] }
   | { readonly type: 'update_memory'; readonly callbacks: readonly OwnerOpCallback[] }
   | {
@@ -46,6 +47,11 @@ export type AgentEvent =
 /** Sentinel value used to signal the consumer to stop. */
 const CLOSED = Symbol('closed');
 
+interface InitiateConversation {
+  readonly conversationId: string;
+  readonly context: string;
+}
+
 /** Pending key types in the FIFO array. */
 type PendingKey =
   | `conv:${string}`
@@ -53,7 +59,8 @@ type PendingKey =
   | 'compact_session'
   | 'update_memory'
   | 'rotate_session'
-  | CronTriggerEvent;
+  | CronTriggerEvent
+  | InitiateConversation;
 
 export class EventQueue {
   /** Pending message batches keyed by conversationId. */
@@ -108,6 +115,14 @@ export class EventQueue {
       return;
     }
     this.pending.push(job);
+    this.wake();
+  }
+
+  enqueueInitiatingConversation(conversationId: string, context: string): void {
+    if (this.closed) {
+      return;
+    }
+    this.pending.push({ conversationId, context });
     this.wake();
   }
 
@@ -194,7 +209,11 @@ export class EventQueue {
 
       // Cron event (object, not string)
       if (typeof key === 'object') {
-        yield { type: 'cron', job: key };
+        if (assertInitiateConversation(key)) {
+          yield { type: 'initiate_conversation', ...key };
+        } else {
+          yield { type: 'cron', job: key };
+        }
         continue;
       }
     }
@@ -240,4 +259,9 @@ export class EventQueue {
   private wake(): void {
     this.resolve?.(undefined);
   }
+}
+
+function assertInitiateConversation(obj: unknown): obj is InitiateConversation {
+  // todo
+  return true;
 }

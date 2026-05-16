@@ -4,29 +4,34 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NewioApp } from '@newio/agent-sdk';
+import { AgentInstance } from '../../agent-instance';
+import { IdGetter } from '../types';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
 
 /** Register messaging tools on the MCP server. */
-export function registerMessagingTools(server: McpServer, app: NewioApp): void {
+export function registerMessagingTools(
+  server: McpServer,
+  app: NewioApp,
+  agent: AgentInstance,
+  getCurrentConversationId: IdGetter,
+): void {
   server.registerTool(
-    'send_message',
+    'initiate_conversation',
     {
       description:
         'Send a message to a group chat or work session, optionally with file attachments (max 5). Use @username to mention members, @everyone to notify all, or @here to notify online members. ⚠️ Only use this to send messages to a DIFFERENT conversation. If you are responding to a message in the current conversation, your reply is delivered automatically — do NOT use this tool or the message will be sent twice.',
       inputSchema: {
         conversationId: z.string().describe('Conversation ID to send the message to'),
-        text: z.string().describe('Message text (supports markdown)'),
-        filePaths: z
-          .array(z.string())
-          .max(5)
-          .optional()
-          .describe('Optional local file paths to attach (max 5, absolute or relative)'),
+        context: z.string().describe('Message text (supports markdown)'),
       },
     },
-    async ({ conversationId, text: msgText, filePaths }) => {
-      await app.sendMessage(conversationId, msgText, filePaths);
+    ({ conversationId, context }) => {
+      if (getCurrentConversationId() !== conversationId) {
+        return text(`can't initiate the current conversation.`);
+      }
+      agent.initiateConversation(conversationId, context);
       return text('Message sent');
     },
   );

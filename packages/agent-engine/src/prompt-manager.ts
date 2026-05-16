@@ -91,6 +91,10 @@ export class PromptManager {
     return this.findCompatiblePromptFormatter(promptVersion).buildSessionEndPrompt();
   }
 
+  buildInitiateConversationPrompt(_promptVersion: string, _context: string): string {
+    return 'todo';
+  }
+
   /** Find a formatter whose major version matches the requested version. */
   private findCompatiblePromptFormatter(version: string): PromptFormatter {
     const formatter = this.formatterByMajor.get(parseMajor(version));
