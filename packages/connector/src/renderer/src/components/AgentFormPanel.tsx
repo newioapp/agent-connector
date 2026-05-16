@@ -41,9 +41,18 @@ const AGENT_TYPE_OPTIONS: readonly { value: AgentType; label: string }[] = [
   { value: 'custom', label: 'Custom ACP Agent' },
 ];
 
-const SESSION_MODE_OPTIONS: readonly { value: SessionMode; label: string }[] = [
-  { value: 'isolated', label: 'Isolated (one session per conversation)' },
-  { value: 'shared', label: 'Shared (single session for all events)' },
+const SESSION_MODE_OPTIONS: readonly { value: SessionMode; label: string; description: string }[] = [
+  {
+    value: 'isolated',
+    label: 'Isolated',
+    description: 'One session per conversation. Best for agents with specific tasks, e.g. individual contributor role.',
+  },
+  {
+    value: 'shared',
+    label: 'Shared',
+    description:
+      'Single session across all conversations. Best for agents that carry context between conversations, e.g. manager role.',
+  },
 ];
 
 export function AgentFormPanel({
@@ -140,10 +149,7 @@ export function AgentFormPanel({
         <AgentTypeHint type={type} className="mb-4" />
 
         {/* Session mode */}
-        <Label
-          text="Session Mode"
-          hint="Isolated: separate session per conversation. Shared: single session handles all events."
-        >
+        <Label text="Session Mode">
           <Dropdown<SessionMode> options={SESSION_MODE_OPTIONS} value={sessionMode} onChange={setSessionMode} />
         </Label>
 
