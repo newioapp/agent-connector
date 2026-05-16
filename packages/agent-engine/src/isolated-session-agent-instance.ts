@@ -80,7 +80,7 @@ interface SessionSlot {
     | null;
 }
 
-export class AgentInstanceImpl implements AgentInstance {
+export class IsolatedSessionAgentInstance implements AgentInstance {
   status: AgentRuntimeStatus = 'stopped';
   error?: string;
 

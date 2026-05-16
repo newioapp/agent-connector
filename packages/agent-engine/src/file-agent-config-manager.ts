@@ -53,6 +53,7 @@ export class FileAgentConfigManager implements AgentConfigManager {
         ...(input.newioUsername ? { username: input.newioUsername } : {}),
       },
       envVars: input.envVars ?? {},
+      ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
       ...(input.envVarsShell ? { envVarsShell: input.envVarsShell } : {}),
       ...(input.acp ? { acp: input.acp } : {}),
     };
@@ -79,6 +80,7 @@ export class FileAgentConfigManager implements AgentConfigManager {
     const updated: AgentConfig = {
       ...existing,
       newio,
+      ...(updates.sessionMode !== undefined ? { sessionMode: updates.sessionMode } : {}),
       ...(updates.envVars !== undefined ? { envVars: updates.envVars } : {}),
       ...(updates.envVarsShell !== undefined ? { envVarsShell: updates.envVarsShell } : {}),
       ...(updates.acp !== undefined ? { acp: updates.acp } : {}),

@@ -6,14 +6,14 @@ import type { CronStore } from '../../src/cron-store';
 import type { AgentConfig } from '../../src/types';
 import type { EngineConfig } from '../../src/engine-config';
 
-// Mock AgentInstanceImpl — the only concrete implementation created by the manager
-vi.mock('../../src/agent-instance-impl', () => ({
-  AgentInstanceImpl: vi.fn(),
+// Mock IsolatedSessionAgentInstance — the only concrete implementation created by the manager
+vi.mock('../../src/isolated-session-agent-instance', () => ({
+  IsolatedSessionAgentInstance: vi.fn(),
 }));
 
-import { AgentInstanceImpl } from '../../src/agent-instance-impl';
+import { IsolatedSessionAgentInstance } from '../../src/isolated-session-agent-instance';
 
-const MockAgentInstanceImpl = vi.mocked(AgentInstanceImpl);
+const MockIsolatedSessionAgentInstance = vi.mocked(IsolatedSessionAgentInstance);
 
 function makeConfig(id: string, username?: string): AgentConfig {
   return {
@@ -77,7 +77,7 @@ describe('AgentRuntimeManager', () => {
     manager = new AgentRuntimeManager(configManager, sessionStore, listener, mockEngineConfig);
 
     // Default mock instance behavior
-    MockAgentInstanceImpl.mockImplementation(() => {
+    MockIsolatedSessionAgentInstance.mockImplementation(() => {
       return {
         status: 'running',
         error: undefined,
@@ -103,8 +103,8 @@ describe('AgentRuntimeManager', () => {
     it('creates an AcpAgentInstance and calls start', () => {
       manager.start('agent-1');
 
-      expect(MockAgentInstanceImpl).toHaveBeenCalledOnce();
-      const instance = MockAgentInstanceImpl.mock.results[0]!.value;
+      expect(MockIsolatedSessionAgentInstance).toHaveBeenCalledOnce();
+      const instance = MockIsolatedSessionAgentInstance.mock.results[0]!.value;
       expect(instance.start).toHaveBeenCalledOnce();
     });
 
@@ -116,7 +116,7 @@ describe('AgentRuntimeManager', () => {
       manager.start('agent-1');
       manager.start('agent-1'); // second call should be no-op
 
-      expect(MockAgentInstanceImpl).toHaveBeenCalledOnce();
+      expect(MockIsolatedSessionAgentInstance).toHaveBeenCalledOnce();
     });
 
     it('allows restart after stop', async () => {
@@ -124,18 +124,18 @@ describe('AgentRuntimeManager', () => {
       await manager.stop('agent-1');
       manager.start('agent-1');
 
-      expect(MockAgentInstanceImpl).toHaveBeenCalledTimes(2);
+      expect(MockIsolatedSessionAgentInstance).toHaveBeenCalledTimes(2);
     });
 
     it('allows restart when status is error', () => {
-      MockAgentInstanceImpl.mockImplementationOnce(() => {
+      MockIsolatedSessionAgentInstance.mockImplementationOnce(() => {
         return { status: 'error', error: 'crashed', start: vi.fn(), stop: vi.fn() } as never;
       });
       manager.start('agent-1');
 
       // Now start again — should create a new instance since status is 'error'
       manager.start('agent-1');
-      expect(MockAgentInstanceImpl).toHaveBeenCalledTimes(2);
+      expect(MockIsolatedSessionAgentInstance).toHaveBeenCalledTimes(2);
     });
 
     it('prevents two agents with the same username from running', () => {
@@ -157,14 +157,14 @@ describe('AgentRuntimeManager', () => {
       await manager.stop('agent-1');
       // Should not throw now
       manager.start('agent-2');
-      expect(MockAgentInstanceImpl).toHaveBeenCalledTimes(2);
+      expect(MockIsolatedSessionAgentInstance).toHaveBeenCalledTimes(2);
     });
 
     it('relays status events through the listener with agentId', () => {
       manager.start('agent-1');
 
       // Grab the instanceListener passed to the constructor
-      const instanceListener = MockAgentInstanceImpl.mock.calls[0]![3];
+      const instanceListener = MockIsolatedSessionAgentInstance.mock.calls[0]![3];
 
       instanceListener.onStatusChanged('running');
       expect(listener.onStatusChanged).toHaveBeenCalledWith('agent-1', 'running', undefined);
@@ -187,7 +187,7 @@ describe('AgentRuntimeManager', () => {
   describe('stop', () => {
     it('calls instance.stop and removes from map', async () => {
       manager.start('agent-1');
-      const instance = MockAgentInstanceImpl.mock.results[0]!.value;
+      const instance = MockIsolatedSessionAgentInstance.mock.results[0]!.value;
 
       await manager.stop('agent-1');
 
@@ -215,7 +215,7 @@ describe('AgentRuntimeManager', () => {
   describe('delegation methods', () => {
     it('getAgentInfo delegates to instance', () => {
       const info = { protocol: 'acp' as const, protocolVersion: '1.0', capabilities: [] };
-      MockAgentInstanceImpl.mockImplementationOnce(() => {
+      MockIsolatedSessionAgentInstance.mockImplementationOnce(() => {
         return { status: 'running', start: vi.fn(), getAgentInfo: vi.fn().mockReturnValue(info) } as never;
       });
 
