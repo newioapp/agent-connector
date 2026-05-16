@@ -10,6 +10,7 @@ export type {
   AddAgentInput,
   UpdateAgentInput,
   AgentStatusInfo,
+  SessionMode,
 } from '@newio/agent-engine';
 
 export type ThemeSource = 'system' | 'light' | 'dark';

@@ -3,7 +3,7 @@
  * Renders in the detail panel area (right side) instead of a modal.
  */
 import { useEffect, useState } from 'react';
-import type { AgentType, AgentConfig } from '../../../shared/types';
+import type { AgentType, AgentConfig, SessionMode } from '../../../shared/types';
 import { useAgentStore } from '../stores/agent-store';
 import { Button, Input, Dropdown, Label } from './ui';
 import { AgentTypeHint } from './AgentTypeHint';
@@ -41,6 +41,20 @@ const AGENT_TYPE_OPTIONS: readonly { value: AgentType; label: string }[] = [
   { value: 'custom', label: 'Custom ACP Agent' },
 ];
 
+const SESSION_MODE_OPTIONS: readonly { value: SessionMode; label: string; description: string }[] = [
+  {
+    value: 'isolated',
+    label: 'Isolated',
+    description: 'One session per conversation. Best for agents with specific tasks, e.g. individual contributor role.',
+  },
+  {
+    value: 'shared',
+    label: 'Shared',
+    description:
+      'Single session across all conversations. Best for agents that carry context between conversations, e.g. manager role.',
+  },
+];
+
 export function AgentFormPanel({
   editAgent,
   onDone,
@@ -57,6 +71,7 @@ export function AgentFormPanel({
 
   const [name, setName] = useState('');
   const [type, setType] = useState<AgentType>('claude-code');
+  const [sessionMode, setSessionMode] = useState<SessionMode>('isolated');
   const [newioUsername, setNewioUsername] = useState('');
   const [cwd, setCwd] = useState('');
   const [executablePath, setExecutablePath] = useState('');
@@ -70,6 +85,7 @@ export function AgentFormPanel({
     }
     setName(editAgent.newio?.displayName ?? '');
     setType(editAgent.type);
+    setSessionMode(editAgent.sessionMode ?? 'isolated');
     setNewioUsername(editAgent.newio?.username ?? '');
     setCwd(editAgent.acp?.cwd ?? '');
     if (editAgent.acp) {
@@ -97,12 +113,14 @@ export function AgentFormPanel({
         await updateAgent(editAgent.id, {
           displayName: name.trim(),
           newioUsername: newioUsername.trim(),
+          sessionMode,
           acp: acpConfig,
         });
       } else {
         await addAgent({
           displayName: name.trim(),
           type,
+          sessionMode,
           ...(newioUsername.trim() ? { newioUsername: newioUsername.trim() } : {}),
           acp: acpConfig,
         });
@@ -129,6 +147,11 @@ export function AgentFormPanel({
 
         {/* Type description */}
         <AgentTypeHint type={type} className="mb-4" />
+
+        {/* Session mode */}
+        <Label text="Session Mode">
+          <Dropdown<SessionMode> options={SESSION_MODE_OPTIONS} value={sessionMode} onChange={setSessionMode} />
+        </Label>
 
         <Label
           text={type === 'custom' ? 'Executable Path' : 'Executable Path (optional)'}

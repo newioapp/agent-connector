@@ -110,6 +110,9 @@ export interface AgentConfig {
   /** Newio identity — set after first registration, synced on every start. */
   readonly newio?: NewioIdentity;
 
+  /** Session mode: 'isolated' (one session per conversation) or 'shared' (single session for all events). Default: 'isolated'. */
+  readonly sessionMode?: SessionMode;
+
   /** Idle timeout for sessions in ms. Sessions with no activity are stopped. Default: 1 hour. */
   readonly sessionIdleTimeoutMs?: number;
 
@@ -130,6 +133,7 @@ export interface AddAgentInput {
   readonly type: AgentType;
   /** Optional: existing Newio username to login with instead of registering a new agent. */
   readonly newioUsername?: string;
+  readonly sessionMode?: SessionMode;
   readonly acp?: AcpConfig;
   /** Optional: initial environment variables (e.g. synced from shell by the desktop app). */
   readonly envVars?: Readonly<Record<string, string>>;
@@ -140,6 +144,7 @@ export interface AddAgentInput {
 export interface UpdateAgentInput {
   readonly displayName?: string;
   readonly newioUsername?: string;
+  readonly sessionMode?: SessionMode;
   readonly envVars?: Readonly<Record<string, string>>;
   readonly envVarsShell?: string;
   readonly acp?: AcpConfig;

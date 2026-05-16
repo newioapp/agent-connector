@@ -1,14 +1,11 @@
 /**
- * Base agent instance — shared auth, WebSocket, session routing, and lifecycle logic.
+ * Single-session agent instance — all events share one ACP session.
  *
- * Uses NewioApp for all Newio interactions. Manages multiple sessions per agent,
- * routing incoming events by type:
- * - Messages: routed by conversationId (one session per conversation)
- * - Contact events: routed to a dedicated contact session
- * - Cron triggers: routed by cronId (one session per cron job)
+ * Uses NewioApp for all Newio interactions. Routes all incoming events
+ * (messages, contacts, crons) into a single shared session that processes
+ * them serially. Context accumulates across conversations within the session.
  *
- * Each session processes its own event queue concurrently.
- * Subclasses implement session creation and greeting logic.
+ * Best for agents that need cross-conversation awareness (e.g. manager role).
  */
 import { ApprovalTimeoutError, ConnectionRejectedError, NewioApp, NotFoundApiError } from '@newio/agent-sdk';
 import type { IncomingMessage, ContactEvent, CronTriggerEvent, ActionOption, ActionRequest } from '@newio/agent-sdk';
@@ -17,7 +14,7 @@ import type { Server } from 'net';
 import { hostname, tmpdir } from 'os';
 import { join } from 'path';
 import type { AgentConfigManager } from './agent-config-manager';
-import type { AgentRuntimeStatus, AgentConfig, SessionType } from './types';
+import type { AgentRuntimeStatus, AgentConfig } from './types';
 import { DEFAULT_SESSION_IDLE_TIMEOUT_MS, resolveCommand, extractErrorMessage } from './types';
 import type { AgentInfo, PermissionRequestOption, ConversationFlags } from './types';
 import type { AgentInstance, AgentInstanceListener } from './agent-instance';
@@ -57,30 +54,21 @@ function isErrnoException(err: unknown): err is NodeJS.ErrnoException {
 type InboundEvent =
   | { readonly type: 'message'; readonly msg: IncomingMessage }
   | { readonly type: 'contact'; readonly event: ContactEvent }
-  | { readonly type: 'cron'; readonly event: CronTriggerEvent }
-  | { readonly type: 'initiate_conversation'; readonly conversationId: string; readonly context: string };
+  | { readonly type: 'cron'; readonly event: CronTriggerEvent };
 
 interface SessionSlot {
-  readonly type: SessionType;
-  /** ConversationId, __contact__, cron id job */
-  readonly externalReferenceId: string;
   readonly queue: EventQueue;
   session: AgentSession | undefined;
   readonly sessionPromise: Promise<AgentSession>;
   lastActivityAt: number;
   /** Non-null while the session loop is processing any event. */
-  inFlight:
-    | 'messages'
-    | 'contact'
-    | 'cron'
-    | 'initiate_conversation'
-    | 'compact_session'
-    | 'rotate_session'
-    | 'update_memory'
-    | null;
+  inFlight: AgentEvent['type'] | null;
 }
 
-export class AgentInstanceImpl implements AgentInstance {
+const SESSION_TYPE = 'conversation';
+const EXTERNAL_REFERENCE_ID = 'externalReferenceId';
+
+export class SingleSessionAgentInstance implements AgentInstance {
   status: AgentRuntimeStatus = 'stopped';
   error?: string;
 
@@ -96,15 +84,13 @@ export class AgentInstanceImpl implements AgentInstance {
   private _sessionFactory?: SessionFactory;
   /** Socket path for the MCP UDS server. Set after auth in start(). */
   private _mcpSocketPath?: string;
-
-  /** conversationId → session slot for conversation sessions. */
-  private readonly conversationSlots = new Map<string, SessionSlot>();
-  /** Dedicated session slot for contact events. */
-  private contactSlot: SessionSlot | undefined;
-  /** cronId → session slot for cron job sessions. */
-  private readonly cronSlots = new Map<string, SessionSlot>();
+  private sharedSessionSlot: SessionSlot | undefined;
   /** Per-conversation flags toggled by the owner (e.g. show_tool_call, show_thoughts). */
   private readonly conversationFlags = new Map<string, ConversationFlags>();
+  /** Tracks which conversation scopes have already been injected into the shared session. */
+  private readonly injectedConversationIds = new Set<string>();
+  /** Tracks which user scopes have already been injected into the shared session. */
+  private readonly injectedUserIds = new Set<string>();
   /** Inbound event buffer — events captured synchronously, routed serially. */
   private readonly inbound: InboundEvent[] = [];
   private draining = false;
@@ -282,7 +268,7 @@ export class AgentInstanceImpl implements AgentInstance {
           if (this.pendingMcpServer) {
             log.warn(`${this.logTag} New MCP connection arrived before previous one was wired to a session`);
           }
-          const mcpServer = new NewioMcpServer(app, this, 'isolated');
+          const mcpServer = new NewioMcpServer(app, this, 'shared');
           this.pendingMcpServer = mcpServer;
           void mcpServer.connect(transport);
         },
@@ -369,7 +355,7 @@ export class AgentInstanceImpl implements AgentInstance {
     log.debug(`${this.logTag} Owner DM conversation: ${ownerDmConversationId}`);
 
     this.setStatus('greeting');
-    const slot = this.getOrCreateConversationSlot(ownerDmConversationId);
+    const slot = this.getOrCreateSharedSessionSlot();
     const session = await slot.sessionPromise;
 
     log.debug(`${this.logTag} [${session.correlationId}] Generating greeting for owner...`);
@@ -415,34 +401,17 @@ export class AgentInstanceImpl implements AgentInstance {
     // Drain inbound queue
     this.inbound.length = 0;
     this.conversationFlags.clear();
+    this.injectedConversationIds.clear();
+    this.injectedUserIds.clear();
 
-    // Close all session slots
-    for (const [id, slot] of this.conversationSlots) {
-      log.debug(`${this.logTag} Disposing conversation slot: ${id}`);
-      slot.queue.close();
-      if (slot.session) {
-        await slot.session.dispose();
+    if (this.sharedSessionSlot) {
+      log.debug(`${this.logTag} Disposing shared session slot`);
+      this.sharedSessionSlot.queue.close();
+      if (this.sharedSessionSlot.session) {
+        await this.sharedSessionSlot.session.dispose();
       }
+      this.sharedSessionSlot = undefined;
     }
-    this.conversationSlots.clear();
-
-    if (this.contactSlot) {
-      log.debug(`${this.logTag} Disposing contact slot`);
-      this.contactSlot.queue.close();
-      if (this.contactSlot.session) {
-        await this.contactSlot.session.dispose();
-      }
-      this.contactSlot = undefined;
-    }
-
-    for (const [id, slot] of this.cronSlots) {
-      log.debug(`${this.logTag} Disposing cron slot: ${id}`);
-      slot.queue.close();
-      if (slot.session) {
-        await slot.session.dispose();
-      }
-    }
-    this.cronSlots.clear();
 
     if (this.udsServer) {
       this.udsServer.close();
@@ -521,25 +490,18 @@ export class AgentInstanceImpl implements AgentInstance {
 
   /** Resolve session and enqueue to the per-session EventQueue (created eagerly). */
   private routeInboundEvent(event: InboundEvent): void {
+    const slot = this.getOrCreateSharedSessionSlot();
     switch (event.type) {
       case 'message': {
-        const slot = this.getOrCreateConversationSlot(event.msg.conversationId);
         slot.queue.enqueueMessage(event.msg);
         break;
       }
       case 'contact': {
-        const slot = this.getOrCreateContactSlot();
         slot.queue.enqueueContact(event.event);
         break;
       }
       case 'cron': {
-        const slot = this.getOrCreateCronSlot(event.event.cronId);
         slot.queue.enqueueCron(event.event);
-        break;
-      }
-      case 'initiate_conversation': {
-        const slot = this.getOrCreateConversationSlot(event.conversationId);
-        slot.queue.enqueueInitiatingConversation(event.conversationId, event.context);
         break;
       }
     }
@@ -549,49 +511,23 @@ export class AgentInstanceImpl implements AgentInstance {
   // Session slot management
   // ---------------------------------------------------------------------------
 
-  /** Get or create a SessionSlot for a conversation. */
-  private getOrCreateConversationSlot(conversationId: string): SessionSlot {
-    const existing = this.conversationSlots.get(conversationId);
-    if (existing) {
-      existing.lastActivityAt = Date.now();
-      return existing;
+  /** Get or create the single shared session slot used for all events. */
+  private getOrCreateSharedSessionSlot(): SessionSlot {
+    if (this.sharedSessionSlot) {
+      this.sharedSessionSlot.lastActivityAt = Date.now();
+      return this.sharedSessionSlot;
     }
-    const slot = this.createSlot('conversation', conversationId);
-    this.conversationSlots.set(conversationId, slot);
-    return slot;
-  }
-
-  /** Get or create the dedicated contact event session slot. */
-  private getOrCreateContactSlot(): SessionSlot {
-    if (this.contactSlot) {
-      this.contactSlot.lastActivityAt = Date.now();
-      return this.contactSlot;
-    }
-    const slot = this.createSlot('contact', '__contact__');
-    this.contactSlot = slot;
-    return slot;
-  }
-
-  /** Get or create a SessionSlot for a cron job. */
-  private getOrCreateCronSlot(cronId: string): SessionSlot {
-    const existing = this.cronSlots.get(cronId);
-    if (existing) {
-      existing.lastActivityAt = Date.now();
-      return existing;
-    }
-    const slot = this.createSlot('cron', cronId);
-    this.cronSlots.set(cronId, slot);
+    const slot = this.createSlot();
+    this.sharedSessionSlot = slot;
     return slot;
   }
 
   /** Create a new session slot — shared logic for all slot types. */
-  private createSlot(type: SessionType, externalReferenceId: string): SessionSlot {
-    const queue = new EventQueue(type, externalReferenceId);
-    const sessionPromise = this.enqueueLaunch(type, externalReferenceId);
+  private createSlot(): SessionSlot {
+    const queue = new EventQueue(SESSION_TYPE, EXTERNAL_REFERENCE_ID);
+    const sessionPromise = this.enqueueLaunch();
 
     const slot: SessionSlot = {
-      type,
-      externalReferenceId,
       queue,
       session: undefined,
       sessionPromise,
@@ -605,39 +541,13 @@ export class AgentInstanceImpl implements AgentInstance {
         void this.runSessionLoop(slot);
       },
       (err: unknown) => {
-        log.error(`${this.logTag} Session creation failed for ${type}:${externalReferenceId}, closing slot`, err);
+        log.error(`${this.logTag} Shared session creation failed, closing slot`, err);
         queue.close();
-        this.removeSlot(slot);
+        this.sharedSessionSlot = undefined;
       },
     );
 
     return slot;
-  }
-
-  /** Remove a slot from its owning collection. */
-  private removeSlot(slot: SessionSlot): void {
-    switch (slot.type) {
-      case 'conversation':
-        this.conversationSlots.delete(slot.externalReferenceId);
-        break;
-      case 'contact':
-        this.contactSlot = undefined;
-        break;
-      case 'cron':
-        this.cronSlots.delete(slot.externalReferenceId);
-        break;
-    }
-  }
-
-  private getSlot(type: SessionType, externalReferenceId: string): SessionSlot | undefined {
-    switch (type) {
-      case 'conversation':
-        return this.conversationSlots.get(externalReferenceId);
-      case 'contact':
-        return this.contactSlot;
-      case 'cron':
-        return this.cronSlots.get(externalReferenceId);
-    }
   }
 
   /**
@@ -645,34 +555,30 @@ export class AgentInstanceImpl implements AgentInstance {
    * This ensures the MCP bridge that connects during launch is correctly
    * wired to the right session via `latestMcpServer`.
    */
-  private enqueueLaunch(type: SessionType, externalReferenceId: string, handoffNote?: string): Promise<AgentSession> {
-    const launch = this.launchQueue.then(() => this.launchSession(type, externalReferenceId, handoffNote));
+  private enqueueLaunch(handoffNote?: string): Promise<AgentSession> {
+    const launch = this.launchQueue.then(() => this.launchSession(handoffNote));
     this.launchQueue = launch.then(
       () => {},
       (err: unknown) => {
-        log.error(`${this.logTag} Session launch failed for ${type} ${externalReferenceId}`, err);
+        log.error(`${this.logTag} Shared session launch failed`, err);
       },
     );
     return launch;
   }
 
   /** Launch a session — always creates a fresh session, wire MCP and status hooks. */
-  private async launchSession(
-    type: SessionType,
-    externalReferenceId: string,
-    handoffNote?: string,
-  ): Promise<AgentSession> {
+  private async launchSession(handoffNote?: string): Promise<AgentSession> {
     if (this.abortController.signal.aborted) {
       throw new Error('Agent is stopping — session launch aborted');
     }
 
-    const session = await this.createSessionWithErrorHandling(type, externalReferenceId);
+    const session = await this.createSessionWithErrorHandling();
 
     // Wire MCP sessionId
     if (this.pendingMcpServer) {
       this.pendingMcpServer.setCurrentConversationIdGetter(() => session.currentConversationId);
       this.pendingMcpServer = undefined;
-      log.debug(`${this.logTag} Wired externalReferenceId ${type}:${externalReferenceId} to pending MCP server`);
+      log.debug(`${this.logTag} Wired session to pending MCP server`);
     }
 
     await this.provideContext(session, handoffNote);
@@ -694,22 +600,22 @@ export class AgentInstanceImpl implements AgentInstance {
 
     // Wire context pressure — triggers session rotation
     session.onContextPressure(() => {
-      void this.rotateSession(type, externalReferenceId);
+      void this.rotateSession();
     });
 
-    log.info(`${this.logTag} Session ready: key=${type}/${externalReferenceId} → correlation=${session.correlationId}`);
+    log.info(`${this.logTag} Shared Session ready`);
 
     // Apply persisted acpModel/acpMode from the backend (conversation sessions only)
-    void this.applyPersistedSessionConfig(type, externalReferenceId, session);
+    void this.applyPersistedSessionConfig(session);
 
     return session;
   }
 
-  private async createSessionWithErrorHandling(type: SessionType, externalReferenceId: string): Promise<AgentSession> {
+  private async createSessionWithErrorHandling(): Promise<AgentSession> {
     try {
       const session = await this.sessionFactory.createSession({
-        type,
-        externalReferenceId,
+        type: SESSION_TYPE,
+        externalReferenceId: EXTERNAL_REFERENCE_ID,
         promptFormatterVersion: this.promptManager.defaultVersion,
         mcpSocketPath: this.mcpSocketPath,
         skipToken: this.promptManager.skipToken(this.promptManager.defaultVersion),
@@ -803,23 +709,8 @@ export class AgentInstanceImpl implements AgentInstance {
   // ---------------------------------------------------------------------------
 
   /** Read persisted acpModel/acpMode from the conversation member and apply on session launch. */
-  private async applyPersistedSessionConfig(
-    type: SessionType,
-    externalReferenceId: string,
-    session: AgentSession,
-  ): Promise<void> {
-    if (type !== 'conversation') {
-      return;
-    }
-    try {
-      const members = this.app.store.getMembers(externalReferenceId);
-      const self = members?.get(this.app.identity.userId);
-      if (self) {
-        await session.applySessionConfig(self);
-      }
-    } catch (err: unknown) {
-      log.warn(`${this.logTag} Failed to apply persisted session config for ${type}/${externalReferenceId}`, err);
-    }
+  private async applyPersistedSessionConfig(_session: AgentSession): Promise<void> {
+    // todo
   }
 
   /** Apply acpModel/acpMode changes from conversation.member_updated to the live session. */
@@ -827,9 +718,9 @@ export class AgentInstanceImpl implements AgentInstance {
     conversationId: string,
     changes: { acpModel?: string | null; acpMode?: string | null },
   ): Promise<void> {
-    const slot = this.conversationSlots.get(conversationId);
+    const slot = this.sharedSessionSlot;
     if (!slot?.session) {
-      log.debug(`${this.logTag} acpModel/acpMode change for ${conversationId} — session not active, ignoring`);
+      log.debug(`${this.logTag} acpModel/acpMode change for ${conversationId} — shared session not active, ignoring`);
       return;
     }
     await slot.session.applySessionConfig(changes);
@@ -924,9 +815,7 @@ export class AgentInstanceImpl implements AgentInstance {
     for await (const event of slot.queue.events()) {
       const session = slot.session;
       if (!session) {
-        log.warn(
-          `${this.logTag} Session loop has no session for ${slot.type}:${slot.externalReferenceId}, skipping event`,
-        );
+        log.warn(`${this.logTag} Session loop has no session, skipping event`);
         continue;
       }
       slot.lastActivityAt = Date.now();
@@ -937,7 +826,77 @@ export class AgentInstanceImpl implements AgentInstance {
         slot.inFlight = null;
       }
     }
-    log.debug(`${this.logTag} Session loop ended: ${slot.type}:${slot.externalReferenceId}`);
+    log.debug(`${this.logTag} Session loop ended`);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Lazy memory injection — inject per-conversation and per-user context on first encounter
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Inject conversation and participant memory into the shared session the first time
+   * we process messages for a given conversation. Subsequent messages for the same
+   * conversation (and already-seen participants) skip fetching.
+   */
+  private async injectConversationContextIfNeeded(conversationId: string, session: AgentSession): Promise<void> {
+    const agentId = this.app.identity.userId;
+    const sections: string[] = [];
+
+    // Per-conversation memory
+    if (!this.injectedConversationIds.has(conversationId)) {
+      this.injectedConversationIds.add(conversationId);
+      try {
+        const { data } = await this.app.client.getMemory({ agentId, scope: 'conversation', scopeId: conversationId });
+        const parts: string[] = [];
+        if (data.summary) {
+          parts.push(`Summary: ${data.summary.text}`);
+        }
+        for (const fact of data.facts) {
+          parts.push(`- ${fact.text}`);
+        }
+        if (parts.length > 0) {
+          sections.push(`## Memory about conversation ${conversationId}\n${parts.join('\n')}`);
+        }
+      } catch {
+        // Graceful — memory may not exist yet
+      }
+    }
+
+    // Per-user memory for unseen participants
+    const members = this.app.store.getMembers(conversationId);
+    if (members) {
+      for (const [userId] of members) {
+        if (userId === agentId || this.injectedUserIds.has(userId)) {
+          continue;
+        }
+        this.injectedUserIds.add(userId);
+        try {
+          const { data } = await this.app.client.getMemory({ agentId, scope: 'user', scopeId: userId });
+          const parts: string[] = [];
+          if (data.summary) {
+            parts.push(`Summary: ${data.summary.text}`);
+          }
+          for (const fact of data.facts) {
+            parts.push(`- ${fact.text}`);
+          }
+          if (parts.length > 0) {
+            const member = members.get(userId);
+            const label = member?.displayName ?? member?.username ?? userId;
+            sections.push(`## Memory about ${label} (${userId})\n${parts.join('\n')}`);
+          }
+        } catch {
+          // Graceful
+        }
+      }
+    }
+
+    if (sections.length > 0) {
+      const contextPrompt = `# Additional context loaded for this conversation\n\n${sections.join('\n\n')}`;
+      await collectAgentMessage(session.prompt(contextPrompt, conversationId));
+      log.debug(
+        `${this.logTag} Injected memory context for conversation ${conversationId} (${sections.length} sections)`,
+      );
+    }
   }
 
   /** Dispatch an event to the appropriate handler. */
@@ -956,13 +915,10 @@ export class AgentInstanceImpl implements AgentInstance {
         await this.processSessionCompaction(session, event.callbacks);
         break;
       case 'rotate_session':
-        await this.processSessionRotation(event.sessionType, event.externalReferenceId, event.callbacks);
+        await this.processSessionRotation(event.callbacks);
         break;
       case 'update_memory':
         await this.processSessionMemoryUpdate(session, event.callbacks);
-        break;
-      case 'initiate_conversation':
-        await this.processConversationInitiation(session, event.conversationId, event.context);
         break;
     }
   }
@@ -972,6 +928,7 @@ export class AgentInstanceImpl implements AgentInstance {
     session: AgentSession,
     messages: readonly IncomingMessage[],
   ): Promise<void> {
+    await this.injectConversationContextIfNeeded(conversationId, session);
     const userText = this.promptManager.formatMessagePrompt(session.promptFormatterVersion, messages);
     const flags = this.getConversationFlags(conversationId);
     const ownerId = this.app.identity.ownerId;
@@ -1058,13 +1015,9 @@ export class AgentInstanceImpl implements AgentInstance {
     }
   }
 
-  private async processSessionRotation(
-    sessionType: SessionType,
-    externalReferenceId: string,
-    callbacks: readonly OwnerOpCallback[],
-  ): Promise<void> {
+  private async processSessionRotation(callbacks: readonly OwnerOpCallback[]): Promise<void> {
     try {
-      await this.rotateSession(sessionType, externalReferenceId);
+      await this.rotateSession();
       callbacks.forEach((callback) => callback.resolve({ success: true }));
     } catch (err: unknown) {
       callbacks.forEach((callback) => callback.reject(err));
@@ -1085,32 +1038,6 @@ export class AgentInstanceImpl implements AgentInstance {
     }
   }
 
-  private async processConversationInitiation(session: AgentSession, conversationId: string, context: string) {
-    try {
-      const promptText = this.promptManager.buildInitiateConversationPrompt(session.promptFormatterVersion, context);
-      const output = await collectAgentMessage(session.prompt(promptText, conversationId));
-
-      if (!output || this.promptManager.isSkip(session.promptFormatterVersion, output)) {
-        log.debug(`${this.logTag} Conversation initiation skipped for ${conversationId} (no message produced)`);
-        return;
-      }
-
-      // Extract message content after the MESSAGE: keyword
-      const messageMatch = output.match(/MESSAGE:\s*([\s\S]+)/i);
-      const message = messageMatch?.[1]?.trim();
-
-      if (!message) {
-        log.debug(`${this.logTag} Conversation initiation for ${conversationId} — no MESSAGE: keyword found, skipping`);
-        return;
-      }
-
-      await this.app.sendMessage(conversationId, message);
-      log.info(`${this.logTag} Delegated message sent to ${conversationId}`);
-    } catch (err: unknown) {
-      log.error(`${this.logTag} Conversation initiation failed for ${conversationId}`, err);
-    }
-  }
-
   // ---------------------------------------------------------------------------
   // Capability management
   // ---------------------------------------------------------------------------
@@ -1127,7 +1054,7 @@ export class AgentInstanceImpl implements AgentInstance {
 
   /** Get live session info for a session. */
   private getLiveSessionInfo(request: LiveSessionInfoRequest): LiveSessionInfoResponse {
-    const slot = this.getSlot(request.sessionType, request.externalReferenceId);
+    const slot = this.sharedSessionSlot;
     if (!slot?.session) {
       return {
         sessionType: request.sessionType,
@@ -1143,8 +1070,8 @@ export class AgentInstanceImpl implements AgentInstance {
   }
 
   /** Handle cancel session signal. */
-  private async handleCancelSession(request: CancelSessionRequest): Promise<CancelSessionResponse> {
-    const slot = this.getSlot(request.sessionType, request.externalReferenceId);
+  private async handleCancelSession(_request: CancelSessionRequest): Promise<CancelSessionResponse> {
+    const slot = this.sharedSessionSlot;
     if (!slot?.session) {
       return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
     }
@@ -1154,8 +1081,8 @@ export class AgentInstanceImpl implements AgentInstance {
   }
 
   /** Handle compact session signal. */
-  private async handleCompactSession(request: CompactSessionRequest): Promise<CompactSessionResponse> {
-    const slot = this.getSlot(request.sessionType, request.externalReferenceId);
+  private async handleCompactSession(_request: CompactSessionRequest): Promise<CompactSessionResponse> {
+    const slot = this.sharedSessionSlot;
     if (!slot?.session) {
       return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
     }
@@ -1176,7 +1103,7 @@ export class AgentInstanceImpl implements AgentInstance {
     if (request.sessionType !== 'conversation') {
       return { success: false, error: 'Can only start conversation session ondemand' };
     }
-    const slot = this.getOrCreateConversationSlot(request.externalReferenceId);
+    const slot = this.getOrCreateSharedSessionSlot();
     try {
       await slot.sessionPromise;
     } catch (err: unknown) {
@@ -1190,8 +1117,8 @@ export class AgentInstanceImpl implements AgentInstance {
   }
 
   /** Handle update_memory signal — run the mid-session memory-update prompt. */
-  private async handleUpdateMemory(request: UpdateMemoryRequest): Promise<UpdateMemoryResponse> {
-    const slot = this.getSlot(request.sessionType, request.externalReferenceId);
+  private async handleUpdateMemory(_request: UpdateMemoryRequest): Promise<UpdateMemoryResponse> {
+    const slot = this.sharedSessionSlot;
     if (!slot?.session) {
       return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
     }
@@ -1212,7 +1139,7 @@ export class AgentInstanceImpl implements AgentInstance {
     if (request.sessionType !== 'conversation') {
       return { success: false, errorCode: 'invalid_session_type', error: 'Can only rotate conversation sessions' };
     }
-    const slot = this.getSlot(request.sessionType, request.externalReferenceId);
+    const slot = this.sharedSessionSlot;
     if (!slot?.session) {
       return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
     }
@@ -1228,11 +1155,8 @@ export class AgentInstanceImpl implements AgentInstance {
     }
   }
 
-  initiateConversation(conversationId: string, context: string): void {
-    if (!this.abortController.signal.aborted) {
-      this.inbound.push({ type: 'initiate_conversation', conversationId: conversationId, context: context });
-      this.drainInbound();
-    }
+  initiateConversation(_conversationId: string, _context: string): void {
+    throw new Error('Shared session does not support initiating conversation');
   }
 
   // ---------------------------------------------------------------------------
@@ -1255,28 +1179,14 @@ export class AgentInstanceImpl implements AgentInstance {
       const timeout = this.config.sessionIdleTimeoutMs ?? DEFAULT_SESSION_IDLE_TIMEOUT_MS;
       const now = Date.now();
 
-      // Conversation slots
-      for (const [conversationId, slot] of this.conversationSlots) {
-        if (now - slot.lastActivityAt > timeout && slot.session && !slot.inFlight) {
-          log.info(
-            `${this.logTag} Idle session cleanup: conversation ${conversationId} (idle ${Math.round((now - slot.lastActivityAt) / 1000)}s)`,
-          );
-          await this.endSession(slot);
-        }
-      }
-
-      // Contact slot
-      if (this.contactSlot?.session && now - this.contactSlot.lastActivityAt > timeout && !this.contactSlot.inFlight) {
-        log.info(`${this.logTag} Idle session cleanup: contact session`);
-        await this.endSession(this.contactSlot);
-      }
-
-      // Cron slots
-      for (const [cronId, slot] of this.cronSlots) {
-        if (now - slot.lastActivityAt > timeout && slot.session && !slot.inFlight) {
-          log.info(`${this.logTag} Idle session cleanup: cron ${cronId}`);
-          await this.endSession(slot);
-        }
+      // Shared session slot
+      if (
+        this.sharedSessionSlot?.session &&
+        now - this.sharedSessionSlot.lastActivityAt > timeout &&
+        !this.sharedSessionSlot.inFlight
+      ) {
+        log.info(`${this.logTag} Idle session cleanup: shared session`);
+        await this.endSession(this.sharedSessionSlot);
       }
     } finally {
       this.cleaningUpIdleSessions = false;
@@ -1288,9 +1198,9 @@ export class AgentInstanceImpl implements AgentInstance {
   // ---------------------------------------------------------------------------
 
   /** Rotate a session in-place: run session-end prompt, end old session, launch new, assign to slot. */
-  private async rotateSession(type: SessionType, externalReferenceId: string): Promise<void> {
-    log.info(`${this.logTag} Rotating session in-place for ${type}:${externalReferenceId}`);
-    const slot = this.getSlot(type, externalReferenceId);
+  private async rotateSession(): Promise<void> {
+    log.info(`${this.logTag} Rotating shared session in-place`);
+    const slot = this.sharedSessionSlot;
     if (!slot?.session) {
       return;
     }
@@ -1298,41 +1208,44 @@ export class AgentInstanceImpl implements AgentInstance {
     const oldSession = slot.session;
     let handoffNote: string | undefined;
 
-    // For conversation sessions, run session-end prompt to capture handoff
-    if (type === 'conversation') {
-      try {
-        const fullOutput = await collectAgentMessage(
-          oldSession.prompt(this.promptManager.buildSessionEndPrompt(oldSession.promptFormatterVersion)),
-        );
-        const handoffMatch = fullOutput?.match(/HANDOFF:\s*([\s\S]+)/i);
-        if (handoffMatch && handoffMatch[1]) {
-          handoffNote = handoffMatch[1].trim();
-          log.info(`${this.logTag} Captured handoff for ${type}:${externalReferenceId} (${handoffNote.length} chars)`);
-        }
-      } catch (err: unknown) {
-        log.warn(`${this.logTag} Session-end prompt failed for ${type}:${externalReferenceId}`, err);
+    try {
+      const fullOutput = await collectAgentMessage(
+        oldSession.prompt(this.promptManager.buildSessionEndPrompt(oldSession.promptFormatterVersion)),
+      );
+      const handoffMatch = fullOutput?.match(/HANDOFF:\s*([\s\S]+)/i);
+      if (handoffMatch && handoffMatch[1]) {
+        handoffNote = handoffMatch[1].trim();
+        log.info(`${this.logTag} Captured handoff for shared session (${handoffNote.length} chars)`);
       }
+    } catch (err: unknown) {
+      log.warn(`${this.logTag} Session-end prompt failed for shared session`, err);
     }
 
     // End old session
     slot.session = undefined;
     await this.sessionFactory.endSession(oldSession.correlationId);
+    this.injectedConversationIds.clear();
+    this.injectedUserIds.clear();
 
     // Launch new session (serialized through launch queue) and assign to slot
     try {
-      const newSession = await this.enqueueLaunch(type, externalReferenceId, handoffNote);
+      const newSession = await this.enqueueLaunch(handoffNote);
       slot.session = newSession;
-      log.info(`${this.logTag} Session rotated: ${type}:${externalReferenceId} → ${newSession.correlationId}`);
+      log.info(`${this.logTag} Rotated shared session: → ${newSession.correlationId}`);
     } catch (err: unknown) {
-      log.error(`${this.logTag} Failed to launch replacement session for ${type}:${externalReferenceId}`, err);
+      log.error(`${this.logTag} Failed to launch replacement shared session`, err);
       // Persist handoff so the self-recovery path can load it from backend
       if (handoffNote) {
         this.app.client
-          .putHandoffNote({ agentId: this.app.identity.userId, conversationId: externalReferenceId, text: handoffNote })
+          .putHandoffNote({
+            agentId: this.app.identity.userId,
+            conversationId: EXTERNAL_REFERENCE_ID,
+            text: handoffNote,
+          })
           .catch((e: unknown) => log.warn(`${this.logTag} Failed to persist handoff note`, e));
       }
       slot.queue.close();
-      this.removeSlot(slot);
+      this.sharedSessionSlot = undefined;
     }
   }
 
@@ -1344,37 +1257,32 @@ export class AgentInstanceImpl implements AgentInstance {
     const session = slot.session;
     if (!session) {
       slot.queue.close();
-      this.removeSlot(slot);
+      this.sharedSessionSlot = undefined;
       return;
     }
 
-    // For conversation sessions, run session-end prompt to capture handoff
-    if (slot.type === 'conversation') {
-      try {
-        const fullOutput = await collectAgentMessage(
-          session.prompt(this.promptManager.buildSessionEndPrompt(session.promptFormatterVersion)),
-        );
+    try {
+      const fullOutput = await collectAgentMessage(
+        session.prompt(this.promptManager.buildSessionEndPrompt(session.promptFormatterVersion)),
+      );
 
-        const handoffMatch = fullOutput?.match(/HANDOFF:\s*([\s\S]+)/i);
-        if (handoffMatch && handoffMatch[1]) {
-          const summary = handoffMatch[1].trim();
-          await this.app.client.putHandoffNote({
-            agentId: this.app.identity.userId,
-            conversationId: slot.externalReferenceId,
-            text: summary,
-          });
-          log.info(
-            `${this.logTag} Captured handoff for ${slot.type}:${slot.externalReferenceId} (${summary.length} chars)`,
-          );
-        }
-      } catch (err: unknown) {
-        log.warn(`${this.logTag} Session-end prompt failed for ${slot.type}:${slot.externalReferenceId}`, err);
+      const handoffMatch = fullOutput?.match(/HANDOFF:\s*([\s\S]+)/i);
+      if (handoffMatch && handoffMatch[1]) {
+        const summary = handoffMatch[1].trim();
+        await this.app.client.putHandoffNote({
+          agentId: this.app.identity.userId,
+          conversationId: EXTERNAL_REFERENCE_ID,
+          text: summary,
+        });
+        log.info(`${this.logTag} Captured handoff shared session (${summary.length} chars)`);
       }
+    } catch (err: unknown) {
+      log.warn(`${this.logTag} Session-end prompt failed for shared session`, err);
     }
 
     slot.queue.close();
     await this.sessionFactory.endSession(session.correlationId);
-    this.removeSlot(slot);
+    this.sharedSessionSlot = undefined;
   }
 
   // ---------------------------------------------------------------------------

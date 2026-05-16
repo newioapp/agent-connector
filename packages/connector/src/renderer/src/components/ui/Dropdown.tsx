@@ -7,6 +7,7 @@ import { ChevronDown } from 'lucide-react';
 interface DropdownOption<T extends string> {
   readonly value: T;
   readonly label: string;
+  readonly description?: string;
 }
 
 export function Dropdown<T extends string>({
@@ -53,7 +54,7 @@ export function Dropdown<T extends string>({
           {options.map((o) => (
             <button
               key={o.value}
-              className={`flex w-full px-3 py-2 text-left text-sm transition-colors hover:bg-accent ${
+              className={`flex w-full flex-col px-3 py-2 text-left text-sm transition-colors hover:bg-accent ${
                 value === o.value ? 'text-primary font-medium' : 'text-foreground'
               }`}
               onMouseDown={() => {
@@ -61,7 +62,8 @@ export function Dropdown<T extends string>({
                 setOpen(false);
               }}
             >
-              {o.label}
+              <span>{o.label}</span>
+              {o.description && <span className="text-xs font-normal text-muted-foreground">{o.description}</span>}
             </button>
           ))}
         </div>

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AgentInstanceImpl } from '../../src/agent-instance-impl';
+import { IsolatedSessionAgentInstance } from '../../src/isolated-session-agent-instance';
 import type { AgentSession } from '../../src/agent-session';
 import type { AgentConfigManager } from '../../src/agent-config-manager';
 import type { AgentInstanceListener } from '../../src/agent-instance';
@@ -42,7 +42,7 @@ function createMockApp(
   };
 }
 
-function createInstance(): AgentInstanceImpl {
+function createInstance(): IsolatedSessionAgentInstance {
   const config: AgentConfig = { id: 'agent-1', type: 'kiro-cli', envVars: {} };
   const configManager = {} as AgentConfigManager;
   const cronStore = {} as CronStore;
@@ -62,22 +62,22 @@ function createInstance(): AgentInstanceImpl {
     onAgentInfo: vi.fn(),
   } satisfies AgentInstanceListener;
 
-  return new AgentInstanceImpl(config, configManager, cronStore, listener, engineConfig);
+  return new IsolatedSessionAgentInstance(config, configManager, cronStore, listener, engineConfig);
 }
 
 /** Inject a mock NewioApp into the instance. */
-function setApp(instance: AgentInstanceImpl, app: unknown): void {
+function setApp(instance: IsolatedSessionAgentInstance, app: unknown): void {
   (instance as unknown as Record<string, unknown>)['_app'] = app;
 }
 
 /** Inject the owner DM conversation ID. */
-function setOwnerDmConversationId(instance: AgentInstanceImpl, id: string): void {
+function setOwnerDmConversationId(instance: IsolatedSessionAgentInstance, id: string): void {
   (instance as unknown as Record<string, unknown>)['_ownerDmConversationId'] = id;
 }
 
 /** Inject a conversation slot with a mock session for testing. */
 function injectConversationSlot(
-  instance: AgentInstanceImpl,
+  instance: IsolatedSessionAgentInstance,
   conversationId: string,
   session: Partial<AgentSession>,
 ): void {
@@ -93,7 +93,7 @@ function injectConversationSlot(
 
 /** Call the private handlePermissionRequest method. */
 async function callPermissionRequest(
-  instance: AgentInstanceImpl,
+  instance: IsolatedSessionAgentInstance,
   title: string,
   options: ReadonlyArray<{ optionId: string; name: string }>,
   conversationId?: string,
@@ -103,7 +103,7 @@ async function callPermissionRequest(
 
 /** Simulate a conversation.member_updated event routing through the handler. */
 function simulateMemberUpdated(
-  instance: AgentInstanceImpl,
+  instance: IsolatedSessionAgentInstance,
   event: { conversationId: string; userId: string; updatedBy?: string; changes: Record<string, unknown> },
 ): void {
   const { conversationId, userId, updatedBy, changes } = event;
@@ -127,7 +127,7 @@ function simulateMemberUpdated(
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('AgentInstanceImpl — permission request routing', () => {
+describe('IsolatedSessionAgentInstance — permission request routing', () => {
   const ownerId = 'owner-1';
   const ownerDmConvId = 'dm-owner-agent';
   const friendConvId = 'conv-friend';
@@ -136,7 +136,7 @@ describe('AgentInstanceImpl — permission request routing', () => {
     { optionId: 'reject_once', name: 'Reject once' },
   ];
 
-  let instance: AgentInstanceImpl;
+  let instance: IsolatedSessionAgentInstance;
 
   beforeEach(() => {
     instance = createInstance();
@@ -269,10 +269,10 @@ describe('AgentInstanceImpl — permission request routing', () => {
   });
 });
 
-describe('AgentInstanceImpl — acpModel/acpMode routing via conversation.member_updated', () => {
+describe('IsolatedSessionAgentInstance — acpModel/acpMode routing via conversation.member_updated', () => {
   const ownerId = 'owner-1';
   const convId = 'conv-123';
-  let instance: AgentInstanceImpl;
+  let instance: IsolatedSessionAgentInstance;
   let mockSession: { applySessionConfig: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {

@@ -235,6 +235,7 @@ export function ConfigTab({
 
         {showInfo && agentInfo && <AgentInfoModal info={agentInfo} onClose={() => setShowInfo(false)} />}
 
+        <Field label="Session Mode" value={config.sessionMode === 'shared' ? 'Shared' : 'Isolated'} />
         {config.acp?.cwd && <Field label="Working Directory" value={config.acp.cwd} />}
         {config.newio?.displayName && <Field label="Display Name" value={config.newio.displayName} />}
         <div className="mb-3">
