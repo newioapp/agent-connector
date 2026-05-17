@@ -2,6 +2,7 @@ export type {
   EvalArea,
   EvalConfig,
   EvalScenario,
+  ScenarioSessionMode,
   ScriptedEvent,
   Expectation,
   ScenarioSetup,

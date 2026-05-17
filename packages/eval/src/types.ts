@@ -156,12 +156,15 @@ export interface ScenarioSetup {
   readonly conversations?: readonly ConversationSetup[];
 }
 
+/** Scenarios can declare 'both' to run in both isolated and shared modes. */
+export type ScenarioSessionMode = SessionMode | 'both';
+
 export interface EvalScenario {
   readonly id: string;
   readonly name: string;
   readonly description: string;
   readonly area: EvalArea;
-  readonly sessionMode: SessionMode;
+  readonly sessionMode: ScenarioSessionMode;
   readonly setup: ScenarioSetup;
   readonly events: readonly ScriptedEvent[];
   readonly expectations: readonly Expectation[];
@@ -176,7 +179,7 @@ export interface EvalConfig {
   readonly acp: { readonly executablePath?: string; readonly cwd: string };
   readonly model: string;
   readonly promptVersion: string;
-  readonly sessionMode: SessionMode;
+  readonly sessionMode: SessionMode | 'both';
   readonly judgeModel: string;
   readonly judgeApiKeyEnvVar: string;
   readonly runsPerScenario: number;
@@ -221,7 +224,7 @@ export interface ScenarioRunResult {
   readonly agentType: AgentType;
   readonly model: string;
   readonly promptVersion: string;
-  readonly sessionMode: SessionMode;
+  readonly sessionMode: SessionMode | 'both';
   readonly traces: readonly EventTrace[];
   readonly assertions: readonly AssertionResult[];
   readonly passed: boolean;
