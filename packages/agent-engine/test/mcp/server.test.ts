@@ -76,7 +76,7 @@ function mockApp(
 
 async function createConnectedClient(app: NewioApp, sessionMode: SessionMode = 'isolated'): Promise<Client> {
   const agent = { initiateConversation: vi.fn() } as unknown as AgentInstance;
-  const server = new NewioMcpServer(app, agent, sessionMode);
+  const server = new NewioMcpServer({ app, agent, sessionMode });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
   const client = new Client({ name: 'test-client', version: '1.0.0' });
@@ -216,7 +216,7 @@ describe('MCP Server', () => {
   it('initiate_conversation delegates to agent instance', async () => {
     const app = mockApp();
     const agent = { initiateConversation: vi.fn() } as unknown as AgentInstance;
-    const server = new NewioMcpServer(app, agent, 'isolated');
+    const server = new NewioMcpServer({ app, agent, sessionMode: 'isolated' });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     const client = new Client({ name: 'test-client', version: '1.0.0' });
@@ -268,7 +268,7 @@ describe('MCP Server', () => {
   it('upload_attachment_to_current_conversation sends attachment-only message', async () => {
     const app = mockApp();
     const agent = { initiateConversation: vi.fn() } as unknown as AgentInstance;
-    const server = new NewioMcpServer(app, agent, 'isolated');
+    const server = new NewioMcpServer({ app, agent, sessionMode: 'isolated' });
     server.setCurrentConversationIdGetter(() => 'conv-1');
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
@@ -529,5 +529,77 @@ describe('MCP Server', () => {
       username: 'alice',
       conversationId: undefined,
     });
+  });
+});
+
+describe('onToolCall hook', () => {
+  async function createClientWithHook(
+    app: NewioApp,
+    onToolCall: (toolName: string, args: Readonly<Record<string, unknown>>) => void,
+  ): Promise<Client> {
+    const agent = { initiateConversation: vi.fn() } as unknown as AgentInstance;
+    const server = new NewioMcpServer({ app, agent, sessionMode: 'shared', onToolCall });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    const client = new Client({ name: 'test-client', version: '1.0.0' });
+    await client.connect(clientTransport);
+    return client;
+  }
+
+  it('fires hook with tool name and args for send_dm', async () => {
+    const app = mockApp();
+    const calls: Array<{ tool: string; args: Record<string, unknown> }> = [];
+    const client = await createClientWithHook(app, (tool, args) => {
+      calls.push({ tool, args: { ...args } });
+    });
+
+    await client.callTool({ name: 'send_dm', arguments: { username: 'alice', text: 'hello' } });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.tool).toBe('send_dm');
+    expect(calls[0]!.args).toEqual({ username: 'alice', text: 'hello', filePaths: undefined });
+  });
+
+  it('fires hook for list_friends (no args)', async () => {
+    const app = mockApp();
+    const calls: Array<{ tool: string; args: Record<string, unknown> }> = [];
+    const client = await createClientWithHook(app, (tool, args) => {
+      calls.push({ tool, args: { ...args } });
+    });
+
+    await client.callTool({ name: 'list_friends', arguments: {} });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.tool).toBe('list_friends');
+    expect(calls[0]!.args).toEqual({});
+  });
+
+  it('fires hook for memory tools', async () => {
+    const app = mockApp();
+    const calls: Array<{ tool: string; args: Record<string, unknown> }> = [];
+    const client = await createClientWithHook(app, (tool, args) => {
+      calls.push({ tool, args: { ...args } });
+    });
+
+    await client.callTool({ name: 'add_memory', arguments: { text: 'Alice likes cats', username: 'alice' } });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.tool).toBe('add_memory');
+    expect(calls[0]!.args.text).toBe('Alice likes cats');
+    expect(calls[0]!.args.username).toBe('alice');
+  });
+
+  it('captures multiple tool calls in order', async () => {
+    const app = mockApp();
+    const calls: Array<{ tool: string }> = [];
+    const client = await createClientWithHook(app, (tool) => {
+      calls.push({ tool });
+    });
+
+    await client.callTool({ name: 'list_friends', arguments: {} });
+    await client.callTool({ name: 'list_conversations', arguments: {} });
+    await client.callTool({ name: 'dm_owner', arguments: { text: 'hi' } });
+
+    expect(calls.map((c) => c.tool)).toEqual(['list_friends', 'list_conversations', 'dm_owner']);
   });
 });

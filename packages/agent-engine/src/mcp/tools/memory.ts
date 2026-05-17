@@ -10,12 +10,13 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NewioApp } from '@newio/agent-sdk';
 import { stringify } from 'yaml';
+import type { ToolCallHook } from '../types.js';
 
 const yaml = (obj: unknown) => ({ content: [{ type: 'text' as const, text: stringify(obj) }] });
 const err = (msg: string) => ({ content: [{ type: 'text' as const, text: msg }], isError: true as const });
 
 /** Register memory tools on the MCP server. */
-export function registerMemoryTools(server: McpServer, app: NewioApp): void {
+export function registerMemoryTools(server: McpServer, app: NewioApp, onToolCall?: ToolCallHook): void {
   /** Reject if the agent passes its own username — that's global scope. */
   function validateNotSelf(username?: string): void {
     if (username && username.toLowerCase() === app.identity.username.toLowerCase()) {
@@ -34,6 +35,7 @@ export function registerMemoryTools(server: McpServer, app: NewioApp): void {
       },
     },
     async ({ username, conversationId }) => {
+      onToolCall?.('get_memory', { username, conversationId });
       if (username) {
         return yaml(await app.getContactMemory(username));
       }
@@ -58,6 +60,7 @@ export function registerMemoryTools(server: McpServer, app: NewioApp): void {
       },
     },
     async ({ text, username, conversationId }) => {
+      onToolCall?.('add_memory', { text, username, conversationId });
       validateNotSelf(username);
       await app.addMemory(text, { username, conversationId });
       return yaml({ stored: true });
@@ -77,6 +80,7 @@ export function registerMemoryTools(server: McpServer, app: NewioApp): void {
       },
     },
     async ({ factId, text, username, conversationId }) => {
+      onToolCall?.('update_memory', { factId, text, username, conversationId });
       validateNotSelf(username);
       await app.updateMemory(factId, text, { username, conversationId });
       return yaml({ updated: true });
@@ -94,6 +98,7 @@ export function registerMemoryTools(server: McpServer, app: NewioApp): void {
       },
     },
     async ({ factId, username, conversationId }) => {
+      onToolCall?.('delete_memory', { factId, username, conversationId });
       validateNotSelf(username);
       await app.deleteMemory(factId, { username, conversationId });
       return yaml({ deleted: true });
@@ -112,6 +117,7 @@ export function registerMemoryTools(server: McpServer, app: NewioApp): void {
       },
     },
     async ({ text, username, conversationId }) => {
+      onToolCall?.('update_memory_summary', { text, username, conversationId });
       validateNotSelf(username);
       await app.updateMemorySummary(text, { username, conversationId });
       return yaml({ updated: true });

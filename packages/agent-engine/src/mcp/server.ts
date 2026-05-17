@@ -18,16 +18,24 @@ import { registerMessagingTools } from './tools/messaging.js';
 import { registerUsersTools } from './tools/users.js';
 import { registerMediaTools } from './tools/media.js';
 import { registerMemoryTools } from './tools/memory.js';
-import { IdGetter } from './types.js';
-import { AgentInstance } from '../agent-instance.js';
+import type { IdGetter, ToolCallHook } from './types.js';
+import type { AgentInstance } from '../agent-instance.js';
 import type { SessionMode } from '../types.js';
+
+export interface NewioMcpServerOptions {
+  readonly app: NewioApp;
+  readonly agent: AgentInstance;
+  readonly sessionMode: SessionMode;
+  /** Optional hook called before each tool invocation. */
+  readonly onToolCall?: ToolCallHook;
+}
 
 /**
  * MCP server that exposes Newio tools to agent sessions.
  *
  * @example
  * ```ts
- * const mcpServer = new NewioMcpServer(app, agent, 'isolated');
+ * const mcpServer = new NewioMcpServer({ app, agent, sessionMode: 'isolated' });
  * await mcpServer.connect(transport);
  * ```
  */
@@ -36,20 +44,22 @@ export class NewioMcpServer {
   private readonly server: McpServer;
   private getCurrentConversationId: IdGetter;
 
-  constructor(app: NewioApp, agent: AgentInstance, sessionMode: SessionMode) {
+  constructor(opts: NewioMcpServerOptions) {
     this.server = new McpServer({
       name: 'newio-mcp-server',
       version: '0.1.0',
     });
 
+    const { app, agent, sessionMode, onToolCall } = opts;
+
     this.getCurrentConversationId = () => undefined;
-    registerContactsTools(this.server, app);
-    registerConversationsTools(this.server, app);
-    registerCronTools(this.server, app);
-    registerMessagingTools(this.server, app, agent, () => this.getCurrentConversationId(), sessionMode);
-    registerUsersTools(this.server, app);
-    registerMediaTools(this.server, app, () => this.getCurrentConversationId());
-    registerMemoryTools(this.server, app);
+    registerContactsTools(this.server, app, onToolCall);
+    registerConversationsTools(this.server, app, onToolCall);
+    registerCronTools(this.server, app, onToolCall);
+    registerMessagingTools(this.server, app, agent, () => this.getCurrentConversationId(), sessionMode, onToolCall);
+    registerUsersTools(this.server, app, onToolCall);
+    registerMediaTools(this.server, app, () => this.getCurrentConversationId(), onToolCall);
+    registerMemoryTools(this.server, app, onToolCall);
   }
 
   setCurrentConversationIdGetter(idGetter: IdGetter): void {

@@ -282,7 +282,7 @@ export class IsolatedSessionAgentInstance implements AgentInstance {
           if (this.pendingMcpServer) {
             log.warn(`${this.logTag} New MCP connection arrived before previous one was wired to a session`);
           }
-          const mcpServer = new NewioMcpServer(app, this, 'isolated');
+          const mcpServer = new NewioMcpServer({ app, agent: this, sessionMode: 'isolated' });
           this.pendingMcpServer = mcpServer;
           void mcpServer.connect(transport);
         },

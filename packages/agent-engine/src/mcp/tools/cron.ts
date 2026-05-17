@@ -4,12 +4,13 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NewioApp } from '@newio/agent-sdk';
+import type { ToolCallHook } from '../types.js';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
 
 /** Register cron scheduling tools on the MCP server. */
-export function registerCronTools(server: McpServer, app: NewioApp): void {
+export function registerCronTools(server: McpServer, app: NewioApp, onToolCall?: ToolCallHook): void {
   server.registerTool(
     'schedule_cron',
     {
@@ -32,6 +33,7 @@ export function registerCronTools(server: McpServer, app: NewioApp): void {
       },
     },
     ({ expression, label, payload }) => {
+      onToolCall?.('schedule_cron', { expression, label, payload });
       const cronId = `cron_${Date.now().toString(36)}`;
       app.scheduleCron({ cronId, expression, label, payload });
       return text(`Cron scheduled: ${cronId} — "${label}" (${expression})`);
@@ -47,6 +49,7 @@ export function registerCronTools(server: McpServer, app: NewioApp): void {
       },
     },
     ({ cronId }) => {
+      onToolCall?.('cancel_cron', { cronId });
       const status = app.cancelCron(cronId);
       if (status === 'not_found') {
         return text(`Cron not found: ${cronId}`);
@@ -56,6 +59,7 @@ export function registerCronTools(server: McpServer, app: NewioApp): void {
   );
 
   server.registerTool('list_crons', { description: 'List all active cron jobs for this agent' }, () => {
+    onToolCall?.('list_crons', {});
     return json(app.listCrons());
   });
 }
