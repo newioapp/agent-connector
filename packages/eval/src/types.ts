@@ -200,6 +200,18 @@ export type Expectation =
 // ---------------------------------------------------------------------------
 
 export interface ScenarioSetup {
+  /** Agent identity for this scenario. */
+  readonly agent: {
+    readonly userId: string;
+    readonly username: string;
+    readonly displayName: string;
+    readonly ownerId: string;
+  };
+  /** Owner identity for this scenario. */
+  readonly owner: {
+    readonly username: string;
+    readonly displayName: string;
+  };
   readonly memory?: MemorySetup;
   readonly handoffNote?: string;
   readonly contacts?: readonly ContactSetup[];

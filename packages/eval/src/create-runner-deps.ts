@@ -41,13 +41,8 @@ export async function createScenarioRunnerDeps(
   const traceCollector = new TraceCollector();
 
   const mockApp = new MockNewioApp({
-    identity: {
-      userId: '9c7547be-8e6e-435d-a3a5-f1e776719750',
-      username: 'evalagent',
-      displayName: 'Eval Agent',
-      ownerId: '54ec54aa-f1dc-4d73-930e-6be51d6c5b6a',
-    },
-    owner: { username: 'evalowner', displayName: 'Eval Owner' },
+    identity: scenario.setup.agent,
+    owner: scenario.setup.owner,
     contacts: scenario.setup.contacts?.map((c) => ({ username: c.username, displayName: c.displayName })),
     conversations: scenario.setup.conversations?.map((c) => ({
       conversationId: c.conversationId,

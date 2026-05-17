@@ -1,16 +1,30 @@
 /**
  * First eval scenarios — tool usage (Area 2) and response relevance/skip behavior (Area 4).
  */
-import type { EvalScenario, UserProfile, ConversationSetup } from '../types.js';
+import type { EvalScenario, UserProfile, ConversationSetup, ScenarioSetup } from '../types.js';
 
 // ---------------------------------------------------------------------------
-// Reusable fixtures
+// Shared setup — reused across scenarios
+// ---------------------------------------------------------------------------
+
+const defaultSetup = {
+  agent: {
+    userId: '9c7547be-8e6e-435d-a3a5-f1e776719750',
+    username: 'evalagent',
+    displayName: 'Eval Agent',
+    ownerId: '54ec54aa-f1dc-4d73-930e-6be51d6c5b6a',
+  },
+  owner: { username: 'evalowner', displayName: 'Eval Owner' },
+} satisfies Pick<ScenarioSetup, 'agent' | 'owner'>;
+
+// ---------------------------------------------------------------------------
+// Reusable user fixtures
 // ---------------------------------------------------------------------------
 
 const owner: UserProfile = {
   userId: '54ec54aa-f1dc-4d73-930e-6be51d6c5b6a',
-  username: 'myowner',
-  displayName: 'My Owner',
+  username: 'evalowner',
+  displayName: 'Eval Owner',
   accountType: 'human',
   relationship: 'owner',
 };
@@ -57,7 +71,10 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
       'When replying to a DM, the agent should NOT call send_message/send_dm/dm_owner — the reply is auto-delivered.',
     area: 'tool_usage',
     sessionMode: 'shared',
-    setup: { contacts: [{ username: 'alice', displayName: 'Alice', accountType: 'human' }] },
+    setup: {
+      ...defaultSetup,
+      contacts: [{ username: 'alice', displayName: 'Alice', accountType: 'human' }],
+    },
     events: [{ type: 'dm', from: alice, text: 'Hey, what time is it?' }],
     expectations: [
       { type: 'no_skip', eventIndex: 0, description: 'Agent should respond to a DM' },
@@ -72,7 +89,10 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
     description: 'When owner asks agent to message someone else, agent uses send_dm in shared mode.',
     area: 'tool_usage',
     sessionMode: 'shared',
-    setup: { contacts: [{ username: 'alice', displayName: 'Alice', accountType: 'human' }] },
+    setup: {
+      ...defaultSetup,
+      contacts: [{ username: 'alice', displayName: 'Alice', accountType: 'human' }],
+    },
     events: [{ type: 'dm', from: owner, text: 'Please tell Alice that the meeting is moved to 3pm.' }],
     expectations: [
       {
@@ -89,14 +109,13 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
     description: 'When owner asks agent to message someone else, agent uses initiate_conversation in isolated mode.',
     area: 'tool_usage',
     sessionMode: 'isolated',
-    setup: { contacts: [{ username: 'alice', displayName: 'Alice', accountType: 'human' }] },
+    setup: {
+      ...defaultSetup,
+      contacts: [{ username: 'alice', displayName: 'Alice', accountType: 'human' }],
+    },
     events: [{ type: 'dm', from: owner, text: 'Please tell Alice that the meeting is moved to 3pm.' }],
     expectations: [
-      {
-        type: 'tool_called',
-        tool: 'initiate_conversation',
-        description: 'Should use initiate_conversation in isolated mode',
-      },
+      { type: 'tool_called', tool: 'initiate_conversation', description: 'Should use initiate_conversation' },
       { type: 'tool_not_called', tool: 'send_dm', description: 'send_dm is not available in isolated mode' },
     ],
   },
@@ -106,7 +125,7 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
     description: 'Agent should output _skip for contact events and take action exclusively via MCP tools.',
     area: 'tool_usage',
     sessionMode: 'shared',
-    setup: {},
+    setup: defaultSetup,
     events: [
       {
         type: 'contact_event',
@@ -133,6 +152,7 @@ export const skipBehaviorScenarios: readonly EvalScenario[] = [
     area: 'response_relevance',
     sessionMode: 'shared',
     setup: {
+      ...defaultSetup,
       conversations: [teamChat],
       contacts: [
         { username: 'alice', displayName: 'Alice', accountType: 'human' },
@@ -149,6 +169,7 @@ export const skipBehaviorScenarios: readonly EvalScenario[] = [
     area: 'response_relevance',
     sessionMode: 'shared',
     setup: {
+      ...defaultSetup,
       conversations: [teamChat],
       contacts: [{ username: 'alice', displayName: 'Alice', accountType: 'human' }],
     },
@@ -168,7 +189,10 @@ export const skipBehaviorScenarios: readonly EvalScenario[] = [
     description: 'Agent must never skip a DM — the user is talking directly to it.',
     area: 'response_relevance',
     sessionMode: 'shared',
-    setup: { contacts: [{ username: 'alice', displayName: 'Alice', accountType: 'human' }] },
+    setup: {
+      ...defaultSetup,
+      contacts: [{ username: 'alice', displayName: 'Alice', accountType: 'human' }],
+    },
     events: [{ type: 'dm', from: alice, text: 'Hello!' }],
     expectations: [{ type: 'no_skip', eventIndex: 0, description: 'DMs always get a response' }],
   },
@@ -179,6 +203,7 @@ export const skipBehaviorScenarios: readonly EvalScenario[] = [
     area: 'response_relevance',
     sessionMode: 'shared',
     setup: {
+      ...defaultSetup,
       conversations: [workSession],
       contacts: [{ username: 'alice', displayName: 'Alice', accountType: 'human' }],
     },
@@ -198,7 +223,7 @@ export const skipBehaviorScenarios: readonly EvalScenario[] = [
     description: 'Agent should output _skip for cron events — the text response goes nowhere.',
     area: 'response_relevance',
     sessionMode: 'shared',
-    setup: {},
+    setup: defaultSetup,
     events: [{ type: 'cron_trigger', cronId: 'cron_1', label: 'Send daily standup reminder' }],
     expectations: [{ type: 'skip', eventIndex: 0, description: 'Cron response is discarded — should skip' }],
   },
