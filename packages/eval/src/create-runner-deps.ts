@@ -26,6 +26,8 @@ export interface ScenarioRunnerDeps {
 
   readonly promptFormatter: PromptFormatter;
 
+  readonly setCurrentConversationId: (id: string | undefined) => void;
+
   /** Tear down everything (ACP process + UDS server). */
   teardown(): Promise<void>;
 }
@@ -65,6 +67,13 @@ export async function createScenarioRunnerDeps(
     initiateConversation: () => {},
     sessionMode: scenario.sessionMode,
     onToolCall,
+  });
+
+  const currentConversationId: { id: string | undefined } = {
+    id: undefined,
+  };
+  mcpServer.setCurrentConversationIdGetter(() => {
+    return currentConversationId.id;
   });
 
   // Start UDS server
@@ -113,6 +122,9 @@ export async function createScenarioRunnerDeps(
     promptFormatter: promptFormatter,
     toolInterceptor,
     traceCollector,
+    setCurrentConversationId: (id) => {
+      currentConversationId.id = id;
+    },
     teardown: async () => {
       await sessionFactory.terminate();
       await new Promise<void>((resolve) => {
