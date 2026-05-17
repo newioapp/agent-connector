@@ -18,8 +18,10 @@ import type { AgentSession } from './agent-session';
 import type { AgentConfig, SessionType } from './types';
 import { resolveCommand } from './types';
 import type { AgentInfo } from './types';
-import { getLogger, NewioClient } from '@newio/agent-sdk';
+import { getLogger } from '@newio/agent-sdk';
 import { EngineConfig } from './engine-config';
+import { ContextWindow } from './acp-session-context-window-handler';
+import { SessionConfig } from './acp-session-config-handler';
 
 const log = getLogger('acp-session-factory');
 
@@ -49,6 +51,8 @@ export interface CreateSessionInput {
   readonly promptFormatterVersion: string;
   readonly mcpSocketPath: string;
   readonly skipToken: string;
+  readonly updateConfig: (config: SessionConfig) => Promise<void>;
+  readonly reportContextWindow: (contextWindow: ContextWindow) => Promise<void>;
 }
 
 export interface SessionFactory {
@@ -89,11 +93,8 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
   private stopping = false;
 
   constructor(
-    private readonly client: NewioClient,
     private readonly config: AgentConfig,
     private readonly engineConfig: EngineConfig,
-    private readonly agentId: string,
-    private readonly ownerId: string,
     private readonly logTag: string,
   ) {}
 
@@ -284,13 +285,12 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
       promptFormatterVersion: input.promptFormatterVersion,
       correlationId: result.sessionId,
       connection: conn,
-      client: this.client,
-      agentUserId: this.agentId,
-      ownerId: this.ownerId,
       sessionResponse: result,
       disposable: this.supportsClose,
       username: this.config.newio?.username,
       skipToken: input.skipToken,
+      updateConfig: input.updateConfig,
+      reportContextWindow: input.reportContextWindow,
     });
     this.registerSession(result.sessionId, session);
     log.info(`${this.logTag} Session created: ${result.sessionId}`);

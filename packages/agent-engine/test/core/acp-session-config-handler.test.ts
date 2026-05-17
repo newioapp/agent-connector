@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AcpSessionConfigHandler } from '../../src/acp-session-config-handler';
+import type { SessionConfig } from '../../src/acp-session-config-handler';
 import type { ClientSideConnection, NewSessionResponse } from '@agentclientprotocol/sdk';
-import type { NewioClient } from '@newio/agent-sdk';
 
 /** Expose private methods for testing. */
 interface TestableConfigHandler {
@@ -18,8 +18,8 @@ function mockConnection(overrides?: Partial<ClientSideConnection>): ClientSideCo
   } as unknown as ClientSideConnection;
 }
 
-function mockClient(): NewioClient {
-  return { updateAgentMember: vi.fn().mockResolvedValue(undefined) } as unknown as NewioClient;
+function mockUpdateConfig(): (config: SessionConfig) => Promise<void> {
+  return vi.fn().mockResolvedValue(undefined);
 }
 
 function makeSessionResponse(overrides?: Partial<NewSessionResponse>): NewSessionResponse {
@@ -40,8 +40,7 @@ describe('AcpSessionConfigHandler', () => {
         'conv-1',
         'sess-1',
         mockConnection(),
-        mockClient(),
-        'agent-1',
+        mockUpdateConfig(),
         makeSessionResponse({
           configOptions: [
             {
@@ -87,8 +86,7 @@ describe('AcpSessionConfigHandler', () => {
         'conv-1',
         'sess-1',
         mockConnection(),
-        mockClient(),
-        'agent-1',
+        mockUpdateConfig(),
         makeSessionResponse({
           models: {
             availableModels: [
@@ -123,8 +121,7 @@ describe('AcpSessionConfigHandler', () => {
         'conv-1',
         'sess-1',
         mockConnection(),
-        mockClient(),
-        'agent-1',
+        mockUpdateConfig(),
         makeSessionResponse(),
       );
 
@@ -138,8 +135,7 @@ describe('AcpSessionConfigHandler', () => {
         'conv-1',
         'sess-1',
         mockConnection(),
-        mockClient(),
-        'agent-1',
+        mockUpdateConfig(),
         makeSessionResponse({
           configOptions: [
             {
@@ -174,8 +170,7 @@ describe('AcpSessionConfigHandler', () => {
         'conv-1',
         'sess-1',
         mockConnection(),
-        mockClient(),
-        'agent-1',
+        mockUpdateConfig(),
         makeSessionResponse({
           configOptions: [{ type: 'toggle', category: 'model', currentValue: true }] as never,
         }),
@@ -193,8 +188,7 @@ describe('AcpSessionConfigHandler', () => {
         'conv-1',
         'sess-1',
         conn,
-        mockClient(),
-        'agent-1',
+        mockUpdateConfig(),
         makeSessionResponse({
           models: {
             availableModels: [{ modelId: 'a', name: 'A' }],
@@ -218,8 +212,7 @@ describe('AcpSessionConfigHandler', () => {
         'conv-1',
         'sess-1',
         conn,
-        mockClient(),
-        'agent-1',
+        mockUpdateConfig(),
         makeSessionResponse({
           models: { availableModels: [{ modelId: 'a', name: 'A' }], currentModelId: 'a' },
         }),
@@ -237,8 +230,7 @@ describe('AcpSessionConfigHandler', () => {
         'conv-1',
         'sess-1',
         conn,
-        mockClient(),
-        'agent-1',
+        mockUpdateConfig(),
         makeSessionResponse(),
       );
 
@@ -254,8 +246,7 @@ describe('AcpSessionConfigHandler', () => {
         'conv-1',
         'sess-1',
         conn,
-        mockClient(),
-        'agent-1',
+        mockUpdateConfig(),
         makeSessionResponse(),
       );
 
@@ -273,8 +264,7 @@ describe('AcpSessionConfigHandler', () => {
         'conv-1',
         'sess-1',
         conn,
-        mockClient(),
-        'agent-1',
+        mockUpdateConfig(),
         makeSessionResponse({
           modes: { availableModes: [{ id: 'fast', name: 'Fast' }], currentModeId: 'fast' },
         }),
@@ -295,8 +285,7 @@ describe('AcpSessionConfigHandler', () => {
         'conv-1',
         'sess-1',
         conn,
-        mockClient(),
-        'agent-1',
+        mockUpdateConfig(),
         makeSessionResponse(),
       );
 
@@ -311,8 +300,7 @@ describe('AcpSessionConfigHandler', () => {
         'conv-1',
         'sess-1',
         mockConnection(),
-        mockClient(),
-        'agent-1',
+        mockUpdateConfig(),
         makeSessionResponse({
           modes: { availableModes: [{ id: 'a', name: 'A' }], currentModeId: 'a' },
         }),
@@ -333,8 +321,7 @@ describe('AcpSessionConfigHandler', () => {
         'conv-1',
         'sess-1',
         mockConnection(),
-        mockClient(),
-        'agent-1',
+        mockUpdateConfig(),
         makeSessionResponse(),
       );
 
@@ -353,8 +340,7 @@ describe('AcpSessionConfigHandler', () => {
         'conv-1',
         'sess-1',
         mockConnection(),
-        mockClient(),
-        'agent-1',
+        mockUpdateConfig(),
         makeSessionResponse(),
       );
 
@@ -382,8 +368,7 @@ describe('AcpSessionConfigHandler', () => {
         'conv-1',
         'sess-1',
         mockConnection(),
-        mockClient(),
-        'agent-1',
+        mockUpdateConfig(),
         makeSessionResponse(),
       );
 
@@ -411,8 +396,7 @@ describe('AcpSessionConfigHandler', () => {
         'conv-1',
         'sess-1',
         mockConnection(),
-        mockClient(),
-        'agent-1',
+        mockUpdateConfig(),
         makeSessionResponse(),
       );
 
@@ -430,8 +414,7 @@ describe('AcpSessionConfigHandler', () => {
         'conv-1',
         'sess-1',
         mockConnection(),
-        mockClient(),
-        'agent-1',
+        mockUpdateConfig(),
         makeSessionResponse(),
       );
 
@@ -445,14 +428,13 @@ describe('AcpSessionConfigHandler', () => {
       const conn = mockConnection({
         unstable_setSessionModel: vi.fn().mockRejectedValue(new Error('model not available')),
       });
-      const client = mockClient();
+      const updateConfig = mockUpdateConfig();
       const handler = new AcpSessionConfigHandler(
         'conversation',
         'conv-1',
         'sess-1',
         conn,
-        client,
-        'agent-1',
+        updateConfig,
         makeSessionResponse({
           models: { availableModels: [{ modelId: 'fallback', name: 'Fallback' }], currentModelId: 'fallback' },
         }),
@@ -461,23 +443,20 @@ describe('AcpSessionConfigHandler', () => {
       await handler.applySessionConfig({ acpModel: 'unavailable-model' });
 
       expect(conn.unstable_setSessionModel).toHaveBeenCalledWith({ sessionId: 'sess-1', modelId: 'unavailable-model' });
-      expect(client.updateAgentMember).toHaveBeenCalledWith({
-        conversationId: 'conv-1',
-        targetUserId: 'agent-1',
+      expect(updateConfig).toHaveBeenCalledWith({
         acpModel: 'fallback',
         acpMode: null,
       });
     });
 
     it('does not report when setModel succeeds', async () => {
-      const client = mockClient();
+      const updateConfig = mockUpdateConfig();
       const handler = new AcpSessionConfigHandler(
         'conversation',
         'conv-1',
         'sess-1',
         mockConnection(),
-        client,
-        'agent-1',
+        updateConfig,
         makeSessionResponse({
           models: { availableModels: [{ modelId: 'a', name: 'A' }], currentModelId: 'a' },
         }),
@@ -485,7 +464,7 @@ describe('AcpSessionConfigHandler', () => {
 
       await handler.applySessionConfig({ acpModel: 'a' });
 
-      expect(client.updateAgentMember).not.toHaveBeenCalled();
+      expect(updateConfig).not.toHaveBeenCalled();
     });
   });
 });

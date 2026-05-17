@@ -11,8 +11,8 @@ import type * as acp from '@agentclientprotocol/sdk';
 import type { AgentSession } from './agent-session';
 import { AcpSessionStream } from './acp-session-stream';
 import type { PermissionHandler, SessionStatusListener, SessionStreamSegment, SessionType } from './types';
-import { AcpSessionConfigHandler } from './acp-session-config-handler';
-import { AcpSessionContextWindowHandler } from './acp-session-context-window-handler';
+import { AcpSessionConfigHandler, SessionConfig } from './acp-session-config-handler';
+import { AcpSessionContextWindowHandler, ContextWindow } from './acp-session-context-window-handler';
 import { AcpSlashCommandHandler } from './acp-slash-command-handler';
 import { getLogger } from '@newio/agent-sdk';
 import type {
@@ -21,7 +21,6 @@ import type {
   CompactSessionResponse,
   ModelOption,
   ModeOption,
-  NewioClient,
   SessionConfigUpdate,
 } from '@newio/agent-sdk';
 import { extractErrorMessage } from './types';
@@ -35,14 +34,13 @@ export interface AcpAgentSessionInit {
   readonly promptFormatterVersion: string;
   readonly correlationId: string;
   readonly connection: ClientSideConnection;
-  readonly client: NewioClient;
-  readonly agentUserId: string;
-  readonly ownerId: string;
   readonly sessionResponse: NewSessionResponse | LoadSessionResponse;
   readonly disposable: boolean;
   readonly username?: string;
   /** The token the agent uses to indicate "no reply needed". */
   readonly skipToken: string;
+  readonly updateConfig: (config: SessionConfig) => Promise<void>;
+  readonly reportContextWindow: (contextWindow: ContextWindow) => Promise<void>;
 }
 
 export interface AcpAgentSessionInterface extends AgentSession {}
@@ -83,15 +81,13 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
       init.externalReferenceId,
       init.correlationId,
       init.connection,
-      init.client,
-      init.agentUserId,
+      init.updateConfig,
       init.sessionResponse,
     );
     this.contextWindowHandler = new AcpSessionContextWindowHandler(
       init.type,
       init.externalReferenceId,
-      init.ownerId,
-      init.client,
+      init.reportContextWindow,
     );
     this.slashCommandHandler = new AcpSlashCommandHandler(
       init.type,

@@ -39,6 +39,9 @@ export type { StatusListener } from './agent-runtime-manager.js';
 
 // Agent instances
 export { AcpSessionFactory } from './acp-session-factory.js';
+export type { CreateSessionInput, SessionFactory } from './acp-session-factory.js';
+export type { SessionConfig } from './acp-session-config-handler.js';
+export type { ContextWindow } from './acp-session-context-window-handler.js';
 export { IsolatedSessionAgentInstance } from './isolated-session-agent-instance.js';
 export { SingleSessionAgentInstance } from './single-session-agent-instance.js';
 

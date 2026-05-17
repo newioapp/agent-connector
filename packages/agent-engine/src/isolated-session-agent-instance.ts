@@ -296,14 +296,7 @@ export class IsolatedSessionAgentInstance implements AgentInstance {
         throw new Error('Cannot create session: ownerId is not set');
       }
 
-      this._sessionFactory = new AcpSessionFactory(
-        app.client,
-        this.config,
-        this.engineConfig,
-        app.identity.userId,
-        ownerId,
-        `[${app.identity.username}]`,
-      );
+      this._sessionFactory = new AcpSessionFactory(this.config, this.engineConfig, `[${app.identity.username}]`);
       this._sessionFactory.onAbnormalTermination((message) => {
         this.pendingCleanup = this.cleanup()
           .then(() => this._sessionFactory?.terminate())
@@ -706,6 +699,10 @@ export class IsolatedSessionAgentInstance implements AgentInstance {
   }
 
   private async createSessionWithErrorHandling(type: SessionType, externalReferenceId: string): Promise<AgentSession> {
+    const ownerId = this.app.identity.ownerId;
+    if (!ownerId) {
+      throw new Error('Cannot create session: ownerId is not set');
+    }
     try {
       const session = await this.sessionFactory.createSession({
         type,
@@ -713,6 +710,28 @@ export class IsolatedSessionAgentInstance implements AgentInstance {
         promptFormatterVersion: this.promptManager.defaultVersion,
         mcpSocketPath: this.mcpSocketPath,
         skipToken: this.promptManager.skipToken(this.promptManager.defaultVersion),
+        updateConfig: async (config) => {
+          await this.app.client.updateAgentMember({
+            conversationId: externalReferenceId,
+            targetUserId: this.app.identity.userId,
+            acpModel: config.acpModel,
+            acpMode: config.acpMode,
+          });
+        },
+        reportContextWindow: async (context) => {
+          await this.app.client.sendSignal({
+            targetUserId: ownerId,
+            requestId: crypto.randomUUID(),
+            intent: 'notification',
+            type: 'context_window_update',
+            payload: {
+              sessionType: type,
+              externalReferenceId: externalReferenceId,
+              contextWindowSize: context.size,
+              contextWindowUsed: context.used,
+            },
+          });
+        },
       });
       return session;
     } catch (err) {
