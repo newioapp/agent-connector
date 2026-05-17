@@ -268,7 +268,13 @@ export class SingleSessionAgentInstance implements AgentInstance {
           if (this.pendingMcpServer) {
             log.warn(`${this.logTag} New MCP connection arrived before previous one was wired to a session`);
           }
-          const mcpServer = new NewioMcpServer({ app, agent: this, sessionMode: 'shared' });
+          const mcpServer = new NewioMcpServer({
+            app,
+            initiateConversation: () => {
+              throw new Error('Shared session does not support initiating conversation');
+            },
+            sessionMode: 'shared',
+          });
           this.pendingMcpServer = mcpServer;
           void mcpServer.connect(transport);
         },
@@ -282,7 +288,12 @@ export class SingleSessionAgentInstance implements AgentInstance {
         throw new Error('Cannot create session: ownerId is not set');
       }
 
-      this._sessionFactory = new AcpSessionFactory(this.config, this.engineConfig, `[${app.identity.username}]`);
+      this._sessionFactory = new AcpSessionFactory(
+        this.config,
+        this.engineConfig.appDisplayName,
+        this.engineConfig.appVersion,
+        `[${app.identity.username}]`,
+      );
       this._sessionFactory.onAbnormalTermination((message) => {
         this.pendingCleanup = this.cleanup()
           .then(() => this._sessionFactory?.terminate())
@@ -1150,10 +1161,6 @@ export class SingleSessionAgentInstance implements AgentInstance {
     } catch {
       return { success: false, error: 'Operation cancelled' };
     }
-  }
-
-  initiateConversation(_conversationId: string, _context: string): void {
-    throw new Error('Shared session does not support initiating conversation');
   }
 
   // ---------------------------------------------------------------------------

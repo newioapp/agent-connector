@@ -11,7 +11,7 @@ import type { EvalConfig, EvalScenario, EvalArea, ScenarioRunResult, ScenarioAgg
 import type { AgentType, SessionMode } from '@newio/agent-engine';
 import { allPhase1Scenarios } from './scenarios/phase1.js';
 import { runScenario } from './runner.js';
-import type { RunnerDeps } from './runner.js';
+import { createScenarioRunnerDeps, ScenarioRunnerDeps } from './create-runner-deps.js';
 
 program
   .name('newio-eval')
@@ -41,13 +41,13 @@ const opts = program.opts<{
   timeout: string;
 }>();
 
-function main(): void {
+async function main(): Promise<void> {
   const config: EvalConfig = {
     agentType: opts.agentType as AgentType,
     acp: { cwd: opts.cwd, executablePath: opts.executable },
     model: opts.model,
     promptVersion: opts.promptVersion,
-    sessionMode: opts.sessionMode as SessionMode | 'both',
+    sessionMode: opts.sessionMode as SessionMode,
     judgeModel: process.env['EVAL_JUDGE_MODEL'] ?? 'claude-sonnet-4-20250514',
     judgeApiKeyEnvVar: 'ANTHROPIC_API_KEY',
     runsPerScenario: parseInt(opts.runs, 10),
@@ -63,9 +63,7 @@ function main(): void {
   if (config.area) {
     scenarios = scenarios.filter((s) => s.area === config.area);
   }
-  if (config.sessionMode !== 'both') {
-    scenarios = scenarios.filter((s) => s.sessionMode === 'both' || s.sessionMode === config.sessionMode);
-  }
+  scenarios = scenarios.filter((s) => s.sessionMode === config.sessionMode);
 
   if (scenarios.length === 0) {
     console.error('No scenarios match the given filters.');
@@ -86,14 +84,13 @@ function main(): void {
   }
 
   console.log('─'.repeat(60));
-  console.log('\n⚠️  Full execution requires an ACP agent process.');
-  console.log('   To run scenarios end-to-end, provide RunnerDeps with a real SessionFactory.');
-  console.log('   See DESIGN.md for integration details.\n');
 
-  // TODO: When ready for full execution, wire up AcpSessionFactory here:
-  // const deps = await createRunnerDeps(config);
-  // const results = await runAllScenarios(scenarios, config, deps);
-  // printReport(results);
+  // Run scenarios — each gets a fresh ACP process for isolation
+  const results = await runAllScenarios(scenarios, config);
+  printReport(results);
+
+  const failed = results.some((r) => r.passRate < 1);
+  process.exit(failed ? 1 : 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -138,7 +135,6 @@ export function printReport(aggregates: readonly ScenarioAggregateResult[]): voi
 export async function runAllScenarios(
   scenarios: readonly EvalScenario[],
   config: EvalConfig,
-  deps: RunnerDeps,
 ): Promise<readonly ScenarioAggregateResult[]> {
   const aggregates: ScenarioAggregateResult[] = [];
 
@@ -147,10 +143,40 @@ export async function runAllScenarios(
     console.log(`\n  Running: ${scenario.id}...`);
 
     for (let i = 0; i < config.runsPerScenario; i++) {
-      const result = await runScenario(scenario, config, deps, i);
-      runs.push(result);
-      const icon = result.passed ? '✓' : '✗';
-      process.stdout.write(`  ${icon}`);
+      // Fresh ACP process + MCP server per run for full isolation
+
+      let deps: ScenarioRunnerDeps | undefined;
+      try {
+        deps = await createScenarioRunnerDeps(config, scenario);
+        const result = await runScenario(scenario, config, deps, i);
+        runs.push(result);
+        const icon = result.passed ? '✓' : '✗';
+        process.stdout.write(`  ${icon}`);
+      } catch (err: unknown) {
+        console.error(`\n    ❌ Run ${i} failed: ${err instanceof Error ? err.message : String(err)}`);
+        // Record as failed run
+        runs.push({
+          scenarioId: scenario.id,
+          runIndex: i,
+          agentType: config.agentType,
+          model: config.model,
+          promptVersion: config.promptVersion,
+          sessionMode: scenario.sessionMode,
+          traces: [],
+          assertions: [
+            {
+              expectation: { type: 'no_skip' },
+              passed: false,
+              reason: `Run failed: ${err instanceof Error ? err.message : String(err)}`,
+            },
+          ],
+          passed: false,
+          timestamp: new Date().toISOString(),
+        });
+        process.stdout.write('  ✗');
+      } finally {
+        await deps?.teardown();
+      }
     }
     console.log();
 
@@ -167,4 +193,7 @@ export async function runAllScenarios(
   return aggregates;
 }
 
-main();
+main().catch((err: unknown) => {
+  console.error('Fatal error:', err instanceof Error ? err.message : String(err));
+  process.exit(1);
+});

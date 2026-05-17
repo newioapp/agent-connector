@@ -253,11 +253,4 @@ describe('SingleSessionAgentInstance — routing', () => {
     const slot2 = getSlot.call(instance);
     expect(slot1).toBe(slot2);
   });
-
-  it('initiateConversation throws', () => {
-    const instance = createInstance();
-    expect(() => instance.initiateConversation('conv-1', 'test')).toThrow(
-      'Shared session does not support initiating conversation',
-    );
-  });
 });

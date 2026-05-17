@@ -19,7 +19,6 @@ import type { AgentConfig, SessionType } from './types';
 import { resolveCommand } from './types';
 import type { AgentInfo } from './types';
 import { getLogger } from '@newio/agent-sdk';
-import { EngineConfig } from './engine-config';
 import { ContextWindow } from './acp-session-context-window-handler';
 import { SessionConfig } from './acp-session-config-handler';
 
@@ -94,7 +93,8 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
 
   constructor(
     private readonly config: AgentConfig,
-    private readonly engineConfig: EngineConfig,
+    private readonly appDisplayName: string,
+    private readonly appVersion: string,
     private readonly logTag: string,
   ) {}
 
@@ -191,7 +191,7 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
 
     const initResult = await conn.initialize({
       protocolVersion: PROTOCOL_VERSION,
-      clientInfo: { name: this.engineConfig.appDisplayName, version: this.engineConfig.appVersion },
+      clientInfo: { name: this.appDisplayName, version: this.appVersion },
       clientCapabilities: {
         fs: { readTextFile: true, writeTextFile: true },
       },

@@ -3,7 +3,6 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { NewioMcpServer } from '../../src/mcp/server.js';
 import type { SessionMode } from '../../src/types.js';
-import type { AgentInstance } from '../../src/agent-instance.js';
 import type { NewioApp, ContactSummary, ConversationSummary, FriendRequestSummary } from '@newio/agent-sdk';
 
 /** Extract text from MCP callTool result (handles unknown content type). */
@@ -75,8 +74,8 @@ function mockApp(
 }
 
 async function createConnectedClient(app: NewioApp, sessionMode: SessionMode = 'isolated'): Promise<Client> {
-  const agent = { initiateConversation: vi.fn() } as unknown as AgentInstance;
-  const server = new NewioMcpServer({ app, agent, sessionMode });
+  const initiateConversation = vi.fn();
+  const server = new NewioMcpServer({ app, initiateConversation, sessionMode });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
   const client = new Client({ name: 'test-client', version: '1.0.0' });
@@ -215,8 +214,8 @@ describe('MCP Server', () => {
 
   it('initiate_conversation delegates to agent instance', async () => {
     const app = mockApp();
-    const agent = { initiateConversation: vi.fn() } as unknown as AgentInstance;
-    const server = new NewioMcpServer({ app, agent, sessionMode: 'isolated' });
+    const initiateConversation = vi.fn();
+    const server = new NewioMcpServer({ app, initiateConversation, sessionMode: 'isolated' });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     const client = new Client({ name: 'test-client', version: '1.0.0' });
@@ -225,7 +224,7 @@ describe('MCP Server', () => {
       name: 'initiate_conversation',
       arguments: { conversationId: 'conv-1', context: 'Tell them I will be late' },
     });
-    expect(agent.initiateConversation).toHaveBeenCalledWith('conv-1', 'Tell them I will be late');
+    expect(initiateConversation).toHaveBeenCalledWith('conv-1', 'Tell them I will be late');
   });
 
   it('send_message sends to conversation in shared mode', async () => {
@@ -267,8 +266,8 @@ describe('MCP Server', () => {
 
   it('upload_attachment_to_current_conversation sends attachment-only message', async () => {
     const app = mockApp();
-    const agent = { initiateConversation: vi.fn() } as unknown as AgentInstance;
-    const server = new NewioMcpServer({ app, agent, sessionMode: 'isolated' });
+    const initiateConversation = vi.fn();
+    const server = new NewioMcpServer({ app, initiateConversation, sessionMode: 'isolated' });
     server.setCurrentConversationIdGetter(() => 'conv-1');
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
@@ -537,8 +536,8 @@ describe('onToolCall hook', () => {
     app: NewioApp,
     onToolCall: (toolName: string, args: Readonly<Record<string, unknown>>) => void,
   ): Promise<Client> {
-    const agent = { initiateConversation: vi.fn() } as unknown as AgentInstance;
-    const server = new NewioMcpServer({ app, agent, sessionMode: 'shared', onToolCall });
+    const initiateConversation = vi.fn();
+    const server = new NewioMcpServer({ app, initiateConversation, sessionMode: 'shared', onToolCall });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     const client = new Client({ name: 'test-client', version: '1.0.0' });

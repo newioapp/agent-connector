@@ -4,7 +4,6 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NewioApp } from '@newio/agent-sdk';
-import { AgentInstance } from '../../agent-instance';
 import type { IdGetter, ToolCallHook } from '../types';
 import type { SessionMode } from '../../types';
 
@@ -15,7 +14,7 @@ const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
 export function registerMessagingTools(
   server: McpServer,
   app: NewioApp,
-  agent: AgentInstance,
+  initiateConversation: (convId: string, context: string) => void,
   getCurrentConversationId: IdGetter,
   sessionMode: SessionMode,
   onToolCall?: ToolCallHook,
@@ -41,7 +40,7 @@ export function registerMessagingTools(
         if (getCurrentConversationId() === conversationId) {
           return text("Can't initiate the current conversation — your reply is delivered automatically.");
         }
-        agent.initiateConversation(conversationId, context);
+        initiateConversation(conversationId, context);
         return text('Delegated to target conversation session.');
       },
     );
