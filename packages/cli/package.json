@@ -30,7 +30,8 @@
   "dependencies": {
     "@newio/agent-engine": "workspace:*",
     "@newio/agent-sdk": "workspace:*",
-    "better-sqlite3": "^12.8.0"
+    "better-sqlite3": "^12.8.0",
+    "commander": "^12.1.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
