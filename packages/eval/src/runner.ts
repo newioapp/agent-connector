@@ -6,75 +6,12 @@
 import type { EvalScenario, EvalConfig, ScenarioRunResult, ScriptedEvent, ToolCallRecord } from './types.js';
 import type { PromptFormatter } from '@newio/agent-engine';
 import type { SessionStreamSegment } from '@newio/agent-engine';
-import type { IncomingMessage, ContactEvent, CronTriggerEvent, LoadSessionMemoryResponse } from '@newio/agent-sdk';
 import { ToolInterceptor } from './mock-environment.js';
 import { evaluateRuleBasedExpectations } from './assertions.js';
 import { ScenarioRunnerDeps } from './create-runner-deps.js';
 
 /** Timeout for a single prompt turn (ms). */
 const PROMPT_TIMEOUT_MS = 120_000;
-
-/** Convert a scripted DM event into an IncomingMessage. */
-function buildDmMessage(event: Extract<ScriptedEvent, { type: 'dm' }>, index: number): IncomingMessage {
-  return {
-    messageId: `msg_${index}`,
-    conversationId: event.conversationId ?? `dm_${event.from.username}`,
-    conversationType: 'dm',
-    senderUserId: event.from.userId,
-    senderUsername: event.from.username,
-    senderDisplayName: event.from.displayName,
-    senderAccountType: event.from.accountType,
-    relationship: event.from.relationship,
-    isOwnMessage: false,
-    text: event.text,
-    attachments: event.attachments,
-    timestamp: new Date().toISOString(),
-    status: 'new',
-  };
-}
-
-/** Convert a scripted group message into an IncomingMessage. */
-function buildGroupMessage(event: Extract<ScriptedEvent, { type: 'group_message' }>, index: number): IncomingMessage {
-  return {
-    messageId: `msg_${index}`,
-    conversationId: event.conversation.conversationId,
-    conversationType: event.conversation.type,
-    groupName: event.conversation.name,
-    senderUserId: event.from.userId,
-    senderUsername: event.from.username,
-    senderDisplayName: event.from.displayName,
-    senderAccountType: event.from.accountType,
-    relationship: event.from.relationship,
-    isOwnMessage: false,
-    text: event.text,
-    timestamp: new Date().toISOString(),
-    status: 'new',
-  };
-}
-
-/** Convert a scripted contact event. */
-function buildContactEvent(event: Extract<ScriptedEvent, { type: 'contact_event' }>): ContactEvent {
-  return {
-    type: event.eventType,
-    username: event.from.username,
-    displayName: event.from.displayName,
-    accountType: event.from.accountType,
-    ownerUsername: event.from.ownerUsername,
-    ownerDisplayName: event.from.ownerDisplayName,
-    note: event.note,
-    timestamp: new Date().toISOString(),
-  };
-}
-
-/** Convert a scripted cron trigger. */
-function buildCronTrigger(event: Extract<ScriptedEvent, { type: 'cron_trigger' }>): CronTriggerEvent {
-  return {
-    cronId: event.cronId,
-    label: event.label,
-    payload: event.payload,
-    triggeredAt: new Date().toISOString(),
-  };
-}
 
 /** Collect all agent message chunks from a session prompt generator. */
 async function collectOutput(
@@ -108,17 +45,28 @@ export async function runScenario(
   deps: ScenarioRunnerDeps,
   runIndex: number,
 ): Promise<ScenarioRunResult> {
-  // Inject memory context if provided
-  if (scenario.setup.memory) {
-    const memoryContext = deps.promptFormatter.formatMemoryContext(
-      scenario.setup.memory as unknown as LoadSessionMemoryResponse,
-      scenario.setup.handoffNote,
-    );
-    if (memoryContext) {
-      // Send memory as first prompt turn (agent absorbs it)
-      await drainGenerator(deps.session.prompt(memoryContext));
-    }
-  }
+  // Inject system instruction + memory context (mirrors provideContext in IsolatedSessionAgentInstance)
+  const instruction = deps.promptFormatter.buildNewioInstruction();
+  const memoryContext = scenario.setup.initialMemory
+    ? deps.promptFormatter.formatMemoryContext(scenario.setup.initialMemory, scenario.setup.initialHandoffNote)
+    : undefined;
+  const fullInstruction = memoryContext ? `${instruction.prompt}\n\n${memoryContext}` : instruction.prompt;
+
+  const initStart = Date.now();
+  const initResult = await withTimeout(
+    collectOutput(deps.session.prompt(fullInstruction), deps.toolInterceptor),
+    PROMPT_TIMEOUT_MS,
+    'Initialization prompt timed out',
+  );
+  deps.traceCollector.record({
+    eventIndex: -1,
+    event: { type: 'initialization' },
+    promptSent: fullInstruction,
+    agentOutput: initResult.text,
+    isSkip: false,
+    toolCalls: initResult.toolCalls,
+    latencyMs: Date.now() - initStart,
+  });
 
   // Process each scripted event
   for (let i = 0; i < scenario.events.length; i++) {
@@ -188,16 +136,14 @@ export async function runScenario(
 // Helpers
 // ---------------------------------------------------------------------------
 
-function formatEventPrompt(event: ScriptedEvent, index: number, promptFormatter: PromptFormatter): string | undefined {
+function formatEventPrompt(event: ScriptedEvent, _index: number, promptFormatter: PromptFormatter): string | undefined {
   switch (event.type) {
-    case 'dm':
-      return promptFormatter.formatMessagePrompt([buildDmMessage(event, index)]);
-    case 'group_message':
-      return promptFormatter.formatMessagePrompt([buildGroupMessage(event, index)]);
-    case 'contact_event':
-      return promptFormatter.formatContactPrompt([buildContactEvent(event)]);
-    case 'cron_trigger':
-      return promptFormatter.formatCronPrompt(buildCronTrigger(event));
+    case 'message':
+      return promptFormatter.formatMessagePrompt(event.messages);
+    case 'contact':
+      return promptFormatter.formatContactPrompt(event.events);
+    case 'cron':
+      return promptFormatter.formatCronPrompt(event.event);
     case 'session_end':
       return promptFormatter.buildSessionEndPrompt();
     case 'memory_update':
@@ -207,19 +153,10 @@ function formatEventPrompt(event: ScriptedEvent, index: number, promptFormatter:
 
 function getConversationId(event: ScriptedEvent): string | undefined {
   switch (event.type) {
-    case 'dm':
-      return event.conversationId ?? `dm_${event.from.username}`;
-    case 'group_message':
-      return event.conversation.conversationId;
+    case 'message':
+      return event.messages[0]?.conversationId;
     default:
       return undefined;
-  }
-}
-
-async function drainGenerator(gen: AsyncGenerator<SessionStreamSegment>): Promise<void> {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  for await (const _segment of gen) {
-    // consume without processing
   }
 }
 

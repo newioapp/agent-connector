@@ -202,17 +202,16 @@ interface EvalScenario {
 }
 
 interface ScenarioSetup {
-  readonly memory?: LoadSessionMemoryResponse;
-  readonly handoffNote?: string;
+  readonly initialMemory?: LoadSessionMemoryResponse;
+  readonly initialHandoffNote?: string;
   readonly contacts?: ContactSetup[];
   readonly conversations?: ConversationSetup[];
 }
 
 type ScriptedEvent =
-  | { readonly type: 'dm'; readonly from: UserProfile; readonly text: string; readonly attachments?: Attachment[] }
-  | { readonly type: 'group_message'; readonly conversation: ConversationSetup; readonly from: UserProfile; readonly text: string }
-  | { readonly type: 'contact_event'; readonly event: ContactEvent }
-  | { readonly type: 'cron_trigger'; readonly job: CronTriggerEvent }
+  | { readonly type: 'message'; readonly messages: readonly IncomingMessage[] }
+  | { readonly type: 'contact'; readonly events: readonly ContactEvent[] }
+  | { readonly type: 'cron'; readonly event: CronTriggerEvent }
   | { readonly type: 'session_end' }
   | { readonly type: 'memory_update' };
 

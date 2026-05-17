@@ -6,7 +6,41 @@
  * - ToolInterceptor: captures MCP tool calls for assertion
  * - MockMemoryStore: in-memory memory store that records operations
  */
+import { createHash } from 'crypto';
 import type { ToolCallRecord } from './types.js';
+
+// ---------------------------------------------------------------------------
+// Deterministic UUID helper — derives a UUID v4-shaped ID from a stable key.
+// Scenario authors use the same function to predict conversationIds.
+// ---------------------------------------------------------------------------
+
+/** Generate a deterministic UUID from a key string. Exported for use in scenario fixtures. */
+export function deterministicUuid(key: string): string {
+  const hash = createHash('sha256').update(key).digest('hex');
+  // Format as UUID v4 (set version nibble to 4, variant bits to 10xx)
+  return [
+    hash.slice(0, 8),
+    hash.slice(8, 12),
+    '4' + hash.slice(13, 16),
+    ((parseInt(hash.charAt(16), 16) & 0x3) | 0x8).toString(16) + hash.slice(17, 20),
+    hash.slice(20, 32),
+  ].join('-');
+}
+
+/** Deterministic conversationId for a DM with a given username. */
+export function dmConversationId(username: string): string {
+  return deterministicUuid(`dm:${username}`);
+}
+
+/** Deterministic conversationId for a work session with a given name. */
+export function workSessionConversationId(name: string): string {
+  return deterministicUuid(`work_session:${name}`);
+}
+
+/** Deterministic conversationId for a group with a given name. */
+export function groupConversationId(name: string): string {
+  return deterministicUuid(`group:${name}`);
+}
 
 // ---------------------------------------------------------------------------
 // MockNewioApp — satisfies PromptFormatterImpl's needs
@@ -96,6 +130,9 @@ export class MockNewioApp {
   async sendMessage(_conversationId: string, _text?: string, _filePaths?: readonly string[]): Promise<void> {}
   async sendDm(_username: string, _text: string, _filePaths?: readonly string[]): Promise<void> {}
   async dmOwner(_text: string, _filePaths?: readonly string[]): Promise<void> {}
+  getOrCreateDm(username: string): Promise<string> {
+    return Promise.resolve(dmConversationId(username));
+  }
 
   async sendFriendRequestByUsername(_username: string, _note?: string): Promise<void> {}
   async acceptFriendRequestByUsername(_username: string): Promise<void> {}
@@ -106,12 +143,12 @@ export class MockNewioApp {
     return [];
   }
 
-  createWorkSession(_name: string, _usernames: readonly string[]): Promise<string> {
-    return Promise.resolve('mock-work-session-id');
+  createWorkSession(name: string, _usernames: readonly string[]): Promise<string> {
+    return Promise.resolve(workSessionConversationId(name));
   }
 
-  createGroup(_name: string, _usernames: readonly string[]): Promise<string> {
-    return Promise.resolve('mock-group-id');
+  createGroup(name: string, _usernames: readonly string[]): Promise<string> {
+    return Promise.resolve(groupConversationId(name));
   }
 
   // Stub client for tools that reach through to app.client

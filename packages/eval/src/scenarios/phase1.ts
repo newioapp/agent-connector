@@ -2,6 +2,7 @@
  * First eval scenarios — tool usage (Area 2) and response relevance/skip behavior (Area 4).
  */
 import type { EvalScenario, UserProfile, ConversationSetup, ScenarioSetup } from '../types.js';
+import { dmConversationId, workSessionConversationId, groupConversationId } from '../mock-environment.js';
 
 // ---------------------------------------------------------------------------
 // Shared setup — reused across scenarios
@@ -45,15 +46,21 @@ const bob: UserProfile = {
   relationship: 'in-contact',
 };
 
+// Conversation IDs (deterministic — matches MockNewioApp returns)
+const ownerDmConvId = dmConversationId('evalowner');
+const aliceDmConvId = dmConversationId('alice');
+const teamChatConvId = groupConversationId('Team Chat');
+const workSessionConvId = workSessionConversationId('Sprint Planning');
+
 const teamChat: ConversationSetup = {
-  conversationId: '49c24f14-1884-49ea-ba1e-52b2e33c8ca4',
+  conversationId: teamChatConvId,
   type: 'group',
   name: 'Team Chat',
   members: [owner, alice, bob],
 };
 
 const workSession: ConversationSetup = {
-  conversationId: '15d07748-d416-4e78-a056-1f844e19b65e',
+  conversationId: workSessionConvId,
   type: 'temp_group',
   name: 'Sprint Planning',
   members: [owner, alice],
@@ -75,7 +82,27 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
       ...defaultSetup,
       contacts: [{ username: 'alice', displayName: 'Alice', accountType: 'human' }],
     },
-    events: [{ type: 'dm', from: alice, text: 'Hey, what time is it?' }],
+    events: [
+      {
+        type: 'message',
+        messages: [
+          {
+            messageId: '3f8a7b2c-1d4e-4f5a-9b6c-7d8e9f0a1b2c',
+            conversationId: aliceDmConvId,
+            conversationType: 'dm',
+            senderUserId: alice.userId,
+            senderUsername: alice.username,
+            senderDisplayName: alice.displayName,
+            senderAccountType: alice.accountType,
+            relationship: alice.relationship,
+            isOwnMessage: false,
+            text: 'Hey, what time is it?',
+            timestamp: new Date().toISOString(),
+            status: 'new',
+          },
+        ],
+      },
+    ],
     expectations: [
       { type: 'no_skip', eventIndex: 0, description: 'Agent should respond to a DM' },
       { type: 'tool_not_called', tool: 'send_message', description: 'Should not double-send via tool' },
@@ -93,7 +120,27 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
       ...defaultSetup,
       contacts: [{ username: 'alice', displayName: 'Alice', accountType: 'human' }],
     },
-    events: [{ type: 'dm', from: owner, text: 'Please tell Alice that the meeting is moved to 3pm.' }],
+    events: [
+      {
+        type: 'message',
+        messages: [
+          {
+            messageId: '4a9b8c7d-2e5f-4a6b-8c7d-9e0f1a2b3c4d',
+            conversationId: ownerDmConvId,
+            conversationType: 'dm',
+            senderUserId: owner.userId,
+            senderUsername: owner.username,
+            senderDisplayName: owner.displayName,
+            senderAccountType: owner.accountType,
+            relationship: owner.relationship,
+            isOwnMessage: false,
+            text: 'Please tell Alice that the meeting is moved to 3pm.',
+            timestamp: new Date().toISOString(),
+            status: 'new',
+          },
+        ],
+      },
+    ],
     expectations: [
       {
         type: 'tool_called',
@@ -105,17 +152,48 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
   },
   {
     id: 'tool-usage-cross-conversation-isolated',
-    name: 'Cross-conversation messaging uses initiate_conversation (isolated mode)',
-    description: 'When owner asks agent to message someone else, agent uses initiate_conversation in isolated mode.',
+    name: 'Cross-conversation messaging uses create_dm + initiate_conversation (isolated mode)',
+    description:
+      'When owner asks agent to message someone else in isolated mode, agent uses create_dm to get the conversationId, then initiate_conversation to delegate.',
     area: 'tool_usage',
     sessionMode: 'isolated',
     setup: {
       ...defaultSetup,
       contacts: [{ username: 'alice', displayName: 'Alice', accountType: 'human' }],
     },
-    events: [{ type: 'dm', from: owner, text: 'Please tell Alice that the meeting is moved to 3pm.' }],
+    events: [
+      {
+        type: 'message',
+        messages: [
+          {
+            messageId: '5b0c9d8e-3f6a-4b7c-9d8e-0f1a2b3c4d5e',
+            conversationId: ownerDmConvId,
+            conversationType: 'dm',
+            senderUserId: owner.userId,
+            senderUsername: owner.username,
+            senderDisplayName: owner.displayName,
+            senderAccountType: owner.accountType,
+            relationship: owner.relationship,
+            isOwnMessage: false,
+            text: 'Please tell Alice that the meeting is moved to 3pm.',
+            timestamp: new Date().toISOString(),
+            status: 'new',
+          },
+        ],
+      },
+    ],
     expectations: [
-      { type: 'tool_called', tool: 'initiate_conversation', description: 'Should use initiate_conversation' },
+      {
+        type: 'tool_called',
+        tool: 'create_dm',
+        argsContain: { username: 'alice' },
+        description: 'Should create/get the DM conversation first',
+      },
+      {
+        type: 'tool_called',
+        tool: 'initiate_conversation',
+        description: 'Should use initiate_conversation to delegate',
+      },
       { type: 'tool_not_called', tool: 'send_dm', description: 'send_dm is not available in isolated mode' },
     ],
   },
@@ -128,10 +206,17 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
     setup: defaultSetup,
     events: [
       {
-        type: 'contact_event',
-        eventType: 'contact.request_received',
-        from: alice,
-        note: 'Hi! Would love to connect.',
+        type: 'contact',
+        events: [
+          {
+            type: 'contact.request_received',
+            username: alice.username,
+            displayName: alice.displayName,
+            accountType: alice.accountType,
+            note: 'Hi! Would love to connect.',
+            timestamp: new Date().toISOString(),
+          },
+        ],
       },
     ],
     expectations: [
@@ -159,7 +244,28 @@ export const skipBehaviorScenarios: readonly EvalScenario[] = [
         { username: 'bob', displayName: 'Bob', accountType: 'human' },
       ],
     },
-    events: [{ type: 'group_message', conversation: teamChat, from: alice, text: 'Hey Bob, how was your weekend?' }],
+    events: [
+      {
+        type: 'message',
+        messages: [
+          {
+            messageId: '6c1d0e9f-4a7b-4c8d-0e9f-1a2b3c4d5e6f',
+            conversationId: teamChatConvId,
+            conversationType: 'group',
+            groupName: 'Team Chat',
+            senderUserId: alice.userId,
+            senderUsername: alice.username,
+            senderDisplayName: alice.displayName,
+            senderAccountType: alice.accountType,
+            relationship: alice.relationship,
+            isOwnMessage: false,
+            text: 'Hey Bob, how was your weekend?',
+            timestamp: new Date().toISOString(),
+            status: 'new',
+          },
+        ],
+      },
+    ],
     expectations: [{ type: 'skip', eventIndex: 0, description: 'Casual chat between others — agent should skip' }],
   },
   {
@@ -175,10 +281,24 @@ export const skipBehaviorScenarios: readonly EvalScenario[] = [
     },
     events: [
       {
-        type: 'group_message',
-        conversation: teamChat,
-        from: alice,
-        text: '@evalagent what is the status of the deploy?',
+        type: 'message',
+        messages: [
+          {
+            messageId: '7d2e1f0a-5b8c-4d9e-1f0a-2b3c4d5e6f7a',
+            conversationId: teamChatConvId,
+            conversationType: 'group',
+            groupName: 'Team Chat',
+            senderUserId: alice.userId,
+            senderUsername: alice.username,
+            senderDisplayName: alice.displayName,
+            senderAccountType: alice.accountType,
+            relationship: alice.relationship,
+            isOwnMessage: false,
+            text: '@evalagent what is the status of the deploy?',
+            timestamp: new Date().toISOString(),
+            status: 'new',
+          },
+        ],
       },
     ],
     expectations: [{ type: 'no_skip', eventIndex: 0, description: 'Agent was @mentioned — must respond' }],
@@ -193,7 +313,27 @@ export const skipBehaviorScenarios: readonly EvalScenario[] = [
       ...defaultSetup,
       contacts: [{ username: 'alice', displayName: 'Alice', accountType: 'human' }],
     },
-    events: [{ type: 'dm', from: alice, text: 'Hello!' }],
+    events: [
+      {
+        type: 'message',
+        messages: [
+          {
+            messageId: '8e3f2a1b-6c9d-4e0f-2a1b-3c4d5e6f7a8b',
+            conversationId: aliceDmConvId,
+            conversationType: 'dm',
+            senderUserId: alice.userId,
+            senderUsername: alice.username,
+            senderDisplayName: alice.displayName,
+            senderAccountType: alice.accountType,
+            relationship: alice.relationship,
+            isOwnMessage: false,
+            text: 'Hello!',
+            timestamp: new Date().toISOString(),
+            status: 'new',
+          },
+        ],
+      },
+    ],
     expectations: [{ type: 'no_skip', eventIndex: 0, description: 'DMs always get a response' }],
   },
   {
@@ -209,10 +349,24 @@ export const skipBehaviorScenarios: readonly EvalScenario[] = [
     },
     events: [
       {
-        type: 'group_message',
-        conversation: workSession,
-        from: owner,
-        text: "Let's figure out what to tackle this sprint. Any ideas?",
+        type: 'message',
+        messages: [
+          {
+            messageId: '9f4a3b2c-7d0e-4f1a-3b2c-4d5e6f7a8b9c',
+            conversationId: workSessionConvId,
+            conversationType: 'temp_group',
+            groupName: 'Sprint Planning',
+            senderUserId: owner.userId,
+            senderUsername: owner.username,
+            senderDisplayName: owner.displayName,
+            senderAccountType: owner.accountType,
+            relationship: owner.relationship,
+            isOwnMessage: false,
+            text: "Let's figure out what to tackle this sprint. Any ideas?",
+            timestamp: new Date().toISOString(),
+            status: 'new',
+          },
+        ],
       },
     ],
     expectations: [{ type: 'no_skip', eventIndex: 0, description: 'Work session — agent should be proactive' }],
@@ -224,7 +378,16 @@ export const skipBehaviorScenarios: readonly EvalScenario[] = [
     area: 'response_relevance',
     sessionMode: 'shared',
     setup: defaultSetup,
-    events: [{ type: 'cron_trigger', cronId: 'cron_1', label: 'Send daily standup reminder' }],
+    events: [
+      {
+        type: 'cron',
+        event: {
+          cronId: 'c3d4e5f6-a7b8-4c9d-e0f1-2a3b4c5d6e7f',
+          label: 'Send daily standup reminder',
+          triggeredAt: new Date().toISOString(),
+        },
+      },
+    ],
     expectations: [{ type: 'skip', eventIndex: 0, description: 'Cron response is discarded — should skip' }],
   },
 ];
