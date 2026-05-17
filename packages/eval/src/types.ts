@@ -211,7 +211,7 @@ export interface EvalScenario {
   readonly name: string;
   readonly description: string;
   readonly area: EvalArea;
-  readonly sessionMode: SessionMode | 'both';
+  readonly sessionMode: SessionMode;
   readonly setup: ScenarioSetup;
   readonly events: readonly ScriptedEvent[];
   readonly expectations: readonly Expectation[];
@@ -226,7 +226,7 @@ export interface EvalConfig {
   readonly acp: { readonly executablePath?: string; readonly cwd: string };
   readonly model: string;
   readonly promptVersion: string;
-  readonly sessionMode: SessionMode | 'both';
+  readonly sessionMode: SessionMode;
   readonly judgeModel: string;
   readonly judgeApiKeyEnvVar: string;
   readonly runsPerScenario: number;

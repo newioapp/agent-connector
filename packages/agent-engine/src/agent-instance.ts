@@ -31,8 +31,6 @@ export interface AgentInstance {
   /** Stop the agent — disconnect, revoke tokens, clean up. */
   stop(): Promise<void>;
 
-  initiateConversation(conversationId: string, context: string): void;
-
   /** Current runtime status. */
   readonly status: AgentRuntimeStatus;
   /** Error message if status is 'error'. */

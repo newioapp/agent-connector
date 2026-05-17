@@ -28,4 +28,3 @@ export { TraceCollector } from './trace.js';
 export { evaluateExpectation, evaluateRuleBasedExpectations } from './assertions.js';
 
 export { runScenario } from './runner.js';
-export type { RunnerDeps } from './runner.js';

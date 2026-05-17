@@ -282,7 +282,16 @@ export class IsolatedSessionAgentInstance implements AgentInstance {
           if (this.pendingMcpServer) {
             log.warn(`${this.logTag} New MCP connection arrived before previous one was wired to a session`);
           }
-          const mcpServer = new NewioMcpServer({ app, agent: this, sessionMode: 'isolated' });
+          const mcpServer = new NewioMcpServer({
+            app,
+            initiateConversation: (convId, context) => {
+              if (!this.abortController.signal.aborted) {
+                this.inbound.push({ type: 'initiate_conversation', conversationId: convId, context: context });
+                this.drainInbound();
+              }
+            },
+            sessionMode: 'isolated',
+          });
           this.pendingMcpServer = mcpServer;
           void mcpServer.connect(transport);
         },
@@ -296,7 +305,12 @@ export class IsolatedSessionAgentInstance implements AgentInstance {
         throw new Error('Cannot create session: ownerId is not set');
       }
 
-      this._sessionFactory = new AcpSessionFactory(this.config, this.engineConfig, `[${app.identity.username}]`);
+      this._sessionFactory = new AcpSessionFactory(
+        this.config,
+        this.engineConfig.appDisplayName,
+        this.engineConfig.appVersion,
+        `[${app.identity.username}]`,
+      );
       this._sessionFactory.onAbnormalTermination((message) => {
         this.pendingCleanup = this.cleanup()
           .then(() => this._sessionFactory?.terminate())
@@ -1244,13 +1258,6 @@ export class IsolatedSessionAgentInstance implements AgentInstance {
       });
     } catch {
       return { success: false, error: 'Operation cancelled' };
-    }
-  }
-
-  initiateConversation(conversationId: string, context: string): void {
-    if (!this.abortController.signal.aborted) {
-      this.inbound.push({ type: 'initiate_conversation', conversationId: conversationId, context: context });
-      this.drainInbound();
     }
   }
 

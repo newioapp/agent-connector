@@ -19,12 +19,11 @@ import { registerUsersTools } from './tools/users.js';
 import { registerMediaTools } from './tools/media.js';
 import { registerMemoryTools } from './tools/memory.js';
 import type { IdGetter, ToolCallHook } from './types.js';
-import type { AgentInstance } from '../agent-instance.js';
 import type { SessionMode } from '../types.js';
 
 export interface NewioMcpServerOptions {
   readonly app: NewioApp;
-  readonly agent: AgentInstance;
+  readonly initiateConversation: (convId: string, context: string) => void;
   readonly sessionMode: SessionMode;
   /** Optional hook called before each tool invocation. */
   readonly onToolCall?: ToolCallHook;
@@ -50,13 +49,20 @@ export class NewioMcpServer {
       version: '0.1.0',
     });
 
-    const { app, agent, sessionMode, onToolCall } = opts;
+    const { app, initiateConversation, sessionMode, onToolCall } = opts;
 
     this.getCurrentConversationId = () => undefined;
     registerContactsTools(this.server, app, onToolCall);
     registerConversationsTools(this.server, app, onToolCall);
     registerCronTools(this.server, app, onToolCall);
-    registerMessagingTools(this.server, app, agent, () => this.getCurrentConversationId(), sessionMode, onToolCall);
+    registerMessagingTools(
+      this.server,
+      app,
+      initiateConversation,
+      () => this.getCurrentConversationId(),
+      sessionMode,
+      onToolCall,
+    );
     registerUsersTools(this.server, app, onToolCall);
     registerMediaTools(this.server, app, () => this.getCurrentConversationId(), onToolCall);
     registerMemoryTools(this.server, app, onToolCall);
