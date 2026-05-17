@@ -6,7 +6,6 @@
  * AND at least 5 seconds have elapsed since the last notification.
  */
 import type * as acp from '@agentclientprotocol/sdk';
-import type { NewioClient } from '@newio/agent-sdk';
 import { getLogger } from '@newio/agent-sdk';
 import { SessionType } from './types';
 
@@ -32,8 +31,7 @@ export class AcpSessionContextWindowHandler {
   constructor(
     private readonly sessionType: SessionType,
     private readonly externalReferenceId: string,
-    private readonly ownerId: string,
-    private readonly client: NewioClient,
+    private readonly reportContextWindow: (contextWindow: ContextWindow) => Promise<void>,
   ) {}
 
   /** Register a one-shot callback that fires when context usage crosses the pressure threshold. */
@@ -106,21 +104,11 @@ export class AcpSessionContextWindowHandler {
       `[${this.sessionType}/${this.externalReferenceId}] Sending context window notification to owner: ${currentPercentage}% (size=${this.size}, used=${this.used})`,
     );
 
-    this.client
-      .sendSignal({
-        targetUserId: this.ownerId,
-        requestId: crypto.randomUUID(),
-        intent: 'notification',
-        type: 'context_window_update',
-        payload: {
-          sessionType: this.sessionType,
-          externalReferenceId: this.externalReferenceId,
-          contextWindowSize: this.size,
-          contextWindowUsed: this.used,
-        },
-      })
-      .catch((err: unknown) => {
-        log.warn(`[${this.sessionType}/${this.externalReferenceId}] Failed to send context window notification`, err);
-      });
+    this.reportContextWindow({
+      size: this.size,
+      used: this.used,
+    }).catch((err: unknown) => {
+      log.warn(`[${this.sessionType}/${this.externalReferenceId}] Failed to send context window notification`, err);
+    });
   }
 }

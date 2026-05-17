@@ -282,14 +282,7 @@ export class SingleSessionAgentInstance implements AgentInstance {
         throw new Error('Cannot create session: ownerId is not set');
       }
 
-      this._sessionFactory = new AcpSessionFactory(
-        app.client,
-        this.config,
-        this.engineConfig,
-        app.identity.userId,
-        ownerId,
-        `[${app.identity.username}]`,
-      );
+      this._sessionFactory = new AcpSessionFactory(this.config, this.engineConfig, `[${app.identity.username}]`);
       this._sessionFactory.onAbnormalTermination((message) => {
         this.pendingCleanup = this.cleanup()
           .then(() => this._sessionFactory?.terminate())
@@ -619,6 +612,12 @@ export class SingleSessionAgentInstance implements AgentInstance {
         promptFormatterVersion: this.promptManager.defaultVersion,
         mcpSocketPath: this.mcpSocketPath,
         skipToken: this.promptManager.skipToken(this.promptManager.defaultVersion),
+        updateConfig: async (_config) => {
+          // backend doesn't supported for single session agent instance.
+        },
+        reportContextWindow: async (_context) => {
+          // backend doesn't supported for single session agent instance.
+        },
       });
       return session;
     } catch (err) {
