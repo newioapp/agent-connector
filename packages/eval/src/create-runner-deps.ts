@@ -6,6 +6,8 @@
  */
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { fileURLToPath } from 'url';
+import { readFileSync } from 'fs';
 import { AcpSessionFactory, NewioMcpServer, PromptFormatterImpl, startUdsServer } from '@newio/agent-engine';
 import type { AgentConfig, PromptFormatter, ToolCallHook } from '@newio/agent-engine';
 import type { NewioApp } from '@newio/agent-sdk';
@@ -84,12 +86,14 @@ export async function createScenarioRunnerDeps(
     id: 'eval-agent',
     type: config.agentType,
     sessionMode: scenario.sessionMode,
-    envVars: {},
+    envVars: loadEnvFile(),
     acp: {
       cwd: config.acp.cwd,
       executablePath: config.acp.executablePath,
     },
   };
+
+  const mcpBridgePath = fileURLToPath(import.meta.resolve('@newio/agent-engine/mcp-bridge'));
 
   // Build prompt manager with the requested version
   const promptFormatter = new PromptFormatterImpl(
@@ -108,6 +112,7 @@ export async function createScenarioRunnerDeps(
     promptFormatterVersion: config.promptVersion,
     skipToken: promptFormatter.skipToken,
     mcpSocketPath: socketPath,
+    mcpBridgePath,
     updateConfig: () => Promise.resolve(),
     reportContextWindow: () => Promise.resolve(),
   });
@@ -129,4 +134,33 @@ export async function createScenarioRunnerDeps(
       });
     },
   };
+}
+
+/** Load environment variables from packages/eval/.env file. Falls back to process.env if not found. */
+function loadEnvFile(): Record<string, string> {
+  const envPath = join(fileURLToPath(import.meta.url), '../../.env');
+  try {
+    const content = readFileSync(envPath, 'utf-8');
+    const env: Record<string, string> = {};
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) {
+        continue;
+      }
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx === -1) {
+        continue;
+      }
+      const key = trimmed.slice(0, eqIdx).trim();
+      const value = trimmed
+        .slice(eqIdx + 1)
+        .trim()
+        .replace(/^["']|["']$/g, '');
+      env[key] = value;
+    }
+    return env;
+  } catch {
+    // .env file not found — use process.env as fallback
+    return { ...process.env } as Record<string, string>;
+  }
 }

@@ -622,6 +622,7 @@ export class SingleSessionAgentInstance implements AgentInstance {
         externalReferenceId: EXTERNAL_REFERENCE_ID,
         promptFormatterVersion: this.promptManager.defaultVersion,
         mcpSocketPath: this.mcpSocketPath,
+        mcpBridgePath: this.engineConfig.mcpBridgePath,
         skipToken: this.promptManager.skipToken(this.promptManager.defaultVersion),
         updateConfig: async (_config) => {
           // backend doesn't supported for single session agent instance.

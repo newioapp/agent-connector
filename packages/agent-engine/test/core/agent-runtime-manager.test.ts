@@ -51,6 +51,7 @@ const mockEngineConfig: EngineConfig = {
   appDisplayName: 'Test Connector',
   appVersion: '0.0.1',
   dataDir: '/tmp/newio-test',
+  mcpBridgePath: '/tmp/mock-bridge.js',
 };
 
 function mockListener(): StatusListener {

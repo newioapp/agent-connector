@@ -723,6 +723,7 @@ export class IsolatedSessionAgentInstance implements AgentInstance {
         externalReferenceId,
         promptFormatterVersion: this.promptManager.defaultVersion,
         mcpSocketPath: this.mcpSocketPath,
+        mcpBridgePath: this.engineConfig.mcpBridgePath,
         skipToken: this.promptManager.skipToken(this.promptManager.defaultVersion),
         updateConfig: async (config) => {
           await this.app.client.updateAgentMember({
