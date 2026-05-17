@@ -59,11 +59,17 @@ export async function createScenarioRunnerDeps(
     toolInterceptor.record(toolName, args as Record<string, unknown>);
   };
 
+  // Resolve effective session mode (scenario may declare 'both', config has the resolved mode)
+  const effectiveSessionMode = scenario.sessionMode === 'both' ? config.sessionMode : scenario.sessionMode;
+  if (effectiveSessionMode === 'both') {
+    throw new Error('effectiveSessionMode must be resolved to isolated or shared before creating deps');
+  }
+
   // Create MCP server with hook, backed by mock app
   const mcpServer = new NewioMcpServer({
     app: mockApp as unknown as NewioApp,
     initiateConversation: () => {},
-    sessionMode: scenario.sessionMode,
+    sessionMode: effectiveSessionMode,
     onToolCall,
   });
 
@@ -86,7 +92,7 @@ export async function createScenarioRunnerDeps(
   const agentConfig: AgentConfig = {
     id: 'eval-agent',
     type: config.agentType,
-    sessionMode: scenario.sessionMode,
+    sessionMode: effectiveSessionMode,
     envVars: loadEnvFile(),
     acp: {
       cwd: config.acp.cwd,
@@ -101,7 +107,7 @@ export async function createScenarioRunnerDeps(
   const promptFormatter = new PromptFormatterImpl(
     { username: mockApp.identity.username, displayName: mockApp.identity.displayName },
     mockApp.getOwnerInfo(),
-    scenario.sessionMode,
+    effectiveSessionMode,
   );
 
   const sessionFactory = new AcpSessionFactory(agentConfig, 'Newio Connector Eval', '0.1.0', '[eval]');

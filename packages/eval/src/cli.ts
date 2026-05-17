@@ -9,7 +9,7 @@
 import { program } from 'commander';
 import type { EvalConfig, EvalScenario, EvalArea, ScenarioRunResult, ScenarioAggregateResult } from './types.js';
 import type { AgentType, SessionMode } from '@newio/agent-engine';
-import { allPhase1Scenarios } from './scenarios/phase1.js';
+import { allScenarios } from './scenarios/index.js';
 import { runScenario } from './runner.js';
 import { createScenarioRunnerDeps, ScenarioRunnerDeps } from './create-runner-deps.js';
 import { generateTraceReport } from './trace-report.js';
@@ -59,37 +59,51 @@ async function main(): Promise<void> {
   };
 
   // Filter scenarios
-  let scenarios: readonly EvalScenario[] = allPhase1Scenarios;
+  let scenarios: readonly EvalScenario[] = allScenarios;
   if (config.scenarioId) {
     scenarios = scenarios.filter((s) => s.id === config.scenarioId);
   }
   if (config.area) {
     scenarios = scenarios.filter((s) => s.area === config.area);
   }
-  scenarios = scenarios.filter((s) => s.sessionMode === config.sessionMode);
 
-  if (scenarios.length === 0) {
+  // Determine which session modes to run
+  const modesToRun: readonly SessionMode[] =
+    config.sessionMode === 'both' ? ['shared', 'isolated'] : [config.sessionMode];
+
+  // Expand scenarios: filter by mode compatibility and create effective (scenario, mode) pairs
+  type EffectiveScenario = { readonly scenario: EvalScenario; readonly effectiveMode: SessionMode };
+  const effectiveScenarios: EffectiveScenario[] = [];
+  for (const mode of modesToRun) {
+    for (const s of scenarios) {
+      if (s.sessionMode === mode || s.sessionMode === 'both') {
+        effectiveScenarios.push({ scenario: s, effectiveMode: mode });
+      }
+    }
+  }
+
+  if (effectiveScenarios.length === 0) {
     console.error('No scenarios match the given filters.');
     process.exit(1);
   }
 
   console.log(`\n🧪 Newio Agent Eval`);
   console.log(`   Agent: ${config.agentType} | Model: ${config.model} | Prompt: v${config.promptVersion}`);
-  console.log(`   Scenarios: ${scenarios.length} | Runs per scenario: ${config.runsPerScenario}`);
+  console.log(`   Scenarios: ${effectiveScenarios.length} | Runs per scenario: ${config.runsPerScenario}`);
   console.log(`   Session mode: ${config.sessionMode}\n`);
 
   // NOTE: Full integration requires a running ACP agent.
   // For now, print the scenario plan and exit with instructions.
   console.log('📋 Scenarios to run:\n');
-  for (const s of scenarios) {
-    console.log(`   [${s.area}] ${s.id}`);
+  for (const { scenario: s, effectiveMode } of effectiveScenarios) {
+    console.log(`   [${s.area}] ${s.id} (${effectiveMode})`);
     console.log(`     ${s.description}\n`);
   }
 
   console.log('─'.repeat(60));
 
   // Run scenarios — each gets a fresh ACP process for isolation
-  const results = await runAllScenarios(scenarios, config);
+  const results = await runAllScenarios(effectiveScenarios, config);
   printReport(results);
 
   // Generate HTML trace report
@@ -148,22 +162,26 @@ export function printReport(aggregates: readonly ScenarioAggregateResult[]): voi
 
 /** Run all scenarios with multiple runs, aggregate results. */
 export async function runAllScenarios(
-  scenarios: readonly EvalScenario[],
+  effectiveScenarios: readonly { readonly scenario: EvalScenario; readonly effectiveMode: SessionMode }[],
   config: EvalConfig,
 ): Promise<readonly ScenarioAggregateResult[]> {
   const aggregates: ScenarioAggregateResult[] = [];
 
-  for (const scenario of scenarios) {
+  for (const { scenario, effectiveMode } of effectiveScenarios) {
     const runs: ScenarioRunResult[] = [];
-    console.log(`\n  Running: ${scenario.id}...`);
+    const runId = scenario.sessionMode === 'both' ? `${scenario.id} [${effectiveMode}]` : scenario.id;
+    console.log(`\n  Running: ${runId}...`);
+
+    // Override config sessionMode with the effective mode for this run
+    const effectiveConfig: EvalConfig = { ...config, sessionMode: effectiveMode };
 
     for (let i = 0; i < config.runsPerScenario; i++) {
       // Fresh ACP process + MCP server per run for full isolation
 
       let deps: ScenarioRunnerDeps | undefined;
       try {
-        deps = await createScenarioRunnerDeps(config, scenario);
-        const result = await runScenario(scenario, config, deps, i);
+        deps = await createScenarioRunnerDeps(effectiveConfig, scenario);
+        const result = await runScenario(scenario, effectiveConfig, deps, i);
         runs.push(result);
         const icon = result.passed ? '✓' : '✗';
         process.stdout.write(`  ${icon}`);
@@ -176,7 +194,7 @@ export async function runAllScenarios(
           agentType: config.agentType,
           model: config.model,
           promptVersion: config.promptVersion,
-          sessionMode: scenario.sessionMode,
+          sessionMode: effectiveMode,
           traces: [],
           assertions: [
             {
@@ -197,7 +215,7 @@ export async function runAllScenarios(
 
     const passRate = runs.filter((r) => r.passed).length / runs.length;
     aggregates.push({
-      scenarioId: scenario.id,
+      scenarioId: runId,
       scenarioName: scenario.name,
       area: scenario.area,
       runs,

@@ -124,7 +124,7 @@ export async function runScenario(
     agentType: config.agentType,
     model: config.model,
     promptVersion: config.promptVersion,
-    sessionMode: scenario.sessionMode,
+    sessionMode: config.sessionMode,
     traces,
     assertions,
     passed,
