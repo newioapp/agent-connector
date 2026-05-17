@@ -258,7 +258,7 @@ export class SingleSessionAgentInstance implements AgentInstance {
       }
 
       // Start MCP server on UDS for agent sessions
-      const defaultPromptFormatter = new PromptFormatterImpl(app.identity, app.getOwnerInfo());
+      const defaultPromptFormatter = new PromptFormatterImpl(app.identity, app.getOwnerInfo(), 'shared');
       this._promptManager = new PromptManager([defaultPromptFormatter], defaultPromptFormatter);
 
       this.udsServer = startUdsServer({

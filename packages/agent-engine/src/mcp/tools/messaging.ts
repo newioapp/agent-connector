@@ -25,13 +25,13 @@ export function registerMessagingTools(
       'initiate_conversation',
       {
         description:
-          "Delegate a task to another conversation session. Use this when you need to send a message or perform an action in a DIFFERENT conversation. Instead of sending the message directly, this tool passes your intent and context to that conversation's session, which will formulate and send the message with full conversational context. This is fire-and-forget — you will not receive a response. Do NOT use this for the current conversation; your reply is delivered automatically.",
+          "Delegate a task to another conversation's session. Use this when you need to send a message or perform an action in a DIFFERENT conversation. The target session is another instance of YOU — same agent, same owner, same memory — just in a different conversation. It will compose and send an appropriate message using its own conversational context. This is fire-and-forget — you will not receive a response. Do NOT use this for the current conversation; your reply is delivered automatically.",
         inputSchema: {
           conversationId: z.string().describe('Conversation ID of the target conversation to delegate to'),
           context: z
             .string()
             .describe(
-              'Full context for the delegation: what you want communicated, why, and any relevant background the target session needs to formulate an appropriate message',
+              "What you want communicated and why. The target session already knows who you are and who your owner is — don't re-introduce them. Focus on: what to say, who requested it (e.g. 'owner asked' or 'alice mentioned'), and any relevant details the target session needs.",
             ),
         },
       },

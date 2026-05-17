@@ -91,6 +91,7 @@ export async function createScenarioRunnerDeps(
     acp: {
       cwd: config.acp.cwd,
       executablePath: config.acp.executablePath,
+      kiroCliTrustAllTools: true,
     },
   };
 
@@ -100,6 +101,7 @@ export async function createScenarioRunnerDeps(
   const promptFormatter = new PromptFormatterImpl(
     { username: mockApp.identity.username, displayName: mockApp.identity.displayName },
     mockApp.getOwnerInfo(),
+    scenario.sessionMode,
   );
 
   const sessionFactory = new AcpSessionFactory(agentConfig, 'Newio Connector Eval', '0.1.0', '[eval]');
@@ -117,6 +119,8 @@ export async function createScenarioRunnerDeps(
     updateConfig: () => Promise.resolve(),
     reportContextWindow: () => Promise.resolve(),
   });
+
+  await session.applySessionConfig({ acpModel: config.model });
 
   return {
     session: session,

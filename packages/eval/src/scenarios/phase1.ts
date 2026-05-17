@@ -200,7 +200,7 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
   {
     id: 'tool-usage-contact-event-uses-tools',
     name: 'Contact events acted on via tools, not text reply',
-    description: 'Agent should output _skip for contact events and take action exclusively via MCP tools.',
+    description: 'Agent should notify owner about an incoming friend request via dm_owner tool.',
     area: 'tool_usage',
     sessionMode: 'shared',
     setup: defaultSetup,
@@ -220,7 +220,7 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
       },
     ],
     expectations: [
-      { type: 'skip', eventIndex: 0, description: 'Contact event text response is discarded — agent should skip' },
+      { type: 'tool_called', tool: 'dm_owner', description: 'Should notify owner about the friend request' },
     ],
   },
 ];
