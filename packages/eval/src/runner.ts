@@ -134,14 +134,21 @@ export async function runScenario(
     }
 
     const conversationId = getConversationId(event);
-    const gen = deps.session.prompt(promptText, conversationId);
-
-    // Wrap with timeout
-    const { text: agentOutput, toolCalls } = await withTimeout(
-      collectOutput(gen, deps.toolInterceptor),
-      PROMPT_TIMEOUT_MS,
-      `Prompt timed out after ${PROMPT_TIMEOUT_MS}ms for event ${i}`,
-    );
+    deps.setCurrentConversationId(conversationId);
+    let agentOutput: string;
+    let toolCalls: readonly ToolCallRecord[];
+    try {
+      const gen = deps.session.prompt(promptText, conversationId);
+      const result = await withTimeout(
+        collectOutput(gen, deps.toolInterceptor),
+        PROMPT_TIMEOUT_MS,
+        `Prompt timed out after ${PROMPT_TIMEOUT_MS}ms for event ${i}`,
+      );
+      agentOutput = result.text;
+      toolCalls = result.toolCalls;
+    } finally {
+      deps.setCurrentConversationId(undefined);
+    }
 
     const isSkip = deps.promptFormatter.isSkip(agentOutput);
     const latencyMs = Date.now() - startTime;
