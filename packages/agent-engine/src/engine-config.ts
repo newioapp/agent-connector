@@ -19,4 +19,6 @@ export interface EngineConfig {
   readonly appVersion: string;
   /** Directory for persistent data (config, tokens). Typically ~/.newio/connector/ or similar. */
   readonly dataDir: string;
+  /** Absolute path to the MCP bridge script (node entrypoint). */
+  readonly mcpBridgePath: string;
 }

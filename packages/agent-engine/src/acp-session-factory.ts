@@ -49,6 +49,8 @@ export interface CreateSessionInput {
   readonly externalReferenceId: string;
   readonly promptFormatterVersion: string;
   readonly mcpSocketPath: string;
+  /** Absolute path to the MCP bridge script (node entrypoint). */
+  readonly mcpBridgePath: string;
   readonly skipToken: string;
   readonly updateConfig: (config: SessionConfig) => Promise<void>;
   readonly reportContextWindow: (contextWindow: ContextWindow) => Promise<void>;
@@ -276,7 +278,7 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
 
     const result = await conn.newSession({
       cwd: config.cwd,
-      mcpServers: buildMcpServers(input.mcpSocketPath),
+      mcpServers: buildMcpServers(input.mcpSocketPath, input.mcpBridgePath),
     });
 
     const session = new AcpAgentSession({
@@ -407,17 +409,13 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
   }
 }
 
-function buildMcpServers(mcpSocketPath?: string): AcpMcpServer[] {
-  if (!mcpSocketPath) {
-    return [];
-  }
-  const bridgePath = require.resolve('@newio/agent-engine/mcp-bridge').replace('app.asar', 'app.asar.unpacked');
-  log.debug(`MCP bridge path: ${bridgePath}`);
+function buildMcpServers(mcpSocketPath: string, mcpBridgePath: string): AcpMcpServer[] {
+  log.debug(`MCP bridge path: ${mcpBridgePath}`);
   return [
     {
       name: 'newio',
       command: 'node',
-      args: [bridgePath, mcpSocketPath],
+      args: [mcpBridgePath, mcpSocketPath],
       env: [],
     },
   ];

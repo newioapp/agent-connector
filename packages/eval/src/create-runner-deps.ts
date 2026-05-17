@@ -6,6 +6,9 @@
  */
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { fileURLToPath } from 'url';
+import { readFileSync } from 'fs';
+import { parse as parseDotenv } from 'dotenv';
 import { AcpSessionFactory, NewioMcpServer, PromptFormatterImpl, startUdsServer } from '@newio/agent-engine';
 import type { AgentConfig, PromptFormatter, ToolCallHook } from '@newio/agent-engine';
 import type { NewioApp } from '@newio/agent-sdk';
@@ -84,12 +87,14 @@ export async function createScenarioRunnerDeps(
     id: 'eval-agent',
     type: config.agentType,
     sessionMode: scenario.sessionMode,
-    envVars: {},
+    envVars: loadEnvFile(),
     acp: {
       cwd: config.acp.cwd,
       executablePath: config.acp.executablePath,
     },
   };
+
+  const mcpBridgePath = fileURLToPath(import.meta.resolve('@newio/agent-engine/mcp-bridge'));
 
   // Build prompt manager with the requested version
   const promptFormatter = new PromptFormatterImpl(
@@ -108,6 +113,7 @@ export async function createScenarioRunnerDeps(
     promptFormatterVersion: config.promptVersion,
     skipToken: promptFormatter.skipToken,
     mcpSocketPath: socketPath,
+    mcpBridgePath,
     updateConfig: () => Promise.resolve(),
     reportContextWindow: () => Promise.resolve(),
   });
@@ -129,4 +135,15 @@ export async function createScenarioRunnerDeps(
       });
     },
   };
+}
+
+/** Load environment variables from packages/eval/.env file. Falls back to process.env if not found. */
+function loadEnvFile(): Record<string, string> {
+  const envPath = join(fileURLToPath(import.meta.url), '../../.env');
+  try {
+    const content = readFileSync(envPath, 'utf-8');
+    return parseDotenv(content);
+  } catch {
+    return { ...process.env } as Record<string, string>;
+  }
 }
