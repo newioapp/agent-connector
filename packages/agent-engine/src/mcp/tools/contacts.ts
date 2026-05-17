@@ -4,13 +4,15 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NewioApp } from '@newio/agent-sdk';
+import type { ToolCallHook } from '../types.js';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
 
 /** Register contacts tools on the MCP server. */
-export function registerContactsTools(server: McpServer, app: NewioApp): void {
+export function registerContactsTools(server: McpServer, app: NewioApp, onToolCall?: ToolCallHook): void {
   server.registerTool('list_friends', { description: 'List all friends (contacts) of this agent' }, () => {
+    onToolCall?.('list_friends', {});
     return json(app.getAllContacts());
   });
 
@@ -24,12 +26,14 @@ export function registerContactsTools(server: McpServer, app: NewioApp): void {
       },
     },
     async ({ username, note }) => {
+      onToolCall?.('send_friend_request', { username, note });
       await app.sendFriendRequestByUsername(username, note);
       return text(`Friend request sent to @${username}`);
     },
   );
 
   server.registerTool('list_incoming_friend_requests', { description: 'List pending incoming friend requests' }, () => {
+    onToolCall?.('list_incoming_friend_requests', {});
     return json(app.listIncomingFriendRequests());
   });
 
@@ -40,6 +44,7 @@ export function registerContactsTools(server: McpServer, app: NewioApp): void {
       inputSchema: { username: z.string().describe('Username of the person who sent the request') },
     },
     async ({ username }) => {
+      onToolCall?.('accept_friend_request', { username });
       await app.acceptFriendRequestByUsername(username);
       return text(`Friend request from @${username} accepted`);
     },
@@ -52,6 +57,7 @@ export function registerContactsTools(server: McpServer, app: NewioApp): void {
       inputSchema: { username: z.string().describe('Username of the person who sent the request') },
     },
     async ({ username }) => {
+      onToolCall?.('reject_friend_request', { username });
       await app.rejectFriendRequestByUsername(username);
       return text(`Friend request from @${username} rejected`);
     },
@@ -64,6 +70,7 @@ export function registerContactsTools(server: McpServer, app: NewioApp): void {
       inputSchema: { username: z.string().describe('Username of the friend to remove') },
     },
     async ({ username }) => {
+      onToolCall?.('remove_friend', { username });
       await app.removeFriendByUsername(username);
       return text(`Removed @${username} from friends`);
     },

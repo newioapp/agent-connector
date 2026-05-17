@@ -5,7 +5,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NewioApp } from '@newio/agent-sdk';
 import { AgentInstance } from '../../agent-instance';
-import { IdGetter } from '../types';
+import type { IdGetter, ToolCallHook } from '../types';
 import type { SessionMode } from '../../types';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
@@ -18,6 +18,7 @@ export function registerMessagingTools(
   agent: AgentInstance,
   getCurrentConversationId: IdGetter,
   sessionMode: SessionMode,
+  onToolCall?: ToolCallHook,
 ): void {
   // Isolated mode: use initiate_conversation for cross-conversation delegation
   if (sessionMode === 'isolated') {
@@ -36,6 +37,7 @@ export function registerMessagingTools(
         },
       },
       ({ conversationId, context }) => {
+        onToolCall?.('initiate_conversation', { conversationId, context });
         if (getCurrentConversationId() === conversationId) {
           return text("Can't initiate the current conversation — your reply is delivered automatically.");
         }
@@ -63,6 +65,7 @@ export function registerMessagingTools(
         },
       },
       async ({ conversationId, text: msgText, filePaths }) => {
+        onToolCall?.('send_message', { conversationId, text: msgText, filePaths });
         await app.sendMessage(conversationId, msgText, filePaths);
         return text('Message sent');
       },
@@ -84,6 +87,7 @@ export function registerMessagingTools(
         },
       },
       async ({ username, text: msgText, filePaths }) => {
+        onToolCall?.('send_dm', { username, text: msgText, filePaths });
         await app.sendDm(username, msgText, filePaths);
         return text(`DM sent to @${username}`);
       },
@@ -104,6 +108,7 @@ export function registerMessagingTools(
         },
       },
       async ({ text: msgText, filePaths }) => {
+        onToolCall?.('dm_owner', { text: msgText, filePaths });
         await app.dmOwner(msgText, filePaths);
         return text('DM sent to owner');
       },
@@ -121,6 +126,7 @@ export function registerMessagingTools(
       },
     },
     async ({ conversationId, limit, beforeMessageId }) => {
+      onToolCall?.('list_messages', { conversationId, limit, beforeMessageId });
       const resp = await app.client.listMessages({
         conversationId,
         limit: limit ?? 20,

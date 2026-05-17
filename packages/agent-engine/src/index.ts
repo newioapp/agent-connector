@@ -64,4 +64,4 @@ export type {
 
 // MCP server
 export { NewioMcpServer, startUdsServer } from './mcp/index.js';
-export type { Transport, UdsServerOptions } from './mcp/index.js';
+export type { Transport, UdsServerOptions, ToolCallHook, NewioMcpServerOptions } from './mcp/index.js';

@@ -4,7 +4,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NewioApp } from '@newio/agent-sdk';
-import { IdGetter } from '../types';
+import type { IdGetter, ToolCallHook } from '../types.js';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
@@ -18,7 +18,12 @@ function requireCurrentConversationId(getCurrentConversationId: IdGetter): strin
 }
 
 /** Register media tools on the MCP server. */
-export function registerMediaTools(server: McpServer, app: NewioApp, getCurrentConversationId: IdGetter): void {
+export function registerMediaTools(
+  server: McpServer,
+  app: NewioApp,
+  getCurrentConversationId: IdGetter,
+  onToolCall?: ToolCallHook,
+): void {
   server.registerTool(
     'upload_attachment_to_current_conversation',
     {
@@ -29,6 +34,7 @@ export function registerMediaTools(server: McpServer, app: NewioApp, getCurrentC
       },
     },
     async ({ filePaths }) => {
+      onToolCall?.('upload_attachment_to_current_conversation', { filePaths });
       const convId = requireCurrentConversationId(getCurrentConversationId);
       await app.sendMessage(convId, undefined, filePaths);
       return json({ sent: filePaths.length, convId });
@@ -46,6 +52,7 @@ export function registerMediaTools(server: McpServer, app: NewioApp, getCurrentC
       },
     },
     async ({ conversationId, s3Key, fileName }) => {
+      onToolCall?.('download_attachment', { conversationId, s3Key, fileName });
       const localPath = await app.downloadAttachment(conversationId, s3Key, fileName);
       return text(localPath);
     },
