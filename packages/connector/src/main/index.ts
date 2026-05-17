@@ -78,6 +78,7 @@ void app.whenReady().then(async () => {
     appDisplayName: __APP_DISPLAY_NAME__,
     appVersion: __APP_VERSION__,
     dataDir,
+    mcpBridgePath: require.resolve('@newio/agent-engine/mcp-bridge').replace('app.asar', 'app.asar.unpacked'),
   };
 
   const agentConfigManager = new FileAgentConfigManager(dataDir);
