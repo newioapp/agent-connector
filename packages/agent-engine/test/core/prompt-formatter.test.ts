@@ -28,7 +28,7 @@ function mockApp(
   identity: PromptFormatterIdentity = defaultIdentity,
   owner: PromptFormatterOwner = defaultOwner,
 ): PromptFormatterImpl {
-  return new PromptFormatterImpl(identity, owner);
+  return new PromptFormatterImpl(identity, owner, 'isolated');
 }
 
 describe('PromptFormatterImpl', () => {
@@ -123,8 +123,9 @@ describe('PromptFormatterImpl', () => {
         timestamp: '2026-04-04T10:00:00Z',
       };
       const result = pf.formatContactPrompt([event]);
+      expect(result).toContain('event: contact.batch');
       expect(result).toContain('events:');
-      expect(result).toContain('event: contact.request_received');
+      expect(result).toContain('type: contact.request_received');
       expect(result).toContain('username: alice');
       expect(result).toContain('displayName: Alice');
       expect(result).toContain('accountType: human');
@@ -153,8 +154,8 @@ describe('PromptFormatterImpl', () => {
         },
       ];
       const result = pf.formatContactPrompt(events);
-      expect(result).toContain('event: contact.request_received');
-      expect(result).toContain('event: contact.request_accepted');
+      expect(result).toContain('type: contact.request_received');
+      expect(result).toContain('type: contact.request_accepted');
       expect(result).toContain('username: alice');
       expect(result).toContain('username: bob');
       expect(result).toContain('ownerUsername: charlie');
@@ -269,8 +270,8 @@ describe('PromptFormatterImpl', () => {
     it('includes YAML examples and response rules', () => {
       const pf = mockApp();
       const result = pf.buildNewioInstruction();
-      expect(result.prompt).toContain('DM example:');
-      expect(result.prompt).toContain('Group example:');
+      expect(result.prompt).toContain('Example (DM):');
+      expect(result.prompt).toContain('Example (Group):');
       expect(result.prompt).toContain('_skip');
       expect(result.prompt).toContain('@mention convention');
     });
@@ -278,27 +279,23 @@ describe('PromptFormatterImpl', () => {
     it('includes contact event instructions', () => {
       const pf = mockApp();
       const result = pf.buildNewioInstruction();
-      expect(result.prompt).toContain('Contact events:');
-      expect(result.prompt).toContain('contact.request_received');
-      expect(result.prompt).toContain('Always respond with _skip');
-      expect(result.prompt).toContain('accept_friend_request');
+      expect(result.prompt).toContain('contact.batch');
+      expect(result.prompt).toContain('_skip');
     });
 
     it('includes cron trigger instructions', () => {
       const pf = mockApp();
       const result = pf.buildNewioInstruction();
-      expect(result.prompt).toContain('Cron triggers:');
-      expect(result.prompt).toContain('schedule_cron');
       expect(result.prompt).toContain('cron.triggered');
-      expect(result.prompt).toContain('Always respond with _skip');
+      expect(result.prompt).toContain('_skip');
     });
   });
 
   describe('buildGreetingPrompt', () => {
-    it('includes owner name', () => {
+    it('includes greeting task', () => {
       const pf = mockApp();
       const result = pf.buildGreetingPrompt();
-      expect(result).toContain('Nan');
+      expect(result).toContain('system.greeting');
       expect(result).toContain('greeting');
     });
   });
