@@ -506,6 +506,12 @@ export class NewioApp {
     await this.sendMessage(conversationId, text, filePaths);
   }
 
+  /** Get or create a DM conversation with a user by username. Returns the conversationId. */
+  async getOrCreateDm(username: string): Promise<string> {
+    const userId = await this.resolveUsername(username);
+    return this.findOrCreateDm(userId);
+  }
+
   // ---------------------------------------------------------------------------
   // Contacts — high-level (username-based)
   // ---------------------------------------------------------------------------

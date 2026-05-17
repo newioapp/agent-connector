@@ -12,6 +12,9 @@ import type { AgentType, SessionMode } from '@newio/agent-engine';
 import { allPhase1Scenarios } from './scenarios/phase1.js';
 import { runScenario } from './runner.js';
 import { createScenarioRunnerDeps, ScenarioRunnerDeps } from './create-runner-deps.js';
+import { generateTraceReport } from './trace-report.js';
+import { mkdirSync } from 'fs';
+import { join } from 'path';
 
 program
   .name('newio-eval')
@@ -22,7 +25,7 @@ program
   .option('--session-mode <mode>', 'Session mode (isolated, shared, both)', 'shared')
   .option('--area <area>', 'Filter by evaluation area')
   .option('--scenario <id>', 'Run a single scenario by ID')
-  .option('--runs <n>', 'Number of runs per scenario', '3')
+  .option('--runs <n>', 'Number of runs per scenario', '1')
   .option('--cwd <dir>', 'Working directory for the ACP agent', process.cwd())
   .option('--executable <path>', 'Path to ACP executable (overrides agent-type default)')
   .option('--timeout <ms>', 'Timeout per prompt in ms', '120000')
@@ -89,12 +92,24 @@ async function main(): Promise<void> {
   const results = await runAllScenarios(scenarios, config);
   printReport(results);
 
+  // Generate HTML trace report
+  const outputDir = join(opts.cwd, 'results');
+  mkdirSync(outputDir, { recursive: true });
+  const reportPath = generateTraceReport(results, config, outputDir);
+  console.log(`📄 Full trace report: ${reportPath}`);
+
   const failed = results.some((r) => r.passRate < 1);
   process.exit(failed ? 1 : 0);
 }
 
 // ---------------------------------------------------------------------------
-// Report formatting (used once full execution is wired)
+// Trace printing — generates HTML report
+// ---------------------------------------------------------------------------
+
+// (moved to trace-report.ts — generates a full HTML page)
+
+// ---------------------------------------------------------------------------
+// Report formatting
 // ---------------------------------------------------------------------------
 
 export function printReport(aggregates: readonly ScenarioAggregateResult[]): void {

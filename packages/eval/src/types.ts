@@ -2,7 +2,14 @@
  * Eval scenario types — defines the shape of evaluation scenarios,
  * scripted events, and expectations.
  */
-import type { AccountType, ConversationType } from '@newio/agent-sdk';
+import type {
+  AccountType,
+  ConversationType,
+  IncomingMessage,
+  ContactEvent,
+  CronTriggerEvent,
+  LoadSessionMemoryResponse,
+} from '@newio/agent-sdk';
 import type { AgentType, SessionMode } from '@newio/agent-engine';
 
 // ---------------------------------------------------------------------------
@@ -52,86 +59,17 @@ export interface ContactSetup {
   readonly accountType: AccountType;
 }
 
-export interface MemoryFact {
-  readonly factId: string;
-  readonly text: string;
-}
-
-export interface MemorySummary {
-  readonly text: string;
-}
-
-export interface MemoryScope {
-  readonly summary?: MemorySummary;
-  readonly facts: readonly MemoryFact[];
-}
-
-export interface MemorySetup {
-  readonly global: MemoryScope;
-  readonly participants: Readonly<Record<string, MemoryScope>>;
-  readonly conversation: MemoryScope;
-  readonly topUsers: readonly { readonly scopeId: string; readonly text: string }[];
-  readonly topConversations: readonly { readonly scopeId: string; readonly text: string }[];
-}
-
 // ---------------------------------------------------------------------------
-// Scripted events
+// Scripted events — mirrors InboundEvent from agent-engine
 // ---------------------------------------------------------------------------
-
-export interface DmEvent {
-  readonly type: 'dm';
-  readonly from: UserProfile;
-  readonly text: string;
-  readonly conversationId?: string;
-  readonly attachments?: readonly {
-    readonly attachmentType: 'image' | 'file';
-    readonly fileName: string;
-    readonly contentType: string;
-    readonly size: number;
-    readonly s3Key: string;
-  }[];
-}
-
-export interface GroupMessageEvent {
-  readonly type: 'group_message';
-  readonly conversation: ConversationSetup;
-  readonly from: UserProfile;
-  readonly text: string;
-}
-
-export interface ContactEventScripted {
-  readonly type: 'contact_event';
-  readonly eventType:
-    | 'contact.request_received'
-    | 'contact.request_accepted'
-    | 'contact.request_rejected'
-    | 'contact.removed';
-  readonly from: UserProfile;
-  readonly note?: string;
-}
-
-export interface CronTriggerScripted {
-  readonly type: 'cron_trigger';
-  readonly cronId: string;
-  readonly label: string;
-  readonly payload?: unknown;
-}
-
-export interface SessionEndEvent {
-  readonly type: 'session_end';
-}
-
-export interface MemoryUpdateEvent {
-  readonly type: 'memory_update';
-}
 
 export type ScriptedEvent =
-  | DmEvent
-  | GroupMessageEvent
-  | ContactEventScripted
-  | CronTriggerScripted
-  | SessionEndEvent
-  | MemoryUpdateEvent;
+  | { readonly type: 'message'; readonly messages: readonly IncomingMessage[] }
+  | { readonly type: 'contact'; readonly events: readonly ContactEvent[] }
+  | { readonly type: 'cron'; readonly event: CronTriggerEvent }
+  | { readonly type: 'initialization' }
+  | { readonly type: 'session_end' }
+  | { readonly type: 'memory_update' };
 
 // ---------------------------------------------------------------------------
 // Expectations
@@ -212,8 +150,8 @@ export interface ScenarioSetup {
     readonly username: string;
     readonly displayName: string;
   };
-  readonly memory?: MemorySetup;
-  readonly handoffNote?: string;
+  readonly initialMemory?: LoadSessionMemoryResponse;
+  readonly initialHandoffNote?: string;
   readonly contacts?: readonly ContactSetup[];
   readonly conversations?: readonly ConversationSetup[];
 }

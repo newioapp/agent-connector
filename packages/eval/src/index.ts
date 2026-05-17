@@ -8,10 +8,6 @@ export type {
   UserProfile,
   ConversationSetup,
   ContactSetup,
-  MemorySetup,
-  MemoryScope,
-  MemoryFact,
-  MemorySummary,
   ToolCallRecord,
   EventTrace,
   AssertionResult,
@@ -20,7 +16,15 @@ export type {
   EvalReport,
 } from './types.js';
 
-export { MockNewioApp, ToolInterceptor, MockMemoryStore } from './mock-environment.js';
+export {
+  MockNewioApp,
+  ToolInterceptor,
+  MockMemoryStore,
+  deterministicUuid,
+  dmConversationId,
+  workSessionConversationId,
+  groupConversationId,
+} from './mock-environment.js';
 export type { MockNewioAppOptions, MockIdentity, MockOwnerInfo, MemoryOperation } from './mock-environment.js';
 
 export { TraceCollector } from './trace.js';
