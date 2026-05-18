@@ -1,7 +1,7 @@
 /**
  * Memory context — formats loaded memory into XML injected at session start.
  */
-import type { LoadSessionMemoryResponse } from './types.js';
+import type { LoadSessionMemoryResponse } from '@newio/agent-sdk';
 
 export interface MemoryContextProps {
   readonly memory: LoadSessionMemoryResponse;

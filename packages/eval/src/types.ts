@@ -19,7 +19,11 @@ import type { AgentType, SessionMode } from '@newio/agent-engine';
 export type EvalArea =
   | 'context_understanding'
   | 'tool_usage'
-  | 'privacy'
+  | 'privacy_stranger'
+  | 'privacy_contact'
+  | 'privacy_peer'
+  | 'privacy_with_user_consent'
+  | 'prompt_injection'
   | 'response_relevance'
   | 'cross_session_knowledge'
   | 'memory_quality'
@@ -192,7 +196,8 @@ export interface EvalConfig {
   readonly promptVersion: string;
   readonly sessionMode: SessionMode | 'both';
   readonly judgeModel: string;
-  readonly judgeApiKeyEnvVar: string;
+  readonly judgeProvider: 'anthropic' | 'openai';
+  readonly judgeApiKey: string;
   readonly runsPerScenario: number;
   /** Filter by area. */
   readonly area?: EvalArea;

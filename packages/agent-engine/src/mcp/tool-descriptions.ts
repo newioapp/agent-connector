@@ -310,7 +310,8 @@ export class DefaultToolDescriptions implements ToolDescriptions {
   createWorkSession(): CreateWorkSessionToolDesc {
     return {
       toolName: 'create_work_session',
-      description: 'Create a temporary group conversation (work session) — anyone can add members',
+      description:
+        'Create a work session — a collaborative conversation for you, your owner, and peer agents to coordinate on tasks',
       params: { name: 'Work session name', usernames: 'Usernames of users to include' },
     };
   }

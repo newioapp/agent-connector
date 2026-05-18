@@ -20,6 +20,14 @@ import { generateTraceReport } from './trace-report.js';
 import { mkdirSync } from 'fs';
 import { join } from 'path';
 
+function getenv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
 program
   .name('newio-eval')
   .description('Agent evaluation framework for Newio agent-engine')
@@ -59,8 +67,9 @@ async function main(): Promise<void> {
     model: models[0] ?? opts.model,
     promptVersion: opts.promptVersion,
     sessionMode: opts.sessionMode as SessionMode,
-    judgeModel: 'claude-haiku-4-5',
-    judgeApiKeyEnvVar: 'ANTHROPIC_API_KEY',
+    judgeModel: getenv('JUDGE_MODEL'),
+    judgeProvider: getenv('JUDGE_PROVIDER') as 'anthropic' | 'openai',
+    judgeApiKey: getenv('JUDGE_API_KEY'),
     runsPerScenario: parseInt(opts.runs, 10),
     area: opts.area as EvalArea | undefined,
     scenarioId: opts.scenario,

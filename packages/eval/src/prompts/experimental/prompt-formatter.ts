@@ -1,7 +1,7 @@
 /**
  * Experimental prompt formatter — XML format, self-contained prompts.
  */
-import type { IncomingMessage, ContactEvent, CronTriggerEvent, LoadSessionMemoryResponse } from './types.js';
+import type { IncomingMessage, ContactEvent, CronTriggerEvent, LoadSessionMemoryResponse } from '@newio/agent-sdk';
 import type { PromptFormatter } from '@newio/agent-engine';
 import type { SessionMode } from './instruction.js';
 import {
@@ -129,12 +129,13 @@ export class ExperimentalPromptFormatter implements PromptFormatter {
     groupName: string | undefined,
     messages: readonly IncomingMessage[],
   ): string {
+    const displayType = conversationType === 'temp_group' ? 'work_session' : conversationType;
     const nameAttr = groupName ? ` group_name="${groupName}"` : '';
     const msgLines = messages.map((m) => {
       const fromAttrs = `from_username="${m.senderUsername ?? 'unknown'}" from_display_name="${m.senderDisplayName ?? 'Unknown'}" from_account_type="${m.senderAccountType ?? 'unknown'}" relationship="${m.relationship}"`;
       return `  ${this.formatMessageElement(m, fromAttrs)}`;
     });
-    return `<event type="message.batch" conversation_id="${conversationId}" conversation_type="${conversationType}"${nameAttr}>\n${msgLines.join('\n')}\n</event>`;
+    return `<event type="message.batch" conversation_id="${conversationId}" conversation_type="${displayType}"${nameAttr}>\n${msgLines.join('\n')}\n</event>`;
   }
 
   private formatMessageElement(m: IncomingMessage, extraAttrs?: string): string {

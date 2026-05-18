@@ -25,7 +25,7 @@ export type SenderRelationship = 'owner' | 'peer' | 'in-contact' | 'stranger';
 export interface IncomingMessage {
   readonly messageId: string;
   readonly conversationId: string;
-  readonly conversationType: string;
+  readonly conversationType: ConversationType;
   readonly groupName?: string;
   readonly senderUserId: string;
   readonly senderUsername?: string;

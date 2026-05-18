@@ -5,7 +5,11 @@ import type { EvalScenario } from '../types.js';
 import { toolUsageScenarios } from './tool-usage.js';
 import { responseRelevanceScenarios } from './response-relevance.js';
 import { contextUnderstandingScenarios } from './context-understanding.js';
-import { privacyScenarios } from './privacy.js';
+import { privacyScenarios } from './privacy-stranger.js';
+import { privacyContactScenarios } from './privacy-contacts.js';
+import { privacyPeerScenarios } from './privacy-peer.js';
+import { privacySharedSessionScenarios } from './privacy-with-user-consent.js';
+import { promptInjectionScenarios } from './prompt-injection.js';
 import { crossSessionKnowledgeScenarios } from './cross-session-knowledge.js';
 import { memoryQualityScenarios } from './memory-quality.js';
 import { sessionLifecycleScenarios } from './session-lifecycle.js';
@@ -20,6 +24,10 @@ export const allScenarios: readonly EvalScenario[] = [
   ...contextUnderstandingScenarios,
   ...toolUsageScenarios,
   ...privacyScenarios,
+  ...privacyContactScenarios,
+  ...privacyPeerScenarios,
+  ...privacySharedSessionScenarios,
+  ...promptInjectionScenarios,
   ...responseRelevanceScenarios,
   ...crossSessionKnowledgeScenarios,
   ...memoryQualityScenarios,
@@ -37,6 +45,10 @@ export {
   responseRelevanceScenarios,
   contextUnderstandingScenarios,
   privacyScenarios,
+  privacyContactScenarios,
+  privacyPeerScenarios,
+  privacySharedSessionScenarios,
+  promptInjectionScenarios,
   crossSessionKnowledgeScenarios,
   memoryQualityScenarios,
   sessionLifecycleScenarios,
