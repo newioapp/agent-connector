@@ -15,4 +15,4 @@ export type {
   AccountType,
   SenderRelationship,
   Attachment,
-} from './types.js';
+} from '@newio/agent-sdk';

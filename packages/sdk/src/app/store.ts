@@ -11,6 +11,7 @@ import type {
   AccountType,
   ContactRecord,
   ConversationListItem,
+  ConversationType,
   MemberRecord,
   MessageRecord,
   NotifyLevel,
@@ -356,7 +357,7 @@ export class NewioAppStore {
     identity: NewioIdentity,
     msg: MessageRecord,
     conversationId: string,
-    conversationType?: string,
+    conversationType?: ConversationType,
   ): IncomingMessage {
     const contact = this.contacts.get(msg.senderId);
     const conv = this.conversations.get(conversationId);

@@ -1,7 +1,6 @@
 /**
  * LLM-as-judge — stateless API call to score agent output against criteria.
  */
-import Anthropic from '@anthropic-ai/sdk';
 import type {
   EvalConfig,
   EventTrace,
@@ -10,6 +9,7 @@ import type {
   AssertionResult,
   ToolCallRecord,
 } from './types.js';
+import { createJudgeLlm } from './judge-llm.js';
 
 interface JudgeInput {
   readonly criteria: string;
@@ -110,28 +110,21 @@ export async function evaluateJudgeExpectation(
     toolCalls,
   };
 
-  const apiKey = process.env[config.judgeApiKeyEnvVar];
-  if (!apiKey) {
+  if (!config.judgeApiKey) {
     return {
       expectation,
       passed: false,
       severity,
-      reason: `Missing API key env var: ${config.judgeApiKeyEnvVar}`,
+      reason: 'Missing judge API key (set JUDGE_API_KEY or ANTHROPIC_API_KEY env var)',
     };
   }
 
-  const client = new Anthropic({ apiKey });
-  const response = await client.messages.create({
-    model: config.judgeModel,
-    max_tokens: 512,
+  const judge = createJudgeLlm(config.judgeProvider, config.judgeModel, config.judgeApiKey);
+  const responseText = await judge.complete({
     system: JUDGE_SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: buildJudgeUserPrompt(input) }],
+    userPrompt: buildJudgeUserPrompt(input),
+    maxTokens: 512,
   });
-
-  const responseText = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-    .map((b) => b.text)
-    .join('');
 
   const { score, reasoning } = parseJudgeResponse(responseText);
   const passed = score >= expectation.minScore;

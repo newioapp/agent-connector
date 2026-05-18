@@ -119,6 +119,8 @@ export async function runScenario(
   const traces = deps.traceCollector.getAll();
   const allToolCalls = deps.toolInterceptor.getAll();
 
+  console.log(`[eval] Event loop complete — ${traces.length} traces collected`);
+
   // Built-in: init response must be a skip (agent should not output anything after system instruction)
   const initAssertion = evaluateRuleBasedExpectations(
     [
@@ -134,8 +136,14 @@ export async function runScenario(
 
   const scenarioAssertions = evaluateRuleBasedExpectations(scenario.expectations, traces, allToolCalls);
 
+  console.log(
+    `[eval] Rule-based expectations evaluated — ${initAssertion.length + scenarioAssertions.length} assertions`,
+  );
+
   // Evaluate LLM judge expectations
   const judgeAssertions = await evaluateJudgeExpectations(scenario.expectations, traces, allToolCalls, config);
+
+  console.log(`[eval] Judge expectations evaluated — ${judgeAssertions.length} assertions`);
 
   const assertions = [...initAssertion, ...scenarioAssertions, ...judgeAssertions];
   const passed = assertions.every((a) => a.passed || a.severity === 'warning');
