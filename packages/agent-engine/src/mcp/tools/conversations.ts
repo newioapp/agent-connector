@@ -6,6 +6,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NewioApp } from '@newio/agent-sdk';
 import type { ToolCallHook } from '../types.js';
 import type { ToolDescriptions } from '../tool-descriptions.js';
+import type { SessionMode } from '../../types.js';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
@@ -14,6 +15,7 @@ export function registerConversationsTools(
   server: McpServer,
   app: NewioApp,
   desc: ToolDescriptions,
+  sessionMode: SessionMode,
   onToolCall?: ToolCallHook,
 ): void {
   const lc = desc.listConversations();
@@ -23,15 +25,17 @@ export function registerConversationsTools(
   });
 
   const cd = desc.createDm();
-  server.registerTool(
-    cd.toolName,
-    { description: cd.description, inputSchema: { username: z.string().describe(cd.params.username) } },
-    async ({ username }) => {
-      onToolCall?.(cd.toolName, { username });
-      const conversationId = await app.getOrCreateDm(username);
-      return json({ conversationId });
-    },
-  );
+  if (sessionMode === 'isolated') {
+    server.registerTool(
+      cd.toolName,
+      { description: cd.description, inputSchema: { username: z.string().describe(cd.params.username) } },
+      async ({ username }) => {
+        onToolCall?.(cd.toolName, { username });
+        const conversationId = await app.getOrCreateDm(username);
+        return json({ conversationId });
+      },
+    );
+  }
 
   const cws = desc.createWorkSession();
   server.registerTool(

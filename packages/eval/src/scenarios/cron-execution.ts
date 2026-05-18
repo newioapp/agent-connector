@@ -59,7 +59,7 @@ export const cronExecutionScenarios: readonly EvalScenario[] = [
     ],
     expectations: [
       { type: 'skip', eventIndex: 0, description: 'Cron output is _skip' },
-      { type: 'tool_called', tool: 'dm_owner', description: 'Agent uses dm_owner to send the check-in' },
+      { type: 'tool_called', tool: 'send_dm', description: 'Agent uses send_dm to send the check-in to owner' },
     ],
   },
 ];

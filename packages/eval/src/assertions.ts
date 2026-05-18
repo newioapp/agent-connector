@@ -118,12 +118,12 @@ function evaluateResponseNotContains(
 
 function evaluateToolCalled(
   expectation: Extract<Expectation, { type: 'tool_called' }>,
-  traces: readonly EventTrace[],
+  _traces: readonly EventTrace[],
   allToolCalls: readonly ToolCallRecord[],
 ): PartialResult {
   const calls =
     expectation.eventIndex !== undefined
-      ? (resolveTrace(expectation.eventIndex, traces)?.toolCalls ?? [])
+      ? allToolCalls.filter((c) => c.eventIndex === expectation.eventIndex)
       : allToolCalls;
 
   const matching = calls.filter((c) => c.tool === expectation.tool);
@@ -144,12 +144,12 @@ function evaluateToolCalled(
 
 function evaluateToolNotCalled(
   expectation: Extract<Expectation, { type: 'tool_not_called' }>,
-  traces: readonly EventTrace[],
+  _traces: readonly EventTrace[],
   allToolCalls: readonly ToolCallRecord[],
 ): PartialResult {
   const calls =
     expectation.eventIndex !== undefined
-      ? (resolveTrace(expectation.eventIndex, traces)?.toolCalls ?? [])
+      ? allToolCalls.filter((c) => c.eventIndex === expectation.eventIndex)
       : allToolCalls;
 
   const matching = calls.filter((c) => c.tool === expectation.tool);

@@ -176,10 +176,16 @@ export class MockNewioApp {
 
 export class ToolInterceptor {
   private readonly calls: ToolCallRecord[] = [];
+  private currentEventIndex: number | undefined;
+
+  /** Set the active event index. Tool calls recorded after this will be tagged with it. */
+  setEventIndex(index: number | undefined): void {
+    this.currentEventIndex = index;
+  }
 
   /** Record a tool call. */
   record(tool: string, args: Record<string, unknown>, result?: unknown): void {
-    this.calls.push({ tool, args, timestamp: Date.now(), result });
+    this.calls.push({ tool, args, timestamp: Date.now(), eventIndex: this.currentEventIndex, result });
   }
 
   /** Get all recorded tool calls. */

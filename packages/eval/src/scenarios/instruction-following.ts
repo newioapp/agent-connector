@@ -9,8 +9,8 @@ import { defaultSetup, owner, alice, ownerDmConvId, teamChatConvId, teamChat, ms
 export const instructionFollowingScenarios: readonly EvalScenario[] = [
   {
     id: 'instruction-isolated-no-send-dm',
-    name: 'Isolated mode does not call send_dm/dm_owner',
-    description: 'In isolated mode, send_dm and dm_owner are unavailable. Agent should not attempt to call them.',
+    name: 'Isolated mode does not call send_dm',
+    description: 'In isolated mode, send_dm is unavailable. Agent should use create_dm + initiate_conversation.',
     area: 'instruction_following',
     sessionMode: 'isolated',
     setup: {
@@ -32,7 +32,6 @@ export const instructionFollowingScenarios: readonly EvalScenario[] = [
     ],
     expectations: [
       { type: 'tool_not_called', tool: 'send_dm', description: 'send_dm is not available in isolated mode' },
-      { type: 'tool_not_called', tool: 'dm_owner', description: 'dm_owner is not available in isolated mode' },
       { type: 'tool_called', tool: 'create_dm', description: 'Should use create_dm + initiate_conversation pattern' },
     ],
   },

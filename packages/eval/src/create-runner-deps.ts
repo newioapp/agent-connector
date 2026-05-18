@@ -150,9 +150,9 @@ export async function createScenarioRunnerDeps(
   };
 }
 
-/** Load environment variables from packages/eval/.env file. Falls back to process.env if not found. */
+/** Load environment variables from packages/eval/.env.agent file. Falls back to process.env if not found. */
 function loadEnvFile(): Record<string, string> {
-  const envPath = join(fileURLToPath(import.meta.url), '../../.env');
+  const envPath = join(fileURLToPath(import.meta.url), '../../.env.agent');
   try {
     const content = readFileSync(envPath, 'utf-8');
     return parseDotenv(content);

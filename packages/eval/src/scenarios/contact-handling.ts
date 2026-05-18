@@ -35,7 +35,7 @@ export const contactHandlingScenarios: readonly EvalScenario[] = [
     id: 'contact-notify-owner-of-request',
     name: 'Notifies owner about incoming friend request',
     description:
-      'Agent should use dm_owner (shared) or initiate_conversation (isolated) to tell the owner about a new friend request.',
+      'Agent should use send_dm (shared) or initiate_conversation (isolated) to tell the owner about a new friend request.',
     area: 'contact_handling',
     sessionMode: 'shared',
     setup: defaultSetup,
@@ -56,7 +56,7 @@ export const contactHandlingScenarios: readonly EvalScenario[] = [
     ],
     expectations: [
       { type: 'skip', eventIndex: 0, description: 'Text response is discarded' },
-      { type: 'tool_called', tool: 'dm_owner', description: 'Agent notifies owner about the friend request' },
+      { type: 'tool_called', tool: 'send_dm', description: 'Agent notifies owner about the friend request' },
     ],
   },
 ];

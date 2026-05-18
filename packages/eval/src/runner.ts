@@ -6,8 +6,8 @@
 import type { EvalScenario, EvalConfig, ScenarioRunResult, ScriptedEvent, ToolCallRecord } from './types.js';
 import type { PromptFormatter } from '@newio/agent-engine';
 import type { SessionStreamSegment } from '@newio/agent-engine';
-import { ToolInterceptor } from './mock-environment.js';
 import { evaluateRuleBasedExpectations } from './assertions.js';
+import { evaluateJudgeExpectations } from './judge.js';
 import { ScenarioRunnerDeps } from './create-runner-deps.js';
 
 /** Timeout for a single prompt turn (ms). */
@@ -16,23 +16,24 @@ const PROMPT_TIMEOUT_MS = 120_000;
 /** Collect all agent message chunks from a session prompt generator. */
 async function collectOutput(
   gen: AsyncGenerator<SessionStreamSegment>,
-  toolInterceptor: ToolInterceptor,
 ): Promise<{ text: string; toolCalls: readonly ToolCallRecord[] }> {
-  const startIdx = toolInterceptor.count;
+  const toolCalls: ToolCallRecord[] = [];
   const parts: string[] = [];
 
   for await (const segment of gen) {
     if (segment.type === 'agent_message_chunk') {
       parts.push(segment.text);
     } else if (segment.type === 'tool_call') {
-      // Tool calls are captured by the interceptor via MCP server hooks.
-      // We also record them here for trace completeness.
-      toolInterceptor.record(segment.toolCallId ?? 'unknown_tool', { text: segment.text }, segment.toolCallStatus);
+      // Local trace only — authoritative tool calls come from MCP interceptor.
+      toolCalls.push({
+        tool: segment.toolCallId ?? 'unknown_tool',
+        args: { text: segment.text },
+        timestamp: Date.now(),
+      });
     }
   }
 
   const text = parts.join('').trim();
-  const toolCalls = toolInterceptor.getSince(startIdx);
   return { text, toolCalls };
 }
 
@@ -53,8 +54,9 @@ export async function runScenario(
   const fullInstruction = memoryContext ? `${instruction.prompt}\n\n${memoryContext}` : instruction.prompt;
 
   const initStart = Date.now();
+  deps.toolInterceptor.setEventIndex(-1);
   const initResult = await withTimeout(
-    collectOutput(deps.session.prompt(fullInstruction), deps.toolInterceptor),
+    collectOutput(deps.session.prompt(fullInstruction)),
     PROMPT_TIMEOUT_MS,
     'Initialization prompt timed out',
   );
@@ -83,12 +85,13 @@ export async function runScenario(
 
     const conversationId = getConversationId(event);
     deps.setCurrentConversationId(conversationId);
+    deps.toolInterceptor.setEventIndex(i);
     let agentOutput: string;
     let toolCalls: readonly ToolCallRecord[];
     try {
       const gen = deps.session.prompt(promptText, conversationId);
       const result = await withTimeout(
-        collectOutput(gen, deps.toolInterceptor),
+        collectOutput(gen),
         PROMPT_TIMEOUT_MS,
         `Prompt timed out after ${PROMPT_TIMEOUT_MS}ms for event ${i}`,
       );
@@ -130,7 +133,11 @@ export async function runScenario(
   );
 
   const scenarioAssertions = evaluateRuleBasedExpectations(scenario.expectations, traces, allToolCalls);
-  const assertions = [...initAssertion, ...scenarioAssertions];
+
+  // Evaluate LLM judge expectations
+  const judgeAssertions = await evaluateJudgeExpectations(scenario.expectations, traces, allToolCalls, config);
+
+  const assertions = [...initAssertion, ...scenarioAssertions, ...judgeAssertions];
   const passed = assertions.every((a) => a.passed || a.severity === 'warning');
 
   return {
