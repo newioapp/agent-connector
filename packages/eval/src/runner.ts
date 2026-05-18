@@ -131,7 +131,7 @@ export async function runScenario(
 
   const scenarioAssertions = evaluateRuleBasedExpectations(scenario.expectations, traces, allToolCalls);
   const assertions = [...initAssertion, ...scenarioAssertions];
-  const passed = assertions.every((a) => a.passed);
+  const passed = assertions.every((a) => a.passed || a.severity === 'warning');
 
   return {
     scenarioId: scenario.id,

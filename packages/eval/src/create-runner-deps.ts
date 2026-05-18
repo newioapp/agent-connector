@@ -11,6 +11,7 @@ import { readFileSync } from 'fs';
 import { parse as parseDotenv } from 'dotenv';
 import { AcpSessionFactory, NewioMcpServer, startUdsServer } from '@newio/agent-engine';
 import { ExperimentalPromptFormatter } from './prompts/experimental/prompt-formatter.js';
+import { ExperimentalToolDescriptions } from './mcp/experimental-tool-descriptions.js';
 import type { AgentConfig, PromptFormatter, ToolCallHook } from '@newio/agent-engine';
 import type { NewioApp } from '@newio/agent-sdk';
 import type { Server } from 'net';
@@ -72,6 +73,7 @@ export async function createScenarioRunnerDeps(
     initiateConversation: () => {},
     sessionMode: effectiveSessionMode,
     onToolCall,
+    toolDescriptions: new ExperimentalToolDescriptions(),
   });
 
   const currentConversationId: { id: string | undefined } = {

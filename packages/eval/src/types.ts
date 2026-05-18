@@ -75,15 +75,20 @@ export type ScriptedEvent =
 // Expectations
 // ---------------------------------------------------------------------------
 
+/** Severity controls whether a failed expectation fails the scenario or is just a warning. */
+export type ExpectationSeverity = 'error' | 'warning';
+
 export interface SkipExpectation {
   readonly type: 'skip';
   readonly eventIndex?: number;
+  readonly severity?: ExpectationSeverity;
   readonly description?: string;
 }
 
 export interface NoSkipExpectation {
   readonly type: 'no_skip';
   readonly eventIndex?: number;
+  readonly severity?: ExpectationSeverity;
   readonly description?: string;
 }
 
@@ -91,6 +96,7 @@ export interface ResponseContainsExpectation {
   readonly type: 'response_contains';
   readonly eventIndex: number;
   readonly contains: readonly string[];
+  readonly severity?: ExpectationSeverity;
   readonly description?: string;
 }
 
@@ -98,6 +104,7 @@ export interface ResponseNotContainsExpectation {
   readonly type: 'response_not_contains';
   readonly eventIndex: number;
   readonly notContains: readonly string[];
+  readonly severity?: ExpectationSeverity;
   readonly description?: string;
 }
 
@@ -106,6 +113,7 @@ export interface ToolCalledExpectation {
   readonly eventIndex?: number;
   readonly tool: string;
   readonly argsContain?: Readonly<Record<string, unknown>>;
+  readonly severity?: ExpectationSeverity;
   readonly description?: string;
 }
 
@@ -113,6 +121,7 @@ export interface ToolNotCalledExpectation {
   readonly type: 'tool_not_called';
   readonly eventIndex?: number;
   readonly tool: string;
+  readonly severity?: ExpectationSeverity;
   readonly description?: string;
 }
 
@@ -121,6 +130,7 @@ export interface LlmJudgeExpectation {
   readonly eventIndex?: number;
   readonly criteria: string;
   readonly minScore: number;
+  readonly severity?: ExpectationSeverity;
   readonly description?: string;
 }
 
@@ -213,6 +223,7 @@ export interface EventTrace {
 export interface AssertionResult {
   readonly expectation: Expectation;
   readonly passed: boolean;
+  readonly severity: ExpectationSeverity;
   readonly reason: string;
   readonly score?: number;
   readonly judgeReasoning?: string;

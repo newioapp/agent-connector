@@ -1,10 +1,5 @@
 /**
  * Memory tools — read and write agent memory.
- *
- * Scoping is inferred from parameters:
- * - username provided → user-scoped memory
- * - conversationId provided → conversation-scoped memory
- * - neither → global (agent's own) memory (write tools only)
  */
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -16,7 +11,6 @@ import type { ToolDescriptions } from '../tool-descriptions.js';
 const yaml = (obj: unknown) => ({ content: [{ type: 'text' as const, text: stringify(obj) }] });
 const err = (msg: string) => ({ content: [{ type: 'text' as const, text: msg }], isError: true as const });
 
-/** Register memory tools on the MCP server. */
 export function registerMemoryTools(
   server: McpServer,
   app: NewioApp,
@@ -29,18 +23,18 @@ export function registerMemoryTools(
     }
   }
 
-  const getMem = desc.getMemory();
+  const gm = desc.getMemory();
   server.registerTool(
-    'get_memory',
+    gm.toolName,
     {
-      description: getMem.description,
+      description: gm.description,
       inputSchema: {
-        username: z.string().optional().describe(getMem.params.username),
-        conversationId: z.string().optional().describe(getMem.params.conversationId),
+        username: z.string().optional().describe(gm.params.username),
+        conversationId: z.string().optional().describe(gm.params.conversationId),
       },
     },
     async ({ username, conversationId }) => {
-      onToolCall?.('get_memory', { username, conversationId });
+      onToolCall?.(gm.toolName, { username, conversationId });
       if (username) {
         return yaml(await app.getContactMemory(username));
       }
@@ -53,77 +47,77 @@ export function registerMemoryTools(
     },
   );
 
-  const addMem = desc.addMemory();
+  const am = desc.addMemory();
   server.registerTool(
-    'add_memory',
+    am.toolName,
     {
-      description: addMem.description,
+      description: am.description,
       inputSchema: {
-        text: z.string().describe(addMem.params.text),
-        username: z.string().optional().describe(addMem.params.username),
-        conversationId: z.string().optional().describe(addMem.params.conversationId),
+        text: z.string().describe(am.params.text),
+        username: z.string().optional().describe(am.params.username),
+        conversationId: z.string().optional().describe(am.params.conversationId),
       },
     },
     async ({ text, username, conversationId }) => {
-      onToolCall?.('add_memory', { text, username, conversationId });
+      onToolCall?.(am.toolName, { text, username, conversationId });
       validateNotSelf(username);
       await app.addMemory(text, { username, conversationId });
       return yaml({ stored: true });
     },
   );
 
-  const updateMem = desc.updateMemory();
+  const um = desc.updateMemory();
   server.registerTool(
-    'update_memory',
+    um.toolName,
     {
-      description: updateMem.description,
+      description: um.description,
       inputSchema: {
-        factId: z.string().describe(updateMem.params.factId),
-        text: z.string().describe(updateMem.params.text),
-        username: z.string().optional().describe(updateMem.params.username),
-        conversationId: z.string().optional().describe(updateMem.params.conversationId),
+        factId: z.string().describe(um.params.factId),
+        text: z.string().describe(um.params.text),
+        username: z.string().optional().describe(um.params.username),
+        conversationId: z.string().optional().describe(um.params.conversationId),
       },
     },
     async ({ factId, text, username, conversationId }) => {
-      onToolCall?.('update_memory', { factId, text, username, conversationId });
+      onToolCall?.(um.toolName, { factId, text, username, conversationId });
       validateNotSelf(username);
       await app.updateMemory(factId, text, { username, conversationId });
       return yaml({ updated: true });
     },
   );
 
-  const deleteMem = desc.deleteMemory();
+  const dm = desc.deleteMemory();
   server.registerTool(
-    'delete_memory',
+    dm.toolName,
     {
-      description: deleteMem.description,
+      description: dm.description,
       inputSchema: {
-        factId: z.string().describe(deleteMem.params.factId),
-        username: z.string().optional().describe(deleteMem.params.username),
-        conversationId: z.string().optional().describe(deleteMem.params.conversationId),
+        factId: z.string().describe(dm.params.factId),
+        username: z.string().optional().describe(dm.params.username),
+        conversationId: z.string().optional().describe(dm.params.conversationId),
       },
     },
     async ({ factId, username, conversationId }) => {
-      onToolCall?.('delete_memory', { factId, username, conversationId });
+      onToolCall?.(dm.toolName, { factId, username, conversationId });
       validateNotSelf(username);
       await app.deleteMemory(factId, { username, conversationId });
       return yaml({ deleted: true });
     },
   );
 
-  const updateSummary = desc.updateMemorySummary();
+  const ums = desc.updateMemorySummary();
   server.registerTool(
-    'update_memory_summary',
+    ums.toolName,
     {
-      description: updateSummary.description,
+      description: ums.description,
       inputSchema: {
-        text: z.string().describe(updateSummary.params.text),
-        username: z.string().optional().describe(updateSummary.params.username),
-        conversationId: z.string().optional().describe(updateSummary.params.conversationId),
+        text: z.string().describe(ums.params.text),
+        username: z.string().optional().describe(ums.params.username),
+        conversationId: z.string().optional().describe(ums.params.conversationId),
       },
     },
     async ({ text, username, conversationId }) => {
-      onToolCall?.('update_memory_summary', { text, username, conversationId });
+      onToolCall?.(ums.toolName, { text, username, conversationId });
       validateNotSelf(username);
       await app.updateMemorySummary(text, { username, conversationId });
       return yaml({ updated: true });

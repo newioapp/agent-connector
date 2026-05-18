@@ -87,13 +87,14 @@ function renderRunResult(result: ScenarioRunResult): string {
 
   const assertionsHtml = result.assertions
     .map((a) => {
-      const icon = a.passed ? '✅' : '❌';
+      const icon = a.passed ? '✅' : a.severity === 'warning' ? '⚠️' : '❌';
+      const cssClass = a.passed ? 'pass' : a.severity === 'warning' ? 'warn' : 'fail';
       const desc =
         'description' in a.expectation && a.expectation.description ? a.expectation.description : a.expectation.type;
       const details = !a.passed ? `<div class="assertion-reason">${escapeHtml(a.reason)}</div>` : '';
       const score = a.score !== undefined ? `<span class="score">Score: ${a.score}/5</span>` : '';
       const judge = a.judgeReasoning ? `<div class="judge-reasoning">${escapeHtml(a.judgeReasoning)}</div>` : '';
-      return `<div class="assertion ${a.passed ? 'pass' : 'fail'}">${icon} ${escapeHtml(desc)} ${score}${details}${judge}</div>`;
+      return `<div class="assertion ${cssClass}">${icon} ${escapeHtml(desc)} ${score}${details}${judge}</div>`;
     })
     .join('');
 
@@ -171,6 +172,7 @@ const CSS = `
   .tool-result .label { font-size: 11px; color: #8b949e; }
   .tool-result pre { color: #ffa657; }
   .assertion { padding: 4px 0; font-size: 13px; }
+  .assertion.warn .assertion-reason { color: #d29922; }
   .assertion-reason { color: #f85149; font-size: 12px; margin-left: 24px; margin-top: 2px; }
   .judge-reasoning { color: #8b949e; font-size: 12px; margin-left: 24px; margin-top: 2px; font-style: italic; }
   .score { font-size: 11px; color: #d29922; margin-left: 8px; }

@@ -9,23 +9,32 @@ export function evaluateExpectation(
   traces: readonly EventTrace[],
   allToolCalls: readonly ToolCallRecord[],
 ): AssertionResult {
+  const severity = expectation.severity ?? 'error';
+  let result: Omit<AssertionResult, 'severity'>;
   switch (expectation.type) {
     case 'skip':
-      return evaluateSkip(expectation, traces);
+      result = evaluateSkip(expectation, traces);
+      break;
     case 'no_skip':
-      return evaluateNoSkip(expectation, traces);
+      result = evaluateNoSkip(expectation, traces);
+      break;
     case 'response_contains':
-      return evaluateResponseContains(expectation, traces);
+      result = evaluateResponseContains(expectation, traces);
+      break;
     case 'response_not_contains':
-      return evaluateResponseNotContains(expectation, traces);
+      result = evaluateResponseNotContains(expectation, traces);
+      break;
     case 'tool_called':
-      return evaluateToolCalled(expectation, traces, allToolCalls);
+      result = evaluateToolCalled(expectation, traces, allToolCalls);
+      break;
     case 'tool_not_called':
-      return evaluateToolNotCalled(expectation, traces, allToolCalls);
+      result = evaluateToolNotCalled(expectation, traces, allToolCalls);
+      break;
     case 'llm_judge':
-      // LLM judge assertions are handled separately by the judge module
-      return { expectation, passed: true, reason: 'Deferred to LLM judge' };
+      result = { expectation, passed: true, reason: 'Deferred to LLM judge' };
+      break;
   }
+  return { ...result, severity };
 }
 
 /** Evaluate all non-judge expectations. Returns results array. */
@@ -41,10 +50,12 @@ export function evaluateRuleBasedExpectations(
 // Individual evaluators
 // ---------------------------------------------------------------------------
 
+type PartialResult = Omit<AssertionResult, 'severity'>;
+
 function evaluateSkip(
   expectation: Extract<Expectation, { type: 'skip' }>,
   traces: readonly EventTrace[],
-): AssertionResult {
+): PartialResult {
   const trace = resolveTrace(expectation.eventIndex, traces);
   if (!trace) {
     return { expectation, passed: false, reason: `No trace found for event index ${expectation.eventIndex ?? 'last'}` };
@@ -58,7 +69,7 @@ function evaluateSkip(
 function evaluateNoSkip(
   expectation: Extract<Expectation, { type: 'no_skip' }>,
   traces: readonly EventTrace[],
-): AssertionResult {
+): PartialResult {
   const trace = resolveTrace(expectation.eventIndex, traces);
   if (!trace) {
     return { expectation, passed: false, reason: `No trace found for event index ${expectation.eventIndex ?? 'last'}` };
@@ -72,7 +83,7 @@ function evaluateNoSkip(
 function evaluateResponseContains(
   expectation: Extract<Expectation, { type: 'response_contains' }>,
   traces: readonly EventTrace[],
-): AssertionResult {
+): PartialResult {
   const trace = resolveTrace(expectation.eventIndex, traces);
   if (!trace) {
     return { expectation, passed: false, reason: `No trace found for event index ${expectation.eventIndex}` };
@@ -88,7 +99,7 @@ function evaluateResponseContains(
 function evaluateResponseNotContains(
   expectation: Extract<Expectation, { type: 'response_not_contains' }>,
   traces: readonly EventTrace[],
-): AssertionResult {
+): PartialResult {
   const trace = resolveTrace(expectation.eventIndex, traces);
   if (!trace) {
     return { expectation, passed: false, reason: `No trace found for event index ${expectation.eventIndex}` };
@@ -109,7 +120,7 @@ function evaluateToolCalled(
   expectation: Extract<Expectation, { type: 'tool_called' }>,
   traces: readonly EventTrace[],
   allToolCalls: readonly ToolCallRecord[],
-): AssertionResult {
+): PartialResult {
   const calls =
     expectation.eventIndex !== undefined
       ? (resolveTrace(expectation.eventIndex, traces)?.toolCalls ?? [])
@@ -135,7 +146,7 @@ function evaluateToolNotCalled(
   expectation: Extract<Expectation, { type: 'tool_not_called' }>,
   traces: readonly EventTrace[],
   allToolCalls: readonly ToolCallRecord[],
-): AssertionResult {
+): PartialResult {
   const calls =
     expectation.eventIndex !== undefined
       ? (resolveTrace(expectation.eventIndex, traces)?.toolCalls ?? [])

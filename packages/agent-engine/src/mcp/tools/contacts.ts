@@ -17,72 +17,63 @@ export function registerContactsTools(
   desc: ToolDescriptions,
   onToolCall?: ToolCallHook,
 ): void {
-  const listFriends = desc.listFriends();
-  server.registerTool('list_friends', { description: listFriends.description }, () => {
-    onToolCall?.('list_friends', {});
+  const lf = desc.listFriends();
+  server.registerTool(lf.toolName, { description: lf.description }, () => {
+    onToolCall?.(lf.toolName, {});
     return json(app.getAllContacts());
   });
 
-  const sendReq = desc.sendFriendRequest();
+  const sfr = desc.sendFriendRequest();
   server.registerTool(
-    'send_friend_request',
+    sfr.toolName,
     {
-      description: sendReq.description,
+      description: sfr.description,
       inputSchema: {
-        username: z.string().describe(sendReq.params.username),
-        note: z.string().optional().describe(sendReq.params.note),
+        username: z.string().describe(sfr.params.username),
+        note: z.string().optional().describe(sfr.params.note),
       },
     },
     async ({ username, note }) => {
-      onToolCall?.('send_friend_request', { username, note });
+      onToolCall?.(sfr.toolName, { username, note });
       await app.sendFriendRequestByUsername(username, note);
       return text(`Friend request sent to @${username}`);
     },
   );
 
-  const listIncoming = desc.listIncomingFriendRequests();
-  server.registerTool('list_incoming_friend_requests', { description: listIncoming.description }, () => {
-    onToolCall?.('list_incoming_friend_requests', {});
+  const lifr = desc.listIncomingFriendRequests();
+  server.registerTool(lifr.toolName, { description: lifr.description }, () => {
+    onToolCall?.(lifr.toolName, {});
     return json(app.listIncomingFriendRequests());
   });
 
-  const acceptReq = desc.acceptFriendRequest();
+  const afr = desc.acceptFriendRequest();
   server.registerTool(
-    'accept_friend_request',
-    {
-      description: acceptReq.description,
-      inputSchema: { username: z.string().describe(acceptReq.params.username) },
-    },
+    afr.toolName,
+    { description: afr.description, inputSchema: { username: z.string().describe(afr.params.username) } },
     async ({ username }) => {
-      onToolCall?.('accept_friend_request', { username });
+      onToolCall?.(afr.toolName, { username });
       await app.acceptFriendRequestByUsername(username);
       return text(`Friend request from @${username} accepted`);
     },
   );
 
-  const rejectReq = desc.rejectFriendRequest();
+  const rfr = desc.rejectFriendRequest();
   server.registerTool(
-    'reject_friend_request',
-    {
-      description: rejectReq.description,
-      inputSchema: { username: z.string().describe(rejectReq.params.username) },
-    },
+    rfr.toolName,
+    { description: rfr.description, inputSchema: { username: z.string().describe(rfr.params.username) } },
     async ({ username }) => {
-      onToolCall?.('reject_friend_request', { username });
+      onToolCall?.(rfr.toolName, { username });
       await app.rejectFriendRequestByUsername(username);
       return text(`Friend request from @${username} rejected`);
     },
   );
 
-  const removeFriend = desc.removeFriend();
+  const rf = desc.removeFriend();
   server.registerTool(
-    'remove_friend',
-    {
-      description: removeFriend.description,
-      inputSchema: { username: z.string().describe(removeFriend.params.username) },
-    },
+    rf.toolName,
+    { description: rf.description, inputSchema: { username: z.string().describe(rf.params.username) } },
     async ({ username }) => {
-      onToolCall?.('remove_friend', { username });
+      onToolCall?.(rf.toolName, { username });
       await app.removeFriendByUsername(username);
       return text(`Removed @${username} from friends`);
     },
