@@ -21,6 +21,7 @@ program
   .description('Agent evaluation framework for Newio agent-engine')
   .option('--agent-type <type>', 'Agent type (kiro-cli, claude-code, codex, gemini, cursor, custom)', 'kiro-cli')
   .option('--model <model>', 'Model to configure on ACP session', 'claude-sonnet-4-20250514')
+  .option('--models <models>', 'Comma-separated list of models to test (overrides --model)')
   .option('--prompt-version <version>', 'Prompt formatter version', '1.0.0')
   .option('--session-mode <mode>', 'Session mode (isolated, shared, both)', 'shared')
   .option('--area <area>', 'Filter by evaluation area')
@@ -34,6 +35,7 @@ program
 const opts = program.opts<{
   agentType: string;
   model: string;
+  models?: string;
   promptVersion: string;
   sessionMode: string;
   area?: string;
@@ -45,10 +47,12 @@ const opts = program.opts<{
 }>();
 
 async function main(): Promise<void> {
+  const models = opts.models ? opts.models.split(',').map((m) => m.trim()) : [opts.model];
+
   const config: EvalConfig = {
     agentType: opts.agentType as AgentType,
     acp: { cwd: opts.cwd, executablePath: opts.executable },
-    model: opts.model,
+    model: models[0] ?? opts.model,
     promptVersion: opts.promptVersion,
     sessionMode: opts.sessionMode as SessionMode,
     judgeModel: process.env['EVAL_JUDGE_MODEL'] ?? 'claude-sonnet-4-20250514',
@@ -88,7 +92,7 @@ async function main(): Promise<void> {
   }
 
   console.log(`\n🧪 Newio Agent Eval`);
-  console.log(`   Agent: ${config.agentType} | Model: ${config.model} | Prompt: v${config.promptVersion}`);
+  console.log(`   Agent: ${config.agentType} | Models: ${models.join(', ')} | Prompt: v${config.promptVersion}`);
   console.log(`   Scenarios: ${effectiveScenarios.length} | Runs per scenario: ${config.runsPerScenario}`);
   console.log(`   Session mode: ${config.sessionMode}\n`);
 
@@ -102,17 +106,27 @@ async function main(): Promise<void> {
 
   console.log('─'.repeat(60));
 
-  // Run scenarios — each gets a fresh ACP process for isolation
-  const results = await runAllScenarios(effectiveScenarios, config);
-  printReport(results);
-
-  // Generate HTML trace report
+  // Run scenarios for each model
+  const allResults: ScenarioAggregateResult[] = [];
   const outputDir = join(opts.cwd, 'results');
   mkdirSync(outputDir, { recursive: true });
-  const reportPath = generateTraceReport(results, config, outputDir);
-  console.log(`📄 Full trace report: ${reportPath}`);
 
-  const failed = results.some((r) => r.passRate < 1);
+  for (const model of models) {
+    if (models.length > 1) {
+      console.log(`\n${'═'.repeat(60)}`);
+      console.log(` 🤖 Model: ${model}`);
+      console.log('═'.repeat(60));
+    }
+    const modelConfig: EvalConfig = { ...config, model };
+    const results = await runAllScenarios(effectiveScenarios, modelConfig);
+    allResults.push(...results);
+    printReport(results);
+
+    const reportPath = generateTraceReport(results, modelConfig, outputDir);
+    console.log(`📄 Trace report: ${reportPath}`);
+  }
+
+  const failed = allResults.some((r) => r.passRate < 1);
   process.exit(failed ? 1 : 0);
 }
 
