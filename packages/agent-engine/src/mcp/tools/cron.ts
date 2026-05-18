@@ -5,31 +5,27 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NewioApp } from '@newio/agent-sdk';
 import type { ToolCallHook } from '../types.js';
+import type { ToolDescriptions } from '../tool-descriptions.js';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
 
 /** Register cron scheduling tools on the MCP server. */
-export function registerCronTools(server: McpServer, app: NewioApp, onToolCall?: ToolCallHook): void {
+export function registerCronTools(
+  server: McpServer,
+  app: NewioApp,
+  desc: ToolDescriptions,
+  onToolCall?: ToolCallHook,
+): void {
+  const schedule = desc.scheduleCron();
   server.registerTool(
     'schedule_cron',
     {
-      description:
-        'Schedule a task. Supports recurring intervals and one-shot fixed-time triggers.\n' +
-        'Recurring: "every <N>s|m|h" (e.g. "every 23s", "every 45m", "every 4h").\n' +
-        'One-shot: "at <ISO-8601>" (e.g. "at 2026-04-09T12:00:00Z", "at 2026-04-10T10:00:00-04:00").\n' +
-        'For timezone-aware scheduling, convert to ISO-8601 with offset before calling.',
+      description: schedule.description,
       inputSchema: {
-        expression: z
-          .string()
-          .describe(
-            'Schedule expression. Examples: "every 23s", "every 45m", "at 2026-04-09T12:00:00Z", "at 2026-04-10T10:00:00-04:00"',
-          ),
-        label: z.string().describe('Human-readable description of what this cron job should do when it fires'),
-        payload: z
-          .unknown()
-          .optional()
-          .describe('Optional structured data to pass to your future self when the job fires'),
+        expression: z.string().describe(schedule.params.expression),
+        label: z.string().describe(schedule.params.label),
+        payload: z.unknown().optional().describe(schedule.params.payload),
       },
     },
     ({ expression, label, payload }) => {
@@ -40,13 +36,12 @@ export function registerCronTools(server: McpServer, app: NewioApp, onToolCall?:
     },
   );
 
+  const cancel = desc.cancelCron();
   server.registerTool(
     'cancel_cron',
     {
-      description: 'Cancel a scheduled cron job by its ID',
-      inputSchema: {
-        cronId: z.string().describe('The cron job ID returned by schedule_cron'),
-      },
+      description: cancel.description,
+      inputSchema: { cronId: z.string().describe(cancel.params.cronId) },
     },
     ({ cronId }) => {
       onToolCall?.('cancel_cron', { cronId });
@@ -58,7 +53,8 @@ export function registerCronTools(server: McpServer, app: NewioApp, onToolCall?:
     },
   );
 
-  server.registerTool('list_crons', { description: 'List all active cron jobs for this agent' }, () => {
+  const listCrons = desc.listCrons();
+  server.registerTool('list_crons', { description: listCrons.description }, () => {
     onToolCall?.('list_crons', {});
     return json(app.listCrons());
   });
