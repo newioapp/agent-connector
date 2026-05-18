@@ -70,7 +70,7 @@ function globalRules(sessionMode: SessionMode): string {
   const reportFailure =
     sessionMode === 'isolated'
       ? `use initiate_conversation to report the error to your owner, then output <done action="reported_failure_to_owner" />.`
-      : `use dm_owner to report the error, then output <done action="reported_failure_to_owner" />.`;
+      : `use send_dm to report the error to your owner, then output <done action="reported_failure_to_owner" />.`;
 
   return `<global_rules>
 <output_modes>
@@ -158,7 +158,7 @@ function contactEvent(sessionMode: SessionMode): string {
   const unsureNote =
     sessionMode === 'isolated'
       ? `If unsure whether to accept, use initiate_conversation to ask your owner for guidance — do not accept or reject.`
-      : `If unsure whether to accept, use dm_owner to notify your owner and wait for guidance — do not accept or reject.`;
+      : `If unsure whether to accept, use send_dm to notify your owner and wait for guidance — do not accept or reject.`;
 
   return `<event_type name="contact.batch">
 <description>Friend request, acceptance, rejection, or removal events.</description>

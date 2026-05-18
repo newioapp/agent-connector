@@ -57,7 +57,7 @@ export class NewioMcpServer {
 
     this.getCurrentConversationId = () => undefined;
     registerContactsTools(this.server, app, descriptions, onToolCall);
-    registerConversationsTools(this.server, app, descriptions, onToolCall);
+    registerConversationsTools(this.server, app, descriptions, sessionMode, onToolCall);
     registerCronTools(this.server, app, descriptions, onToolCall);
     registerMessagingTools(
       this.server,

@@ -78,23 +78,6 @@ export function registerMessagingTools(
         return text(`DM sent to @${username}`);
       },
     );
-
-    const dmo = desc.dmOwner();
-    server.registerTool(
-      dmo.toolName,
-      {
-        description: dmo.description,
-        inputSchema: {
-          text: z.string().describe(dmo.params.text),
-          filePaths: z.array(z.string()).max(5).optional().describe(dmo.params.filePaths),
-        },
-      },
-      async ({ text: msgText, filePaths }) => {
-        onToolCall?.(dmo.toolName, { text: msgText, filePaths });
-        await app.dmOwner(msgText, filePaths);
-        return text('DM sent to owner');
-      },
-    );
   }
 
   const lm = desc.listMessages();

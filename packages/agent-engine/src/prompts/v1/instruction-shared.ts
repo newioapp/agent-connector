@@ -11,7 +11,7 @@ export function instructionShared(skipToken: string): string {
 | \`message.batch\` (dm) | Sent to conversation | Always respond |
 | \`message.batch\` (group) | Sent to conversation | Only if @mentioned or clearly relevant, otherwise ${skipToken} |
 | \`message.batch\` (temp_group) | Sent to conversation | Be proactive — you are included to participate |
-| \`contact.batch\` | Discarded | Use MCP tools (accept/reject/dm_owner). If unsure, notify owner via dm_owner |
+| \`contact.batch\` | Discarded | Use MCP tools (accept/reject/send_dm). If unsure, notify owner via send_dm |
 | \`cron.triggered\` | Discarded | Use MCP tools for actions |
 | \`system.greeting\` | Sent to owner as DM | Write a brief greeting |
 | \`system.*\` (other) | Consumed by connector | Follow the instructions in the event |

@@ -130,11 +130,9 @@ describe('MCP Server', () => {
       'add_members',
       'add_memory',
       'cancel_cron',
-      'create_dm',
       'create_group',
       'create_work_session',
       'delete_memory',
-      'dm_owner',
       'download_attachment',
       'get_conversation',
       'get_memory',
@@ -238,13 +236,6 @@ describe('MCP Server', () => {
       arguments: { conversationId: 'conv-1', text: 'check this', filePaths: ['/tmp/photo.jpg'] },
     });
     expect(app.sendMessage).toHaveBeenCalledWith('conv-1', 'check this', ['/tmp/photo.jpg']);
-  });
-
-  it('dm_owner sends message to owner', async () => {
-    const app = mockApp();
-    const client = await createConnectedClient(app, 'shared');
-    await client.callTool({ name: 'dm_owner', arguments: { text: 'hello owner', filePaths: ['/tmp/file.txt'] } });
-    expect(app.dmOwner).toHaveBeenCalledWith('hello owner', ['/tmp/file.txt']);
   });
 
   it('download_attachment returns local file path', async () => {
@@ -600,8 +591,8 @@ describe('onToolCall hook', () => {
 
     await client.callTool({ name: 'list_friends', arguments: {} });
     await client.callTool({ name: 'list_conversations', arguments: {} });
-    await client.callTool({ name: 'dm_owner', arguments: { text: 'hi' } });
+    await client.callTool({ name: 'send_dm', arguments: { username: 'marcus42', text: 'hi' } });
 
-    expect(calls.map((c) => c.tool)).toEqual(['list_friends', 'list_conversations', 'dm_owner']);
+    expect(calls.map((c) => c.tool)).toEqual(['list_friends', 'list_conversations', 'send_dm']);
   });
 });

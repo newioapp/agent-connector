@@ -6,7 +6,11 @@
  *   pnpm eval -- --area tool_usage
  *   pnpm eval -- --scenario skip-dm-always-respond --runs 5
  */
+import { config as loadDotenv } from 'dotenv';
 import { program } from 'commander';
+
+// Load .env (secrets like ANTHROPIC_API_KEY) into process.env
+loadDotenv();
 import type { EvalConfig, EvalScenario, EvalArea, ScenarioRunResult, ScenarioAggregateResult } from './types.js';
 import type { AgentType, SessionMode } from '@newio/agent-engine';
 import { allScenarios } from './scenarios/index.js';
@@ -55,7 +59,7 @@ async function main(): Promise<void> {
     model: models[0] ?? opts.model,
     promptVersion: opts.promptVersion,
     sessionMode: opts.sessionMode as SessionMode,
-    judgeModel: process.env['EVAL_JUDGE_MODEL'] ?? 'claude-sonnet-4-20250514',
+    judgeModel: 'claude-haiku-4-5',
     judgeApiKeyEnvVar: 'ANTHROPIC_API_KEY',
     runsPerScenario: parseInt(opts.runs, 10),
     area: opts.area as EvalArea | undefined,
@@ -151,16 +155,22 @@ export function printReport(aggregates: readonly ScenarioAggregateResult[]): voi
   for (const agg of aggregates) {
     const icon = agg.passRate === 1 ? '✅' : agg.passRate > 0 ? '⚠️' : '❌';
     const pct = (agg.passRate * 100).toFixed(0);
-    console.log(`${icon} ${agg.scenarioId} — ${pct}% pass (${agg.runs.length} runs)`);
+    const judgeStr = agg.meanJudgeScore !== undefined ? ` | Judge: ${agg.meanJudgeScore.toFixed(1)}/5` : '';
+    console.log(`${icon} ${agg.scenarioId} — ${pct}% pass (${agg.runs.length} runs)${judgeStr}`);
 
     for (const run of agg.runs) {
       const warnings = run.assertions.filter((a) => !a.passed && a.severity === 'warning');
       const errors = run.assertions.filter((a) => !a.passed && a.severity === 'error');
+      const judged = run.assertions.filter((a) => a.score !== undefined);
       for (const w of warnings) {
         console.log(`     ⚠️  ${w.reason}`);
       }
       for (const e of errors) {
         console.log(`     ❌ ${e.reason}`);
+      }
+      for (const j of judged) {
+        const jIcon = j.passed ? '🟢' : '🔴';
+        console.log(`     ${jIcon} Score ${j.score}/5 — ${j.judgeReasoning ?? ''}`);
       }
     }
 
@@ -231,12 +241,18 @@ export async function runAllScenarios(
     console.log();
 
     const passRate = runs.filter((r) => r.passed).length / runs.length;
+    const judgeScores = runs.flatMap((r) =>
+      r.assertions.filter((a) => a.score !== undefined).map((a) => a.score as number),
+    );
     aggregates.push({
       scenarioId: runId,
       scenarioName: scenario.name,
       area: scenario.area,
       runs,
       passRate,
+      meanJudgeScore: judgeScores.length > 0 ? judgeScores.reduce((a, b) => a + b, 0) / judgeScores.length : undefined,
+      minJudgeScore: judgeScores.length > 0 ? Math.min(...judgeScores) : undefined,
+      maxJudgeScore: judgeScores.length > 0 ? Math.max(...judgeScores) : undefined,
     });
   }
 

@@ -129,6 +129,7 @@ export interface LlmJudgeExpectation {
   readonly type: 'llm_judge';
   readonly eventIndex?: number;
   readonly criteria: string;
+  readonly context?: string;
   readonly minScore: number;
   readonly severity?: ExpectationSeverity;
   readonly description?: string;
@@ -207,6 +208,7 @@ export interface ToolCallRecord {
   readonly tool: string;
   readonly args: Readonly<Record<string, unknown>>;
   readonly timestamp: number;
+  readonly eventIndex?: number;
   readonly result?: unknown;
 }
 

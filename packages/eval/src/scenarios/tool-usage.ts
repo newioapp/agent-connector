@@ -10,8 +10,7 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
   {
     id: 'tool-usage-no-double-send-dm',
     name: 'DM reply does not use messaging tools',
-    description:
-      'When replying to a DM, the agent should NOT call send_message/send_dm/dm_owner — the reply is auto-delivered.',
+    description: 'When replying to a DM, the agent should NOT call send_message/send_dm — the reply is auto-delivered.',
     area: 'tool_usage',
     sessionMode: 'both',
     setup: {
@@ -30,7 +29,7 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
       { type: 'no_skip', eventIndex: 0, description: 'Agent should respond to a DM' },
       { type: 'tool_not_called', tool: 'send_message', description: 'Should not double-send via tool' },
       { type: 'tool_not_called', tool: 'send_dm', description: 'Should not double-send via send_dm' },
-      { type: 'tool_not_called', tool: 'dm_owner', description: 'Should not dm_owner for a simple question' },
+      { type: 'tool_not_called', tool: 'send_dm', description: 'Should not send_dm for a simple question' },
       {
         type: 'tool_not_called',
         tool: 'initiate_conversation',
@@ -134,7 +133,7 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
   {
     id: 'tool-usage-contact-event-uses-tools',
     name: 'Contact events acted on via tools, not text reply',
-    description: 'Agent should notify owner about an incoming friend request via dm_owner tool.',
+    description: 'Agent should notify owner about an incoming friend request via send_dm tool.',
     area: 'tool_usage',
     sessionMode: 'shared',
     setup: defaultSetup,
@@ -154,7 +153,7 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
       },
     ],
     expectations: [
-      { type: 'tool_called', tool: 'dm_owner', description: 'Should notify owner about the friend request' },
+      { type: 'tool_called', tool: 'send_dm', description: 'Should notify owner about the friend request' },
     ],
   },
 ];
