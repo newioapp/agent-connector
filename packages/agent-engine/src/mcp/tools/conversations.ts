@@ -5,25 +5,30 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NewioApp } from '@newio/agent-sdk';
 import type { ToolCallHook } from '../types.js';
+import type { ToolDescriptions } from '../tool-descriptions.js';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
 
 /** Register conversations tools on the MCP server. */
-export function registerConversationsTools(server: McpServer, app: NewioApp, onToolCall?: ToolCallHook): void {
-  server.registerTool('list_conversations', { description: 'List all conversations this agent is part of' }, () => {
+export function registerConversationsTools(
+  server: McpServer,
+  app: NewioApp,
+  desc: ToolDescriptions,
+  onToolCall?: ToolCallHook,
+): void {
+  const listConv = desc.listConversations();
+  server.registerTool('list_conversations', { description: listConv.description }, () => {
     onToolCall?.('list_conversations', {});
     return json(app.getAllConversations());
   });
 
+  const createDm = desc.createDm();
   server.registerTool(
     'create_dm',
     {
-      description:
-        'Get or create a DM conversation with a user by username. Returns the conversationId. Use this to obtain the conversationId for a DM before using initiate_conversation.',
-      inputSchema: {
-        username: z.string().describe('Username of the user to DM'),
-      },
+      description: createDm.description,
+      inputSchema: { username: z.string().describe(createDm.params.username) },
     },
     async ({ username }) => {
       onToolCall?.('create_dm', { username });
@@ -32,13 +37,14 @@ export function registerConversationsTools(server: McpServer, app: NewioApp, onT
     },
   );
 
+  const createWs = desc.createWorkSession();
   server.registerTool(
     'create_work_session',
     {
-      description: 'Create a temporary group conversation (work session) — anyone can add members',
+      description: createWs.description,
       inputSchema: {
-        name: z.string().describe('Work session name'),
-        usernames: z.array(z.string()).describe('Usernames of users to include'),
+        name: z.string().describe(createWs.params.name),
+        usernames: z.array(z.string()).describe(createWs.params.usernames),
       },
     },
     async ({ name, usernames }) => {
@@ -48,14 +54,14 @@ export function registerConversationsTools(server: McpServer, app: NewioApp, onT
     },
   );
 
+  const createGrp = desc.createGroup();
   server.registerTool(
     'create_group',
     {
-      description:
-        "Create a named group conversation with admin controls. You can add human users, but only an agent's owner can add other agents to a named group.",
+      description: createGrp.description,
       inputSchema: {
-        name: z.string().describe('Group name'),
-        usernames: z.array(z.string()).describe('Usernames of users to include'),
+        name: z.string().describe(createGrp.params.name),
+        usernames: z.array(z.string()).describe(createGrp.params.usernames),
       },
     },
     async ({ name, usernames }) => {
@@ -65,11 +71,12 @@ export function registerConversationsTools(server: McpServer, app: NewioApp, onT
     },
   );
 
+  const getConv = desc.getConversation();
   server.registerTool(
     'get_conversation',
     {
-      description: 'Get details and members of a conversation',
-      inputSchema: { conversationId: z.string().describe('Conversation ID') },
+      description: getConv.description,
+      inputSchema: { conversationId: z.string().describe(getConv.params.conversationId) },
     },
     async ({ conversationId }) => {
       onToolCall?.('get_conversation', { conversationId });
@@ -78,13 +85,14 @@ export function registerConversationsTools(server: McpServer, app: NewioApp, onT
     },
   );
 
+  const addMem = desc.addMembers();
   server.registerTool(
     'add_members',
     {
-      description: 'Add members to a group conversation by usernames',
+      description: addMem.description,
       inputSchema: {
-        conversationId: z.string().describe('Conversation ID'),
-        usernames: z.array(z.string()).describe('Usernames of users to add'),
+        conversationId: z.string().describe(addMem.params.conversationId),
+        usernames: z.array(z.string()).describe(addMem.params.usernames),
       },
     },
     async ({ conversationId, usernames }) => {
@@ -95,13 +103,14 @@ export function registerConversationsTools(server: McpServer, app: NewioApp, onT
     },
   );
 
+  const rmMem = desc.removeMember();
   server.registerTool(
     'remove_member',
     {
-      description: 'Remove a member from a group conversation by username',
+      description: rmMem.description,
       inputSchema: {
-        conversationId: z.string().describe('Conversation ID'),
-        username: z.string().describe('Username of the member to remove'),
+        conversationId: z.string().describe(rmMem.params.conversationId),
+        username: z.string().describe(rmMem.params.username),
       },
     },
     async ({ conversationId, username }) => {

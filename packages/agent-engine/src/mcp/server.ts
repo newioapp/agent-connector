@@ -20,6 +20,7 @@ import { registerMediaTools } from './tools/media.js';
 import { registerMemoryTools } from './tools/memory.js';
 import type { IdGetter, ToolCallHook } from './types.js';
 import type { SessionMode } from '../types.js';
+import { DefaultToolDescriptions, type ToolDescriptions } from './tool-descriptions.js';
 
 export interface NewioMcpServerOptions {
   readonly app: NewioApp;
@@ -27,6 +28,8 @@ export interface NewioMcpServerOptions {
   readonly sessionMode: SessionMode;
   /** Optional hook called before each tool invocation. */
   readonly onToolCall?: ToolCallHook;
+  /** Optional custom tool descriptions. Defaults to DefaultToolDescriptions. */
+  readonly toolDescriptions?: ToolDescriptions;
 }
 
 /**
@@ -50,22 +53,24 @@ export class NewioMcpServer {
     });
 
     const { app, initiateConversation, sessionMode, onToolCall } = opts;
+    const descriptions = opts.toolDescriptions ?? new DefaultToolDescriptions();
 
     this.getCurrentConversationId = () => undefined;
-    registerContactsTools(this.server, app, onToolCall);
-    registerConversationsTools(this.server, app, onToolCall);
-    registerCronTools(this.server, app, onToolCall);
+    registerContactsTools(this.server, app, descriptions, onToolCall);
+    registerConversationsTools(this.server, app, descriptions, onToolCall);
+    registerCronTools(this.server, app, descriptions, onToolCall);
     registerMessagingTools(
       this.server,
       app,
+      descriptions,
       initiateConversation,
       () => this.getCurrentConversationId(),
       sessionMode,
       onToolCall,
     );
-    registerUsersTools(this.server, app, onToolCall);
-    registerMediaTools(this.server, app, () => this.getCurrentConversationId(), onToolCall);
-    registerMemoryTools(this.server, app, onToolCall);
+    registerUsersTools(this.server, app, descriptions, onToolCall);
+    registerMediaTools(this.server, app, descriptions, () => this.getCurrentConversationId(), onToolCall);
+    registerMemoryTools(this.server, app, descriptions, onToolCall);
   }
 
   setCurrentConversationIdGetter(idGetter: IdGetter): void {

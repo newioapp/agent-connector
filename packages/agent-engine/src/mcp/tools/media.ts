@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NewioApp } from '@newio/agent-sdk';
 import type { IdGetter, ToolCallHook } from '../types.js';
+import type { ToolDescriptions } from '../tool-descriptions.js';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
@@ -21,16 +22,17 @@ function requireCurrentConversationId(getCurrentConversationId: IdGetter): strin
 export function registerMediaTools(
   server: McpServer,
   app: NewioApp,
+  desc: ToolDescriptions,
   getCurrentConversationId: IdGetter,
   onToolCall?: ToolCallHook,
 ): void {
+  const upload = desc.uploadAttachmentToCurrentConversation();
   server.registerTool(
     'upload_attachment_to_current_conversation',
     {
-      description:
-        'Upload files to the current active conversation as a message with no text. Only works during an active conversation prompt. To send files to a specific conversation, use send_message with filePaths instead.',
+      description: upload.description,
       inputSchema: {
-        filePaths: z.array(z.string()).min(1).max(5).describe('Local file paths to upload (1–5, absolute or relative)'),
+        filePaths: z.array(z.string()).min(1).max(5).describe(upload.params.filePaths),
       },
     },
     async ({ filePaths }) => {
@@ -41,14 +43,15 @@ export function registerMediaTools(
     },
   );
 
+  const download = desc.downloadAttachment();
   server.registerTool(
     'download_attachment',
     {
-      description: 'Download a message attachment to a local file and return the absolute file path',
+      description: download.description,
       inputSchema: {
-        conversationId: z.string().describe('Conversation ID the attachment belongs to'),
-        s3Key: z.string().describe('The s3Key from the message attachment'),
-        fileName: z.string().describe('The fileName from the message attachment'),
+        conversationId: z.string().describe(download.params.conversationId),
+        s3Key: z.string().describe(download.params.s3Key),
+        fileName: z.string().describe(download.params.fileName),
       },
     },
     async ({ conversationId, s3Key, fileName }) => {

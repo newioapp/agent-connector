@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NewioApp } from '@newio/agent-sdk';
 import type { IdGetter, ToolCallHook } from '../types';
+import type { ToolDescriptions } from '../tool-descriptions.js';
 import type { SessionMode } from '../../types';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
@@ -14,25 +15,21 @@ const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
 export function registerMessagingTools(
   server: McpServer,
   app: NewioApp,
+  desc: ToolDescriptions,
   initiateConversation: (convId: string, context: string) => void,
   getCurrentConversationId: IdGetter,
   sessionMode: SessionMode,
   onToolCall?: ToolCallHook,
 ): void {
-  // Isolated mode: use initiate_conversation for cross-conversation delegation
   if (sessionMode === 'isolated') {
+    const ic = desc.initiateConversation();
     server.registerTool(
       'initiate_conversation',
       {
-        description:
-          "Delegate a task to another conversation's session. Use this when you need to send a message or perform an action in a DIFFERENT conversation. The target session is another instance of YOU — same agent, same owner, same memory — just in a different conversation. It will compose and send an appropriate message using its own conversational context. This is fire-and-forget — you will not receive a response. Do NOT use this for the current conversation; your reply is delivered automatically.",
+        description: ic.description,
         inputSchema: {
-          conversationId: z.string().describe('Conversation ID of the target conversation to delegate to'),
-          context: z
-            .string()
-            .describe(
-              "What you want communicated and why. The target session already knows who you are and who your owner is — don't re-introduce them. Focus on: what to say, who requested it (e.g. 'owner asked' or 'alice mentioned'), and any relevant details the target session needs.",
-            ),
+          conversationId: z.string().describe(ic.params.conversationId),
+          context: z.string().describe(ic.params.context),
         },
       },
       ({ conversationId, context }) => {
@@ -46,21 +43,16 @@ export function registerMessagingTools(
     );
   }
 
-  // Shared mode: send_dm, dm_owner, and send_message send messages directly
   if (sessionMode === 'shared') {
+    const sm = desc.sendMessage();
     server.registerTool(
       'send_message',
       {
-        description:
-          'Send a message to a group chat or work session, optionally with file attachments (max 5). Use @username to mention members, @everyone to notify all, or @here to notify online members. ⚠️ Only use this to send messages to a DIFFERENT conversation. If you are responding to a message in the current conversation, your reply is delivered automatically — do NOT use this tool or the message will be sent twice.',
+        description: sm.description,
         inputSchema: {
-          conversationId: z.string().describe('Conversation ID to send the message to'),
-          text: z.string().describe('Message text (supports markdown)'),
-          filePaths: z
-            .array(z.string())
-            .max(5)
-            .optional()
-            .describe('Optional local file paths to attach (max 5, absolute or relative)'),
+          conversationId: z.string().describe(sm.params.conversationId),
+          text: z.string().describe(sm.params.text),
+          filePaths: z.array(z.string()).max(5).optional().describe(sm.params.filePaths),
         },
       },
       async ({ conversationId, text: msgText, filePaths }) => {
@@ -70,19 +62,15 @@ export function registerMessagingTools(
       },
     );
 
+    const sd = desc.sendDm();
     server.registerTool(
       'send_dm',
       {
-        description:
-          'Send a direct message to a user by username, optionally with attachments. ⚠️ Only use this to INITIATE a message to another user. If you are responding to a DM from that user, your reply is delivered automatically — do NOT use this tool or the message will be sent twice.',
+        description: sd.description,
         inputSchema: {
-          username: z.string().describe('Username of the recipient'),
-          text: z.string().describe('Message text (supports markdown)'),
-          filePaths: z
-            .array(z.string())
-            .max(5)
-            .optional()
-            .describe('Optional local file paths to attach (max 5, absolute or relative)'),
+          username: z.string().describe(sd.params.username),
+          text: z.string().describe(sd.params.text),
+          filePaths: z.array(z.string()).max(5).optional().describe(sd.params.filePaths),
         },
       },
       async ({ username, text: msgText, filePaths }) => {
@@ -92,18 +80,14 @@ export function registerMessagingTools(
       },
     );
 
+    const dmo = desc.dmOwner();
     server.registerTool(
       'dm_owner',
       {
-        description:
-          "Send a direct message to this agent's owner, optionally with attachments. ⚠️ Only use this to INITIATE a message to your owner. If you are already responding to a DM from your owner, your reply is delivered automatically — do NOT use this tool or the message will be sent twice.",
+        description: dmo.description,
         inputSchema: {
-          text: z.string().describe('Message text (supports markdown)'),
-          filePaths: z
-            .array(z.string())
-            .max(5)
-            .optional()
-            .describe('Optional local file paths to attach (max 5, absolute or relative)'),
+          text: z.string().describe(dmo.params.text),
+          filePaths: z.array(z.string()).max(5).optional().describe(dmo.params.filePaths),
         },
       },
       async ({ text: msgText, filePaths }) => {
@@ -114,14 +98,15 @@ export function registerMessagingTools(
     );
   }
 
+  const lm = desc.listMessages();
   server.registerTool(
     'list_messages',
     {
-      description: 'List messages in a conversation (paginated, newest first)',
+      description: lm.description,
       inputSchema: {
-        conversationId: z.string().describe('Conversation ID'),
-        limit: z.number().optional().describe('Max messages to return (default 20)'),
-        beforeMessageId: z.string().optional().describe('Get messages before this message ID (for pagination)'),
+        conversationId: z.string().describe(lm.params.conversationId),
+        limit: z.number().optional().describe(lm.params.limit),
+        beforeMessageId: z.string().optional().describe(lm.params.beforeMessageId),
       },
     },
     async ({ conversationId, limit, beforeMessageId }) => {

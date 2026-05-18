@@ -11,27 +11,32 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NewioApp } from '@newio/agent-sdk';
 import { stringify } from 'yaml';
 import type { ToolCallHook } from '../types.js';
+import type { ToolDescriptions } from '../tool-descriptions.js';
 
 const yaml = (obj: unknown) => ({ content: [{ type: 'text' as const, text: stringify(obj) }] });
 const err = (msg: string) => ({ content: [{ type: 'text' as const, text: msg }], isError: true as const });
 
 /** Register memory tools on the MCP server. */
-export function registerMemoryTools(server: McpServer, app: NewioApp, onToolCall?: ToolCallHook): void {
-  /** Reject if the agent passes its own username — that's global scope. */
+export function registerMemoryTools(
+  server: McpServer,
+  app: NewioApp,
+  desc: ToolDescriptions,
+  onToolCall?: ToolCallHook,
+): void {
   function validateNotSelf(username?: string): void {
     if (username && username.toLowerCase() === app.identity.username.toLowerCase()) {
       throw new Error('To update your own memory, omit the username field. Per-user memory is for other people.');
     }
   }
 
+  const getMem = desc.getMemory();
   server.registerTool(
     'get_memory',
     {
-      description:
-        'Load memory about a person or conversation that was not pre-loaded at session start (e.g., a new participant joined). Requires either a username or conversationId.',
+      description: getMem.description,
       inputSchema: {
-        username: z.string().optional().describe('Username of the person'),
-        conversationId: z.string().optional().describe('Conversation ID'),
+        username: z.string().optional().describe(getMem.params.username),
+        conversationId: z.string().optional().describe(getMem.params.conversationId),
       },
     },
     async ({ username, conversationId }) => {
@@ -48,15 +53,15 @@ export function registerMemoryTools(server: McpServer, app: NewioApp, onToolCall
     },
   );
 
+  const addMem = desc.addMemory();
   server.registerTool(
     'add_memory',
     {
-      description:
-        'Store a new fact in memory. Facts must be self-contained, third-person statements (15-50 words). Omit username and conversationId to store about yourself.',
+      description: addMem.description,
       inputSchema: {
-        text: z.string().describe('The fact to store (self-contained, third-person)'),
-        username: z.string().optional().describe('Username of the person this fact is about (omit for self)'),
-        conversationId: z.string().optional().describe('Conversation ID this fact is about (omit for self)'),
+        text: z.string().describe(addMem.params.text),
+        username: z.string().optional().describe(addMem.params.username),
+        conversationId: z.string().optional().describe(addMem.params.conversationId),
       },
     },
     async ({ text, username, conversationId }) => {
@@ -67,16 +72,16 @@ export function registerMemoryTools(server: McpServer, app: NewioApp, onToolCall
     },
   );
 
+  const updateMem = desc.updateMemory();
   server.registerTool(
     'update_memory',
     {
-      description:
-        'Update an existing memory fact. Use when information has materially changed — not for cosmetic rewording.',
+      description: updateMem.description,
       inputSchema: {
-        factId: z.string().describe('The ID of the fact to update'),
-        text: z.string().describe('The updated fact text'),
-        username: z.string().optional().describe('Username of the person this fact is about (omit for self)'),
-        conversationId: z.string().optional().describe('Conversation ID this fact is about (omit for self)'),
+        factId: z.string().describe(updateMem.params.factId),
+        text: z.string().describe(updateMem.params.text),
+        username: z.string().optional().describe(updateMem.params.username),
+        conversationId: z.string().optional().describe(updateMem.params.conversationId),
       },
     },
     async ({ factId, text, username, conversationId }) => {
@@ -87,14 +92,15 @@ export function registerMemoryTools(server: McpServer, app: NewioApp, onToolCall
     },
   );
 
+  const deleteMem = desc.deleteMemory();
   server.registerTool(
     'delete_memory',
     {
-      description: 'Delete a memory fact. Use when information is contradicted or no longer relevant.',
+      description: deleteMem.description,
       inputSchema: {
-        factId: z.string().describe('The ID of the fact to delete'),
-        username: z.string().optional().describe('Username of the person this fact is about (omit for self)'),
-        conversationId: z.string().optional().describe('Conversation ID this fact is about (omit for self)'),
+        factId: z.string().describe(deleteMem.params.factId),
+        username: z.string().optional().describe(deleteMem.params.username),
+        conversationId: z.string().optional().describe(deleteMem.params.conversationId),
       },
     },
     async ({ factId, username, conversationId }) => {
@@ -105,15 +111,15 @@ export function registerMemoryTools(server: McpServer, app: NewioApp, onToolCall
     },
   );
 
+  const updateSummary = desc.updateMemorySummary();
   server.registerTool(
     'update_memory_summary',
     {
-      description:
-        'Update the summary for a memory scope. Summaries are always loaded at session start — keep them concise (max 10 lines for user/conversation).',
+      description: updateSummary.description,
       inputSchema: {
-        text: z.string().describe('The new summary text'),
-        username: z.string().optional().describe('Username of the person this summary is about (omit for self)'),
-        conversationId: z.string().optional().describe('Conversation ID this summary is about (omit for self)'),
+        text: z.string().describe(updateSummary.params.text),
+        username: z.string().optional().describe(updateSummary.params.username),
+        conversationId: z.string().optional().describe(updateSummary.params.conversationId),
       },
     },
     async ({ text, username, conversationId }) => {

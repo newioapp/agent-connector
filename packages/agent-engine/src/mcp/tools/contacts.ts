@@ -5,24 +5,32 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NewioApp } from '@newio/agent-sdk';
 import type { ToolCallHook } from '../types.js';
+import type { ToolDescriptions } from '../tool-descriptions.js';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
 
 /** Register contacts tools on the MCP server. */
-export function registerContactsTools(server: McpServer, app: NewioApp, onToolCall?: ToolCallHook): void {
-  server.registerTool('list_friends', { description: 'List all friends (contacts) of this agent' }, () => {
+export function registerContactsTools(
+  server: McpServer,
+  app: NewioApp,
+  desc: ToolDescriptions,
+  onToolCall?: ToolCallHook,
+): void {
+  const listFriends = desc.listFriends();
+  server.registerTool('list_friends', { description: listFriends.description }, () => {
     onToolCall?.('list_friends', {});
     return json(app.getAllContacts());
   });
 
+  const sendReq = desc.sendFriendRequest();
   server.registerTool(
     'send_friend_request',
     {
-      description: 'Send a friend request to a user by username',
+      description: sendReq.description,
       inputSchema: {
-        username: z.string().describe('Username of the user to send a friend request to'),
-        note: z.string().optional().describe('Optional note to include with the request'),
+        username: z.string().describe(sendReq.params.username),
+        note: z.string().optional().describe(sendReq.params.note),
       },
     },
     async ({ username, note }) => {
@@ -32,16 +40,18 @@ export function registerContactsTools(server: McpServer, app: NewioApp, onToolCa
     },
   );
 
-  server.registerTool('list_incoming_friend_requests', { description: 'List pending incoming friend requests' }, () => {
+  const listIncoming = desc.listIncomingFriendRequests();
+  server.registerTool('list_incoming_friend_requests', { description: listIncoming.description }, () => {
     onToolCall?.('list_incoming_friend_requests', {});
     return json(app.listIncomingFriendRequests());
   });
 
+  const acceptReq = desc.acceptFriendRequest();
   server.registerTool(
     'accept_friend_request',
     {
-      description: 'Accept a pending incoming friend request by username',
-      inputSchema: { username: z.string().describe('Username of the person who sent the request') },
+      description: acceptReq.description,
+      inputSchema: { username: z.string().describe(acceptReq.params.username) },
     },
     async ({ username }) => {
       onToolCall?.('accept_friend_request', { username });
@@ -50,11 +60,12 @@ export function registerContactsTools(server: McpServer, app: NewioApp, onToolCa
     },
   );
 
+  const rejectReq = desc.rejectFriendRequest();
   server.registerTool(
     'reject_friend_request',
     {
-      description: 'Reject a pending incoming friend request by username',
-      inputSchema: { username: z.string().describe('Username of the person who sent the request') },
+      description: rejectReq.description,
+      inputSchema: { username: z.string().describe(rejectReq.params.username) },
     },
     async ({ username }) => {
       onToolCall?.('reject_friend_request', { username });
@@ -63,11 +74,12 @@ export function registerContactsTools(server: McpServer, app: NewioApp, onToolCa
     },
   );
 
+  const removeFriend = desc.removeFriend();
   server.registerTool(
     'remove_friend',
     {
-      description: 'Remove a friend by username',
-      inputSchema: { username: z.string().describe('Username of the friend to remove') },
+      description: removeFriend.description,
+      inputSchema: { username: z.string().describe(removeFriend.params.username) },
     },
     async ({ username }) => {
       onToolCall?.('remove_friend', { username });
