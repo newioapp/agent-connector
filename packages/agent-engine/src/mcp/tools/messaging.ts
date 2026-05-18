@@ -11,7 +11,6 @@ import type { SessionMode } from '../../types';
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
 
-/** Register messaging tools on the MCP server. */
 export function registerMessagingTools(
   server: McpServer,
   app: NewioApp,
@@ -24,7 +23,7 @@ export function registerMessagingTools(
   if (sessionMode === 'isolated') {
     const ic = desc.initiateConversation();
     server.registerTool(
-      'initiate_conversation',
+      ic.toolName,
       {
         description: ic.description,
         inputSchema: {
@@ -33,7 +32,7 @@ export function registerMessagingTools(
         },
       },
       ({ conversationId, context }) => {
-        onToolCall?.('initiate_conversation', { conversationId, context });
+        onToolCall?.(ic.toolName, { conversationId, context });
         if (getCurrentConversationId() === conversationId) {
           return text("Can't initiate the current conversation — your reply is delivered automatically.");
         }
@@ -46,7 +45,7 @@ export function registerMessagingTools(
   if (sessionMode === 'shared') {
     const sm = desc.sendMessage();
     server.registerTool(
-      'send_message',
+      sm.toolName,
       {
         description: sm.description,
         inputSchema: {
@@ -56,7 +55,7 @@ export function registerMessagingTools(
         },
       },
       async ({ conversationId, text: msgText, filePaths }) => {
-        onToolCall?.('send_message', { conversationId, text: msgText, filePaths });
+        onToolCall?.(sm.toolName, { conversationId, text: msgText, filePaths });
         await app.sendMessage(conversationId, msgText, filePaths);
         return text('Message sent');
       },
@@ -64,7 +63,7 @@ export function registerMessagingTools(
 
     const sd = desc.sendDm();
     server.registerTool(
-      'send_dm',
+      sd.toolName,
       {
         description: sd.description,
         inputSchema: {
@@ -74,7 +73,7 @@ export function registerMessagingTools(
         },
       },
       async ({ username, text: msgText, filePaths }) => {
-        onToolCall?.('send_dm', { username, text: msgText, filePaths });
+        onToolCall?.(sd.toolName, { username, text: msgText, filePaths });
         await app.sendDm(username, msgText, filePaths);
         return text(`DM sent to @${username}`);
       },
@@ -82,7 +81,7 @@ export function registerMessagingTools(
 
     const dmo = desc.dmOwner();
     server.registerTool(
-      'dm_owner',
+      dmo.toolName,
       {
         description: dmo.description,
         inputSchema: {
@@ -91,7 +90,7 @@ export function registerMessagingTools(
         },
       },
       async ({ text: msgText, filePaths }) => {
-        onToolCall?.('dm_owner', { text: msgText, filePaths });
+        onToolCall?.(dmo.toolName, { text: msgText, filePaths });
         await app.dmOwner(msgText, filePaths);
         return text('DM sent to owner');
       },
@@ -100,7 +99,7 @@ export function registerMessagingTools(
 
   const lm = desc.listMessages();
   server.registerTool(
-    'list_messages',
+    lm.toolName,
     {
       description: lm.description,
       inputSchema: {
@@ -110,12 +109,8 @@ export function registerMessagingTools(
       },
     },
     async ({ conversationId, limit, beforeMessageId }) => {
-      onToolCall?.('list_messages', { conversationId, limit, beforeMessageId });
-      const resp = await app.client.listMessages({
-        conversationId,
-        limit: limit ?? 20,
-        beforeMessageId,
-      });
+      onToolCall?.(lm.toolName, { conversationId, limit, beforeMessageId });
+      const resp = await app.client.listMessages({ conversationId, limit: limit ?? 20, beforeMessageId });
       const messages = resp.messages.map((m) => ({
         messageId: m.messageId,
         senderId: m.senderId,

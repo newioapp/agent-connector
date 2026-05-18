@@ -10,111 +10,104 @@ import type { ToolDescriptions } from '../tool-descriptions.js';
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
 
-/** Register conversations tools on the MCP server. */
 export function registerConversationsTools(
   server: McpServer,
   app: NewioApp,
   desc: ToolDescriptions,
   onToolCall?: ToolCallHook,
 ): void {
-  const listConv = desc.listConversations();
-  server.registerTool('list_conversations', { description: listConv.description }, () => {
-    onToolCall?.('list_conversations', {});
+  const lc = desc.listConversations();
+  server.registerTool(lc.toolName, { description: lc.description }, () => {
+    onToolCall?.(lc.toolName, {});
     return json(app.getAllConversations());
   });
 
-  const createDm = desc.createDm();
+  const cd = desc.createDm();
   server.registerTool(
-    'create_dm',
-    {
-      description: createDm.description,
-      inputSchema: { username: z.string().describe(createDm.params.username) },
-    },
+    cd.toolName,
+    { description: cd.description, inputSchema: { username: z.string().describe(cd.params.username) } },
     async ({ username }) => {
-      onToolCall?.('create_dm', { username });
+      onToolCall?.(cd.toolName, { username });
       const conversationId = await app.getOrCreateDm(username);
       return json({ conversationId });
     },
   );
 
-  const createWs = desc.createWorkSession();
+  const cws = desc.createWorkSession();
   server.registerTool(
-    'create_work_session',
+    cws.toolName,
     {
-      description: createWs.description,
+      description: cws.description,
       inputSchema: {
-        name: z.string().describe(createWs.params.name),
-        usernames: z.array(z.string()).describe(createWs.params.usernames),
+        name: z.string().describe(cws.params.name),
+        usernames: z.array(z.string()).describe(cws.params.usernames),
       },
     },
     async ({ name, usernames }) => {
-      onToolCall?.('create_work_session', { name, usernames });
+      onToolCall?.(cws.toolName, { name, usernames });
       const conversationId = await app.createWorkSession(name, usernames);
       return json({ conversationId });
     },
   );
 
-  const createGrp = desc.createGroup();
+  const cg = desc.createGroup();
   server.registerTool(
-    'create_group',
+    cg.toolName,
     {
-      description: createGrp.description,
+      description: cg.description,
       inputSchema: {
-        name: z.string().describe(createGrp.params.name),
-        usernames: z.array(z.string()).describe(createGrp.params.usernames),
+        name: z.string().describe(cg.params.name),
+        usernames: z.array(z.string()).describe(cg.params.usernames),
       },
     },
     async ({ name, usernames }) => {
-      onToolCall?.('create_group', { name, usernames });
+      onToolCall?.(cg.toolName, { name, usernames });
       const conversationId = await app.createGroup(name, usernames);
       return json({ conversationId });
     },
   );
 
-  const getConv = desc.getConversation();
+  const gc = desc.getConversation();
   server.registerTool(
-    'get_conversation',
-    {
-      description: getConv.description,
-      inputSchema: { conversationId: z.string().describe(getConv.params.conversationId) },
-    },
+    gc.toolName,
+    { description: gc.description, inputSchema: { conversationId: z.string().describe(gc.params.conversationId) } },
     async ({ conversationId }) => {
-      onToolCall?.('get_conversation', { conversationId });
+      onToolCall?.(gc.toolName, { conversationId });
       const conv = await app.client.getConversation({ conversationId });
       return json(conv);
     },
   );
 
-  const addMem = desc.addMembers();
+  const am = desc.addMembers();
   server.registerTool(
-    'add_members',
+    am.toolName,
     {
-      description: addMem.description,
+      description: am.description,
       inputSchema: {
-        conversationId: z.string().describe(addMem.params.conversationId),
-        usernames: z.array(z.string()).describe(addMem.params.usernames),
+        conversationId: z.string().describe(am.params.conversationId),
+        usernames: z.array(z.string()).describe(am.params.usernames),
       },
     },
     async ({ conversationId, usernames }) => {
-      onToolCall?.('add_members', { conversationId, usernames });
+      onToolCall?.(am.toolName, { conversationId, usernames });
       const memberIds = await Promise.all(usernames.map((u) => app.resolveUsername(u)));
       await app.client.addMembers({ conversationId, memberIds });
       return text(`Added ${usernames.join(', ')} to conversation`);
     },
   );
 
-  const rmMem = desc.removeMember();
+  const rm = desc.removeMember();
   server.registerTool(
-    'remove_member',
+    rm.toolName,
     {
-      description: rmMem.description,
+      description: rm.description,
       inputSchema: {
-        conversationId: z.string().describe(rmMem.params.conversationId),
-        username: z.string().describe(rmMem.params.username),
+        conversationId: z.string().describe(rm.params.conversationId),
+        username: z.string().describe(rm.params.username),
       },
     },
     async ({ conversationId, username }) => {
-      onToolCall?.('remove_member', { conversationId, username });
+      onToolCall?.(rm.toolName, { conversationId, username });
       const userId = await app.resolveUsername(username);
       await app.client.removeMember({ conversationId, userId });
       return text(`Removed @${username} from conversation`);

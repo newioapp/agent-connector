@@ -23,7 +23,7 @@ program
   .option('--model <model>', 'Model to configure on ACP session', 'claude-sonnet-4-20250514')
   .option('--models <models>', 'Comma-separated list of models to test (overrides --model)')
   .option('--prompt-version <version>', 'Prompt formatter version', '1.0.0')
-  .option('--session-mode <mode>', 'Session mode (isolated, shared, both)', 'shared')
+  .option('--session-mode <mode>', 'Session mode (isolated, shared, both)', 'both')
   .option('--area <area>', 'Filter by evaluation area')
   .option('--scenario <id>', 'Run a single scenario by ID')
   .option('--runs <n>', 'Number of runs per scenario', '1')
@@ -153,12 +153,14 @@ export function printReport(aggregates: readonly ScenarioAggregateResult[]): voi
     const pct = (agg.passRate * 100).toFixed(0);
     console.log(`${icon} ${agg.scenarioId} — ${pct}% pass (${agg.runs.length} runs)`);
 
-    if (agg.passRate < 1) {
-      for (const run of agg.runs) {
-        const failed = run.assertions.filter((a) => !a.passed);
-        for (const f of failed) {
-          console.log(`     ❌ ${f.reason}`);
-        }
+    for (const run of agg.runs) {
+      const warnings = run.assertions.filter((a) => !a.passed && a.severity === 'warning');
+      const errors = run.assertions.filter((a) => !a.passed && a.severity === 'error');
+      for (const w of warnings) {
+        console.log(`     ⚠️  ${w.reason}`);
+      }
+      for (const e of errors) {
+        console.log(`     ❌ ${e.reason}`);
       }
     }
 
@@ -214,6 +216,7 @@ export async function runAllScenarios(
             {
               expectation: { type: 'no_skip' },
               passed: false,
+              severity: 'error' as const,
               reason: `Run failed: ${err instanceof Error ? err.message : String(err)}`,
             },
           ],

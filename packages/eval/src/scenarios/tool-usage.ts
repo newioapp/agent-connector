@@ -31,6 +31,11 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
       { type: 'tool_not_called', tool: 'send_message', description: 'Should not double-send via tool' },
       { type: 'tool_not_called', tool: 'send_dm', description: 'Should not double-send via send_dm' },
       { type: 'tool_not_called', tool: 'dm_owner', description: 'Should not dm_owner for a simple question' },
+      {
+        type: 'tool_not_called',
+        tool: 'initiate_conversation',
+        description: 'Should not use initiate_conversation to reply to current conversation',
+      },
     ],
   },
   {
@@ -59,9 +64,20 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
     expectations: [
       {
         type: 'tool_called',
+        tool: 'list_contacts',
+        description: 'Should look up contacts to find the correct username for "Priya"',
+      },
+      {
+        type: 'tool_called',
         tool: 'send_dm',
         argsContain: { username: alice.username },
-        description: 'Should use send_dm to reach Priya',
+        description: 'Should use send_dm with the correct username to reach Priya',
+      },
+      {
+        type: 'tool_not_called',
+        tool: 'search_users',
+        severity: 'warning',
+        description: 'Prefer list_contacts over search_users for contact lookup',
       },
     ],
   },
@@ -92,9 +108,14 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
     expectations: [
       {
         type: 'tool_called',
+        tool: 'list_contacts',
+        description: 'Should look up contacts to find the correct username for "Priya"',
+      },
+      {
+        type: 'tool_called',
         tool: 'create_dm',
         argsContain: { username: alice.username },
-        description: 'Should create/get the DM conversation first',
+        description: 'Should create/get the DM conversation with the correct username',
       },
       {
         type: 'tool_called',
@@ -102,6 +123,12 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
         description: 'Should use initiate_conversation to delegate',
       },
       { type: 'tool_not_called', tool: 'send_dm', description: 'send_dm is not available in isolated mode' },
+      {
+        type: 'tool_not_called',
+        tool: 'search_users',
+        severity: 'warning',
+        description: 'Prefer list_contacts over search_users for contact lookup',
+      },
     ],
   },
   {
