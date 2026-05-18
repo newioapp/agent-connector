@@ -9,7 +9,8 @@ import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
 import { parse as parseDotenv } from 'dotenv';
-import { AcpSessionFactory, NewioMcpServer, PromptFormatterImpl, startUdsServer } from '@newio/agent-engine';
+import { AcpSessionFactory, NewioMcpServer, startUdsServer } from '@newio/agent-engine';
+import { ExperimentalPromptFormatter } from './prompts/experimental/prompt-formatter.js';
 import type { AgentConfig, PromptFormatter, ToolCallHook } from '@newio/agent-engine';
 import type { NewioApp } from '@newio/agent-sdk';
 import type { Server } from 'net';
@@ -104,7 +105,7 @@ export async function createScenarioRunnerDeps(
   const mcpBridgePath = fileURLToPath(import.meta.resolve('@newio/agent-engine/mcp-bridge'));
 
   // Build prompt manager with the requested version
-  const promptFormatter = new PromptFormatterImpl(
+  const promptFormatter = new ExperimentalPromptFormatter(
     { username: mockApp.identity.username, displayName: mockApp.identity.displayName },
     mockApp.getOwnerInfo(),
     effectiveSessionMode,

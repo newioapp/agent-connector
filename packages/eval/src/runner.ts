@@ -63,7 +63,7 @@ export async function runScenario(
     event: { type: 'initialization' },
     promptSent: fullInstruction,
     agentOutput: initResult.text,
-    isSkip: false,
+    isSkip: deps.promptFormatter.isSkip(initResult.text),
     toolCalls: initResult.toolCalls,
     latencyMs: Date.now() - initStart,
   });
@@ -115,7 +115,22 @@ export async function runScenario(
   // Evaluate assertions
   const traces = deps.traceCollector.getAll();
   const allToolCalls = deps.toolInterceptor.getAll();
-  const assertions = evaluateRuleBasedExpectations(scenario.expectations, traces, allToolCalls);
+
+  // Built-in: init response must be a skip (agent should not output anything after system instruction)
+  const initAssertion = evaluateRuleBasedExpectations(
+    [
+      {
+        type: 'skip',
+        eventIndex: -1,
+        description: 'Agent should not output after system instruction (wait for first event)',
+      },
+    ],
+    traces,
+    allToolCalls,
+  );
+
+  const scenarioAssertions = evaluateRuleBasedExpectations(scenario.expectations, traces, allToolCalls);
+  const assertions = [...initAssertion, ...scenarioAssertions];
   const passed = assertions.every((a) => a.passed);
 
   return {
