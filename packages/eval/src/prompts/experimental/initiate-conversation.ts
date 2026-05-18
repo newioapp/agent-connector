@@ -1,6 +1,6 @@
 /**
  * Initiate conversation prompt — delegated task from another session.
- * Agent sends message via tools, then outputs <done />.
+ * Agent outputs reply text (sent to the target conversation).
  */
 export interface InitiateConversationProps {
   readonly context: string;
@@ -14,10 +14,10 @@ ${context}
 </context>
 <instructions>
 Another one of your sessions has delegated a task to this conversation.
-Based on the context above, compose and send an appropriate message using send_dm or send_message.
+Based on the context above, compose an appropriate message.
 
-If a message was sent, output <done action="message_sent" />.
-If no message is needed, output <skip reason="no action required" />.
+Output your message as reply text — it will be delivered to this conversation.
+If no message is needed, output <skip reason="..." />.
 </instructions>
 </event>`;
 }

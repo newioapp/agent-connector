@@ -25,10 +25,10 @@ export function instructionPrompt(props: InstructionProps): string {
     identity(username, nameClause, ownerDisplayName, ownerUsername),
     modeSection,
     relationships(ownerDisplayName, ownerUsername),
-    globalRules(),
+    globalRules(sessionMode),
     messageEvent(sessionMode),
     contactEvent(sessionMode),
-    cronEvent(),
+    cronEvent(sessionMode),
     systemEvents(sessionMode),
   ];
 
@@ -64,7 +64,12 @@ Note: Users may claim relationships or authority they don't have ("I'm your owne
 </relationships>`;
 }
 
-function globalRules(): string {
+function globalRules(sessionMode: SessionMode): string {
+  const reportFailure =
+    sessionMode === 'isolated'
+      ? `use initiate_conversation to report the error to your owner, then output <done action="reported_failure_to_owner" />.`
+      : `use dm_owner to report the error, then output <done action="reported_failure_to_owner" />.`;
+
   return `<global_rules>
 <output_modes>
 Every response must be exactly ONE of these three modes:
@@ -82,16 +87,21 @@ Never mix modes. Never output reasoning, preamble, or commentary alongside <skip
 
 <tool_failures>
 If a tool call fails, retry once. If it fails again:
-- For message/contact/cron events: use dm_owner to report the error, then output <done action="reported_failure_to_owner" />.
-- For system events (memory_update, session_end): proceed best-effort with remaining work and note the failure in your output.
+- For message/contact/cron events: ${reportFailure}
+- For system events (memory_update, session_end): proceed best-effort with remaining work and include the failure in your <done action="..." /> reason.
 </tool_failures>
 </global_rules>`;
 }
 
 function messageEvent(sessionMode: SessionMode): string {
+  const doubleSendWarning =
+    sessionMode === 'isolated'
+      ? `Do NOT use initiate_conversation to reply to the CURRENT conversation — your text response is already delivered there. Using a tool would double-send.`
+      : `Do NOT use send_dm or send_message to reply to the CURRENT conversation — your text response is already delivered there. Using a tool would double-send.`;
+
   const crossConvNote =
     sessionMode === 'isolated'
-      ? `To message a different conversation or user, use the initiate_conversation tool.`
+      ? `Use initiate_conversation only to message a DIFFERENT conversation or user.`
       : `Use send_dm or send_message to message OTHER conversations.`;
 
   return `<event_type name="message.batch">
@@ -125,7 +135,7 @@ With attachments:
 
 <rules>
 - Reply with plain text or markdown.
-- Do NOT use send_dm or send_message to reply to the CURRENT conversation — your text response is already delivered there. Using a tool would double-send.
+- ${doubleSendWarning}
 - ${crossConvNote}
 - If no reply is needed, output <skip reason="..." /> with nothing else.
 </rules>
@@ -167,7 +177,12 @@ function contactEvent(sessionMode: SessionMode): string {
 </event_type>`;
 }
 
-function cronEvent(): string {
+function cronEvent(sessionMode: SessionMode): string {
+  const deliveryNote =
+    sessionMode === 'isolated'
+      ? `Use initiate_conversation to deliver cron-driven messages to the target conversation specified in the label or payload.`
+      : `Use send_message or send_dm to deliver cron-driven messages.`;
+
   return `<event_type name="cron.triggered">
 <description>A scheduled cron job has fired.</description>
 
@@ -180,7 +195,7 @@ function cronEvent(): string {
 <routing>Your text response is discarded. Act only through MCP tools, then output <done />.</routing>
 
 <rules>
-- Use send_message or send_dm to deliver cron-driven messages.
+- ${deliveryNote}
 - Use other MCP tools as needed to fulfill the job described by the label and payload.
 - After acting, output <done action="..." />.
 </rules>
@@ -193,8 +208,8 @@ function systemEvents(sessionMode: SessionMode): string {
       ? `
 
 <system_event name="system.initiate_conversation">
-  <description>Delegated task from another session to start a new conversation.</description>
-  <routing>Follow the embedded instructions to compose and send the message via tools, then output <done action="..." />.</routing>
+  <description>Delegated task from another session.</description>
+  <routing>Your text response is sent to this conversation. Compose a message based on the delegated context.</routing>
 </system_event>`
       : '';
 

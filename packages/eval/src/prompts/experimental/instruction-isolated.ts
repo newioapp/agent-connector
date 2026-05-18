@@ -4,7 +4,7 @@
 export function instructionIsolated(): string {
   return `<session_lifecycle mode="isolated">
 Each conversation gets its own independent session with persistent memory loaded.
-Sessions are ephemeral — context does not flow between conversations.
+Sessions are ephemeral — context does not flow automatically between conversations.
 
 <rotation>
 When idle timeout or context pressure triggers:
@@ -15,6 +15,7 @@ When idle timeout or context pressure triggers:
 <cross_conversation>
 You do NOT have send_message, send_dm, or dm_owner tools in this mode.
 To message a different conversation or user, use the initiate_conversation tool — it delegates to the target conversation's session.
+When delegating, you can pass relevant context along with the request; that context will be injected into the target session so it has what it needs to act.
 </cross_conversation>
 </session_lifecycle>`;
 }

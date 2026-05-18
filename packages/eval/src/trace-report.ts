@@ -182,7 +182,7 @@ const CSS = `
 /** Generate an HTML trace report and write it to disk. Returns the file path. */
 export function generateTraceReport(
   aggregates: readonly ScenarioAggregateResult[],
-  config: { agentType: string; model: string; promptVersion: string; sessionMode: string },
+  config: { agentType: string; model: string; promptVersion: string; sessionMode: string; scenarioId?: string },
   outputDir: string,
 ): string {
   const totalPassed = aggregates.filter((a) => a.passRate === 1).length;
@@ -217,7 +217,9 @@ export function generateTraceReport(
 </body>
 </html>`;
 
-  const filename = `trace-${config.agentType}-${timestamp}.html`;
+  const modelSlug = config.model.replace(/[^a-zA-Z0-9.-]/g, '_');
+  const scenarioSlug = config.scenarioId ? `-${config.scenarioId}` : '';
+  const filename = `trace-${config.agentType}-${modelSlug}-${config.sessionMode}${scenarioSlug}-${timestamp}.html`;
   const filepath = join(outputDir, filename);
   writeFileSync(filepath, html, 'utf-8');
   return filepath;
