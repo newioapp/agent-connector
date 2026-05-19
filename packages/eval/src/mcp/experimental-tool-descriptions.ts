@@ -3,9 +3,26 @@
  * Extends DefaultToolDescriptions — only override tools you're experimenting with.
  */
 import { DefaultToolDescriptions } from '@newio/agent-engine';
-import type { CreateDmToolDesc, ListFriendsToolDesc, SearchUsersToolDesc } from '@newio/agent-engine';
+import type {
+  AddMemoryToolDesc,
+  CreateDmToolDesc,
+  ListFriendsToolDesc,
+  SearchUsersToolDesc,
+} from '@newio/agent-engine';
 
 export class ExperimentalToolDescriptions extends DefaultToolDescriptions {
+  override addMemory(): AddMemoryToolDesc {
+    return {
+      toolName: 'add_memory',
+      description:
+        'Store a new fact in memory. Facts must be self-contained, third-person statements (15-50 words). Use username for facts about a specific person (their job, preferences, schedule). Use conversationId for facts about a conversation itself (group decisions, project goals, recurring topics that belong to the group — not any one individual). Omit both to store about yourself (global scope).',
+      params: {
+        text: 'The fact to store (self-contained, third-person)',
+        username: 'Username of the person this fact is about (for per-user facts)',
+        conversationId: 'Conversation ID this fact belongs to (for group decisions, conversation-level context)',
+      },
+    };
+  }
   override listFriends(): ListFriendsToolDesc {
     return {
       toolName: 'list_contacts',

@@ -53,11 +53,11 @@ function renderToolCall(tc: ToolCallRecord): string {
   return `<div class="tool-call"><span class="tool-name">${escapeHtml(tc.tool)}</span><pre class="tool-args">${argsHtml}</pre>${resultHtml}</div>`;
 }
 
-function renderEventTrace(trace: EventTrace): string {
+function renderEventTrace(trace: EventTrace, mcpToolCalls: readonly ToolCallRecord[]): string {
   const skipBadge = trace.isSkip ? '<span class="badge skip">SKIP</span>' : '';
   const toolCallsHtml =
-    trace.toolCalls.length > 0
-      ? `<div class="section"><h4>Tool Calls (${trace.toolCalls.length})</h4>${trace.toolCalls.map(renderToolCall).join('')}</div>`
+    mcpToolCalls.length > 0
+      ? `<div class="section"><h4>MCP Tool Calls (${mcpToolCalls.length})</h4>${mcpToolCalls.map(renderToolCall).join('')}</div>`
       : '';
 
   return `
@@ -98,6 +98,18 @@ function renderRunResult(result: ScenarioRunResult): string {
     })
     .join('');
 
+  // Group MCP tool calls by eventIndex for per-trace rendering
+  const toolCallsByEvent = new Map<number, ToolCallRecord[]>();
+  for (const tc of result.allToolCalls) {
+    const idx = tc.eventIndex ?? -1;
+    const arr = toolCallsByEvent.get(idx);
+    if (arr) {
+      arr.push(tc);
+    } else {
+      toolCallsByEvent.set(idx, [tc]);
+    }
+  }
+
   return `
     <div class="run-result ${statusClass}">
       <div class="run-header">
@@ -106,7 +118,7 @@ function renderRunResult(result: ScenarioRunResult): string {
       </div>
       <div class="traces">
         <h4>Event Traces</h4>
-        ${result.traces.map(renderEventTrace).join('')}
+        ${result.traces.map((t) => renderEventTrace(t, toolCallsByEvent.get(t.eventIndex) ?? [])).join('')}
       </div>
       <div class="assertions-section">
         <h4>Assertions (${passCount}/${totalCount})</h4>
@@ -118,6 +130,7 @@ function renderRunResult(result: ScenarioRunResult): string {
 function renderScenarioAggregate(agg: ScenarioAggregateResult): string {
   const pct = (agg.passRate * 100).toFixed(0);
   const statusClass = agg.passRate === 1 ? 'passed' : agg.passRate > 0 ? 'partial' : 'failed';
+  const copyData = buildCopyPayload(agg);
 
   return `
     <div class="scenario">
@@ -126,9 +139,46 @@ function renderScenarioAggregate(agg: ScenarioAggregateResult): string {
         <span class="scenario-name">${escapeHtml(agg.scenarioName)}</span>
         <span class="pass-rate">${pct}% pass (${agg.runs.length} runs)</span>
         <span class="area badge">${escapeHtml(agg.area)}</span>
+        <button class="copy-btn" onclick="copyScenario(this)" data-payload="${escapeHtml(JSON.stringify(copyData))}">📋 Copy</button>
       </div>
       ${agg.runs.map(renderRunResult).join('')}
     </div>`;
+}
+
+function buildCopyPayload(agg: ScenarioAggregateResult): object {
+  return {
+    scenario: agg.scenarioId,
+    name: agg.scenarioName,
+    area: agg.area,
+    passRate: agg.passRate,
+    runs: agg.runs.map((run) => ({
+      passed: run.passed,
+      traces: run.traces
+        .filter((t) => t.eventIndex >= 0) // skip init
+        .map((t) => {
+          const mcpCalls = run.allToolCalls
+            .filter((tc) => tc.eventIndex === t.eventIndex)
+            .map((tc) => ({ tool: tc.tool, args: tc.args }));
+          return {
+            event: `#${t.eventIndex} ${formatEventSummary(t.event)}`,
+            ...(t.promptSent.length < 500
+              ? { prompt: t.promptSent }
+              : { prompt: '[system prompt omitted — event content in event field]' }),
+            ...(mcpCalls.length > 0 ? { mcpToolCalls: mcpCalls } : {}),
+            agentOutput: t.agentOutput || '(empty)',
+            isSkip: t.isSkip,
+          };
+        }),
+      assertions: run.assertions.map((a) => ({
+        description:
+          'description' in a.expectation && a.expectation.description ? a.expectation.description : a.expectation.type,
+        passed: a.passed,
+        reason: a.reason,
+        ...(a.score !== undefined ? { score: a.score } : {}),
+        ...(a.judgeReasoning ? { judgeReasoning: a.judgeReasoning } : {}),
+      })),
+    })),
+  };
 }
 
 const CSS = `
@@ -144,6 +194,9 @@ const CSS = `
   .scenario-header h2 { font-size: 16px; color: #f0f6fc; }
   .scenario-name { color: #8b949e; font-size: 13px; }
   .pass-rate { margin-left: auto; font-weight: 600; font-size: 13px; }
+  .copy-btn { background: #21262d; border: 1px solid #30363d; color: #8b949e; padding: 4px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.15s; }
+  .copy-btn:hover { background: #30363d; color: #c9d1d9; }
+  .copy-btn.copied { background: #238636; border-color: #238636; color: #fff; }
   .badge { font-size: 11px; padding: 2px 8px; border-radius: 12px; background: #30363d; color: #8b949e; }
   .badge.skip { background: #1f2d3d; color: #58a6ff; }
   .run-result { padding: 16px 20px; border-top: 1px solid #21262d; }
@@ -198,6 +251,17 @@ export function generateTraceReport(
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Eval Trace — ${config.agentType} ${config.model} ${timestamp}</title>
   <style>${CSS}</style>
+  <script>
+  function copyScenario(btn) {
+    const payload = JSON.parse(btn.dataset.payload);
+    const text = JSON.stringify(payload, null, 2);
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = '✅ Copied';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = '📋 Copy'; btn.classList.remove('copied'); }, 2000);
+    });
+  }
+  </script>
 </head>
 <body>
   <h1>🧪 Newio Agent Eval — Trace Report</h1>
@@ -220,7 +284,7 @@ export function generateTraceReport(
 </html>`;
 
   const modelSlug = config.model.replace(/[^a-zA-Z0-9.-]/g, '_');
-  const scenarioSlug = config.scenarioId ? `-${config.scenarioId}` : '';
+  const scenarioSlug = config.scenarioId ? `-${config.scenarioId.slice(0, 60)}` : '';
   const filename = `trace-${config.agentType}-${modelSlug}-${config.sessionMode}${scenarioSlug}-${timestamp}.html`;
   const filepath = join(outputDir, filename);
   writeFileSync(filepath, html, 'utf-8');

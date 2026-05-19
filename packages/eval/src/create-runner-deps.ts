@@ -54,6 +54,7 @@ export async function createScenarioRunnerDeps(
       type: c.type,
       name: c.name,
     })),
+    memoryStore: scenario.setup.memoryStore,
   });
 
   // Hook: every MCP tool call gets recorded in the interceptor

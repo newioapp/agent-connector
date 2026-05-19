@@ -14,8 +14,11 @@ ${memoryRules()}
 </step>
 
 <step name="handoff">
-Output 2-4 sentences describing the current state of work so the next session can pick up context.
-Capture what was happening — not durable facts (those go in memory).
+Write a handoff note so the next session can pick up exactly where you left off — as if continuing the same session.
+
+Include: what was being discussed, what was tried or decided, any pending questions or tasks, and recent context the next session needs (even transient topics like someone venting or a request in progress).
+
+Keep it 2-4 sentences for simple sessions. For longer or multi-conversation sessions, you may write more to capture the full state, but stay concise.
 
 Your final output must be exactly:
 <handoff>Your handoff note here.</handoff>

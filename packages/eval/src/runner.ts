@@ -156,6 +156,7 @@ export async function runScenario(
     promptVersion: config.promptVersion,
     sessionMode: config.sessionMode,
     traces,
+    allToolCalls,
     assertions,
     passed,
     timestamp: new Date().toISOString(),

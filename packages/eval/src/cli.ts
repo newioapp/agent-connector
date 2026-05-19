@@ -78,7 +78,8 @@ async function main(): Promise<void> {
   // Filter scenarios
   let scenarios: readonly EvalScenario[] = allScenarios;
   if (config.scenarioId) {
-    scenarios = scenarios.filter((s) => s.id === config.scenarioId);
+    const ids = config.scenarioId.split(',').map((s) => s.trim());
+    scenarios = scenarios.filter((s) => ids.includes(s.id));
   }
   if (config.area) {
     scenarios = scenarios.filter((s) => s.area === config.area);
@@ -231,6 +232,7 @@ export async function runAllScenarios(
           promptVersion: config.promptVersion,
           sessionMode: effectiveMode,
           traces: [],
+          allToolCalls: [],
           assertions: [
             {
               expectation: { type: 'no_skip' },

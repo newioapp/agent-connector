@@ -68,6 +68,10 @@ export interface MockNewioAppOptions {
     readonly type: string;
     readonly name?: string;
   }[];
+  /** Pre-loaded memory that get_memory MCP tool returns. Keyed by username or conversationId. */
+  readonly memoryStore?: Readonly<
+    Record<string, { summary: string | null; facts: readonly { factId: string; text: string }[] }>
+  >;
 }
 
 /**
@@ -84,12 +88,18 @@ export class MockNewioApp {
     readonly type: string;
     readonly name?: string;
   }[];
+  private readonly memoryStore: Record<string, { summary: string | null; facts: { factId: string; text: string }[] }>;
 
   constructor(opts: MockNewioAppOptions) {
     this.identity = opts.identity;
     this.owner = opts.owner;
     this.contacts = new Map((opts.contacts ?? []).map((c) => [c.username, c]));
     this.conversations = opts.conversations ?? [];
+    this.memoryStore = opts.memoryStore
+      ? Object.fromEntries(
+          Object.entries(opts.memoryStore).map(([k, v]) => [k, { summary: v.summary, facts: [...v.facts] }]),
+        )
+      : {};
   }
 
   getOwnerInfo(): MockOwnerInfo {
@@ -109,23 +119,67 @@ export class MockNewioApp {
     return Promise.resolve(`user_${username}`);
   }
 
-  /** Stub — memory operations are handled by MockMemoryStore via ToolInterceptor. */
-  getContactMemory(_username: string): Promise<{ summary: null; facts: readonly [] }> {
+  /** Stub — returns memory from memoryStore if available, otherwise empty. */
+  getContactMemory(
+    username: string,
+  ): Promise<{ summary: string | null; facts: readonly { factId: string; text: string }[] }> {
+    const data = this.memoryStore[username];
+    if (data) {
+      return Promise.resolve(data);
+    }
     return Promise.resolve({ summary: null, facts: [] });
   }
 
-  getConversationMemory(_conversationId: string): Promise<{ summary: null; facts: readonly [] }> {
+  getConversationMemory(
+    conversationId: string,
+  ): Promise<{ summary: string | null; facts: readonly { factId: string; text: string }[] }> {
+    const data = this.memoryStore[conversationId];
+    if (data) {
+      return Promise.resolve(data);
+    }
     return Promise.resolve({ summary: null, facts: [] });
   }
 
-  async addMemory(_text: string, _opts?: { username?: string; conversationId?: string }): Promise<void> {}
-  async updateMemory(
-    _factId: string,
-    _text: string,
-    _opts?: { username?: string; conversationId?: string },
-  ): Promise<void> {}
-  async deleteMemory(_factId: string, _opts?: { username?: string; conversationId?: string }): Promise<void> {}
-  async updateMemorySummary(_text: string, _opts?: { username?: string; conversationId?: string }): Promise<void> {}
+  private nextFactId = 1;
+
+  addMemory(text: string, opts?: { username?: string; conversationId?: string }): Promise<void> {
+    const key = opts?.username ?? opts?.conversationId ?? '__global__';
+    if (!this.memoryStore[key]) {
+      this.memoryStore[key] = { summary: null, facts: [] };
+    }
+    this.memoryStore[key].facts.push({ factId: `mock_f${this.nextFactId++}`, text });
+    return Promise.resolve();
+  }
+
+  updateMemory(factId: string, text: string, opts?: { username?: string; conversationId?: string }): Promise<void> {
+    const key = opts?.username ?? opts?.conversationId ?? '__global__';
+    const store = this.memoryStore[key];
+    if (store) {
+      const fact = store.facts.find((f) => f.factId === factId);
+      if (fact) {
+        (fact as { factId: string; text: string }).text = text;
+      }
+    }
+    return Promise.resolve();
+  }
+
+  deleteMemory(factId: string, opts?: { username?: string; conversationId?: string }): Promise<void> {
+    const key = opts?.username ?? opts?.conversationId ?? '__global__';
+    const store = this.memoryStore[key];
+    if (store) {
+      store.facts = store.facts.filter((f) => f.factId !== factId);
+    }
+    return Promise.resolve();
+  }
+
+  updateMemorySummary(text: string, opts?: { username?: string; conversationId?: string }): Promise<void> {
+    const key = opts?.username ?? opts?.conversationId ?? '__global__';
+    if (!this.memoryStore[key]) {
+      this.memoryStore[key] = { summary: null, facts: [] };
+    }
+    this.memoryStore[key].summary = text;
+    return Promise.resolve();
+  }
 
   async sendMessage(_conversationId: string, _text?: string, _filePaths?: readonly string[]): Promise<void> {}
   async sendDm(_username: string, _text: string, _filePaths?: readonly string[]): Promise<void> {}

@@ -28,6 +28,7 @@ export type EvalArea =
   | 'cross_session_knowledge'
   | 'memory_quality'
   | 'session_lifecycle'
+  | 'handoff_quality'
   | 'tone_and_language'
   | 'contact_handling'
   | 'cron_execution'
@@ -169,6 +170,10 @@ export interface ScenarioSetup {
   readonly initialHandoffNote?: string;
   readonly contacts?: readonly ContactSetup[];
   readonly conversations?: readonly ConversationSetup[];
+  /** Pre-loaded memory returned by get_memory MCP tool. Keyed by username or conversationId. */
+  readonly memoryStore?: Readonly<
+    Record<string, { summary: string | null; facts: readonly { factId: string; text: string }[] }>
+  >;
 }
 
 /** Scenarios can declare 'both' to run in both isolated and shared modes. */
@@ -244,6 +249,7 @@ export interface ScenarioRunResult {
   readonly promptVersion: string;
   readonly sessionMode: SessionMode | 'both';
   readonly traces: readonly EventTrace[];
+  readonly allToolCalls: readonly ToolCallRecord[];
   readonly assertions: readonly AssertionResult[];
   readonly passed: boolean;
   readonly timestamp: string;
