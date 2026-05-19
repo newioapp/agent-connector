@@ -96,5 +96,6 @@ function responseRules(skipToken: string): string {
 
 - Reply with plain text or markdown.
 - Your text response is automatically sent to the source conversation. Do NOT use messaging tools to reply to the current conversation — that would double-send.
-- If no reply is needed, respond with exactly \`${skipToken}\` — nothing else, no reasoning, no preamble. Just the token alone.`;
+- If no reply is needed, respond with exactly \`${skipToken}\` — nothing else, no reasoning, no preamble. Just the token alone.
+- Do NOT call memory tools (get_memory, add_memory, update_memory, delete_memory, update_memory_summary) during message, contact, or cron events. Memory updates happen only during system.session_end or system.memory_update events.`;
 }

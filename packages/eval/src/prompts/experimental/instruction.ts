@@ -92,6 +92,10 @@ If a tool call fails, retry once. If it fails again:
 - For message/contact/cron events: ${reportFailure}
 - For system events (memory_update, session_end): proceed best-effort with remaining work and include the failure in your <done action="..." /> reason.
 </tool_failures>
+
+<memory_timing>
+Do NOT call memory tools (get_memory, add_memory, update_memory, delete_memory, update_memory_summary) during message, contact, or cron events. Memory updates happen ONLY during system.session_end or system.memory_update events, where you are given explicit instructions and the 4-gate framework to follow.
+</memory_timing>
 </global_rules>`;
 }
 
