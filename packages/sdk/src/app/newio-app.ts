@@ -669,6 +669,51 @@ export class NewioApp {
   }
 
   // ---------------------------------------------------------------------------
+  // Client-facing methods (used by MCP tools — avoid direct client access)
+  // ---------------------------------------------------------------------------
+  /* v8 ignore start */
+
+  /** Get full conversation details including members. */
+  async getConversationDetails(conversationId: string): Promise<import('../core/types.js').GetConversationResponse> {
+    return this.client.getConversation({ conversationId });
+  }
+
+  /** Add members to a conversation by their userIds. */
+  async addMembers(conversationId: string, memberIds: readonly string[]): Promise<void> {
+    await this.client.addMembers({ conversationId, memberIds: [...memberIds] });
+  }
+
+  /** Remove a member from a conversation by userId. */
+  async removeMember(conversationId: string, userId: string): Promise<void> {
+    await this.client.removeMember({ conversationId, userId });
+  }
+
+  /** List messages in a conversation (paginated, newest first). */
+  async listMessages(
+    conversationId: string,
+    limit?: number,
+    beforeMessageId?: string,
+  ): Promise<import('../core/types.js').ListMessagesResponse> {
+    return this.client.listMessages({ conversationId, limit: limit ?? 20, beforeMessageId });
+  }
+
+  /** Get this agent's own profile. */
+  async getMe(): Promise<import('../core/types.js').GetMeResponse> {
+    return this.client.getMe({});
+  }
+
+  /** Search users by display name or username (partial match). */
+  async searchUsers(query: string): Promise<import('../core/types.js').SearchUsersResponse> {
+    return this.client.searchUsers({ query });
+  }
+
+  /** Get a user's public profile by exact username. */
+  async getUserByUsername(username: string): Promise<import('../core/types.js').GetUserByUsernameResponse> {
+    return this.client.getUserByUsername({ username });
+  }
+  /* v8 ignore stop */
+
+  // ---------------------------------------------------------------------------
   // Conversation helpers
   // ---------------------------------------------------------------------------
 

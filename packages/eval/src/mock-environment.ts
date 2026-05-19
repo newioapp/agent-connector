@@ -2,11 +2,11 @@
  * Mock environment for eval scenarios.
  *
  * Provides:
- * - MockNewioApp: minimal NewioApp stub for PromptFormatterImpl
+ * - MockNewioApp: realistic in-memory NewioApp that holds and mutates state
  * - ToolInterceptor: captures MCP tool calls for assertion
  * - MockMemoryStore: in-memory memory store that records operations
  */
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import type { ToolCallRecord } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -17,7 +17,6 @@ import type { ToolCallRecord } from './types.js';
 /** Generate a deterministic UUID from a key string. Exported for use in scenario fixtures. */
 export function deterministicUuid(key: string): string {
   const hash = createHash('sha256').update(key).digest('hex');
-  // Format as UUID v4 (set version nibble to 4, variant bits to 10xx)
   return [
     hash.slice(0, 8),
     hash.slice(8, 12),
@@ -43,7 +42,7 @@ export function groupConversationId(name: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// MockNewioApp — satisfies PromptFormatterImpl's needs
+// Types
 // ---------------------------------------------------------------------------
 
 export interface MockIdentity {
@@ -59,95 +58,419 @@ export interface MockOwnerInfo {
   readonly displayName: string;
 }
 
+interface MockContact {
+  userId: string;
+  username: string;
+  displayName: string;
+  accountType: string;
+}
+
+interface MockMember {
+  userId: string;
+  username: string;
+  displayName: string;
+  accountType: string;
+  role: string;
+}
+
+interface MockConversation {
+  conversationId: string;
+  type: string;
+  name?: string;
+  members: MockMember[];
+  createdBy: string;
+  createdAt: string;
+  lastMessageAt?: string;
+}
+
+interface MockMessage {
+  messageId: string;
+  conversationId: string;
+  senderId: string;
+  content: { text?: string; attachments?: { fileName: string; contentType: string; size: number; s3Key: string }[] };
+  createdAt: string;
+}
+
+interface MockFriendRequest {
+  username: string;
+  displayName: string;
+  accountType: string;
+  note?: string;
+}
+
+interface MockUserProfile {
+  userId: string;
+  username: string;
+  displayName: string;
+  accountType: string;
+  bio?: string;
+  avatarUrl?: string;
+}
+
+interface MockCronJob {
+  cronId: string;
+  expression: string;
+  label: string;
+  payload?: unknown;
+}
+
+// ---------------------------------------------------------------------------
+// MockNewioAppOptions
+// ---------------------------------------------------------------------------
+
 export interface MockNewioAppOptions {
   readonly identity: MockIdentity;
   readonly owner: MockOwnerInfo;
-  readonly contacts?: readonly { readonly username: string; readonly displayName: string }[];
+  readonly contacts?: readonly {
+    readonly username: string;
+    readonly displayName: string;
+    readonly accountType?: string;
+  }[];
   readonly conversations?: readonly {
     readonly conversationId: string;
     readonly type: string;
     readonly name?: string;
+    readonly members?: readonly {
+      readonly username: string;
+      readonly displayName: string;
+      readonly accountType: string;
+      readonly role?: string;
+    }[];
   }[];
-  /** Pre-loaded memory that get_memory MCP tool returns. Keyed by username or conversationId. */
+  readonly messages?: readonly MockMessage[];
+  readonly incomingFriendRequests?: readonly MockFriendRequest[];
+  readonly users?: readonly MockUserProfile[];
   readonly memoryStore?: Readonly<
     Record<string, { summary: string | null; facts: readonly { factId: string; text: string }[] }>
   >;
 }
 
+// ---------------------------------------------------------------------------
+// MockNewioApp — realistic in-memory simulation
+// ---------------------------------------------------------------------------
+
 /**
- * Minimal mock that satisfies what PromptFormatterImpl and MCP tools need.
- * Does NOT extend NewioApp — it's a duck-typed stand-in with only the
- * properties/methods the engine actually calls during prompt formatting.
+ * In-memory NewioApp mock that holds mutable state for contacts, conversations,
+ * members, messages, friend requests, and memory. All IDs are UUIDs.
  */
 export class MockNewioApp {
   readonly identity: MockIdentity;
   private readonly owner: MockOwnerInfo;
-  private readonly contacts: ReadonlyMap<string, { readonly username: string; readonly displayName: string }>;
-  private readonly conversations: readonly {
-    readonly conversationId: string;
-    readonly type: string;
-    readonly name?: string;
-  }[];
+  private readonly contacts: Map<string, MockContact>;
+  private readonly conversations: Map<string, MockConversation>;
+  private readonly messages: Map<string, MockMessage[]>; // keyed by conversationId
+  private readonly incomingFriendRequests: MockFriendRequest[];
+  private readonly users: Map<string, MockUserProfile>;
   private readonly memoryStore: Record<string, { summary: string | null; facts: { factId: string; text: string }[] }>;
+  private readonly cronJobs: Map<string, MockCronJob>;
+  private nextFactId = 1;
 
   constructor(opts: MockNewioAppOptions) {
     this.identity = opts.identity;
     this.owner = opts.owner;
-    this.contacts = new Map((opts.contacts ?? []).map((c) => [c.username, c]));
-    this.conversations = opts.conversations ?? [];
+
+    // Contacts
+    this.contacts = new Map();
+    for (const c of opts.contacts ?? []) {
+      const userId = deterministicUuid(`user:${c.username}`);
+      this.contacts.set(c.username, {
+        userId,
+        username: c.username,
+        displayName: c.displayName,
+        accountType: c.accountType ?? 'human',
+      });
+    }
+
+    // Conversations with members
+    this.conversations = new Map();
+    for (const c of opts.conversations ?? []) {
+      const members: MockMember[] = (c.members ?? []).map((m) => ({
+        userId: deterministicUuid(`user:${m.username}`),
+        username: m.username,
+        displayName: m.displayName,
+        accountType: m.accountType,
+        role: m.role ?? 'member',
+      }));
+      this.conversations.set(c.conversationId, {
+        conversationId: c.conversationId,
+        type: c.type,
+        name: c.name,
+        members,
+        createdBy: opts.identity.userId,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    // Messages
+    this.messages = new Map();
+    for (const m of opts.messages ?? []) {
+      const list = this.messages.get(m.conversationId) ?? [];
+      list.push(m);
+      this.messages.set(m.conversationId, list);
+    }
+
+    // Friend requests
+    this.incomingFriendRequests = [...(opts.incomingFriendRequests ?? [])];
+
+    // User profiles (for search/lookup)
+    this.users = new Map();
+    for (const u of opts.users ?? []) {
+      this.users.set(u.username, u);
+    }
+    // Also add contacts as users for lookup
+    for (const c of this.contacts.values()) {
+      if (!this.users.has(c.username)) {
+        this.users.set(c.username, { ...c });
+      }
+    }
+
+    // Memory
     this.memoryStore = opts.memoryStore
       ? Object.fromEntries(
           Object.entries(opts.memoryStore).map(([k, v]) => [k, { summary: v.summary, facts: [...v.facts] }]),
         )
       : {};
+
+    // Cron
+    this.cronJobs = new Map();
   }
+
+  // ── Identity ──────────────────────────────────────────────────────────────
 
   getOwnerInfo(): MockOwnerInfo {
     return this.owner;
   }
 
-  getAllContacts(): readonly { readonly username: string; readonly displayName: string }[] {
-    return [...this.contacts.values()];
+  // ── Contacts ──────────────────────────────────────────────────────────────
+
+  getAllContacts(): { username: string; displayName: string; accountType: string }[] {
+    return [...this.contacts.values()].map((c) => ({
+      username: c.username,
+      displayName: c.displayName,
+      accountType: c.accountType,
+    }));
   }
 
-  getAllConversations(): readonly { readonly conversationId: string; readonly type: string; readonly name?: string }[] {
-    return this.conversations;
-  }
-
-  /** Stub — returns the username as userId for simplicity in tests. */
   resolveUsername(username: string): Promise<string> {
-    return Promise.resolve(`user_${username}`);
+    const contact = this.contacts.get(username);
+    if (contact) {
+      return Promise.resolve(contact.userId);
+    }
+    return Promise.resolve(deterministicUuid(`user:${username}`));
   }
 
-  /** Stub — returns memory from memoryStore if available, otherwise empty. */
+  listIncomingFriendRequests(): readonly MockFriendRequest[] {
+    return this.incomingFriendRequests;
+  }
+
+  async sendFriendRequestByUsername(_username: string, _note?: string): Promise<void> {}
+
+  acceptFriendRequestByUsername(username: string): Promise<void> {
+    const idx = this.incomingFriendRequests.findIndex((r) => r.username === username);
+    if (idx >= 0) {
+      const req = this.incomingFriendRequests[idx];
+      if (req) {
+        this.incomingFriendRequests.splice(idx, 1);
+        this.contacts.set(username, {
+          userId: deterministicUuid(`user:${username}`),
+          username,
+          displayName: req.displayName,
+          accountType: req.accountType,
+        });
+      }
+    }
+    return Promise.resolve();
+  }
+
+  rejectFriendRequestByUsername(username: string): Promise<void> {
+    const idx = this.incomingFriendRequests.findIndex((r) => r.username === username);
+    if (idx >= 0) {
+      this.incomingFriendRequests.splice(idx, 1);
+    }
+    return Promise.resolve();
+  }
+
+  removeFriendByUsername(username: string): Promise<void> {
+    this.contacts.delete(username);
+    return Promise.resolve();
+  }
+
+  // ── Conversations ─────────────────────────────────────────────────────────
+
+  getAllConversations(): { conversationId: string; type: string; name?: string; lastMessageAt?: string }[] {
+    return [...this.conversations.values()].map((c) => ({
+      conversationId: c.conversationId,
+      type: c.type,
+      name: c.name,
+      lastMessageAt: c.lastMessageAt,
+    }));
+  }
+
+  getOrCreateDm(username: string): Promise<string> {
+    const convId = dmConversationId(username);
+    if (!this.conversations.has(convId)) {
+      const contact = this.contacts.get(username);
+      this.conversations.set(convId, {
+        conversationId: convId,
+        type: 'dm',
+        members: [
+          {
+            userId: this.identity.userId,
+            username: this.identity.username,
+            displayName: this.identity.displayName ?? this.identity.username,
+            accountType: 'agent',
+            role: 'member',
+          },
+          ...(contact
+            ? [
+                {
+                  userId: contact.userId,
+                  username: contact.username,
+                  displayName: contact.displayName,
+                  accountType: contact.accountType,
+                  role: 'member',
+                },
+              ]
+            : []),
+        ],
+        createdBy: this.identity.userId,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    return Promise.resolve(convId);
+  }
+
+  createWorkSession(name: string, usernames: readonly string[]): Promise<string> {
+    const convId = workSessionConversationId(name);
+    const members: MockMember[] = [
+      {
+        userId: this.identity.userId,
+        username: this.identity.username,
+        displayName: this.identity.displayName ?? this.identity.username,
+        accountType: 'agent',
+        role: 'admin',
+      },
+    ];
+    for (const u of usernames) {
+      const c = this.contacts.get(u);
+      members.push({
+        userId: c?.userId ?? deterministicUuid(`user:${u}`),
+        username: u,
+        displayName: c?.displayName ?? u,
+        accountType: c?.accountType ?? 'human',
+        role: 'member',
+      });
+    }
+    this.conversations.set(convId, {
+      conversationId: convId,
+      type: 'temp_group',
+      name,
+      members,
+      createdBy: this.identity.userId,
+      createdAt: new Date().toISOString(),
+    });
+    return Promise.resolve(convId);
+  }
+
+  createGroup(name: string, usernames: readonly string[]): Promise<string> {
+    const convId = groupConversationId(name);
+    const members: MockMember[] = [
+      {
+        userId: this.identity.userId,
+        username: this.identity.username,
+        displayName: this.identity.displayName ?? this.identity.username,
+        accountType: 'agent',
+        role: 'admin',
+      },
+    ];
+    for (const u of usernames) {
+      const c = this.contacts.get(u);
+      members.push({
+        userId: c?.userId ?? deterministicUuid(`user:${u}`),
+        username: u,
+        displayName: c?.displayName ?? u,
+        accountType: c?.accountType ?? 'human',
+        role: 'member',
+      });
+    }
+    this.conversations.set(convId, {
+      conversationId: convId,
+      type: 'group',
+      name,
+      members,
+      createdBy: this.identity.userId,
+      createdAt: new Date().toISOString(),
+    });
+    return Promise.resolve(convId);
+  }
+
+  // ── Messaging ─────────────────────────────────────────────────────────────
+
+  sendMessage(conversationId: string, text?: string, _filePaths?: readonly string[]): Promise<void> {
+    const msg: MockMessage = {
+      messageId: randomUUID(),
+      conversationId,
+      senderId: this.identity.userId,
+      content: { text: text ?? undefined },
+      createdAt: new Date().toISOString(),
+    };
+    const list = this.messages.get(conversationId) ?? [];
+    list.push(msg);
+    this.messages.set(conversationId, list);
+    const conv = this.conversations.get(conversationId);
+    if (conv) {
+      conv.lastMessageAt = msg.createdAt;
+    }
+    return Promise.resolve();
+  }
+
+  async sendDm(username: string, text: string, _filePaths?: readonly string[]): Promise<void> {
+    const convId = await this.getOrCreateDm(username);
+    await this.sendMessage(convId, text);
+  }
+
+  async dmOwner(text: string, _filePaths?: readonly string[]): Promise<void> {
+    await this.sendDm(this.owner.username, text);
+  }
+
+  downloadAttachment(_conversationId: string, _s3Key: string, fileName: string): Promise<string> {
+    return Promise.resolve(`/tmp/newio-downloads/${fileName}`);
+  }
+
+  // ── Cron ──────────────────────────────────────────────────────────────────
+
+  scheduleCron(job: { cronId: string; expression: string; label: string; payload?: unknown }): void {
+    this.cronJobs.set(job.cronId, job);
+  }
+
+  cancelCron(cronId: string): 'cancelled' | 'not_found' {
+    return this.cronJobs.delete(cronId) ? 'cancelled' : 'not_found';
+  }
+
+  listCrons(): MockCronJob[] {
+    return [...this.cronJobs.values()];
+  }
+
+  // ── Memory ────────────────────────────────────────────────────────────────
+
   getContactMemory(
     username: string,
   ): Promise<{ summary: string | null; facts: readonly { factId: string; text: string }[] }> {
-    const data = this.memoryStore[username];
-    if (data) {
-      return Promise.resolve(data);
-    }
-    return Promise.resolve({ summary: null, facts: [] });
+    return Promise.resolve(this.memoryStore[username] ?? { summary: null, facts: [] });
   }
 
   getConversationMemory(
     conversationId: string,
   ): Promise<{ summary: string | null; facts: readonly { factId: string; text: string }[] }> {
-    const data = this.memoryStore[conversationId];
-    if (data) {
-      return Promise.resolve(data);
-    }
-    return Promise.resolve({ summary: null, facts: [] });
+    return Promise.resolve(this.memoryStore[conversationId] ?? { summary: null, facts: [] });
   }
-
-  private nextFactId = 1;
 
   addMemory(text: string, opts?: { username?: string; conversationId?: string }): Promise<void> {
     const key = opts?.username ?? opts?.conversationId ?? '__global__';
     if (!this.memoryStore[key]) {
       this.memoryStore[key] = { summary: null, facts: [] };
     }
-    this.memoryStore[key].facts.push({ factId: `mock_f${this.nextFactId++}`, text });
+    this.memoryStore[key].facts.push({ factId: `fact_${this.nextFactId++}`, text });
     return Promise.resolve();
   }
 
@@ -181,47 +504,124 @@ export class MockNewioApp {
     return Promise.resolve();
   }
 
-  async sendMessage(_conversationId: string, _text?: string, _filePaths?: readonly string[]): Promise<void> {}
-  async sendDm(_username: string, _text: string, _filePaths?: readonly string[]): Promise<void> {}
-  async dmOwner(_text: string, _filePaths?: readonly string[]): Promise<void> {}
-  getOrCreateDm(username: string): Promise<string> {
-    return Promise.resolve(dmConversationId(username));
+  // ── Client-facing methods (match NewioApp public API) ───────────────────
+
+  getMe(): Promise<{
+    userId: string;
+    username: string;
+    displayName: string;
+    accountType: string;
+    bio?: string;
+    avatarUrl?: string;
+  }> {
+    return Promise.resolve({
+      userId: this.identity.userId,
+      username: this.identity.username,
+      displayName: this.identity.displayName ?? this.identity.username,
+      accountType: 'agent',
+      bio: undefined,
+      avatarUrl: this.identity.avatarUrl,
+    });
   }
 
-  async sendFriendRequestByUsername(_username: string, _note?: string): Promise<void> {}
-  async acceptFriendRequestByUsername(_username: string): Promise<void> {}
-  async rejectFriendRequestByUsername(_username: string): Promise<void> {}
-  async removeFriendByUsername(_username: string): Promise<void> {}
-
-  listIncomingFriendRequests(): readonly [] {
-    return [];
+  getConversationDetails(conversationId: string): Promise<{
+    conversationId: string;
+    type: string;
+    name?: string;
+    members: MockMember[];
+    createdBy: string;
+    createdAt: string;
+    updatedAt: string;
+    lastMessageAt?: string;
+  }> {
+    const conv = this.conversations.get(conversationId);
+    return Promise.resolve({
+      conversationId,
+      type: conv?.type ?? 'dm',
+      name: conv?.name,
+      members: conv?.members ?? [],
+      createdBy: conv?.createdBy ?? '',
+      createdAt: conv?.createdAt ?? '',
+      updatedAt: conv?.createdAt ?? '',
+      lastMessageAt: conv?.lastMessageAt,
+    });
   }
 
-  createWorkSession(name: string, _usernames: readonly string[]): Promise<string> {
-    return Promise.resolve(workSessionConversationId(name));
+  addMembers(conversationId: string, memberIds: readonly string[]): Promise<void> {
+    const conv = this.conversations.get(conversationId);
+    if (conv) {
+      for (const userId of memberIds) {
+        if (!conv.members.some((m) => m.userId === userId)) {
+          const contact = [...this.contacts.values()].find((c) => c.userId === userId);
+          conv.members.push({
+            userId,
+            username: contact?.username ?? userId,
+            displayName: contact?.displayName ?? userId,
+            accountType: contact?.accountType ?? 'human',
+            role: 'member',
+          });
+        }
+      }
+    }
+    return Promise.resolve();
   }
 
-  createGroup(name: string, _usernames: readonly string[]): Promise<string> {
-    return Promise.resolve(groupConversationId(name));
+  removeMember(conversationId: string, userId: string): Promise<void> {
+    const conv = this.conversations.get(conversationId);
+    if (conv) {
+      conv.members = conv.members.filter((m) => m.userId !== userId);
+    }
+    return Promise.resolve();
   }
 
-  // Stub client for tools that reach through to app.client
-  readonly client = {
-    listMessages: () => Promise.resolve({ messages: [] }),
-    getConversation: () =>
-      Promise.resolve({
-        conversationId: '',
-        type: 'dm',
-        members: [],
-        name: undefined,
-        createdBy: '',
-        createdAt: '',
-        updatedAt: '',
-        lastMessageAt: undefined,
-      }),
-    addMembers: () => Promise.resolve(),
-    removeMember: () => Promise.resolve(),
-  };
+  listMessages(
+    conversationId: string,
+    limit?: number,
+    beforeMessageId?: string,
+  ): Promise<{
+    messages: {
+      messageId: string;
+      conversationId: string;
+      senderId: string;
+      content: {
+        text?: string;
+        attachments?: { fileName: string; contentType: string; size: number; s3Key: string }[];
+      };
+      createdAt: string;
+    }[];
+  }> {
+    const all = this.messages.get(conversationId) ?? [];
+    let filtered = [...all].reverse(); // newest first
+    if (beforeMessageId) {
+      const idx = filtered.findIndex((m) => m.messageId === beforeMessageId);
+      if (idx >= 0) {
+        filtered = filtered.slice(idx + 1);
+      }
+    }
+    const messages = filtered.slice(0, limit ?? 20);
+    return Promise.resolve({ messages });
+  }
+
+  searchUsers(query: string): Promise<{ users: MockUserProfile[] }> {
+    const q = query.toLowerCase();
+    const results = [...this.users.values()].filter(
+      (u) => u.username.toLowerCase().includes(q) || u.displayName.toLowerCase().includes(q),
+    );
+    return Promise.resolve({ users: results });
+  }
+
+  getUserByUsername(username: string): Promise<MockUserProfile> {
+    const user = this.users.get(username);
+    if (user) {
+      return Promise.resolve(user);
+    }
+    return Promise.resolve({
+      userId: deterministicUuid(`user:${username}`),
+      username,
+      displayName: username,
+      accountType: 'human',
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -232,32 +632,26 @@ export class ToolInterceptor {
   private readonly calls: ToolCallRecord[] = [];
   private currentEventIndex: number | undefined;
 
-  /** Set the active event index. Tool calls recorded after this will be tagged with it. */
   setEventIndex(index: number | undefined): void {
     this.currentEventIndex = index;
   }
 
-  /** Record a tool call. */
   record(tool: string, args: Record<string, unknown>, result?: unknown): void {
     this.calls.push({ tool, args, timestamp: Date.now(), eventIndex: this.currentEventIndex, result });
   }
 
-  /** Get all recorded tool calls. */
   getAll(): readonly ToolCallRecord[] {
     return this.calls;
   }
 
-  /** Get tool calls since a given index (for per-event slicing). */
   getSince(startIndex: number): readonly ToolCallRecord[] {
     return this.calls.slice(startIndex);
   }
 
-  /** Current count (use as marker before event processing). */
   get count(): number {
     return this.calls.length;
   }
 
-  /** Clear all recorded calls. */
   clear(): void {
     this.calls.length = 0;
   }
@@ -312,17 +706,14 @@ export class MockMemoryStore {
     this.operations.push({ op: 'update_summary', scope, scopeId, text, timestamp: Date.now() });
   }
 
-  /** Get all recorded operations. */
   getOperations(): readonly MemoryOperation[] {
     return this.operations;
   }
 
-  /** Get operations of a specific type. */
   getOperationsByType(op: MemoryOperation['op']): readonly MemoryOperation[] {
     return this.operations.filter((o) => o.op === op);
   }
 
-  /** Clear all state. */
   clear(): void {
     this.operations.length = 0;
     this.facts.clear();

@@ -1,7 +1,8 @@
 /**
- * ToolDescriptions — provides MCP tool names, descriptions, and parameter descriptions.
+ * ToolDescriptions — provides MCP tool names, descriptions, parameter descriptions,
+ * and output field descriptions (for tools that return structured JSON/YAML).
  *
- * Each tool has a named interface with a toolName field and typed param keys.
+ * Tools that return plain text confirmations do not have an output field.
  */
 
 // ── Contacts ──
@@ -9,6 +10,11 @@
 export interface ListFriendsToolDesc {
   readonly toolName: string;
   readonly description: string;
+  readonly output: {
+    readonly username: string;
+    readonly displayName: string;
+    readonly accountType: string;
+  };
 }
 
 export interface SendFriendRequestToolDesc {
@@ -20,6 +26,12 @@ export interface SendFriendRequestToolDesc {
 export interface ListIncomingFriendRequestsToolDesc {
   readonly toolName: string;
   readonly description: string;
+  readonly output: {
+    readonly username: string;
+    readonly displayName: string;
+    readonly accountType: string;
+    readonly note: string;
+  };
 }
 
 export interface AcceptFriendRequestToolDesc {
@@ -45,30 +57,64 @@ export interface RemoveFriendToolDesc {
 export interface ListConversationsToolDesc {
   readonly toolName: string;
   readonly description: string;
+  readonly params: { readonly limit: string; readonly afterConversationId: string };
+  readonly output: {
+    readonly conversationId: string;
+    readonly type: string;
+    readonly name: string;
+  };
 }
 
 export interface CreateDmToolDesc {
   readonly toolName: string;
   readonly description: string;
   readonly params: { readonly username: string };
+  readonly output: { readonly conversationId: string };
 }
 
 export interface CreateWorkSessionToolDesc {
   readonly toolName: string;
   readonly description: string;
   readonly params: { readonly name: string; readonly usernames: string };
+  readonly output: { readonly conversationId: string };
 }
 
 export interface CreateGroupToolDesc {
   readonly toolName: string;
   readonly description: string;
   readonly params: { readonly name: string; readonly usernames: string };
+  readonly output: { readonly conversationId: string };
 }
 
 export interface GetConversationToolDesc {
   readonly toolName: string;
   readonly description: string;
   readonly params: { readonly conversationId: string };
+  readonly output: {
+    readonly conversationId: string;
+    readonly type: string;
+    readonly name: string;
+    readonly admins: string;
+  };
+}
+
+export interface CheckIsMemberToolDesc {
+  readonly toolName: string;
+  readonly description: string;
+  readonly params: { readonly conversationId: string; readonly username: string };
+  readonly output: { readonly isMember: string };
+}
+
+export interface ListConversationMembersToolDesc {
+  readonly toolName: string;
+  readonly description: string;
+  readonly params: { readonly conversationId: string; readonly limit: string; readonly afterUsername: string };
+  readonly output: {
+    readonly username: string;
+    readonly displayName: string;
+    readonly accountType: string;
+    readonly role: string;
+  };
 }
 
 export interface AddMembersToolDesc {
@@ -107,6 +153,13 @@ export interface ListMessagesToolDesc {
   readonly toolName: string;
   readonly description: string;
   readonly params: { readonly conversationId: string; readonly limit: string; readonly beforeMessageId: string };
+  readonly output: {
+    readonly messageId: string;
+    readonly senderId: string;
+    readonly text: string;
+    readonly attachments: string;
+    readonly createdAt: string;
+  };
 }
 
 // ── Messaging (isolated) ──
@@ -122,18 +175,40 @@ export interface InitiateConversationToolDesc {
 export interface GetMyProfileToolDesc {
   readonly toolName: string;
   readonly description: string;
+  readonly output: {
+    readonly userId: string;
+    readonly username: string;
+    readonly displayName: string;
+    readonly accountType: string;
+    readonly bio: string;
+    readonly avatarUrl: string;
+  };
 }
 
 export interface SearchUsersToolDesc {
   readonly toolName: string;
   readonly description: string;
   readonly params: { readonly query: string };
+  readonly output: {
+    readonly userId: string;
+    readonly username: string;
+    readonly displayName: string;
+    readonly accountType: string;
+  };
 }
 
 export interface GetUserProfileToolDesc {
   readonly toolName: string;
   readonly description: string;
   readonly params: { readonly username: string };
+  readonly output: {
+    readonly userId: string;
+    readonly username: string;
+    readonly displayName: string;
+    readonly accountType: string;
+    readonly bio: string;
+    readonly avatarUrl: string;
+  };
 }
 
 // ── Media ──
@@ -148,6 +223,7 @@ export interface DownloadAttachmentToolDesc {
   readonly toolName: string;
   readonly description: string;
   readonly params: { readonly conversationId: string; readonly s3Key: string; readonly fileName: string };
+  readonly output: { readonly localPath: string };
 }
 
 // ── Cron ──
@@ -167,6 +243,11 @@ export interface CancelCronToolDesc {
 export interface ListCronsToolDesc {
   readonly toolName: string;
   readonly description: string;
+  readonly output: {
+    readonly cronId: string;
+    readonly expression: string;
+    readonly label: string;
+  };
 }
 
 // ── Memory ──
@@ -175,6 +256,10 @@ export interface GetMemoryToolDesc {
   readonly toolName: string;
   readonly description: string;
   readonly params: { readonly username: string; readonly conversationId: string };
+  readonly output: {
+    readonly summary: string;
+    readonly facts: string;
+  };
 }
 
 export interface AddMemoryToolDesc {
@@ -221,6 +306,8 @@ export interface ToolDescriptions {
   createWorkSession(): CreateWorkSessionToolDesc;
   createGroup(): CreateGroupToolDesc;
   getConversation(): GetConversationToolDesc;
+  checkIsMember(): CheckIsMemberToolDesc;
+  listConversationMembers(): ListConversationMembersToolDesc;
   addMembers(): AddMembersToolDesc;
   removeMember(): RemoveMemberToolDesc;
 
@@ -252,7 +339,15 @@ export interface ToolDescriptions {
 
 export class DefaultToolDescriptions implements ToolDescriptions {
   listFriends(): ListFriendsToolDesc {
-    return { toolName: 'list_friends', description: 'List all friends (contacts) of this agent' };
+    return {
+      toolName: 'list_friends',
+      description: 'List all friends (contacts) of this agent',
+      output: {
+        username: 'Unique username identifier',
+        displayName: 'Human-readable display name',
+        accountType: 'Either "human" or "agent"',
+      },
+    };
   }
 
   sendFriendRequest(): SendFriendRequestToolDesc {
@@ -267,7 +362,16 @@ export class DefaultToolDescriptions implements ToolDescriptions {
   }
 
   listIncomingFriendRequests(): ListIncomingFriendRequestsToolDesc {
-    return { toolName: 'list_incoming_friend_requests', description: 'List pending incoming friend requests' };
+    return {
+      toolName: 'list_incoming_friend_requests',
+      description: 'List pending incoming friend requests',
+      output: {
+        username: 'Username of the requester',
+        displayName: 'Display name of the requester',
+        accountType: 'Either "human" or "agent"',
+        note: 'Optional note included with the request',
+      },
+    };
   }
 
   acceptFriendRequest(): AcceptFriendRequestToolDesc {
@@ -295,7 +399,19 @@ export class DefaultToolDescriptions implements ToolDescriptions {
   }
 
   listConversations(): ListConversationsToolDesc {
-    return { toolName: 'list_conversations', description: 'List all conversations this agent is part of' };
+    return {
+      toolName: 'list_conversations',
+      description: 'List conversations this agent is part of (paginated, sorted by most recent activity)',
+      params: {
+        limit: 'Max conversations to return (default 20)',
+        afterConversationId: 'Get conversations after this ID (for pagination)',
+      },
+      output: {
+        conversationId: 'Unique conversation identifier',
+        type: 'Conversation type: "dm", "group", or "temp_group"',
+        name: 'Conversation name (groups only)',
+      },
+    };
   }
 
   createDm(): CreateDmToolDesc {
@@ -304,6 +420,7 @@ export class DefaultToolDescriptions implements ToolDescriptions {
       description:
         'Get or create a DM conversation with a user by username. Returns the conversationId. Use this to obtain the conversationId for a DM before using initiate_conversation.',
       params: { username: 'Username of the user to DM' },
+      output: { conversationId: 'The DM conversation ID (existing or newly created)' },
     };
   }
 
@@ -313,6 +430,7 @@ export class DefaultToolDescriptions implements ToolDescriptions {
       description:
         'Create a work session — a collaborative conversation for you, your owner, and peer agents to coordinate on tasks',
       params: { name: 'Work session name', usernames: 'Usernames of users to include' },
+      output: { conversationId: 'The newly created work session conversation ID' },
     };
   }
 
@@ -322,14 +440,52 @@ export class DefaultToolDescriptions implements ToolDescriptions {
       description:
         "Create a named group conversation with admin controls. You can add human users, but only an agent's owner can add other agents to a named group.",
       params: { name: 'Group name', usernames: 'Usernames of users to include' },
+      output: { conversationId: 'The newly created group conversation ID' },
     };
   }
 
   getConversation(): GetConversationToolDesc {
     return {
       toolName: 'get_conversation',
-      description: 'Get details and members of a conversation',
+      description:
+        'Get metadata of a conversation (type, name, admins). Use list_conversation_members to get the member list.',
       params: { conversationId: 'Conversation ID' },
+      output: {
+        conversationId: 'Conversation ID',
+        type: 'Conversation type: "dm", "group", or "temp_group"',
+        name: 'Conversation name (groups only)',
+        admins: 'Array of admin usernames (groups only)',
+      },
+    };
+  }
+
+  checkIsMember(): CheckIsMemberToolDesc {
+    return {
+      toolName: 'check_is_member',
+      description: 'Check whether a specific user is a member of a conversation',
+      params: {
+        conversationId: 'Conversation ID to check',
+        username: 'Username to look for',
+      },
+      output: { isMember: 'true if the user is a member, false otherwise' },
+    };
+  }
+
+  listConversationMembers(): ListConversationMembersToolDesc {
+    return {
+      toolName: 'list_conversation_members',
+      description: 'List members of a conversation (paginated)',
+      params: {
+        conversationId: 'Conversation ID',
+        limit: 'Max members to return (default 20)',
+        afterUsername: 'Get members after this username (for pagination)',
+      },
+      output: {
+        username: 'Member username',
+        displayName: 'Member display name',
+        accountType: 'Either "human" or "agent"',
+        role: 'Member role: "admin" or "member"',
+      },
     };
   }
 
@@ -396,6 +552,13 @@ export class DefaultToolDescriptions implements ToolDescriptions {
         limit: 'Max messages to return (default 20)',
         beforeMessageId: 'Get messages before this message ID (for pagination)',
       },
+      output: {
+        messageId: 'Unique message ID (ULID)',
+        senderId: 'User ID of the sender',
+        text: 'Message text content',
+        attachments: 'Array of attachments with fileName, contentType, size, s3Key',
+        createdAt: 'ISO 8601 timestamp',
+      },
     };
   }
 
@@ -413,7 +576,18 @@ export class DefaultToolDescriptions implements ToolDescriptions {
   }
 
   getMyProfile(): GetMyProfileToolDesc {
-    return { toolName: 'get_my_profile', description: "Get this agent's own profile" };
+    return {
+      toolName: 'get_my_profile',
+      description: "Get this agent's own profile",
+      output: {
+        userId: 'Unique user ID',
+        username: 'Username',
+        displayName: 'Display name',
+        accountType: 'Always "agent"',
+        bio: 'Profile bio text',
+        avatarUrl: 'Avatar image URL',
+      },
+    };
   }
 
   searchUsers(): SearchUsersToolDesc {
@@ -422,6 +596,12 @@ export class DefaultToolDescriptions implements ToolDescriptions {
       description:
         'Search for users by display name or username (partial match). For exact lookup by username, use get_user_profile instead.',
       params: { query: 'Search query — matches against display name and username' },
+      output: {
+        userId: 'Unique user ID',
+        username: 'Username',
+        displayName: 'Display name',
+        accountType: 'Either "human" or "agent"',
+      },
     };
   }
 
@@ -431,6 +611,14 @@ export class DefaultToolDescriptions implements ToolDescriptions {
       description:
         "Get a user's public profile by exact username. Use this for looking up a specific user when you know their username.",
       params: { username: 'Exact username to look up' },
+      output: {
+        userId: 'Unique user ID',
+        username: 'Username',
+        displayName: 'Display name',
+        accountType: 'Either "human" or "agent"',
+        bio: 'Profile bio text',
+        avatarUrl: 'Avatar image URL',
+      },
     };
   }
 
@@ -452,6 +640,7 @@ export class DefaultToolDescriptions implements ToolDescriptions {
         s3Key: 'The s3Key from the message attachment',
         fileName: 'The fileName from the message attachment',
       },
+      output: { localPath: 'Absolute file path where the attachment was saved' },
     };
   }
 
@@ -477,7 +666,15 @@ export class DefaultToolDescriptions implements ToolDescriptions {
   }
 
   listCrons(): ListCronsToolDesc {
-    return { toolName: 'list_crons', description: 'List all active cron jobs for this agent' };
+    return {
+      toolName: 'list_crons',
+      description: 'List all active cron jobs for this agent',
+      output: {
+        cronId: 'Unique cron job ID',
+        expression: 'Schedule expression',
+        label: 'Human-readable description of the job',
+      },
+    };
   }
 
   getMemory(): GetMemoryToolDesc {
@@ -486,6 +683,10 @@ export class DefaultToolDescriptions implements ToolDescriptions {
       description:
         'Load memory about a person or conversation that was not pre-loaded at session start (e.g., a new participant joined). Requires either a username or conversationId.',
       params: { username: 'Username of the person', conversationId: 'Conversation ID' },
+      output: {
+        summary: 'High-level summary of the scope (or null if not set)',
+        facts: 'Array of { factId, text } stored facts',
+      },
     };
   }
 

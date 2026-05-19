@@ -62,7 +62,7 @@ export function registerMemoryTools(
       onToolCall?.(am.toolName, { text, username, conversationId });
       validateNotSelf(username);
       await app.addMemory(text, { username, conversationId });
-      return yaml({ stored: true });
+      return { content: [{ type: 'text' as const, text: 'Memory fact stored.' }] };
     },
   );
 
@@ -82,7 +82,7 @@ export function registerMemoryTools(
       onToolCall?.(um.toolName, { factId, text, username, conversationId });
       validateNotSelf(username);
       await app.updateMemory(factId, text, { username, conversationId });
-      return yaml({ updated: true });
+      return { content: [{ type: 'text' as const, text: 'Memory fact updated.' }] };
     },
   );
 
@@ -101,7 +101,7 @@ export function registerMemoryTools(
       onToolCall?.(dm.toolName, { factId, username, conversationId });
       validateNotSelf(username);
       await app.deleteMemory(factId, { username, conversationId });
-      return yaml({ deleted: true });
+      return { content: [{ type: 'text' as const, text: 'Memory fact deleted.' }] };
     },
   );
 
@@ -120,7 +120,7 @@ export function registerMemoryTools(
       onToolCall?.(ums.toolName, { text, username, conversationId });
       validateNotSelf(username);
       await app.updateMemorySummary(text, { username, conversationId });
-      return yaml({ updated: true });
+      return { content: [{ type: 'text' as const, text: 'Memory summary updated.' }] };
     },
   );
 }

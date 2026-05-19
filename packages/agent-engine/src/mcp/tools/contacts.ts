@@ -49,7 +49,10 @@ export function registerContactsTools(
   const afr = desc.acceptFriendRequest();
   server.registerTool(
     afr.toolName,
-    { description: afr.description, inputSchema: { username: z.string().describe(afr.params.username) } },
+    {
+      description: afr.description,
+      inputSchema: { username: z.string().describe(afr.params.username) },
+    },
     async ({ username }) => {
       onToolCall?.(afr.toolName, { username });
       await app.acceptFriendRequestByUsername(username);
@@ -60,7 +63,10 @@ export function registerContactsTools(
   const rfr = desc.rejectFriendRequest();
   server.registerTool(
     rfr.toolName,
-    { description: rfr.description, inputSchema: { username: z.string().describe(rfr.params.username) } },
+    {
+      description: rfr.description,
+      inputSchema: { username: z.string().describe(rfr.params.username) },
+    },
     async ({ username }) => {
       onToolCall?.(rfr.toolName, { username });
       await app.rejectFriendRequestByUsername(username);
@@ -71,7 +77,10 @@ export function registerContactsTools(
   const rf = desc.removeFriend();
   server.registerTool(
     rf.toolName,
-    { description: rf.description, inputSchema: { username: z.string().describe(rf.params.username) } },
+    {
+      description: rf.description,
+      inputSchema: { username: z.string().describe(rf.params.username) },
+    },
     async ({ username }) => {
       onToolCall?.(rf.toolName, { username });
       await app.removeFriendByUsername(username);
