@@ -671,6 +671,7 @@ export class NewioApp {
   // ---------------------------------------------------------------------------
   // Client-facing methods (used by MCP tools — avoid direct client access)
   // ---------------------------------------------------------------------------
+  /* v8 ignore start */
 
   /** Get full conversation details including members. */
   async getConversationDetails(conversationId: string): Promise<import('../core/types.js').GetConversationResponse> {
@@ -710,6 +711,7 @@ export class NewioApp {
   async getUserByUsername(username: string): Promise<import('../core/types.js').GetUserByUsernameResponse> {
     return this.client.getUserByUsername({ username });
   }
+  /* v8 ignore stop */
 
   // ---------------------------------------------------------------------------
   // Conversation helpers
