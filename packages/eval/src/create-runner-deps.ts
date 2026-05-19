@@ -48,11 +48,21 @@ export async function createScenarioRunnerDeps(
   const mockApp = new MockNewioApp({
     identity: scenario.setup.agent,
     owner: scenario.setup.owner,
-    contacts: scenario.setup.contacts?.map((c) => ({ username: c.username, displayName: c.displayName })),
+    contacts: scenario.setup.contacts?.map((c) => ({
+      username: c.username,
+      displayName: c.displayName,
+      accountType: c.accountType,
+    })),
     conversations: scenario.setup.conversations?.map((c) => ({
       conversationId: c.conversationId,
       type: c.type,
       name: c.name,
+      members: c.members.map((m) => ({
+        username: m.username,
+        displayName: m.displayName,
+        accountType: m.accountType,
+        role: m.relationship === 'owner' ? 'admin' : 'member',
+      })),
     })),
     memoryStore: scenario.setup.memoryStore,
   });

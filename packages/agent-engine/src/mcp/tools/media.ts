@@ -8,7 +8,6 @@ import type { IdGetter, ToolCallHook } from '../types.js';
 import type { ToolDescriptions } from '../tool-descriptions.js';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
-const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
 
 function requireCurrentConversationId(getter: IdGetter): string {
   const id = getter();
@@ -36,7 +35,7 @@ export function registerMediaTools(
       onToolCall?.(up.toolName, { filePaths });
       const convId = requireCurrentConversationId(getCurrentConversationId);
       await app.sendMessage(convId, undefined, filePaths);
-      return json({ sent: filePaths.length, convId });
+      return text(`Uploaded ${filePaths.length} file(s) to conversation ${convId}`);
     },
   );
 
@@ -50,11 +49,14 @@ export function registerMediaTools(
         s3Key: z.string().describe(dl.params.s3Key),
         fileName: z.string().describe(dl.params.fileName),
       },
+      outputSchema: z.object({
+        localPath: z.string().describe(dl.output.localPath),
+      }),
     },
     async ({ conversationId, s3Key, fileName }) => {
       onToolCall?.(dl.toolName, { conversationId, s3Key, fileName });
       const localPath = await app.downloadAttachment(conversationId, s3Key, fileName);
-      return text(localPath);
+      return { content: [{ type: 'text' as const, text: localPath }], structuredContent: { localPath } };
     },
   );
 }

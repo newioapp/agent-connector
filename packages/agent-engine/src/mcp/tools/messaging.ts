@@ -93,7 +93,7 @@ export function registerMessagingTools(
     },
     async ({ conversationId, limit, beforeMessageId }) => {
       onToolCall?.(lm.toolName, { conversationId, limit, beforeMessageId });
-      const resp = await app.client.listMessages({ conversationId, limit: limit ?? 20, beforeMessageId });
+      const resp = await app.listMessages(conversationId, limit ?? 20, beforeMessageId);
       const messages = resp.messages.map((m) => ({
         messageId: m.messageId,
         senderId: m.senderId,
