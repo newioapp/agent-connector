@@ -41,6 +41,9 @@ import type {
   OwnerInfo,
   ContactSummary,
   ConversationSummary,
+  ConversationInfo,
+  PaginatedConversations,
+  PaginatedMembers,
   FriendRequestSummary,
   MemberSummary,
   AppEventHandlers,
@@ -673,9 +676,71 @@ export class NewioApp {
   // ---------------------------------------------------------------------------
   /* v8 ignore start */
 
-  /** Get full conversation details including members. */
-  async getConversationDetails(conversationId: string): Promise<import('../core/types.js').GetConversationResponse> {
-    return this.client.getConversation({ conversationId });
+  /** Paginate over conversations. */
+  listConversations(limit?: number, afterConversationId?: string): PaginatedConversations {
+    const all = this.getAllConversations();
+    const pageSize = limit ?? 20;
+    let startIdx = 0;
+    if (afterConversationId) {
+      const idx = all.findIndex((c) => c.conversationId === afterConversationId);
+      if (idx >= 0) {
+        startIdx = idx + 1;
+      }
+    }
+    const page = all.slice(startIdx, startIdx + pageSize);
+    const hasMore = startIdx + pageSize < all.length;
+    return {
+      conversations: page.map((c) => ({
+        conversationId: c.conversationId,
+        type: c.type,
+        ...(c.name ? { name: c.name } : {}),
+      })),
+      hasMore,
+    };
+  }
+
+  /** Paginate over conversation members. */
+  async listConversationMembers(
+    conversationId: string,
+    limit?: number,
+    afterUsername?: string,
+  ): Promise<PaginatedMembers> {
+    const conv = await this.client.getConversation({ conversationId });
+    const allMembers = conv.members.map((m) => ({
+      username: m.username ?? m.userId,
+      displayName: m.displayName ?? m.username ?? m.userId,
+      accountType: m.accountType,
+      role: m.role,
+    }));
+    const pageSize = limit ?? 20;
+    let startIdx = 0;
+    if (afterUsername) {
+      const idx = allMembers.findIndex((m) => m.username.toLowerCase() === afterUsername.toLowerCase());
+      if (idx >= 0) {
+        startIdx = idx + 1;
+      }
+    }
+    const page = allMembers.slice(startIdx, startIdx + pageSize);
+    const hasMore = startIdx + pageSize < allMembers.length;
+    return { members: page, hasMore };
+  }
+
+  /** Get conversation info with admins list. */
+  async getConversationInfo(conversationId: string): Promise<ConversationInfo> {
+    const conv = await this.client.getConversation({ conversationId });
+    const admins = conv.members.filter((m) => m.role === 'admin').map((m) => m.username ?? m.userId);
+    return {
+      conversationId: conv.conversationId,
+      type: conv.type,
+      ...(conv.name ? { name: conv.name } : {}),
+      admins,
+    };
+  }
+
+  /** Check if a user is a member of a conversation. */
+  async checkIsMember(conversationId: string, username: string): Promise<boolean> {
+    const conv = await this.client.getConversation({ conversationId });
+    return conv.members.some((m) => m.username?.toLowerCase() === username.toLowerCase());
   }
 
   /** Add members to a conversation by their userIds. */
@@ -683,8 +748,20 @@ export class NewioApp {
     await this.client.addMembers({ conversationId, memberIds: [...memberIds] });
   }
 
+  /** Add members to a conversation by usernames. */
+  async addMembersByUsername(conversationId: string, usernames: readonly string[]): Promise<void> {
+    const memberIds = await Promise.all(usernames.map((u) => this.resolveUsername(u)));
+    await this.client.addMembers({ conversationId, memberIds });
+  }
+
   /** Remove a member from a conversation by userId. */
   async removeMember(conversationId: string, userId: string): Promise<void> {
+    await this.client.removeMember({ conversationId, userId });
+  }
+
+  /** Remove a member from a conversation by username. */
+  async removeMemberByUsername(conversationId: string, username: string): Promise<void> {
+    const userId = await this.resolveUsername(username);
     await this.client.removeMember({ conversationId, userId });
   }
 

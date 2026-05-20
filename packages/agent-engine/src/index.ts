@@ -69,6 +69,8 @@ export type {
   UdsServerOptions,
   ToolCallHook,
   NewioMcpServerOptions,
+  NewioAppForMcp,
+  McpContactSummary,
   ToolDescriptions,
 } from './mcp/index.js';
 export type {

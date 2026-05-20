@@ -3,8 +3,7 @@
  */
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { NewioApp } from '@newio/agent-sdk';
-import type { IdGetter, ToolCallHook } from '../types.js';
+import type { IdGetter, NewioAppForMcp, ToolCallHook } from '../types.js';
 import type { ToolDescriptions } from '../tool-descriptions.js';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
@@ -19,7 +18,7 @@ function requireCurrentConversationId(getter: IdGetter): string {
 
 export function registerMediaTools(
   server: McpServer,
-  app: NewioApp,
+  app: NewioAppForMcp,
   desc: ToolDescriptions,
   getCurrentConversationId: IdGetter,
   onToolCall?: ToolCallHook,

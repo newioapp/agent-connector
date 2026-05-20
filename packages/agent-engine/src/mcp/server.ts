@@ -10,7 +10,6 @@
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import type { NewioApp } from '@newio/agent-sdk';
 import { registerContactsTools } from './tools/contacts.js';
 import { registerConversationsTools } from './tools/conversations.js';
 import { registerCronTools } from './tools/cron.js';
@@ -18,12 +17,12 @@ import { registerMessagingTools } from './tools/messaging.js';
 import { registerUsersTools } from './tools/users.js';
 import { registerMediaTools } from './tools/media.js';
 import { registerMemoryTools } from './tools/memory.js';
-import type { IdGetter, ToolCallHook } from './types.js';
+import type { IdGetter, NewioAppForMcp, ToolCallHook } from './types.js';
 import type { SessionMode } from '../types.js';
 import { DefaultToolDescriptions, type ToolDescriptions } from './tool-descriptions.js';
 
 export interface NewioMcpServerOptions {
-  readonly app: NewioApp;
+  readonly app: NewioAppForMcp;
   readonly initiateConversation: (convId: string, context: string) => void;
   readonly sessionMode: SessionMode;
   /** Optional hook called before each tool invocation. */

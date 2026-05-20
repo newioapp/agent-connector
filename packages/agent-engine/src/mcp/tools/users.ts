@@ -3,15 +3,14 @@
  */
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { NewioApp } from '@newio/agent-sdk';
-import type { ToolCallHook } from '../types.js';
+import type { NewioAppForMcp, ToolCallHook } from '../types.js';
 import type { ToolDescriptions } from '../tool-descriptions.js';
 
 const json = (obj: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(obj, null, 2) }] });
 
 export function registerUsersTools(
   server: McpServer,
-  app: NewioApp,
+  app: NewioAppForMcp,
   desc: ToolDescriptions,
   onToolCall?: ToolCallHook,
 ): void {

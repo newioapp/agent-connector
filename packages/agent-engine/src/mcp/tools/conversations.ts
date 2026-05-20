@@ -1,27 +1,26 @@
 /**
- * Conversations tools — thin MCP wrappers over NewioApp conversation methods.
+ * Conversations tools — thin MCP wrappers over NewioAppForMcp conversation methods.
  */
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { NewioApp } from '@newio/agent-sdk';
-import type { ToolCallHook } from '../types.js';
+import type { NewioAppForMcp, ToolCallHook } from '../types.js';
 import type { ToolDescriptions } from '../tool-descriptions.js';
 import type { SessionMode } from '../../types.js';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
-const structured = (obj: Record<string, unknown>) => ({
+const structured = (obj: object) => ({
   content: [{ type: 'text' as const, text: JSON.stringify(obj, null, 2) }],
-  structuredContent: obj,
+  structuredContent: obj as Record<string, unknown>,
 });
 
 export function registerConversationsTools(
   server: McpServer,
-  app: NewioApp,
+  app: NewioAppForMcp,
   desc: ToolDescriptions,
   sessionMode: SessionMode,
   onToolCall?: ToolCallHook,
 ): void {
-  // ── list_conversations (paginated, structured) ──
+  // ── list_conversations ──
   const lc = desc.listConversations();
   server.registerTool(
     lc.toolName,
@@ -44,45 +43,24 @@ export function registerConversationsTools(
     },
     ({ limit, afterConversationId }) => {
       onToolCall?.(lc.toolName, { limit, afterConversationId });
-      const all = app.getAllConversations();
-      const pageSize = limit ?? 20;
-      let startIdx = 0;
-      if (afterConversationId) {
-        const idx = all.findIndex((c) => c.conversationId === afterConversationId);
-        if (idx >= 0) {
-          startIdx = idx + 1;
-        }
-      }
-      const page = all.slice(startIdx, startIdx + pageSize);
-      const hasMore = startIdx + pageSize < all.length;
-      const conversations = page.map((c) => ({
-        conversationId: c.conversationId,
-        type: c.type,
-        ...(c.name ? { name: c.name } : {}),
-      }));
-      return structured({ conversations, hasMore });
+      return structured(app.listConversations(limit, afterConversationId));
     },
   );
 
   // ── create_dm (isolated only) ──
-  const cd = desc.createDm();
   if (sessionMode === 'isolated') {
+    const cd = desc.createDm();
     server.registerTool(
       cd.toolName,
       {
         description: cd.description,
         inputSchema: { username: z.string().describe(cd.params.username) },
-        outputSchema: z.object({
-          conversationId: z.string().describe(cd.output.conversationId),
-        }),
+        outputSchema: z.object({ conversationId: z.string().describe(cd.output.conversationId) }),
       },
       async ({ username }) => {
         onToolCall?.(cd.toolName, { username });
         const conversationId = await app.getOrCreateDm(username);
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ conversationId }) }],
-          structuredContent: { conversationId },
-        };
+        return structured({ conversationId });
       },
     );
   }
@@ -97,17 +75,12 @@ export function registerConversationsTools(
         name: z.string().describe(cws.params.name),
         usernames: z.array(z.string()).describe(cws.params.usernames),
       },
-      outputSchema: z.object({
-        conversationId: z.string().describe(cws.output.conversationId),
-      }),
+      outputSchema: z.object({ conversationId: z.string().describe(cws.output.conversationId) }),
     },
     async ({ name, usernames }) => {
       onToolCall?.(cws.toolName, { name, usernames });
       const conversationId = await app.createWorkSession(name, usernames);
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify({ conversationId }) }],
-        structuredContent: { conversationId },
-      };
+      return structured({ conversationId });
     },
   );
 
@@ -121,21 +94,16 @@ export function registerConversationsTools(
         name: z.string().describe(cg.params.name),
         usernames: z.array(z.string()).describe(cg.params.usernames),
       },
-      outputSchema: z.object({
-        conversationId: z.string().describe(cg.output.conversationId),
-      }),
+      outputSchema: z.object({ conversationId: z.string().describe(cg.output.conversationId) }),
     },
     async ({ name, usernames }) => {
       onToolCall?.(cg.toolName, { name, usernames });
       const conversationId = await app.createGroup(name, usernames);
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify({ conversationId }) }],
-        structuredContent: { conversationId },
-      };
+      return structured({ conversationId });
     },
   );
 
-  // ── get_conversation (structured, no members) ──
+  // ── get_conversation ──
   const gc = desc.getConversation();
   server.registerTool(
     gc.toolName,
@@ -151,15 +119,7 @@ export function registerConversationsTools(
     },
     async ({ conversationId }) => {
       onToolCall?.(gc.toolName, { conversationId });
-      const conv = await app.getConversationDetails(conversationId);
-      const admins = conv.members.filter((m) => m.role === 'admin').map((m) => m.username ?? m.userId);
-      const result = {
-        conversationId: conv.conversationId,
-        type: conv.type,
-        ...(conv.name ? { name: conv.name } : {}),
-        admins,
-      };
-      return structured(result);
+      return structured(await app.getConversationInfo(conversationId));
     },
   );
 
@@ -173,19 +133,16 @@ export function registerConversationsTools(
         conversationId: z.string().describe(cim.params.conversationId),
         username: z.string().describe(cim.params.username),
       },
-      outputSchema: z.object({
-        isMember: z.boolean().describe(cim.output.isMember),
-      }),
+      outputSchema: z.object({ isMember: z.boolean().describe(cim.output.isMember) }),
     },
     async ({ conversationId, username }) => {
       onToolCall?.(cim.toolName, { conversationId, username });
-      const conv = await app.getConversationDetails(conversationId);
-      const isMember = conv.members.some((m) => m.username?.toLowerCase() === username.toLowerCase());
+      const isMember = await app.checkIsMember(conversationId, username);
       return structured({ isMember });
     },
   );
 
-  // ── list_conversation_members (paginated, structured) ──
+  // ── list_conversation_members ──
   const lcm = desc.listConversationMembers();
   server.registerTool(
     lcm.toolName,
@@ -210,24 +167,7 @@ export function registerConversationsTools(
     },
     async ({ conversationId, limit, afterUsername }) => {
       onToolCall?.(lcm.toolName, { conversationId, limit, afterUsername });
-      const conv = await app.getConversationDetails(conversationId);
-      const allMembers = conv.members.map((m) => ({
-        username: m.username ?? m.userId,
-        displayName: m.displayName ?? m.username ?? m.userId,
-        accountType: m.accountType,
-        role: m.role,
-      }));
-      const pageSize = limit ?? 20;
-      let startIdx = 0;
-      if (afterUsername) {
-        const idx = allMembers.findIndex((m) => m.username.toLowerCase() === afterUsername.toLowerCase());
-        if (idx >= 0) {
-          startIdx = idx + 1;
-        }
-      }
-      const page = allMembers.slice(startIdx, startIdx + pageSize);
-      const hasMore = startIdx + pageSize < allMembers.length;
-      return structured({ members: page, hasMore });
+      return structured(await app.listConversationMembers(conversationId, limit, afterUsername));
     },
   );
 
@@ -244,8 +184,7 @@ export function registerConversationsTools(
     },
     async ({ conversationId, usernames }) => {
       onToolCall?.(am.toolName, { conversationId, usernames });
-      const memberIds = await Promise.all(usernames.map((u) => app.resolveUsername(u)));
-      await app.addMembers(conversationId, memberIds);
+      await app.addMembersByUsername(conversationId, usernames);
       return text(`Added ${usernames.join(', ')} to conversation`);
     },
   );
@@ -263,8 +202,7 @@ export function registerConversationsTools(
     },
     async ({ conversationId, username }) => {
       onToolCall?.(rm.toolName, { conversationId, username });
-      const userId = await app.resolveUsername(username);
-      await app.removeMember(conversationId, userId);
+      await app.removeMemberByUsername(conversationId, username);
       return text(`Removed @${username} from conversation`);
     },
   );

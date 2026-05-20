@@ -3,8 +3,7 @@
  */
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { NewioApp } from '@newio/agent-sdk';
-import type { IdGetter, ToolCallHook } from '../types';
+import type { IdGetter, NewioAppForMcp, ToolCallHook } from '../types';
 import type { ToolDescriptions } from '../tool-descriptions.js';
 import type { SessionMode } from '../../types';
 
@@ -13,7 +12,7 @@ const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
 
 export function registerMessagingTools(
   server: McpServer,
-  app: NewioApp,
+  app: NewioAppForMcp,
   desc: ToolDescriptions,
   initiateConversation: (convId: string, context: string) => void,
   getCurrentConversationId: IdGetter,

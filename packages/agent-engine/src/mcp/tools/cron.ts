@@ -3,8 +3,7 @@
  */
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { NewioApp } from '@newio/agent-sdk';
-import type { ToolCallHook } from '../types.js';
+import type { NewioAppForMcp, ToolCallHook } from '../types.js';
 import type { ToolDescriptions } from '../tool-descriptions.js';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
@@ -12,7 +11,7 @@ const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
 
 export function registerCronTools(
   server: McpServer,
-  app: NewioApp,
+  app: NewioAppForMcp,
   desc: ToolDescriptions,
   onToolCall?: ToolCallHook,
 ): void {
