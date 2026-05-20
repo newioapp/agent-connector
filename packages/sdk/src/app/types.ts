@@ -137,6 +137,34 @@ export interface ConversationSummary {
   readonly lastMessageAt: string | undefined;
 }
 
+/** Paginated conversation list result. */
+export interface PaginatedConversations {
+  readonly conversations: readonly { readonly conversationId: string; readonly type: string; readonly name?: string }[];
+  readonly hasMore: boolean;
+}
+
+/** Member list item in a paginated members result. */
+export interface MemberListItem {
+  readonly username: string;
+  readonly displayName: string;
+  readonly accountType: string;
+  readonly role: string;
+}
+
+/** Paginated members result. */
+export interface PaginatedMembers {
+  readonly members: readonly MemberListItem[];
+  readonly hasMore: boolean;
+}
+
+/** Conversation info with admins. */
+export interface ConversationInfo {
+  readonly conversationId: string;
+  readonly type: string;
+  readonly name?: string;
+  readonly admins: readonly string[];
+}
+
 /** Agent-friendly incoming friend request. */
 export interface FriendRequestSummary {
   readonly username: string | undefined;

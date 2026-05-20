@@ -8,6 +8,7 @@
  */
 import { createHash, randomUUID } from 'crypto';
 import type { ToolCallRecord } from './types.js';
+import type { NewioAppForMcp, McpContactSummary } from '@newio/agent-engine';
 
 // ---------------------------------------------------------------------------
 // Deterministic UUID helper — derives a UUID v4-shaped ID from a stable key.
@@ -153,7 +154,7 @@ export interface MockNewioAppOptions {
  * In-memory NewioApp mock that holds mutable state for contacts, conversations,
  * members, messages, friend requests, and memory. All IDs are UUIDs.
  */
-export class MockNewioApp {
+export class MockNewioApp implements NewioAppForMcp {
   readonly identity: MockIdentity;
   private readonly owner: MockOwnerInfo;
   private readonly contacts: Map<string, MockContact>;
@@ -243,7 +244,7 @@ export class MockNewioApp {
 
   // ── Contacts ──────────────────────────────────────────────────────────────
 
-  getAllContacts(): { username: string; displayName: string; accountType: string }[] {
+  getAllContacts(): McpContactSummary[] {
     return [...this.contacts.values()].map((c) => ({
       username: c.username,
       displayName: c.displayName,
@@ -251,12 +252,9 @@ export class MockNewioApp {
     }));
   }
 
-  resolveUsername(username: string): Promise<string> {
+  private resolveUsername(username: string): string {
     const contact = this.contacts.get(username);
-    if (contact) {
-      return Promise.resolve(contact.userId);
-    }
-    return Promise.resolve(deterministicUuid(`user:${username}`));
+    return contact?.userId ?? deterministicUuid(`user:${username}`);
   }
 
   listIncomingFriendRequests(): readonly MockFriendRequest[] {
@@ -297,13 +295,29 @@ export class MockNewioApp {
 
   // ── Conversations ─────────────────────────────────────────────────────────
 
-  getAllConversations(): { conversationId: string; type: string; name?: string; lastMessageAt?: string }[] {
-    return [...this.conversations.values()].map((c) => ({
-      conversationId: c.conversationId,
-      type: c.type,
-      name: c.name,
-      lastMessageAt: c.lastMessageAt,
-    }));
+  listConversations(
+    limit?: number,
+    afterConversationId?: string,
+  ): { conversations: { conversationId: string; type: string; name?: string }[]; hasMore: boolean } {
+    const all = [...this.conversations.values()];
+    const pageSize = limit ?? 20;
+    let startIdx = 0;
+    if (afterConversationId) {
+      const idx = all.findIndex((c) => c.conversationId === afterConversationId);
+      if (idx >= 0) {
+        startIdx = idx + 1;
+      }
+    }
+    const page = all.slice(startIdx, startIdx + pageSize);
+    const hasMore = startIdx + pageSize < all.length;
+    return {
+      conversations: page.map((c) => ({
+        conversationId: c.conversationId,
+        type: c.type,
+        ...(c.name ? { name: c.name } : {}),
+      })),
+      hasMore,
+    };
   }
 
   getOrCreateDm(username: string): Promise<string> {
@@ -524,39 +538,67 @@ export class MockNewioApp {
     });
   }
 
-  getConversationDetails(conversationId: string): Promise<{
+  getConversationInfo(conversationId: string): Promise<{
     conversationId: string;
     type: string;
     name?: string;
-    members: MockMember[];
-    createdBy: string;
-    createdAt: string;
-    updatedAt: string;
-    lastMessageAt?: string;
+    admins: string[];
   }> {
     const conv = this.conversations.get(conversationId);
+    const admins = (conv?.members ?? []).filter((m) => m.role === 'admin').map((m) => m.username);
     return Promise.resolve({
       conversationId,
       type: conv?.type ?? 'dm',
-      name: conv?.name,
-      members: conv?.members ?? [],
-      createdBy: conv?.createdBy ?? '',
-      createdAt: conv?.createdAt ?? '',
-      updatedAt: conv?.createdAt ?? '',
-      lastMessageAt: conv?.lastMessageAt,
+      ...(conv?.name ? { name: conv.name } : {}),
+      admins,
     });
   }
 
-  addMembers(conversationId: string, memberIds: readonly string[]): Promise<void> {
+  checkIsMember(conversationId: string, username: string): Promise<boolean> {
+    const conv = this.conversations.get(conversationId);
+    const isMember = conv?.members.some((m) => m.username.toLowerCase() === username.toLowerCase()) ?? false;
+    return Promise.resolve(isMember);
+  }
+
+  listConversationMembers(
+    conversationId: string,
+    limit?: number,
+    afterUsername?: string,
+  ): Promise<{
+    members: { username: string; displayName: string; accountType: string; role: string }[];
+    hasMore: boolean;
+  }> {
+    const conv = this.conversations.get(conversationId);
+    const allMembers = (conv?.members ?? []).map((m) => ({
+      username: m.username,
+      displayName: m.displayName,
+      accountType: m.accountType,
+      role: m.role,
+    }));
+    const pageSize = limit ?? 20;
+    let startIdx = 0;
+    if (afterUsername) {
+      const idx = allMembers.findIndex((m) => m.username.toLowerCase() === afterUsername.toLowerCase());
+      if (idx >= 0) {
+        startIdx = idx + 1;
+      }
+    }
+    const page = allMembers.slice(startIdx, startIdx + pageSize);
+    const hasMore = startIdx + pageSize < allMembers.length;
+    return Promise.resolve({ members: page, hasMore });
+  }
+
+  addMembersByUsername(conversationId: string, usernames: readonly string[]): Promise<void> {
     const conv = this.conversations.get(conversationId);
     if (conv) {
-      for (const userId of memberIds) {
+      for (const username of usernames) {
+        const userId = this.resolveUsername(username);
         if (!conv.members.some((m) => m.userId === userId)) {
-          const contact = [...this.contacts.values()].find((c) => c.userId === userId);
+          const contact = this.contacts.get(username);
           conv.members.push({
             userId,
-            username: contact?.username ?? userId,
-            displayName: contact?.displayName ?? userId,
+            username: contact?.username ?? username,
+            displayName: contact?.displayName ?? username,
             accountType: contact?.accountType ?? 'human',
             role: 'member',
           });
@@ -566,9 +608,10 @@ export class MockNewioApp {
     return Promise.resolve();
   }
 
-  removeMember(conversationId: string, userId: string): Promise<void> {
+  removeMemberByUsername(conversationId: string, username: string): Promise<void> {
     const conv = this.conversations.get(conversationId);
     if (conv) {
+      const userId = this.resolveUsername(username);
       conv.members = conv.members.filter((m) => m.userId !== userId);
     }
     return Promise.resolve();

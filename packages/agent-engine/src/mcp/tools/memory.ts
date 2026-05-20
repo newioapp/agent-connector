@@ -3,9 +3,8 @@
  */
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { NewioApp } from '@newio/agent-sdk';
 import { stringify } from 'yaml';
-import type { ToolCallHook } from '../types.js';
+import type { NewioAppForMcp, ToolCallHook } from '../types.js';
 import type { ToolDescriptions } from '../tool-descriptions.js';
 
 const yaml = (obj: unknown) => ({ content: [{ type: 'text' as const, text: stringify(obj) }] });
@@ -13,7 +12,7 @@ const err = (msg: string) => ({ content: [{ type: 'text' as const, text: msg }],
 
 export function registerMemoryTools(
   server: McpServer,
-  app: NewioApp,
+  app: NewioAppForMcp,
   desc: ToolDescriptions,
   onToolCall?: ToolCallHook,
 ): void {

@@ -20,8 +20,7 @@ function mockApp(
   return {
     identity: { userId: 'me', username: 'myagent', displayName: 'My Agent' },
     getAllContacts: vi.fn().mockReturnValue(contacts),
-    getAllConversations: vi.fn().mockReturnValue(conversations),
-    resolveUsername: vi.fn().mockResolvedValue('resolved-id'),
+    listConversations: vi.fn().mockReturnValue({ conversations, hasMore: false }),
     createGroup: vi.fn().mockResolvedValue('group-conv-id'),
     createWorkSession: vi.fn().mockResolvedValue('ws-conv-id'),
     getOrCreateDm: vi.fn().mockResolvedValue('dm-conv-id'),
@@ -42,9 +41,11 @@ function mockApp(
     cancelCron: vi.fn().mockReturnValue('success'),
     listCrons: vi.fn().mockReturnValue([]),
     getMe: vi.fn().mockResolvedValue({ userId: 'me', username: 'myagent' }),
-    getConversationDetails: vi.fn().mockResolvedValue({ conversationId: 'conv-1', type: 'dm', members: [] }),
-    addMembers: vi.fn().mockResolvedValue(undefined),
-    removeMember: vi.fn().mockResolvedValue(undefined),
+    getConversationInfo: vi.fn().mockResolvedValue({ conversationId: 'conv-1', type: 'dm', admins: [] }),
+    checkIsMember: vi.fn().mockResolvedValue(false),
+    listConversationMembers: vi.fn().mockResolvedValue({ members: [], hasMore: false }),
+    addMembersByUsername: vi.fn().mockResolvedValue(undefined),
+    removeMemberByUsername: vi.fn().mockResolvedValue(undefined),
     listMessages: vi.fn().mockResolvedValue({
       messages: [{ messageId: 'msg-1', senderId: 'u1', content: { text: 'hello' }, createdAt: '2026-01-01T00:00:00Z' }],
     }),
@@ -160,7 +161,7 @@ describe('MCP Server', () => {
     const parsed = JSON.parse(getResultText(result)) as { conversations: unknown[]; hasMore: boolean };
     expect(parsed.conversations).toHaveLength(1);
     expect(parsed.hasMore).toBe(false);
-    expect(app.getAllConversations).toHaveBeenCalled();
+    expect(app.listConversations).toHaveBeenCalled();
   });
 
   it('list_friends returns contacts without userIds', async () => {
@@ -352,7 +353,7 @@ describe('MCP Server', () => {
     const result = await client.callTool({ name: 'get_conversation', arguments: { conversationId: 'conv-1' } });
     const parsed = JSON.parse(getResultText(result)) as Record<string, unknown>;
     expect(parsed).toHaveProperty('conversationId', 'conv-1');
-    expect(app.getConversationDetails).toHaveBeenCalledWith('conv-1');
+    expect(app.getConversationInfo).toHaveBeenCalledWith('conv-1');
   });
 
   it('add_members resolves usernames and adds to conversation', async () => {
@@ -362,8 +363,7 @@ describe('MCP Server', () => {
       name: 'add_members',
       arguments: { conversationId: 'conv-1', usernames: ['alice', 'bob'] },
     });
-    expect(app.resolveUsername).toHaveBeenCalledTimes(2);
-    expect(app.addMembers).toHaveBeenCalledWith('conv-1', ['resolved-id', 'resolved-id']);
+    expect(app.addMembersByUsername).toHaveBeenCalledWith('conv-1', ['alice', 'bob']);
   });
 
   it('remove_member resolves username and removes from conversation', async () => {
@@ -373,8 +373,7 @@ describe('MCP Server', () => {
       name: 'remove_member',
       arguments: { conversationId: 'conv-1', username: 'alice' },
     });
-    expect(app.resolveUsername).toHaveBeenCalledWith('alice');
-    expect(app.removeMember).toHaveBeenCalledWith('conv-1', 'resolved-id');
+    expect(app.removeMemberByUsername).toHaveBeenCalledWith('conv-1', 'alice');
   });
 
   it('send_dm sends direct message by username', async () => {
