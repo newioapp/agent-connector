@@ -1,5 +1,5 @@
 /**
- * Experimental prompt formatter — XML format, self-contained prompts.
+ * Eval prompt formatter — XML format, self-contained prompts.
  */
 import type { IncomingMessage, ContactEvent, CronTriggerEvent, LoadSessionMemoryResponse } from '@newio/agent-sdk';
 import type { PromptFormatter } from '@newio/agent-engine';
@@ -15,8 +15,8 @@ import {
 
 export type { SessionMode } from './instruction.js';
 
-export class ExperimentalPromptFormatter implements PromptFormatter {
-  readonly version: string = '0.1.0-experimental';
+export class EvalPromptFormatter implements PromptFormatter {
+  readonly version: string = '0.1.0-v1';
   readonly skipToken: string = '<skip';
 
   constructor(

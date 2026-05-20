@@ -63,7 +63,7 @@ export type {
 } from './prompt-formatter.js';
 
 // MCP server
-export { NewioMcpServer, startUdsServer, DefaultToolDescriptions } from './mcp/index.js';
+export { NewioMcpServer, startUdsServer } from './mcp/index.js';
 export type {
   Transport,
   UdsServerOptions,
@@ -71,38 +71,4 @@ export type {
   NewioMcpServerOptions,
   NewioAppForMcp,
   McpContactSummary,
-  ToolDescriptions,
 } from './mcp/index.js';
-export type {
-  InitiateConversationToolDesc,
-  AddMemoryToolDesc,
-  UpdateMemoryToolDesc,
-  DeleteMemoryToolDesc,
-  UpdateMemorySummaryToolDesc,
-  GetMemoryToolDesc,
-  SendMessageToolDesc,
-  SendDmToolDesc,
-  DmOwnerToolDesc,
-  ListFriendsToolDesc,
-  SendFriendRequestToolDesc,
-  ListIncomingFriendRequestsToolDesc,
-  AcceptFriendRequestToolDesc,
-  RejectFriendRequestToolDesc,
-  RemoveFriendToolDesc,
-  ListConversationsToolDesc,
-  CreateDmToolDesc,
-  CreateWorkSessionToolDesc,
-  CreateGroupToolDesc,
-  GetConversationToolDesc,
-  AddMembersToolDesc,
-  RemoveMemberToolDesc,
-  ListMessagesToolDesc,
-  GetMyProfileToolDesc,
-  SearchUsersToolDesc,
-  GetUserProfileToolDesc,
-  UploadAttachmentToCurrentConversationToolDesc,
-  DownloadAttachmentToolDesc,
-  ScheduleCronToolDesc,
-  CancelCronToolDesc,
-  ListCronsToolDesc,
-} from './mcp/tool-descriptions.js';

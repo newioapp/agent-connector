@@ -1,5 +1,5 @@
 /**
- * NewioMcpServer — MCP server for the Newio messaging platform.
+ * NewioEvalMcpServer — MCP server for eval scenarios.
  *
  * Wraps a {@link NewioApp} instance and exposes developer-friendly MCP tools
  * with username-based lookups instead of UUIDs. Transport-agnostic — callers
@@ -17,10 +17,9 @@ import { registerMessagingTools } from './tools/messaging.js';
 import { registerUsersTools } from './tools/users.js';
 import { registerMediaTools } from './tools/media.js';
 import { registerMemoryTools } from './tools/memory.js';
-import type { IdGetter, NewioAppForMcp, ToolCallHook } from './types.js';
-import type { SessionMode } from '../types.js';
+import type { IdGetter, NewioAppForMcp, SessionMode, ToolCallHook } from './types.js';
 
-export interface NewioMcpServerOptions {
+export interface NewioEvalMcpServerOptions {
   readonly app: NewioAppForMcp;
   readonly initiateConversation: (convId: string, context: string) => void;
   readonly sessionMode: SessionMode;
@@ -33,16 +32,16 @@ export interface NewioMcpServerOptions {
  *
  * @example
  * ```ts
- * const mcpServer = new NewioMcpServer({ app, agent, sessionMode: 'isolated' });
+ * const mcpServer = new NewioEvalMcpServer({ app, agent, sessionMode: 'isolated' });
  * await mcpServer.connect(transport);
  * ```
  */
 
-export class NewioMcpServer {
+export class NewioEvalMcpServer {
   private readonly server: McpServer;
   private getCurrentConversationId: IdGetter;
 
-  constructor(opts: NewioMcpServerOptions) {
+  constructor(opts: NewioEvalMcpServerOptions) {
     this.server = new McpServer({
       name: 'newio-mcp-server',
       version: '0.1.0',

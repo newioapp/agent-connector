@@ -17,7 +17,7 @@ export function registerUsersTools(server: McpServer, app: NewioAppForMcp, onToo
     'search_users',
     {
       description:
-        'Search for users by display name or username (partial match). For exact lookup by username, use get_user_profile instead.',
+        'Search all users on the Newio platform by display name or username (partial match). Use this to find users who are NOT already in your contacts — e.g., when asked to add someone new. You cannot message users found here until they are added as contacts via send_friend_request.',
       inputSchema: { query: z.string().describe('Search query — matches against display name and username') },
     },
     async ({ query }) => {
@@ -31,8 +31,8 @@ export function registerUsersTools(server: McpServer, app: NewioAppForMcp, onToo
     'get_user_profile',
     {
       description:
-        "Get a user's public profile by exact username. Use this for looking up a specific user when you know their username.",
-      inputSchema: { username: z.string().describe('Exact username to look up') },
+        "Get a user's public profile by their exact username (not display name). Use list_contacts or search_users first if you only know the display name.",
+      inputSchema: { username: z.string().describe('Exact username to look up, NOT their display name') },
     },
     async ({ username }) => {
       onToolCall?.('get_user_profile', { username });
