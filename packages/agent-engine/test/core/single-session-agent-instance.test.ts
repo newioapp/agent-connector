@@ -5,7 +5,7 @@ import type { AgentInstanceListener } from '../../src/agent-instance';
 import type { AgentConfig } from '../../src/types';
 import type { CronStore } from '../../src/cron-store';
 import type { EngineConfig } from '../../src/engine-config';
-import type { NewioApp, NewioAppStore, MemberRecord, ConversationListItem } from '@newio/agent-sdk';
+import type { NewioApp, MemberRecord, ConversationListItem } from '@newio/agent-sdk';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -27,22 +27,34 @@ function createMockApp(
   members: Map<string, Map<string, MemberRecord>>,
   conversations?: Map<string, Partial<ConversationListItem>>,
 ): Partial<NewioApp> {
-  const store = {
-    getMembers: vi.fn((conversationId: string) => members.get(conversationId)),
-    getConversation: vi.fn((conversationId: string) => conversations?.get(conversationId)),
-  } as unknown as NewioAppStore;
-
-  const client = {
-    getMemory: vi.fn().mockResolvedValue({ data: { summary: null, facts: [] } }),
-  };
-
   const sendActionRequest = vi.fn().mockResolvedValue({ requestId: 'req-1', selectedOptionId: 'allow_once' });
 
   return {
     identity: { userId: 'agent-1', username: 'test-agent', displayName: 'Test Agent', ownerId },
-    store,
-    client,
     sendActionRequest,
+    getCachedConversationInfo: vi.fn((conversationId: string) => {
+      const conv = conversations?.get(conversationId);
+      if (!conv?.type) {
+        return undefined;
+      }
+      return { type: conv.type, name: conv.name };
+    }),
+    isConversationMember: vi.fn((conversationId: string, userId: string) => {
+      const m = members.get(conversationId);
+      return m?.has(userId) ?? false;
+    }),
+    getConversationMemberIds: vi.fn((conversationId: string) => {
+      const m = members.get(conversationId);
+      return m ? [...m.keys()] : undefined;
+    }),
+    getMemberDisplayInfo: vi.fn((conversationId: string, userId: string) => {
+      const m = members.get(conversationId)?.get(userId);
+      if (!m) {
+        return undefined;
+      }
+      return { username: m.username, displayName: m.displayName };
+    }),
+    getMemoryScope: vi.fn().mockResolvedValue({ summary: null, facts: [] }),
   } as unknown as Partial<NewioApp>;
 }
 
@@ -140,24 +152,24 @@ describe('SingleSessionAgentInstance — lazy memory injection', () => {
   it('fetches conversation and user memory on first encounter', async () => {
     await callInjectContext(instance, convId, mockSession);
 
-    const client = (mockApp as unknown as Record<string, unknown>).client as { getMemory: ReturnType<typeof vi.fn> };
+    const app = mockApp as unknown as { getMemoryScope: ReturnType<typeof vi.fn> };
     // Should fetch conversation memory
-    expect(client.getMemory).toHaveBeenCalledWith({ agentId: 'agent-1', scope: 'conversation', scopeId: convId });
+    expect(app.getMemoryScope).toHaveBeenCalledWith('conversation', convId);
     // Should fetch user memory for user-1 and user-2 (not agent-1)
-    expect(client.getMemory).toHaveBeenCalledWith({ agentId: 'agent-1', scope: 'user', scopeId: 'user-1' });
-    expect(client.getMemory).toHaveBeenCalledWith({ agentId: 'agent-1', scope: 'user', scopeId: 'user-2' });
-    expect(client.getMemory).toHaveBeenCalledTimes(3);
+    expect(app.getMemoryScope).toHaveBeenCalledWith('user', 'user-1');
+    expect(app.getMemoryScope).toHaveBeenCalledWith('user', 'user-2');
+    expect(app.getMemoryScope).toHaveBeenCalledTimes(3);
   });
 
   it('does not re-fetch on subsequent calls for the same conversation', async () => {
     await callInjectContext(instance, convId, mockSession);
 
-    const client = (mockApp as unknown as Record<string, unknown>).client as { getMemory: ReturnType<typeof vi.fn> };
-    client.getMemory.mockClear();
+    const app = mockApp as unknown as { getMemoryScope: ReturnType<typeof vi.fn> };
+    app.getMemoryScope.mockClear();
 
     await callInjectContext(instance, convId, mockSession);
 
-    expect(client.getMemory).not.toHaveBeenCalled();
+    expect(app.getMemoryScope).not.toHaveBeenCalled();
   });
 
   it('tracks injected conversation and user IDs', async () => {
@@ -170,39 +182,44 @@ describe('SingleSessionAgentInstance — lazy memory injection', () => {
   });
 
   it('fetches only new users when a previously-seen user appears in a new conversation', async () => {
-    // First conversation has user-1
-    const members = (mockApp as unknown as Record<string, unknown>).store as NewioAppStore;
     await callInjectContext(instance, convId, mockSession);
 
-    const client = (mockApp as unknown as Record<string, unknown>).client as { getMemory: ReturnType<typeof vi.fn> };
-    client.getMemory.mockClear();
+    const app = mockApp as unknown as {
+      getMemoryScope: ReturnType<typeof vi.fn>;
+      getConversationMemberIds: ReturnType<typeof vi.fn>;
+    };
+    app.getMemoryScope.mockClear();
 
     // Create a second conversation with user-1 (seen) and user-3 (new)
     const newConvId = 'conv-456';
-    const newMembers = new Map([
-      ['agent-1', makeMemberRecord('agent-1', { accountType: 'agent' })],
-      ['user-1', makeMemberRecord('user-1')],
-      ['user-3', makeMemberRecord('user-3', { displayName: 'Charlie' })],
-    ]);
-    (members.getMembers as ReturnType<typeof vi.fn>).mockImplementation((id: string) => {
+    app.getConversationMemberIds.mockImplementation((id: string) => {
       if (id === newConvId) {
-        return newMembers;
+        return ['agent-1', 'user-1', 'user-3'];
       }
       return undefined;
     });
+    (mockApp as unknown as { getMemberDisplayInfo: ReturnType<typeof vi.fn> }).getMemberDisplayInfo.mockImplementation(
+      (cId: string, userId: string) => {
+        if (cId === newConvId && userId === 'user-3') {
+          return { username: 'user-3', displayName: 'Charlie' };
+        }
+        return undefined;
+      },
+    );
 
     await callInjectContext(instance, newConvId, mockSession);
 
     // Should fetch conv memory for new conversation + user-3 only (not user-1)
-    expect(client.getMemory).toHaveBeenCalledWith({ agentId: 'agent-1', scope: 'conversation', scopeId: newConvId });
-    expect(client.getMemory).toHaveBeenCalledWith({ agentId: 'agent-1', scope: 'user', scopeId: 'user-3' });
-    expect(client.getMemory).not.toHaveBeenCalledWith(expect.objectContaining({ scope: 'user', scopeId: 'user-1' }));
+    expect(app.getMemoryScope).toHaveBeenCalledWith('conversation', newConvId);
+    expect(app.getMemoryScope).toHaveBeenCalledWith('user', 'user-3');
+    expect(app.getMemoryScope).not.toHaveBeenCalledWith('user', 'user-1');
   });
 
   it('injects context prompt into session when memory has content', async () => {
-    const client = (mockApp as unknown as Record<string, unknown>).client as { getMemory: ReturnType<typeof vi.fn> };
-    client.getMemory.mockResolvedValueOnce({
-      data: { summary: { text: 'Project discussion channel' }, facts: [{ text: 'Deadline is Friday' }] },
+    const app = mockApp as unknown as { getMemoryScope: ReturnType<typeof vi.fn> };
+    app.getMemoryScope.mockResolvedValueOnce({
+      summary: { text: 'Project discussion channel' },
+      facts: [{ text: 'Deadline is Friday' }],
     });
 
     // Reset the prompt mock to return a fresh generator each time
@@ -228,8 +245,8 @@ describe('SingleSessionAgentInstance — lazy memory injection', () => {
   });
 
   it('gracefully handles getMemory failures', async () => {
-    const client = (mockApp as unknown as Record<string, unknown>).client as { getMemory: ReturnType<typeof vi.fn> };
-    client.getMemory.mockRejectedValue(new Error('Network error'));
+    const app = mockApp as unknown as { getMemoryScope: ReturnType<typeof vi.fn> };
+    app.getMemoryScope.mockRejectedValue(new Error('Network error'));
 
     // Should not throw
     await expect(callInjectContext(instance, convId, mockSession)).resolves.toBeUndefined();

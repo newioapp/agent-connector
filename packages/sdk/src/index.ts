@@ -315,4 +315,11 @@ export type {
   NewioTokens,
 } from './app/index.js';
 export type { NewioAppCreateOptions } from './app/index.js';
-export type { LiveSessionInfoHandler, CancelSessionHandler, CompactSessionHandler } from './app/index.js';
+export type {
+  LiveSessionInfoHandler,
+  CancelSessionHandler,
+  CompactSessionHandler,
+  StartSessionHandler,
+  UpdateMemoryHandler,
+  RotateSessionHandler,
+} from './app/index.js';

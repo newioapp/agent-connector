@@ -1,6 +1,23 @@
 /**
  * Shared types used across the engine.
  */
+import type {
+  ActionRequest,
+  ActionResponse,
+  ActivityStatus,
+  AppEventHandlers,
+  CancelSessionHandler,
+  CompactSessionHandler,
+  LiveSessionInfoHandler,
+  LoadSessionMemoryResponse,
+  MemoryScopeData,
+  ReportAgentInfoRequest,
+  RotateSessionHandler,
+  StartSessionHandler,
+  UpdateMemoryHandler,
+} from '@newio/agent-sdk';
+
+import type { NewioAppForMcp } from './mcp/types.js';
 
 export type SessionType = 'conversation' | 'contact' | 'cron';
 
@@ -224,3 +241,65 @@ export function extractErrorMessage(err: unknown): string {
  *   `initiate_conversation` is not available.
  */
 export type SessionMode = 'isolated' | 'shared';
+
+export interface NewioAppForAgent extends NewioAppForMcp {
+  // ── Lifecycle ──
+  init(): Promise<void>;
+  dispose(): void;
+  onDisconnect(handler: () => void): void;
+
+  // ── Events ──
+  on<K extends keyof AppEventHandlers>(event: K, handler: AppEventHandlers[K]): void;
+
+  // ── Capability handlers (signal routing) ──
+  onLiveSessionInfo(handler: LiveSessionInfoHandler): void;
+  onCancelSession(handler: CancelSessionHandler): void;
+  onCompactSession(handler: CompactSessionHandler): void;
+  onStartSession(handler: StartSessionHandler): void;
+  onUpdateMemory(handler: UpdateMemoryHandler): void;
+  onRotateSession(handler: RotateSessionHandler): void;
+
+  // ── Messaging ──
+  sendActionRequest(
+    conversationId: string,
+    action: ActionRequest,
+    text?: string,
+    visibleTo?: readonly string[],
+  ): Promise<ActionResponse>;
+  setStatus(status: ActivityStatus, conversationId?: string): void;
+
+  // ── Identity & owner ──
+  getOrCreateOwnerDmConversationId(): Promise<string>;
+
+  // ── Conversations ──
+  /** Get conversation type and name (from cache). */
+  getCachedConversationInfo(conversationId: string): { type: string; name?: string } | undefined;
+  /** Check if a userId is a member of the conversation (from cache). */
+  isConversationMember(conversationId: string, userId: string): boolean;
+  /** Get all member userIds for a conversation (from cache). */
+  getConversationMemberIds(conversationId: string): readonly string[] | undefined;
+  /** Get a member's display info (for context messages). */
+  getMemberDisplayInfo(conversationId: string, userId: string): { username?: string; displayName?: string } | undefined;
+  /** Get the self member's persisted session config (acpModel/acpMode). */
+  getSelfMemberConfig(conversationId: string): { acpModel?: string; acpMode?: string } | undefined;
+
+  // ── Memory ──
+  loadSessionMemory(conversationId?: string, participantIds?: readonly string[]): Promise<LoadSessionMemoryResponse>;
+  getMemoryScope(scope: string, scopeId: string): Promise<MemoryScopeData>;
+  getHandoffNote(conversationId: string): Promise<string | null>;
+  putHandoffNote(conversationId: string, text: string): Promise<void>;
+
+  // ── Backend reporting ──
+  reportAgentInfo(request: ReportAgentInfoRequest): Promise<void>;
+  updateAgentMemberConfig(
+    conversationId: string,
+    config: { acpModel?: string | null; acpMode?: string | null },
+  ): Promise<void>;
+  sendContextWindowUpdate(
+    targetUserId: string,
+    sessionType: SessionType,
+    externalReferenceId: string,
+    contextWindowSize: number,
+    contextWindowUsed: number,
+  ): Promise<void>;
+}

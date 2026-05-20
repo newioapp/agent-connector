@@ -6,7 +6,7 @@ import type { AgentInstanceListener } from '../../src/agent-instance';
 import type { AgentConfig, AgentInfo } from '../../src/types';
 import type { CronStore } from '../../src/cron-store';
 import type { EngineConfig } from '../../src/engine-config';
-import type { NewioApp, NewioAppStore, ActionRequest, MemberRecord, ConversationListItem } from '@newio/agent-sdk';
+import type { NewioApp, ActionRequest, MemberRecord, ConversationListItem } from '@newio/agent-sdk';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -28,17 +28,33 @@ function createMockApp(
   members: Map<string, Map<string, MemberRecord>>,
   conversations?: Map<string, Partial<ConversationListItem>>,
 ): Partial<NewioApp> {
-  const store = {
-    getMembers: vi.fn((conversationId: string) => members.get(conversationId)),
-    getConversation: vi.fn((conversationId: string) => conversations?.get(conversationId)),
-  } as unknown as NewioAppStore;
-
   const sendActionRequest = vi.fn().mockResolvedValue({ requestId: 'req-1', selectedOptionId: 'allow_once' });
 
   return {
     identity: { userId: 'agent-1', username: 'test-agent', displayName: 'Test Agent', ownerId },
-    store,
     sendActionRequest,
+    getCachedConversationInfo: vi.fn((conversationId: string) => {
+      const conv = conversations?.get(conversationId);
+      if (!conv?.type) {
+        return undefined;
+      }
+      return { type: conv.type, name: conv.name };
+    }),
+    isConversationMember: vi.fn((conversationId: string, userId: string) => {
+      const m = members.get(conversationId);
+      return m?.has(userId) ?? false;
+    }),
+    getConversationMemberIds: vi.fn((conversationId: string) => {
+      const m = members.get(conversationId);
+      return m ? [...m.keys()] : undefined;
+    }),
+    getMemberDisplayInfo: vi.fn((conversationId: string, userId: string) => {
+      const m = members.get(conversationId)?.get(userId);
+      if (!m) {
+        return undefined;
+      }
+      return { username: m.username, displayName: m.displayName };
+    }),
   };
 }
 

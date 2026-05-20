@@ -407,15 +407,15 @@ describe('NewioApp', () => {
     });
   });
 
-  describe('getOwnerDmConversationId', () => {
-    it('returns undefined when no ownerId', async () => {
+  describe('getOrCreateOwnerDmConversationId', () => {
+    it('throws when no ownerId', async () => {
       const client = mockClient();
       const ws = mockWs();
       const noOwnerIdentity = { userId: 'me', username: 'myagent', displayName: 'My Agent' };
       const app = NewioApp.createFromComponents(noOwnerIdentity, mockAuth(), client, ws);
       await app.init();
 
-      expect(await app.getOwnerDmConversationId()).toBeUndefined();
+      await expect(app.getOrCreateOwnerDmConversationId()).rejects.toThrow('Agent has no owner');
     });
   });
 
