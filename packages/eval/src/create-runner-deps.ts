@@ -9,10 +9,11 @@ import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
 import { parse as parseDotenv } from 'dotenv';
-import { AcpSessionFactory, NewioMcpServer, startUdsServer } from '@newio/agent-engine';
-import { ExperimentalPromptFormatter } from './prompts/experimental/prompt-formatter.js';
-import { ExperimentalToolDescriptions } from './mcp/experimental-tool-descriptions.js';
-import type { AgentConfig, PromptFormatter, ToolCallHook } from '@newio/agent-engine';
+import { AcpSessionFactory, startUdsServer } from '@newio/agent-engine';
+import { NewioEvalMcpServer } from './mcp/v1/server.js';
+import { EvalPromptFormatter } from './prompts/v1/prompt-formatter.js';
+import type { AgentConfig, PromptFormatter } from '@newio/agent-engine';
+import type { ToolCallHook } from './mcp/v1/types.js';
 import type { NewioApp } from '@newio/agent-sdk';
 import type { Server } from 'net';
 import type { EvalConfig, EvalScenario } from './types.js';
@@ -79,12 +80,11 @@ export async function createScenarioRunnerDeps(
   }
 
   // Create MCP server with hook, backed by mock app
-  const mcpServer = new NewioMcpServer({
+  const mcpServer = new NewioEvalMcpServer({
     app: mockApp as unknown as NewioApp,
     initiateConversation: () => {},
     sessionMode: effectiveSessionMode,
     onToolCall,
-    toolDescriptions: new ExperimentalToolDescriptions(),
   });
 
   const currentConversationId: { id: string | undefined } = {
@@ -118,7 +118,7 @@ export async function createScenarioRunnerDeps(
   const mcpBridgePath = fileURLToPath(import.meta.resolve('@newio/agent-engine/mcp-bridge'));
 
   // Build prompt manager with the requested version
-  const promptFormatter = new ExperimentalPromptFormatter(
+  const promptFormatter = new EvalPromptFormatter(
     { username: mockApp.identity.username, displayName: mockApp.identity.displayName },
     mockApp.getOwnerInfo(),
     effectiveSessionMode,

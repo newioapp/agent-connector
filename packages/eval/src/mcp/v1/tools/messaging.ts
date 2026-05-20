@@ -3,8 +3,7 @@
  */
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { IdGetter, NewioAppForMcp, ToolCallHook } from '../types';
-import type { SessionMode } from '../../types';
+import type { IdGetter, NewioAppForMcp, SessionMode, ToolCallHook } from '../types';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
@@ -70,9 +69,9 @@ export function registerMessagingTools(
       'send_dm',
       {
         description:
-          'Send a direct message to a user by username, optionally with attachments. \u26a0\ufe0f Only use this to INITIATE a message to another user. If you are responding to a DM from that user, your reply is delivered automatically — do NOT use this tool or the message will be sent twice.',
+          'Send a direct message to a user by their exact username (not display name), optionally with attachments. \u26a0\ufe0f Only use this to INITIATE a message to another user. If you are responding to a DM from that user, your reply is delivered automatically — do NOT use this tool or the message will be sent twice.',
         inputSchema: {
-          username: z.string().describe('Username of the recipient'),
+          username: z.string().describe('Exact username of the recipient, NOT their display name'),
           text: z.string().describe('Message text (supports markdown)'),
           filePaths: z
             .array(z.string())

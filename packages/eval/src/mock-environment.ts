@@ -8,7 +8,7 @@
  */
 import { createHash, randomUUID } from 'crypto';
 import type { ToolCallRecord } from './types.js';
-import type { NewioAppForMcp, McpContactSummary } from '@newio/agent-engine';
+import type { NewioAppForMcp, McpContactSummary } from './mcp/v1/types.js';
 
 // ---------------------------------------------------------------------------
 // Deterministic UUID helper — derives a UUID v4-shaped ID from a stable key.
