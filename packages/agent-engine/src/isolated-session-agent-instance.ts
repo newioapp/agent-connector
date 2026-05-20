@@ -17,7 +17,7 @@ import type { Server } from 'net';
 import { hostname, tmpdir } from 'os';
 import { join } from 'path';
 import type { AgentConfigManager } from './agent-config-manager';
-import type { AgentRuntimeStatus, AgentConfig, SessionType } from './types';
+import type { AgentRuntimeStatus, AgentConfig, SessionType, NewioAppForAgent } from './types';
 import { DEFAULT_SESSION_IDLE_TIMEOUT_MS, resolveCommand, extractErrorMessage } from './types';
 import type { AgentInfo, PermissionRequestOption, ConversationFlags } from './types';
 import type { AgentInstance, AgentInstanceListener } from './agent-instance';
@@ -90,7 +90,7 @@ export class IsolatedSessionAgentInstance implements AgentInstance {
     return u ? `[${u}]` : '';
   }
 
-  private _app?: NewioApp;
+  private _app?: NewioAppForAgent;
   private _promptManager?: PromptManager;
   private _ownerDmConversationId?: string;
   private _sessionFactory?: SessionFactory;
@@ -371,7 +371,7 @@ export class IsolatedSessionAgentInstance implements AgentInstance {
   }
 
   private async sendGreeting() {
-    const ownerDmConversationId = await this.getOwnerDmOrThrow();
+    const ownerDmConversationId = await this.app.getOrCreateOwnerDmConversationId();
     this._ownerDmConversationId = ownerDmConversationId;
     log.debug(`${this.logTag} Owner DM conversation: ${ownerDmConversationId}`);
 
@@ -464,7 +464,7 @@ export class IsolatedSessionAgentInstance implements AgentInstance {
   }
 
   /** Get the NewioApp instance. Throws if not connected. */
-  get app(): NewioApp {
+  get app(): NewioAppForAgent {
     if (!this._app) {
       throw new Error('Agent is not connected — NewioApp is not initialized.');
     }
@@ -726,26 +726,13 @@ export class IsolatedSessionAgentInstance implements AgentInstance {
         mcpBridgePath: this.engineConfig.mcpBridgePath,
         skipToken: this.promptManager.skipToken(this.promptManager.defaultVersion),
         updateConfig: async (config) => {
-          await this.app.client.updateAgentMember({
-            conversationId: externalReferenceId,
-            targetUserId: this.app.identity.userId,
+          await this.app.updateAgentMemberConfig(externalReferenceId, {
             acpModel: config.acpModel,
             acpMode: config.acpMode,
           });
         },
         reportContextWindow: async (context) => {
-          await this.app.client.sendSignal({
-            targetUserId: ownerId,
-            requestId: crypto.randomUUID(),
-            intent: 'notification',
-            type: 'context_window_update',
-            payload: {
-              sessionType: type,
-              externalReferenceId: externalReferenceId,
-              contextWindowSize: context.size,
-              contextWindowUsed: context.used,
-            },
-          });
+          await this.app.sendContextWindowUpdate(ownerId, type, externalReferenceId, context.size, context.used);
         },
       });
       return session;
@@ -783,42 +770,30 @@ export class IsolatedSessionAgentInstance implements AgentInstance {
   }
 
   private async loadMemoryForSession(conversationId?: string) {
-    const agentId = this.app.identity.userId;
-
     let participantIds: string[] | undefined = undefined;
     if (typeof conversationId === 'string') {
-      const conv = this.app.store.getConversation(conversationId);
-      const members = this.app.store.getMembers(conversationId);
+      const meta = this.app.getCachedConversationInfo(conversationId);
       // For DMs, load full memory for the other participant
-      participantIds = [];
-      if (conv?.type === 'dm' && members) {
-        for (const [userId] of members) {
-          if (userId !== agentId) {
-            participantIds.push(userId);
-          }
+      if (meta?.type === 'dm') {
+        const memberIds = this.app.getConversationMemberIds(conversationId);
+        if (memberIds) {
+          participantIds = memberIds.filter((id) => id !== this.app.identity.userId);
         }
+      } else {
+        participantIds = [];
       }
     }
 
-    return this.app.client.loadSessionMemory({ agentId, conversationId, participantIds });
+    return this.app.loadSessionMemory(conversationId, participantIds);
   }
 
   /** Load the handoff note for a conversation (graceful fallback if endpoint doesn't exist). */
   private async loadHandoffNote(conversationId: string): Promise<string | null> {
-    try {
-      const result = await this.app.client.getHandoffNote({
-        agentId: this.app.identity.userId,
-        conversationId,
-      });
-      return result.text;
-    } catch {
-      // Endpoint may not exist yet — graceful fallback
-      return null;
-    }
+    return this.app.getHandoffNote(conversationId);
   }
 
   private reportAgentInfoToBackend(agentInfo: AgentInfo): void {
-    this.app.client
+    this.app
       .reportAgentInfo({
         agentProtocol: agentInfo.protocol,
         agentVendor: agentInfo.agentName ?? this.config.type,
@@ -846,10 +821,9 @@ export class IsolatedSessionAgentInstance implements AgentInstance {
       return;
     }
     try {
-      const members = this.app.store.getMembers(externalReferenceId);
-      const self = members?.get(this.app.identity.userId);
-      if (self) {
-        await session.applySessionConfig(self);
+      const config = this.app.getSelfMemberConfig(externalReferenceId);
+      if (config) {
+        await session.applySessionConfig(config);
       }
     } catch (err: unknown) {
       log.warn(`${this.logTag} Failed to apply persisted session config for ${type}/${externalReferenceId}`, err);
@@ -902,7 +876,7 @@ export class IsolatedSessionAgentInstance implements AgentInstance {
     if (!ownerId) {
       throw new Error('Cannot route permission request — agent has no owner');
     }
-    const ownerIsInConversation = conversationId && this.isOwnerInConversation(conversationId, ownerId);
+    const ownerIsInConversation = conversationId && this.app.isConversationMember(conversationId, ownerId);
     const convId = ownerIsInConversation ? conversationId : this.ownerDmConversationId;
 
     // When rerouting to the owner DM, include context about the source conversation
@@ -918,35 +892,22 @@ export class IsolatedSessionAgentInstance implements AgentInstance {
 
   /** Build a human-readable context message for a rerouted permission request. */
   private buildPermissionContextText(conversationId: string): string {
-    const conv = this.app.store.getConversation(conversationId);
-    if (conv?.type === 'dm') {
-      const members = this.app.store.getMembers(conversationId);
-      if (members) {
-        for (const [userId, member] of members) {
+    const meta = this.app.getCachedConversationInfo(conversationId);
+    if (meta?.type === 'dm') {
+      const memberIds = this.app.getConversationMemberIds(conversationId);
+      if (memberIds) {
+        for (const userId of memberIds) {
           if (userId !== this.app.identity.userId) {
-            const name = member.displayName ?? member.username ?? userId;
+            const info = this.app.getMemberDisplayInfo(conversationId, userId);
+            const name = info?.displayName ?? info?.username ?? userId;
             return `Requesting permission for a DM conversation with ${name}`;
           }
         }
       }
       return `Requesting permission for a DM conversation`;
     }
-    const label = conv?.name ?? conversationId;
+    const label = meta?.name ?? conversationId;
     return `Requesting permission for ${label} conversation`;
-  }
-
-  /** Check if the owner is a member of the given conversation (in-memory lookup). */
-  private isOwnerInConversation(conversationId: string, ownerId: string): boolean {
-    const members = this.app.store.getMembers(conversationId);
-    return members?.has(ownerId) ?? false;
-  }
-
-  private async getOwnerDmOrThrow(): Promise<string> {
-    const convId = await this.app.getOwnerDmConversationId();
-    if (!convId) {
-      throw new Error('Could not get owner DM conversation');
-    }
-    return convId;
   }
 
   // ---------------------------------------------------------------------------
@@ -1009,7 +970,7 @@ export class IsolatedSessionAgentInstance implements AgentInstance {
     const userText = this.promptManager.formatMessagePrompt(session.promptFormatterVersion, messages);
     const flags = this.getConversationFlags(conversationId);
     const ownerId = this.app.identity.ownerId;
-    const ownerVisible = ownerId && this.isOwnerInConversation(conversationId, ownerId);
+    const ownerVisible = ownerId && this.app.isConversationMember(conversationId, ownerId);
     try {
       for await (const segment of session.prompt(userText, conversationId)) {
         const text = segment.text.trim();
@@ -1020,18 +981,13 @@ export class IsolatedSessionAgentInstance implements AgentInstance {
         ) {
           await this.app.sendMessage(conversationId, text);
         } else if (segment.type === 'agent_thought_chunk' && flags.showThoughts && text && ownerVisible) {
-          await this.app.client.sendMessage({
-            conversationId,
-            content: { text: text, metadata: { type: 'agent_thought' } },
+          await this.app.sendMessage(conversationId, text, {
+            metadata: { type: 'agent_thought' },
             visibleTo: [ownerId],
           });
         } else if (segment.type === 'tool_call' && flags.showToolCalls && text && ownerVisible) {
-          await this.app.client.sendMessage({
-            conversationId,
-            content: {
-              text,
-              metadata: { type: 'tool_call', toolCallId: segment.toolCallId, status: segment.toolCallStatus },
-            },
+          await this.app.sendMessage(conversationId, text, {
+            metadata: { type: 'tool_call', toolCallId: segment.toolCallId, status: segment.toolCallStatus },
             visibleTo: [ownerId],
           });
         }
@@ -1150,7 +1106,7 @@ export class IsolatedSessionAgentInstance implements AgentInstance {
   // ---------------------------------------------------------------------------
 
   /** Wire signal handlers and register them with the app. */
-  private wireCapabilityHandlers(app: NewioApp): void {
+  private wireCapabilityHandlers(app: NewioAppForAgent): void {
     app.onLiveSessionInfo((request) => this.getLiveSessionInfo(request));
     app.onCancelSession((request) => this.handleCancelSession(request));
     app.onCompactSession((request) => this.handleCompactSession(request));
@@ -1354,8 +1310,8 @@ export class IsolatedSessionAgentInstance implements AgentInstance {
       log.error(`${this.logTag} Failed to launch replacement session for ${type}:${externalReferenceId}`, err);
       // Persist handoff so the self-recovery path can load it from backend
       if (handoffNote) {
-        this.app.client
-          .putHandoffNote({ agentId: this.app.identity.userId, conversationId: externalReferenceId, text: handoffNote })
+        this.app
+          .putHandoffNote(externalReferenceId, handoffNote)
           .catch((e: unknown) => log.warn(`${this.logTag} Failed to persist handoff note`, e));
       }
       slot.queue.close();
@@ -1385,11 +1341,7 @@ export class IsolatedSessionAgentInstance implements AgentInstance {
         const handoffMatch = fullOutput?.match(/HANDOFF:\s*([\s\S]+)/i);
         if (handoffMatch && handoffMatch[1]) {
           const summary = handoffMatch[1].trim();
-          await this.app.client.putHandoffNote({
-            agentId: this.app.identity.userId,
-            conversationId: slot.externalReferenceId,
-            text: summary,
-          });
+          await this.app.putHandoffNote(slot.externalReferenceId, summary);
           log.info(
             `${this.logTag} Captured handoff for ${slot.type}:${slot.externalReferenceId} (${summary.length} chars)`,
           );

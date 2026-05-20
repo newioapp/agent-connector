@@ -404,22 +404,35 @@ export class NewioApp {
   // Messaging
   // ---------------------------------------------------------------------------
 
-  /** Send a message to a conversation, with optional file attachments. */
-  async sendMessage(conversationId: string, text?: string, filePaths?: readonly string[]): Promise<void> {
-    if (!text && (!filePaths || filePaths.length === 0)) {
+  /** Send a message to a conversation, with optional attachments, metadata, and visibility restrictions. */
+  async sendMessage(
+    conversationId: string,
+    text?: string,
+    opts?: {
+      filePaths?: readonly string[];
+      metadata?: Record<string, unknown>;
+      visibleTo?: readonly string[];
+    },
+  ): Promise<void> {
+    if (!text && (!opts?.filePaths || opts.filePaths.length === 0)) {
       throw new Error('Message must have text or attachments');
     }
     log.debug(
-      `Sending message to ${conversationId} (${text?.length ?? 0} chars, ${filePaths?.length ?? 0} attachments)`,
+      `Sending message to ${conversationId} (${text?.length ?? 0} chars, ${opts?.filePaths?.length ?? 0} attachments)`,
     );
-    const attachments = filePaths ? await uploadFiles(this.client, filePaths) : undefined;
+    const attachments = opts?.filePaths ? await uploadFiles(this.client, opts.filePaths) : undefined;
     const mentions = text ? await this.buildMentions(conversationId, text) : undefined;
     const content: MessageContent = {
       text: text || undefined,
       attachments: attachments && attachments.length > 0 ? attachments : undefined,
       ...(mentions ? { mentions } : {}),
+      ...(opts?.metadata && { metadata: opts.metadata }),
     };
-    await this.client.sendMessage({ conversationId, content });
+    await this.client.sendMessage({
+      conversationId,
+      content,
+      ...(opts?.visibleTo && { visibleTo: [...opts.visibleTo] }),
+    });
   }
 
   /**
@@ -490,13 +503,13 @@ export class NewioApp {
     }
     log.debug(`Sending DM to owner ${this.identity.ownerId}`);
     const conversationId = await this.findOrCreateDm(this.identity.ownerId);
-    await this.sendMessage(conversationId, text, filePaths);
+    await this.sendMessage(conversationId, text, filePaths ? { filePaths } : undefined);
   }
 
-  /** Get or create the DM conversation with the agent's owner. Returns undefined if no owner. */
-  async getOwnerDmConversationId(): Promise<string | undefined> {
+  /** Get or create the DM conversation with the agent's owner. Throws if no owner. */
+  async getOrCreateOwnerDmConversationId(): Promise<string> {
     if (!this.identity.ownerId) {
-      return undefined;
+      throw new Error('Agent has no owner');
     }
     return this.findOrCreateDm(this.identity.ownerId);
   }
@@ -506,7 +519,7 @@ export class NewioApp {
     log.debug(`Sending DM to @${username}`);
     const userId = await this.resolveUsername(username);
     const conversationId = await this.findOrCreateDm(userId);
-    await this.sendMessage(conversationId, text, filePaths);
+    await this.sendMessage(conversationId, text, filePaths ? { filePaths } : undefined);
   }
 
   /** Get or create a DM conversation with a user by username. Returns the conversationId. */
@@ -788,6 +801,135 @@ export class NewioApp {
   async getUserByUsername(username: string): Promise<import('../core/types.js').GetUserByUsernameResponse> {
     return this.client.getUserByUsername({ username });
   }
+
+  // ---------------------------------------------------------------------------
+  // Agent instance methods (used by agent-engine — satisfy NewioAppForAgent)
+  // ---------------------------------------------------------------------------
+
+  /** Get conversation type and name from cache. */
+  getCachedConversationInfo(conversationId: string): { type: string; name?: string } | undefined {
+    const conv = this.store.getConversation(conversationId);
+    if (!conv) {
+      return undefined;
+    }
+    return { type: conv.type, name: conv.name };
+  }
+
+  /** Check if a userId is a member of a conversation (in-memory). */
+  isConversationMember(conversationId: string, userId: string): boolean {
+    const members = this.store.getMembers(conversationId);
+    return members?.has(userId) ?? false;
+  }
+
+  /** Get all member userIds for a conversation from cache. */
+  getConversationMemberIds(conversationId: string): readonly string[] | undefined {
+    const members = this.store.getMembers(conversationId);
+    if (!members) {
+      return undefined;
+    }
+    return [...members.keys()];
+  }
+
+  /** Get display info for a specific member. */
+  getMemberDisplayInfo(
+    conversationId: string,
+    userId: string,
+  ): { username?: string; displayName?: string } | undefined {
+    const members = this.store.getMembers(conversationId);
+    const member = members?.get(userId);
+    if (!member) {
+      return undefined;
+    }
+    return { username: member.username, displayName: member.displayName };
+  }
+
+  /** Get self member's persisted acpModel/acpMode config. */
+  getSelfMemberConfig(conversationId: string): { acpModel?: string; acpMode?: string } | undefined {
+    const members = this.store.getMembers(conversationId);
+    const self = members?.get(this.identity.userId);
+    if (!self) {
+      return undefined;
+    }
+    return { acpModel: self.acpModel, acpMode: self.acpMode };
+  }
+
+  /** Load session memory (delegates agentId). */
+  async loadSessionMemory(
+    conversationId?: string,
+    participantIds?: readonly string[],
+  ): Promise<import('../core/types.js').LoadSessionMemoryResponse> {
+    return this.client.loadSessionMemory({
+      agentId: this.identity.userId,
+      conversationId,
+      participantIds: participantIds ? [...participantIds] : undefined,
+    });
+  }
+
+  /** Get memory for a specific scope. */
+  async getMemoryScope(scope: string, scopeId: string): Promise<import('../core/types.js').MemoryScopeData> {
+    const result = await this.client.getMemory({
+      agentId: this.identity.userId,
+      scope: scope as import('../core/types.js').MemoryScope,
+      scopeId,
+    });
+    return result.data;
+  }
+
+  /** Get the handoff note for a conversation. */
+  async getHandoffNote(conversationId: string): Promise<string | null> {
+    try {
+      const result = await this.client.getHandoffNote({ agentId: this.identity.userId, conversationId });
+      return result.text;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Put a handoff note for a conversation. */
+  async putHandoffNote(conversationId: string, text: string): Promise<void> {
+    await this.client.putHandoffNote({ agentId: this.identity.userId, conversationId, text });
+  }
+
+  /** Report agent info to the backend. */
+  async reportAgentInfo(request: import('../core/types.js').ReportAgentInfoRequest): Promise<void> {
+    await this.client.reportAgentInfo(request);
+  }
+
+  /** Update agent member config (acpModel/acpMode) on the backend. */
+  async updateAgentMemberConfig(
+    conversationId: string,
+    config: { acpModel?: string | null; acpMode?: string | null },
+  ): Promise<void> {
+    await this.client.updateAgentMember({
+      conversationId,
+      targetUserId: this.identity.userId,
+      acpModel: config.acpModel,
+      acpMode: config.acpMode,
+    });
+  }
+
+  /** Send a context window update signal to the owner. */
+  async sendContextWindowUpdate(
+    targetUserId: string,
+    sessionType: import('../core/types.js').SessionType,
+    externalReferenceId: string,
+    contextWindowSize: number,
+    contextWindowUsed: number,
+  ): Promise<void> {
+    await this.client.sendSignal({
+      targetUserId,
+      requestId: crypto.randomUUID(),
+      intent: 'notification',
+      type: 'context_window_update',
+      payload: {
+        sessionType,
+        externalReferenceId,
+        contextWindowSize,
+        contextWindowUsed,
+      },
+    });
+  }
+
   /* v8 ignore stop */
 
   // ---------------------------------------------------------------------------

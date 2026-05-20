@@ -55,7 +55,7 @@ export function registerMessagingTools(
       },
       async ({ conversationId, text: msgText, filePaths }) => {
         onToolCall?.(sm.toolName, { conversationId, text: msgText, filePaths });
-        await app.sendMessage(conversationId, msgText, filePaths);
+        await app.sendMessage(conversationId, msgText, filePaths ? { filePaths } : undefined);
         return text('Message sent');
       },
     );

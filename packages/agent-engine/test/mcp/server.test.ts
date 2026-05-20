@@ -233,7 +233,7 @@ describe('MCP Server', () => {
       name: 'send_message',
       arguments: { conversationId: 'conv-1', text: 'check this', filePaths: ['/tmp/photo.jpg'] },
     });
-    expect(app.sendMessage).toHaveBeenCalledWith('conv-1', 'check this', ['/tmp/photo.jpg']);
+    expect(app.sendMessage).toHaveBeenCalledWith('conv-1', 'check this', { filePaths: ['/tmp/photo.jpg'] });
   });
 
   it('download_attachment returns local file path', async () => {
@@ -269,7 +269,7 @@ describe('MCP Server', () => {
       name: 'upload_attachment_to_current_conversation',
       arguments: { filePaths: ['/tmp/photo.jpg'] },
     });
-    expect(app.sendMessage).toHaveBeenCalledWith('conv-1', undefined, ['/tmp/photo.jpg']);
+    expect(app.sendMessage).toHaveBeenCalledWith('conv-1', undefined, { filePaths: ['/tmp/photo.jpg'] });
   });
 
   it('list_messages returns formatted messages', async () => {

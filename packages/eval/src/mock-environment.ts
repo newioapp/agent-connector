@@ -420,7 +420,11 @@ export class MockNewioApp implements NewioAppForMcp {
 
   // ── Messaging ─────────────────────────────────────────────────────────────
 
-  sendMessage(conversationId: string, text?: string, _filePaths?: readonly string[]): Promise<void> {
+  sendMessage(
+    conversationId: string,
+    text?: string,
+    _opts?: { filePaths?: readonly string[]; metadata?: Record<string, unknown>; visibleTo?: readonly string[] },
+  ): Promise<void> {
     const msg: MockMessage = {
       messageId: randomUUID(),
       conversationId,

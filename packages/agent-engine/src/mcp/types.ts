@@ -107,7 +107,13 @@ export interface McpConversationInfo {
  * Any implementation (real SDK, mock for evals) can satisfy this contract.
  */
 export interface NewioAppForMcp {
-  readonly identity: { readonly userId: string; readonly username: string; readonly displayName?: string };
+  readonly identity: {
+    readonly userId: string;
+    readonly username: string;
+    readonly displayName?: string;
+    readonly avatarUrl?: string;
+    readonly ownerId?: string;
+  };
 
   // ── Identity ──
   getOwnerInfo(): { readonly username: string; readonly displayName: string };
@@ -132,7 +138,11 @@ export interface NewioAppForMcp {
   removeMemberByUsername(conversationId: string, username: string): Promise<void>;
 
   // ── Messaging ──
-  sendMessage(conversationId: string, text?: string, filePaths?: readonly string[]): Promise<void>;
+  sendMessage(
+    conversationId: string,
+    text?: string,
+    opts?: { filePaths?: readonly string[]; metadata?: Record<string, unknown>; visibleTo?: readonly string[] },
+  ): Promise<void>;
   sendDm(username: string, text: string, filePaths?: readonly string[]): Promise<void>;
   listMessages(conversationId: string, limit?: number, beforeMessageId?: string): Promise<McpListMessagesResult>;
   downloadAttachment(conversationId: string, s3Key: string, fileName: string): Promise<string>;

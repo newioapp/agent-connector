@@ -33,7 +33,7 @@ export function registerMediaTools(
     async ({ filePaths }) => {
       onToolCall?.(up.toolName, { filePaths });
       const convId = requireCurrentConversationId(getCurrentConversationId);
-      await app.sendMessage(convId, undefined, filePaths);
+      await app.sendMessage(convId, undefined, { filePaths });
       return text(`Uploaded ${filePaths.length} file(s) to conversation ${convId}`);
     },
   );
