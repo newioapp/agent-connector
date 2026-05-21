@@ -205,8 +205,8 @@ export class SharedSessionManager implements SessionManager {
     const memory = await this.app.loadMemoryForSession();
     // Use provided handoff note (in-memory from rotation) or fetch from backend
     let resolvedHandoff: string | null = handoffNote ?? null;
-    if (!resolvedHandoff && session.type === 'conversation') {
-      resolvedHandoff = await this.app.getHandoffNote(session.externalReferenceId);
+    if (!resolvedHandoff) {
+      resolvedHandoff = await this.app.getHandoffNote(EXTERNAL_REFERENCE_ID);
     }
 
     const memoryContext = this.promptManager.formatMemoryContext(

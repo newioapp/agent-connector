@@ -201,7 +201,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
           `[${app.identity.username}]`,
           eventProcessor,
           (sessionType, externalReferenceId) => this.launchSession(sessionType, externalReferenceId),
-          (correlationId) => this.sessionFactory.destorySession(correlationId),
+          (correlationId) => this.sessionFactory.destroySession(correlationId),
           this._promptManager,
           this.getNewioAppForSession(),
         );
@@ -210,7 +210,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
           `[${app.identity.username}]`,
           eventProcessor,
           (sessionType, externalReferenceId) => this.launchSession(sessionType, externalReferenceId),
-          (correlationId) => this.sessionFactory.destorySession(correlationId),
+          (correlationId) => this.sessionFactory.destroySession(correlationId),
           this._promptManager,
           this.getNewioAppForSession(),
         );

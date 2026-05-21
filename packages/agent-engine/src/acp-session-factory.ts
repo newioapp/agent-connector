@@ -298,7 +298,7 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
     }
   }
 
-  async destorySession(correlationId: string): Promise<void> {
+  async destroySession(correlationId: string): Promise<void> {
     const session = this.acpSessions.get(correlationId);
     this.acpSessions.delete(correlationId);
     if (session && session.disposable) {

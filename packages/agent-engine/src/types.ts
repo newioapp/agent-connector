@@ -341,18 +341,6 @@ export interface CreateSessionInput {
   readonly reportContextWindow: (contextWindow: ContextWindow) => Promise<void>;
 }
 
-export interface CreateSessionInput {
-  readonly type: SessionType;
-  readonly externalReferenceId: string;
-  readonly promptFormatterVersion: string;
-  readonly mcpSocketPath: string;
-  /** Absolute path to the MCP bridge script (node entrypoint). */
-  readonly mcpBridgePath: string;
-  readonly skipToken: string;
-  readonly updateConfig: (config: SessionConfig) => Promise<void>;
-  readonly reportContextWindow: (contextWindow: ContextWindow) => Promise<void>;
-}
-
 export interface SessionFactory {
   init(): Promise<void>;
 
@@ -360,7 +348,7 @@ export interface SessionFactory {
 
   createSession(input: CreateSessionInput): Promise<AgentSession>;
 
-  destorySession(correlationId: string): Promise<void>;
+  destroySession(correlationId: string): Promise<void>;
 
   terminate(): Promise<void>;
 
