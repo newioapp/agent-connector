@@ -145,7 +145,7 @@ describe('SessionEventProcessorImpl', () => {
       await processor.processEvent(
         {
           type: 'contact',
-          events: [{ type: 'contact.request_received', username: 'bob', displayName: 'Bob', accountType: 'human' }],
+          events: [{ type: 'contact.request_received', username: 'bob', displayName: 'Bob', accountType: 'human', timestamp: new Date().toISOString() }],
         },
         session,
       );
@@ -163,7 +163,7 @@ describe('SessionEventProcessorImpl', () => {
       const session = createMockSession('Done');
 
       await processor.processEvent(
-        { type: 'cron', job: { cronId: 'cron-1', label: 'Check-in', expression: '0 9 * * *' } },
+        { type: 'cron', job: { cronId: 'cron-1', label: 'Check-in', triggeredAt: new Date().toISOString() } },
         session,
       );
 

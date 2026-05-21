@@ -99,11 +99,12 @@ function makeContactEvent(): ContactEvent {
     username: 'new-friend',
     displayName: 'New Friend',
     accountType: 'human',
+    timestamp: new Date().toISOString(),
   };
 }
 
 function makeCronEvent(): CronTriggerEvent {
-  return { cronId: 'cron-1', label: 'Daily check', expression: '0 9 * * *' };
+  return { cronId: 'cron-1', label: 'Daily check', triggeredAt: new Date().toISOString() };
 }
 
 // ---------------------------------------------------------------------------
