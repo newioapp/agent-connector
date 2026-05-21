@@ -1,4 +1,4 @@
-import type { SessionStreamSegment } from './types';
+import type { AcpConfig, AgentType, SessionStreamSegment } from './types';
 
 export async function collectAgentMessage(gen: AsyncGenerator<SessionStreamSegment>): Promise<string | undefined> {
   const parts: string[] = [];
@@ -8,4 +8,64 @@ export async function collectAgentMessage(gen: AsyncGenerator<SessionStreamSegme
     }
   }
   return parts.length > 0 ? parts.join('') : undefined;
+}
+
+/** Resolve the command and arguments to spawn an ACP agent process. */
+export function resolveCommand(
+  type: AgentType,
+  config: AcpConfig,
+): { readonly command: string; readonly args: readonly string[] } {
+  if (type === 'kiro-cli') {
+    const command = config.executablePath ?? 'kiro-cli';
+    const args = config.kiroCliTrustAllTools !== false ? ['acp', '--trust-all-tools'] : ['acp'];
+    return { command, args };
+  }
+
+  if (type === 'claude-code') {
+    return { command: config.executablePath ?? 'claude-agent-acp', args: [] };
+  }
+
+  if (type === 'codex') {
+    return { command: config.executablePath ?? 'codex-acp', args: [] };
+  }
+
+  if (type === 'cursor') {
+    return { command: config.executablePath ?? 'agent', args: ['acp'] };
+  }
+
+  if (type === 'gemini') {
+    return { command: config.executablePath ?? 'gemini', args: ['--acp'] };
+  }
+
+  // custom: user provides the full command string, possibly with args baked in
+  if (!config.executablePath) {
+    throw new Error('No executable path configured for custom agent type');
+  }
+  const parts = config.executablePath.trim().split(/\s+/).filter(Boolean);
+  const command = parts[0];
+  if (command === undefined) {
+    throw new Error('No executable path configured for custom agent type');
+  }
+  return { command, args: parts.slice(1) };
+}
+
+/** Extract a human-readable message from an unknown error (handles Error instances and plain objects). */
+export function extractErrorMessage(err: unknown): string {
+  if (typeof err === 'object' && err !== null) {
+    const obj = err as Record<string, unknown>;
+    // ACP errors may have a more detailed message in data.message
+    if (typeof obj.data === 'object' && obj.data !== null) {
+      const data = obj.data as Record<string, unknown>;
+      if (typeof data.message === 'string') {
+        return data.message;
+      }
+    }
+    if (err instanceof Error) {
+      return err.message;
+    }
+    if (typeof obj.message === 'string') {
+      return obj.message;
+    }
+  }
+  return String(err);
 }

@@ -15,12 +15,10 @@ import type * as acp from '@agentclientprotocol/sdk';
 import type { McpServer as AcpMcpServer } from '@agentclientprotocol/sdk';
 import { AcpAgentSession } from './acp-agent-session';
 import type { AgentSession } from './agent-session';
-import type { AgentConfig, SessionType } from './types';
-import { resolveCommand } from './types';
+import type { AgentConfig, CreateSessionInput, SessionFactory } from './types';
 import type { AgentInfo } from './types';
 import { getLogger } from '@newio/agent-sdk';
-import { ContextWindow } from './acp-session-context-window-handler';
-import { SessionConfig } from './acp-session-config-handler';
+import { resolveCommand } from './utils';
 
 const log = getLogger('acp-session-factory');
 
@@ -42,32 +40,6 @@ function spawnAsync(command: string, args: readonly string[], options: SpawnOpti
     child.once('error', onError);
     child.once('spawn', onSpawn);
   });
-}
-
-export interface CreateSessionInput {
-  readonly type: SessionType;
-  readonly externalReferenceId: string;
-  readonly promptFormatterVersion: string;
-  readonly mcpSocketPath: string;
-  /** Absolute path to the MCP bridge script (node entrypoint). */
-  readonly mcpBridgePath: string;
-  readonly skipToken: string;
-  readonly updateConfig: (config: SessionConfig) => Promise<void>;
-  readonly reportContextWindow: (contextWindow: ContextWindow) => Promise<void>;
-}
-
-export interface SessionFactory {
-  init(): Promise<void>;
-
-  getAgentInfo(): AgentInfo | undefined;
-
-  createSession(input: CreateSessionInput): Promise<AgentSession>;
-
-  endSession(correlationId: string): Promise<void>;
-
-  terminate(): Promise<void>;
-
-  onAbnormalTermination(abnormalTerminationHandler: (details: string) => void): void;
 }
 
 export class AcpSessionFactory implements acp.Client, SessionFactory {
@@ -266,7 +238,6 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
   // ---------------------------------------------------------------------------
   // Session factory
   // ---------------------------------------------------------------------------
-
   async createSession(input: CreateSessionInput): Promise<AgentSession> {
     const config = this.config.acp;
     if (!config) {
@@ -327,7 +298,7 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
     }
   }
 
-  async endSession(correlationId: string): Promise<void> {
+  async destorySession(correlationId: string): Promise<void> {
     const session = this.acpSessions.get(correlationId);
     this.acpSessions.delete(correlationId);
     if (session && session.disposable) {

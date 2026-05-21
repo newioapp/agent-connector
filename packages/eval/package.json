@@ -23,7 +23,8 @@
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
     "eval": "tsx src/cli.ts",
-    "test": "vitest run",
+    "eval:interactive": "tsx src/interactive/cli.ts",
+    "test": "vitest run --passWithNoTests",
     "test:watch": "vitest"
   },
   "dependencies": {

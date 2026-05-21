@@ -844,7 +844,7 @@ export class NewioApp {
   }
 
   /** Get self member's persisted acpModel/acpMode config. */
-  getSelfMemberConfig(conversationId: string): { acpModel?: string; acpMode?: string } | undefined {
+  getSessionConfig(conversationId: string): { acpModel?: string; acpMode?: string } | undefined {
     const members = this.store.getMembers(conversationId);
     const self = members?.get(this.identity.userId);
     if (!self) {

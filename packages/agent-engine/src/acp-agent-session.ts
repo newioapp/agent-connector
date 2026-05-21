@@ -10,9 +10,16 @@ import type { ClientSideConnection, NewSessionResponse, LoadSessionResponse } fr
 import type * as acp from '@agentclientprotocol/sdk';
 import type { AgentSession } from './agent-session';
 import { AcpSessionStream } from './acp-session-stream';
-import type { PermissionHandler, SessionStatusListener, SessionStreamSegment, SessionType } from './types';
-import { AcpSessionConfigHandler, SessionConfig } from './acp-session-config-handler';
-import { AcpSessionContextWindowHandler, ContextWindow } from './acp-session-context-window-handler';
+import type {
+  ContextWindow,
+  PermissionHandler,
+  SessionConfig,
+  SessionStatusListener,
+  SessionStreamSegment,
+  SessionType,
+} from './types';
+import { AcpSessionConfigHandler } from './acp-session-config-handler';
+import { AcpSessionContextWindowHandler } from './acp-session-context-window-handler';
 import { AcpSlashCommandHandler } from './acp-slash-command-handler';
 import { getLogger } from '@newio/agent-sdk';
 import type {
@@ -23,7 +30,7 @@ import type {
   ModeOption,
   SessionConfigUpdate,
 } from '@newio/agent-sdk';
-import { extractErrorMessage } from './types';
+import { extractErrorMessage } from './utils';
 
 const log = getLogger('acp-agent-session');
 

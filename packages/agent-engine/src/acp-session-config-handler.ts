@@ -10,14 +10,9 @@ import type * as acp from '@agentclientprotocol/sdk';
 import type { AgentSessionConfig } from './agent-instance';
 import type { SessionConfigUpdate } from '@newio/agent-sdk';
 import { getLogger } from '@newio/agent-sdk';
-import type { SessionType } from './types';
+import type { SessionConfig, SessionType } from './types';
 
 const log = getLogger('acp-session-config-handler');
-
-export interface SessionConfig {
-  readonly acpModel?: string | null;
-  readonly acpMode?: string | null;
-}
 
 export class AcpSessionConfigHandler {
   private modelConfig: AgentSessionConfig | undefined;

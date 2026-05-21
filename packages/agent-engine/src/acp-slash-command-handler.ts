@@ -9,7 +9,8 @@ import type { ClientSideConnection } from '@agentclientprotocol/sdk';
 import type * as acp from '@agentclientprotocol/sdk';
 import type { CompactSessionResponse } from '@newio/agent-sdk';
 import { getLogger } from '@newio/agent-sdk';
-import { extractErrorMessage, SessionType } from './types';
+import { SessionType } from './types';
+import { extractErrorMessage } from './utils';
 
 const log = getLogger('acp-slash-command-handler');
 

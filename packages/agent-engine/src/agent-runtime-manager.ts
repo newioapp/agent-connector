@@ -10,8 +10,7 @@ import type { EngineConfig } from './engine-config';
 import type { AgentRuntimeStatus, AgentInfo } from './types';
 import type { AgentInstance } from './agent-instance';
 import { getLogger } from '@newio/agent-sdk';
-import { IsolatedSessionAgentInstance } from './isolated-session-agent-instance';
-import { SingleSessionAgentInstance } from './single-session-agent-instance';
+import { AgentInstanceImpl } from './agent-instance-impl';
 
 const log = getLogger('agent-runtime-manager');
 
@@ -91,22 +90,13 @@ export class AgentRuntimeManager {
       },
     };
 
-    const instance: AgentInstance =
-      config.sessionMode === 'shared'
-        ? new SingleSessionAgentInstance(
-            config,
-            this.configManager,
-            this.cronStore,
-            instanceListener,
-            this.engineConfig,
-          )
-        : new IsolatedSessionAgentInstance(
-            config,
-            this.configManager,
-            this.cronStore,
-            instanceListener,
-            this.engineConfig,
-          );
+    const instance: AgentInstance = new AgentInstanceImpl(
+      config,
+      this.configManager,
+      this.cronStore,
+      instanceListener,
+      this.engineConfig,
+    );
 
     this.instances.set(agentId, instance);
     log.info(`Starting agent ${agentId} (${username ?? 'no username'})`);

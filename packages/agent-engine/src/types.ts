@@ -7,17 +7,35 @@ import type {
   ActivityStatus,
   AppEventHandlers,
   CancelSessionHandler,
+  CancelSessionRequest,
+  CancelSessionResponse,
   CompactSessionHandler,
+  CompactSessionRequest,
+  CompactSessionResponse,
+  ContactEvent,
+  CronTriggerEvent,
+  IncomingMessage,
   LiveSessionInfoHandler,
+  LiveSessionInfoRequest,
+  LiveSessionInfoResponse,
   LoadSessionMemoryResponse,
   MemoryScopeData,
   ReportAgentInfoRequest,
   RotateSessionHandler,
+  RotateSessionRequest,
+  RotateSessionResponse,
+  SessionConfigUpdate,
   StartSessionHandler,
+  StartSessionRequest,
+  StartSessionResponse,
   UpdateMemoryHandler,
+  UpdateMemoryRequest,
+  UpdateMemoryResponse,
 } from '@newio/agent-sdk';
 
 import type { NewioAppForMcp } from './mcp/types.js';
+import { AgentSession } from './agent-session.js';
+import { AgentEvent } from './event-queue.js';
 
 export type SessionType = 'conversation' | 'contact' | 'cron';
 
@@ -27,43 +45,12 @@ export type SessionType = 'conversation' | 'contact' | 'cron';
 
 export type AgentType = 'claude-code' | 'kiro-cli' | 'codex' | 'cursor' | 'gemini' | 'custom';
 
-/** Resolve the command and arguments to spawn an ACP agent process. */
-export function resolveCommand(
-  type: AgentType,
-  config: AcpConfig,
-): { readonly command: string; readonly args: readonly string[] } {
-  if (type === 'kiro-cli') {
-    const command = config.executablePath ?? 'kiro-cli';
-    const args = config.kiroCliTrustAllTools !== false ? ['acp', '--trust-all-tools'] : ['acp'];
-    return { command, args };
-  }
-
-  if (type === 'claude-code') {
-    return { command: config.executablePath ?? 'claude-agent-acp', args: [] };
-  }
-
-  if (type === 'codex') {
-    return { command: config.executablePath ?? 'codex-acp', args: [] };
-  }
-
-  if (type === 'cursor') {
-    return { command: config.executablePath ?? 'agent', args: ['acp'] };
-  }
-
-  if (type === 'gemini') {
-    return { command: config.executablePath ?? 'gemini', args: ['--acp'] };
-  }
-
-  // custom: user provides the full command string, possibly with args baked in
-  if (!config.executablePath) {
-    throw new Error('No executable path configured for custom agent type');
-  }
-  const parts = config.executablePath.trim().split(/\s+/).filter(Boolean);
-  const command = parts[0];
-  if (command === undefined) {
-    throw new Error('No executable path configured for custom agent type');
-  }
-  return { command, args: parts.slice(1) };
+export interface AgentIdentity {
+  readonly userId: string;
+  readonly username: string;
+  readonly displayName?: string;
+  readonly avatarUrl?: string;
+  readonly ownerId?: string;
 }
 
 export type AgentRuntimeStatus =
@@ -142,6 +129,16 @@ export interface AgentConfig {
   readonly acp?: AcpConfig;
 }
 
+export interface ContextWindow {
+  readonly size: number;
+  readonly used: number;
+}
+
+export interface SessionConfig {
+  readonly acpModel?: string | null;
+  readonly acpMode?: string | null;
+}
+
 /** Default session idle timeout: 1 hour. */
 export const DEFAULT_SESSION_IDLE_TIMEOUT_MS = 60 * 60 * 1000;
 
@@ -212,27 +209,6 @@ export type PermissionHandler = (
   conversationId?: string,
 ) => Promise<string>;
 
-/** Extract a human-readable message from an unknown error (handles Error instances and plain objects). */
-export function extractErrorMessage(err: unknown): string {
-  if (typeof err === 'object' && err !== null) {
-    const obj = err as Record<string, unknown>;
-    // ACP errors may have a more detailed message in data.message
-    if (typeof obj.data === 'object' && obj.data !== null) {
-      const data = obj.data as Record<string, unknown>;
-      if (typeof data.message === 'string') {
-        return data.message;
-      }
-    }
-    if (err instanceof Error) {
-      return err.message;
-    }
-    if (typeof obj.message === 'string') {
-      return obj.message;
-    }
-  }
-  return String(err);
-}
-
 /**
  * Session mode controls which messaging tools are available:
  * - 'isolated': One session per conversation. Uses `initiate_conversation` for cross-conversation
@@ -281,7 +257,7 @@ export interface NewioAppForAgent extends NewioAppForMcp {
   /** Get a member's display info (for context messages). */
   getMemberDisplayInfo(conversationId: string, userId: string): { username?: string; displayName?: string } | undefined;
   /** Get the self member's persisted session config (acpModel/acpMode). */
-  getSelfMemberConfig(conversationId: string): { acpModel?: string; acpMode?: string } | undefined;
+  getSessionConfig(conversationId: string): { acpModel?: string; acpMode?: string } | undefined;
 
   // ── Memory ──
   loadSessionMemory(conversationId?: string, participantIds?: readonly string[]): Promise<LoadSessionMemoryResponse>;
@@ -302,4 +278,91 @@ export interface NewioAppForAgent extends NewioAppForMcp {
     contextWindowSize: number,
     contextWindowUsed: number,
   ): Promise<void>;
+}
+
+export type InboundEvent =
+  | { readonly type: 'message'; readonly msg: IncomingMessage }
+  | { readonly type: 'contact'; readonly event: ContactEvent }
+  | { readonly type: 'cron'; readonly event: CronTriggerEvent }
+  | { readonly type: 'initiate_conversation'; readonly conversationId: string; readonly context: string };
+
+export interface ApplySessionConfigUpdateRequest {
+  readonly sessionType: SessionType;
+  readonly externalReferenceId: string;
+  readonly updates: SessionConfigUpdate;
+}
+
+/**
+ * initialize session and dispatch events to corresponding session.
+ */
+export interface SessionManager {
+  routeInboundEvent(event: InboundEvent): void;
+  getLiveSessionInfo(request: LiveSessionInfoRequest): LiveSessionInfoResponse;
+  applySessionConfigUpdate(request: ApplySessionConfigUpdateRequest): Promise<void>;
+  rotateSession(sessionType: SessionType, externalReferenceId: string): Promise<void>;
+  getDmSession(convId: string): Promise<AgentSession>;
+
+  handleStartSession(request: StartSessionRequest): Promise<StartSessionResponse>;
+  handleUpdateMemory(request: UpdateMemoryRequest): Promise<UpdateMemoryResponse>;
+  handleRotateSession(request: RotateSessionRequest): Promise<RotateSessionResponse>;
+  handleCancelSession(request: CancelSessionRequest): Promise<CancelSessionResponse>;
+  handleCompactSession(request: CompactSessionRequest): Promise<CompactSessionResponse>;
+
+  startIdleCleanup(): void;
+  terminate(): Promise<void>;
+}
+
+export interface SessionEventProcessor {
+  processEvent(event: AgentEvent, session: AgentSession): Promise<void>;
+}
+
+export interface NewioAppForSession {
+  handlePermissionRequest(
+    title: string,
+    options: ReadonlyArray<PermissionRequestOption>,
+    conversationId?: string,
+  ): Promise<string>;
+  loadMemoryForSession(conversationId?: string): Promise<LoadSessionMemoryResponse>;
+  getHandoffNote(conversationId: string): Promise<string | null>;
+  putHandoffNote(conversationId: string, note: string): Promise<void>;
+  getSessionConfig(conversationId: string): Promise<{ acpModel?: string; acpMode?: string } | undefined>;
+  setStatus(status: ActivityStatus, conversationId?: string): void;
+}
+
+export interface CreateSessionInput {
+  readonly type: SessionType;
+  readonly externalReferenceId: string;
+  readonly promptFormatterVersion: string;
+  readonly mcpSocketPath: string;
+  /** Absolute path to the MCP bridge script (node entrypoint). */
+  readonly mcpBridgePath: string;
+  readonly skipToken: string;
+  readonly updateConfig: (config: SessionConfig) => Promise<void>;
+  readonly reportContextWindow: (contextWindow: ContextWindow) => Promise<void>;
+}
+
+export interface CreateSessionInput {
+  readonly type: SessionType;
+  readonly externalReferenceId: string;
+  readonly promptFormatterVersion: string;
+  readonly mcpSocketPath: string;
+  /** Absolute path to the MCP bridge script (node entrypoint). */
+  readonly mcpBridgePath: string;
+  readonly skipToken: string;
+  readonly updateConfig: (config: SessionConfig) => Promise<void>;
+  readonly reportContextWindow: (contextWindow: ContextWindow) => Promise<void>;
+}
+
+export interface SessionFactory {
+  init(): Promise<void>;
+
+  getAgentInfo(): AgentInfo | undefined;
+
+  createSession(input: CreateSessionInput): Promise<AgentSession>;
+
+  destorySession(correlationId: string): Promise<void>;
+
+  terminate(): Promise<void>;
+
+  onAbnormalTermination(abnormalTerminationHandler: (details: string) => void): void;
 }
