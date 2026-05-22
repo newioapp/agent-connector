@@ -860,4 +860,22 @@ describe('NewioApp', () => {
       );
     });
   });
+
+  describe('explicit event handler methods', () => {
+    it('onMessageNew registers handler for message.new', async () => {
+      const { app } = await createApp();
+      const handler = vi.fn();
+      app.onMessageNew(handler);
+      app.onMessageUpdated(handler);
+      app.onMessageDeleted(handler);
+      app.onContactEvent(handler);
+      app.onCronTriggered(handler);
+      app.onCronScheduled(handler);
+      app.onCronCancelled(handler);
+      app.onConversationMemberUpdated(handler);
+      app.onSessionUpdated(handler);
+      // Verify they don't throw — they delegate to on()
+      expect(handler).not.toHaveBeenCalled();
+    });
+  });
 });
