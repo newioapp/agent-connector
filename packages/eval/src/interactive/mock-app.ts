@@ -62,9 +62,6 @@ export class InteractiveMockNewioApp extends MockNewioApp implements NewioAppFor
   private readonly handoffNotes = new Map<string, string>();
   private readonly _initialMemory?: LoadSessionMemoryResponse;
 
-  /** Wired by the runner after the session manager is created. */
-  sessionManager?: SessionManager;
-
   constructor(opts: InteractiveMockAppOptions) {
     super(opts);
     this._initialMemory = opts.initialMemory;
