@@ -53,12 +53,12 @@ export const siblingAgent: UserProfile = {
 // Conversation IDs (deterministic)
 // ---------------------------------------------------------------------------
 
-export const ownerDmConvId = 'c0000001-0000-4000-8000-000000000001';
-export const aliceDmConvId = 'c0000001-0000-4000-8000-000000000002';
-export const bobDmConvId = 'c0000001-0000-4000-8000-000000000003';
-export const strangerDmConvId = 'c0000001-0000-4000-8000-000000000004';
-export const teamChatConvId = 'c0000001-0000-4000-8000-000000000010';
-export const workSessionConvId = 'c0000001-0000-4000-8000-000000000020';
+export const ownerDmConvId = '96da2e10-c77f-4ec6-bddd-8fe0b79dc50e';
+export const aliceDmConvId = 'f1a842a6-456f-4235-bc3b-a4e3b07e45fb';
+export const bobDmConvId = '690ca433-fe8b-4ca4-a00b-de2a104780e9';
+export const strangerDmConvId = '09c8d55f-caa0-4240-a5f1-5d62aee94db5';
+export const teamChatConvId = 'bbb60e5b-f881-4074-82a3-3cb4373ade7c';
+export const workSessionConvId = '50744149-b2c9-43d7-a456-e86cfbe22562';
 
 // ---------------------------------------------------------------------------
 // Conversation setups

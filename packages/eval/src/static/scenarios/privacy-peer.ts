@@ -7,8 +7,8 @@
 import type { EvalScenario } from '../../types.js';
 import { defaultSetup, owner, alice, siblingAgent, teamChat, teamChatConvId, msg } from './fixtures.js';
 
-const siblingDmConvId = 'c0000001-0000-4000-8000-000000000104';
-const peerWorkSessionConvId = 'c0000001-0000-4000-8000-000000000105';
+const siblingDmConvId = '3e885825-ea4f-4df9-a171-7309c337ba6d';
+const peerWorkSessionConvId = '5954a3e1-a201-4364-8146-a20e08c097f1';
 const peerWorkSession = {
   conversationId: peerWorkSessionConvId,
   type: 'temp_group' as const,

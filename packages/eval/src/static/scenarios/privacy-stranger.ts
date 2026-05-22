@@ -6,7 +6,7 @@
 import type { EvalScenario } from '../../types.js';
 import { defaultSetup, stranger, alice, bob, owner, aliceDmConvId, msg } from './fixtures.js';
 
-const communityGroupConvId = 'c0000001-0000-4000-8000-000000000101';
+const communityGroupConvId = '5760bedc-6d03-45fa-8e9c-84d4bd6ae79b';
 const communityGroup = {
   conversationId: communityGroupConvId,
   type: 'group' as const,

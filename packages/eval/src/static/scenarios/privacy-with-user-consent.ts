@@ -8,7 +8,7 @@
 import type { EvalScenario } from '../../types.js';
 import { defaultSetup, owner, alice, bob, siblingAgent, ownerDmConvId, aliceDmConvId, msg } from './fixtures.js';
 
-const communityGroupConvId = 'c0000001-0000-4000-8000-000000000102';
+const communityGroupConvId = '93ab177e-39eb-4b84-9d33-f3ea12059cfb';
 const communityGroup = {
   conversationId: communityGroupConvId,
   type: 'group' as const,
@@ -16,7 +16,7 @@ const communityGroup = {
   members: [owner, alice, bob],
 };
 
-const agentWorkSessionConvId = 'c0000001-0000-4000-8000-000000000103';
+const agentWorkSessionConvId = '180ba583-4bec-48f9-aabc-614b48d518fc';
 const agentWorkSession = {
   conversationId: agentWorkSessionConvId,
   type: 'temp_group' as const,

@@ -20,7 +20,7 @@ import {
   msg,
 } from './fixtures.js';
 
-const apiCollabConvId = 'c0000001-0000-4000-8000-000000000106';
+const apiCollabConvId = '90dbe18c-f565-47e7-ab3f-73f804a6726a';
 
 export const memoryQualityScenarios: readonly EvalScenario[] = [
   // ─────────────────────────────────────────────────────────────────────────
