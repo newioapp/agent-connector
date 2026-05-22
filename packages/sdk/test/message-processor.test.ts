@@ -3,7 +3,7 @@ import { MessageProcessor, shouldSkipMessage, isMentioned } from '../src/app/mes
 import { NewioAppStore } from '../src/app/store.js';
 import { PendingActions } from '../src/app/pending-actions.js';
 import type { NewioClient } from '../src/core/client.js';
-import type { AppEventHandlers, NewioIdentity } from '../src/app/types.js';
+import type { MessageNewHandler, NewioIdentity } from '../src/app/types.js';
 import type { MessageNewEvent } from '../src/core/events.js';
 
 const identity: NewioIdentity = { userId: 'me', username: 'myagent', displayName: 'My Agent' };
@@ -33,7 +33,7 @@ function createProcessor(
   opts: {
     store?: NewioAppStore;
     client?: NewioClient;
-    handlers?: Partial<AppEventHandlers>;
+    handlers?: Partial<{ 'message.new': MessageNewHandler }>;
     pendingActions?: PendingActions;
   } = {},
 ) {
@@ -41,7 +41,7 @@ function createProcessor(
   const client = opts.client ?? mockClient();
   const handlers = opts.handlers ?? {};
   const pendingActions = opts.pendingActions ?? new PendingActions();
-  const processor = new MessageProcessor(store, client, identity, () => handlers, pendingActions);
+  const processor = new MessageProcessor(store, client, identity, () => handlers['message.new'], pendingActions);
   return { processor, store, client, handlers, pendingActions };
 }
 

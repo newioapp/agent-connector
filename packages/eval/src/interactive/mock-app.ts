@@ -89,6 +89,34 @@ export class InteractiveMockNewioApp extends MockNewioApp implements NewioAppFor
     this.eventHandlers.set(event, handlers);
   }
 
+  onMessageNew(handler: AppEventHandlers['message.new']): void {
+    this.on('message.new', handler);
+  }
+  onMessageUpdated(handler: AppEventHandlers['message.updated']): void {
+    this.on('message.updated', handler);
+  }
+  onMessageDeleted(handler: AppEventHandlers['message.deleted']): void {
+    this.on('message.deleted', handler);
+  }
+  onContactEvent(handler: AppEventHandlers['contact.event']): void {
+    this.on('contact.event', handler);
+  }
+  onCronTriggered(handler: AppEventHandlers['cron.triggered']): void {
+    this.on('cron.triggered', handler);
+  }
+  onCronScheduled(handler: AppEventHandlers['cron.scheduled']): void {
+    this.on('cron.scheduled', handler);
+  }
+  onCronCancelled(handler: AppEventHandlers['cron.cancelled']): void {
+    this.on('cron.cancelled', handler);
+  }
+  onConversationMemberUpdated(handler: AppEventHandlers['conversation.member_updated']): void {
+    this.on('conversation.member_updated', handler);
+  }
+  onSessionUpdated(handler: AppEventHandlers['session.updated']): void {
+    this.on('session.updated', handler);
+  }
+
   /** Emit an event to registered handlers. Used by the driver to inject messages. */
   emit<K extends keyof AppEventHandlers>(event: K, ...args: Parameters<AppEventHandlers[K]>): void {
     const handlers = this.eventHandlers.get(event);

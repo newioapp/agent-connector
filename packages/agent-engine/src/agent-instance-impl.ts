@@ -41,7 +41,7 @@ import { SharedSessionManager } from './shared-session-manager.js';
 import { IsolatedSessionManager } from './isolated-session-manager.js';
 import { SessionEventProcessorImpl } from './session-event-processor-impl.js';
 import { AgentSession } from './agent-session.js';
-import { NewioMcpServerInterface } from './mcp/types.js';
+import { NewioAppForMcp, NewioMcpServerInterface } from './mcp/types.js';
 
 const log = getLogger('agent-instance-impl');
 
@@ -86,11 +86,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
     protected readonly engineConfig: EngineConfig,
   ) {}
 
-  abstract createNewioApp(): Promise<NewioAppForAgent>;
+  abstract createNewioApp(): Promise<NewioAppForAgent & NewioAppForMcp>;
 
   abstract createPromptManager(): Promise<PromptManager>;
 
-  abstract createMcpServer(): NewioMcpServerInterface;
+  abstract createMcpServer(app: NewioAppForMcp): NewioMcpServerInterface;
 
   getAgentInfo(): AgentInfo | undefined {
     return this._sessionFactory?.getAgentInfo();
@@ -140,7 +140,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
           if (this.pendingMcpServer) {
             log.warn(`${this.logTag} New MCP connection arrived before previous one was wired to a session`);
           }
-          const mcpServer = this.createMcpServer();
+          const mcpServer = this.createMcpServer(app);
           this.pendingMcpServer = mcpServer;
           void mcpServer.connect(transport);
         },
@@ -348,32 +348,32 @@ export abstract class BaseAgentInstance implements AgentInstance {
     });
 
     // Wire event handlers — capture synchronously into inbound queue
-    app.on('message.new', (msg) => {
+    app.onMessageNew((msg) => {
       if (!msg.isOwnMessage && !this.abortController.signal.aborted) {
         this.inbound.push({ type: 'message', msg });
         this.drainInbound();
       }
     });
 
-    app.on('contact.event', (event) => {
+    app.onContactEvent((event) => {
       if (!this.abortController.signal.aborted) {
         this.inbound.push({ type: 'contact', event });
         this.drainInbound();
       }
     });
 
-    app.on('cron.triggered', (event) => {
+    app.onCronTriggered((event) => {
       if (!this.abortController.signal.aborted) {
         this.inbound.push({ type: 'cron', event });
         this.drainInbound();
       }
     });
 
-    app.on('cron.scheduled', (def) => {
+    app.onCronScheduled((def) => {
       this.cronStore.saveCron(this.config.id, def);
     });
 
-    app.on('cron.cancelled', (cronId) => {
+    app.onCronCancelled((cronId) => {
       this.cronStore.deleteCron(cronId);
     });
 
@@ -381,7 +381,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
     // - showToolCalls/showThoughts → conversation flags
     // - acpModel/acpMode → apply to live session
     // (session.updated is deprecated; acpModel/acpMode now flow through conversation.member_updated)
-    app.on('conversation.member_updated', (event) => {
+    app.onConversationMemberUpdated((event) => {
       const { conversationId, userId, updatedBy, changes } = event;
       if (userId !== app.identity.userId) {
         return;
@@ -669,7 +669,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
 }
 
 export class AgentInstanceImpl extends BaseAgentInstance {
-  async createNewioApp(): Promise<NewioAppForAgent> {
+  async createNewioApp(): Promise<NewioAppForAgent & NewioAppForMcp> {
     return await NewioApp.create({
       agentId: this.config.newio?.agentId,
       username: this.config.newio?.username,
@@ -704,9 +704,9 @@ export class AgentInstanceImpl extends BaseAgentInstance {
     return new PromptManager([defaultPromptFormatter], defaultPromptFormatter);
   }
 
-  createMcpServer(): NewioMcpServerInterface {
+  createMcpServer(app: NewioAppForMcp): NewioMcpServerInterface {
     return new NewioMcpServer({
-      app: this.app,
+      app: app,
       initiateConversation: (convId, context) => {
         if (!this.abortController.signal.aborted) {
           this.inbound.push({ type: 'initiate_conversation', conversationId: convId, context: context });

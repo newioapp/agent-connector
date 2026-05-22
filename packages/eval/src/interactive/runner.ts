@@ -28,7 +28,7 @@ import type {
   SessionMode,
   EngineConfig,
 } from '@newio/agent-engine';
-import type { NewioMcpServerInterface } from '@newio/agent-engine';
+import type { NewioMcpServerInterface, NewioAppForMcp } from '@newio/agent-engine';
 import type { AgentInstanceListener } from '@newio/agent-engine';
 import type { Server } from 'net';
 import { InteractiveMockNewioApp } from './mock-app.js';
@@ -90,7 +90,7 @@ class EvalAgentInstance extends BaseAgentInstance {
     super(config, noopConfigManager, noopCronStore, listener, engineConfig);
   }
 
-  async createNewioApp(): Promise<NewioAppForAgent> {
+  async createNewioApp(): Promise<NewioAppForAgent & NewioAppForMcp> {
     return this.mockApp;
   }
 

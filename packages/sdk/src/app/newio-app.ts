@@ -56,6 +56,15 @@ import type {
   StartSessionHandler,
   UpdateMemoryHandler,
   RotateSessionHandler,
+  MessageNewHandler,
+  MessageUpdatedHandler,
+  MessageDeletedHandler,
+  ContactEventHandler,
+  CronTriggeredHandler,
+  CronScheduledHandler,
+  CronCancelledHandler,
+  ConversationMemberUpdatedHandler,
+  SessionUpdatedHandler,
 } from './types.js';
 
 const log = getLogger('newio-app');
@@ -225,14 +234,19 @@ export class NewioApp {
     store?: NewioAppStore,
   ): NewioApp {
     const app = new NewioApp(identity, auth, client, ws, store ?? new NewioAppStore());
-    const processor = new MessageProcessor(app.store, client, identity, () => app.eventHandlers, app.pendingActions);
+    const processor = new MessageProcessor(
+      app.store,
+      client,
+      identity,
+      () => app.eventHandlers['message.new'],
+      app.pendingActions,
+    );
     wireEvents(
       ws,
       app.store,
       client,
       identity,
       () => app.eventHandlers,
-      app.pendingActions,
       processor,
       () => app._getSignalHandlers(),
     );
@@ -297,14 +311,19 @@ export class NewioApp {
 
     const store = new NewioAppStore(opts.persistence);
     const app = new NewioApp(identity, auth, client, ws, store, opts.downloadDir);
-    const processor = new MessageProcessor(store, client, identity, () => app.eventHandlers, app.pendingActions);
+    const processor = new MessageProcessor(
+      store,
+      client,
+      identity,
+      () => app.eventHandlers['message.new'],
+      app.pendingActions,
+    );
     wireEvents(
       ws,
       store,
       client,
       identity,
       () => app.eventHandlers,
-      app.pendingActions,
       processor,
       () => app._getSignalHandlers(),
     );
@@ -345,6 +364,34 @@ export class NewioApp {
   /** Register a handler for an app-level event. */
   on<K extends keyof AppEventHandlers>(event: K, handler: AppEventHandlers[K]): void {
     this.eventHandlers[event] = handler;
+  }
+
+  onMessageNew(handler: MessageNewHandler): void {
+    this.on('message.new', handler);
+  }
+  onMessageUpdated(handler: MessageUpdatedHandler): void {
+    this.on('message.updated', handler);
+  }
+  onMessageDeleted(handler: MessageDeletedHandler): void {
+    this.on('message.deleted', handler);
+  }
+  onContactEvent(handler: ContactEventHandler): void {
+    this.on('contact.event', handler);
+  }
+  onCronTriggered(handler: CronTriggeredHandler): void {
+    this.on('cron.triggered', handler);
+  }
+  onCronScheduled(handler: CronScheduledHandler): void {
+    this.on('cron.scheduled', handler);
+  }
+  onCronCancelled(handler: CronCancelledHandler): void {
+    this.on('cron.cancelled', handler);
+  }
+  onConversationMemberUpdated(handler: ConversationMemberUpdatedHandler): void {
+    this.on('conversation.member_updated', handler);
+  }
+  onSessionUpdated(handler: SessionUpdatedHandler): void {
+    this.on('session.updated', handler);
   }
 
   // ---------------------------------------------------------------------------

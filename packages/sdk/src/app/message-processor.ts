@@ -13,7 +13,7 @@ import type { NewioClient } from '../core/client.js';
 import type { MessageContent, MessageRecord } from '../core/types.js';
 import type { MessageNewEvent } from '../core/events.js';
 import type { NewioAppStore } from './store.js';
-import type { AppEventHandlers, NewioIdentity } from './types.js';
+import type { MessageNewHandler, NewioIdentity } from './types.js';
 import type { PendingActions } from './pending-actions.js';
 
 const log = getLogger('message-processor');
@@ -23,7 +23,7 @@ export class MessageProcessor {
     private readonly store: NewioAppStore,
     private readonly client: NewioClient,
     private readonly identity: NewioIdentity,
-    private readonly getHandlers: () => Partial<AppEventHandlers>,
+    private readonly getMessageNewHandler: () => MessageNewHandler | undefined,
     private readonly pendingActions: PendingActions,
   ) {}
 
@@ -80,7 +80,7 @@ export class MessageProcessor {
       const shouldNotify =
         level === 'all' || (level === 'mentions' && isMentioned(payload.content, this.identity.userId));
       if (shouldNotify) {
-        this.getHandlers()['message.new']?.(message);
+        this.getMessageNewHandler()?.(message);
       }
     }
   }
@@ -119,7 +119,7 @@ export class MessageProcessor {
           const message = this.store.toIncomingMessage(this.identity, msg, conversationId);
           const inserted = this.store.insertMessage(conversationId, message);
           if (inserted && !message.isOwnMessage) {
-            this.getHandlers()['message.new']?.(message);
+            this.getMessageNewHandler()?.(message);
           }
           count++;
         }

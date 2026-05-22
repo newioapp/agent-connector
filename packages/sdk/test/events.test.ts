@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { wireEvents } from '../src/app/events.js';
 import { NewioAppStore } from '../src/app/store.js';
-import { PendingActions } from '../src/app/pending-actions.js';
 import type { NewioWebSocket } from '../src/core/websocket.js';
 import type { NewioClient } from '../src/core/client.js';
 import type { EventMap } from '../src/core/events.js';
@@ -72,7 +71,6 @@ describe('wireEvents', () => {
   let store: NewioAppStore;
   let client: NewioClient;
   let handlers: Partial<AppEventHandlers>;
-  let pendingActions: PendingActions;
   let processor: MessageProcessor;
   let signalHandlers: {
     liveSessionInfo: LiveSessionInfoHandler;
@@ -88,7 +86,6 @@ describe('wireEvents', () => {
     store = new NewioAppStore();
     client = createMockClient();
     handlers = {};
-    pendingActions = new PendingActions();
     processor = { handleMessageNew: vi.fn().mockResolvedValue(undefined) } as unknown as MessageProcessor;
     signalHandlers = {
       liveSessionInfo: vi.fn().mockReturnValue({
@@ -111,7 +108,6 @@ describe('wireEvents', () => {
       client,
       identity,
       () => handlers,
-      pendingActions,
       processor,
       () => signalHandlers,
     );
@@ -262,15 +258,12 @@ describe('wireEvents', () => {
       status: 'pending',
       createdAt: ts,
     };
-    const handler = vi.fn();
     const eventHandler = vi.fn();
-    handlers['contact.request_received'] = handler;
     handlers['contact.event'] = eventHandler;
 
     ws.fire('contact.request_received', { type: 'contact.request_received', timestamp: ts, payload: { contact } });
 
     expect(store.findIncomingRequestByUsername('alice')).toBeDefined();
-    expect(handler).toHaveBeenCalledWith(expect.objectContaining({ username: 'alice' }));
     expect(eventHandler).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'contact.request_received', username: 'alice' }),
     );
@@ -297,8 +290,8 @@ describe('wireEvents', () => {
       status: 'accepted',
       createdAt: ts,
     };
-    const handler = vi.fn();
-    handlers['contact.request_accepted'] = handler;
+    const eventHandler = vi.fn();
+    handlers['contact.event'] = eventHandler;
 
     ws.fire('contact.request_accepted', {
       type: 'contact.request_accepted',
@@ -308,7 +301,9 @@ describe('wireEvents', () => {
 
     expect(store.getIncomingRequests()).toHaveLength(0);
     expect(store.isContact('u2')).toBe(true);
-    expect(handler).toHaveBeenCalled();
+    expect(eventHandler).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'contact.request_accepted', username: 'alice' }),
+    );
   });
 
   it('handles contact.request_rejected', () => {
@@ -321,8 +316,8 @@ describe('wireEvents', () => {
       status: 'pending',
       createdAt: ts,
     });
-    const handler = vi.fn();
-    handlers['contact.request_rejected'] = handler;
+    const eventHandler = vi.fn();
+    handlers['contact.event'] = eventHandler;
 
     ws.fire('contact.request_rejected', {
       type: 'contact.request_rejected',
@@ -331,7 +326,7 @@ describe('wireEvents', () => {
     });
 
     expect(store.getIncomingRequests()).toHaveLength(0);
-    expect(handler).toHaveBeenCalled();
+    expect(eventHandler).toHaveBeenCalledWith(expect.objectContaining({ type: 'contact.request_rejected' }));
   });
 
   it('handles contact.request_revoked', () => {
@@ -363,13 +358,13 @@ describe('wireEvents', () => {
       status: 'accepted',
       createdAt: ts,
     });
-    const handler = vi.fn();
-    handlers['contact.removed'] = handler;
+    const eventHandler = vi.fn();
+    handlers['contact.event'] = eventHandler;
 
     ws.fire('contact.removed', { type: 'contact.removed', timestamp: ts, payload: { userId: 'me', contactId: 'u2' } });
 
     expect(store.isContact('u2')).toBe(false);
-    expect(handler).toHaveBeenCalledWith('alice');
+    expect(eventHandler).toHaveBeenCalledWith(expect.objectContaining({ type: 'contact.removed', username: 'alice' }));
   });
 
   it('handles contact.friend_name_updated', () => {

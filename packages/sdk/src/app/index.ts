@@ -31,4 +31,13 @@ export type {
   StartSessionHandler,
   UpdateMemoryHandler,
   RotateSessionHandler,
+  MessageNewHandler,
+  MessageUpdatedHandler,
+  MessageDeletedHandler,
+  ContactEventHandler,
+  CronTriggeredHandler,
+  CronScheduledHandler,
+  CronCancelledHandler,
+  ConversationMemberUpdatedHandler,
+  SessionUpdatedHandler,
 } from './types.js';

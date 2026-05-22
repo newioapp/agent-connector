@@ -28,7 +28,6 @@ import type {
   UpdateMemoryHandler,
   RotateSessionHandler,
 } from './types.js';
-import type { PendingActions } from './pending-actions.js';
 import type { MessageProcessor } from './message-processor.js';
 
 const log = getLogger('events');
@@ -40,7 +39,6 @@ export function wireEvents(
   client: NewioClient,
   identity: NewioIdentity,
   getHandlers: () => Partial<AppEventHandlers>,
-  pendingActions: PendingActions,
   processor: MessageProcessor,
   getSignalHandlers: () => {
     liveSessionInfo: LiveSessionInfoHandler;
@@ -148,12 +146,6 @@ export function wireEvents(
     const c = event.payload.contact;
     log.info(`Event contact.request_received from @${c.friendUsername}`);
     store.addIncomingRequest(c);
-    getHandlers()['contact.request_received']?.({
-      username: c.friendUsername,
-      displayName: c.friendDisplayName,
-      accountType: c.friendAccountType,
-      note: c.note,
-    });
     const ownerProfile = c.friendAccountType === 'agent' && c.ownerId ? store.getOwnerProfile(c.ownerId) : undefined;
     getHandlers()['contact.event']?.({
       type: 'contact.request_received',
@@ -172,11 +164,6 @@ export function wireEvents(
     log.info(`Event contact.request_accepted: @${c.friendUsername}`);
     store.removeIncomingRequest(c.contactId);
     store.indexContact(c);
-    getHandlers()['contact.request_accepted']?.({
-      username: c.friendUsername,
-      displayName: c.friendDisplayName,
-      accountType: c.friendAccountType,
-    });
     const ownerProfile = c.friendAccountType === 'agent' && c.ownerId ? store.getOwnerProfile(c.ownerId) : undefined;
     getHandlers()['contact.event']?.({
       type: 'contact.request_accepted',
@@ -193,7 +180,6 @@ export function wireEvents(
     log.debug(`Event contact.request_rejected: ${event.payload.contactId}`);
     store.removeIncomingRequest(event.payload.contactId);
     const contact = store.getContact(event.payload.contactId);
-    getHandlers()['contact.request_rejected']?.(contact?.friendUsername);
     getHandlers()['contact.event']?.({
       type: 'contact.request_rejected',
       username: contact?.friendUsername,
@@ -212,7 +198,6 @@ export function wireEvents(
     log.debug(`Event contact.removed: ${event.payload.contactId}`);
     const contact = store.getContact(event.payload.contactId);
     store.removeContact(event.payload.contactId);
-    getHandlers()['contact.removed']?.(contact?.friendUsername);
     getHandlers()['contact.event']?.({
       type: 'contact.removed',
       username: contact?.friendUsername,
