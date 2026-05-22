@@ -9,10 +9,11 @@ export default defineConfig([
     sourcemap: true,
   },
   {
-    entry: ['src/cli.ts'],
+    entry: ['src/static/cli.ts'],
     format: ['esm'],
     dts: false,
     sourcemap: true,
+    outDir: 'dist/static',
     banner: { js: '#!/usr/bin/env node' },
   },
   {

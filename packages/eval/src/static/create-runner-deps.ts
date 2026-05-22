@@ -10,17 +10,19 @@ import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
 import { parse as parseDotenv } from 'dotenv';
 import { AcpSessionFactory, startUdsServer } from '@newio/agent-engine';
-import { NewioEvalMcpServer } from './mcp/v1/server.js';
-import { EvalPromptFormatter } from './prompts/v1/prompt-formatter.js';
-import type { AgentConfig, PromptFormatter } from '@newio/agent-engine';
-import type { ToolCallHook } from './mcp/v1/types.js';
-import type { NewioApp } from '@newio/agent-sdk';
-import type { Server } from 'net';
-import type { EvalConfig, EvalScenario } from './types.js';
-import { ToolInterceptor } from './mock-environment.js';
-import { MockNewioApp } from './mock-environment.js';
-import type { AgentSession } from '@newio/agent-engine';
+import { NewioEvalMcpServer } from '../mcp/v1/server.js';
+import { EvalPromptFormatter } from '../prompts/v1/prompt-formatter.js';
+import { MockBackend } from '../mock-backend.js';
+import { MockNewioApp } from '../mock-newio-app.js';
+import { ToolInterceptor } from './tool-interceptor.js';
+import { buildScenarioData } from './build-scenario-data.js';
 import { TraceCollector } from './trace.js';
+import type { AgentConfig, PromptFormatter } from '@newio/agent-engine';
+import type { ToolCallHook } from '../mcp/v1/types.js';
+import type { NewioAppForMcp } from '../mcp/v1/types.js';
+import type { Server } from 'net';
+import type { EvalConfig, EvalScenario } from '../types.js';
+import type { AgentSession } from '@newio/agent-engine';
 
 export interface ScenarioRunnerDeps {
   /** Tool interceptor populated by MCP server hook. Source of truth for tool call assertions. */
@@ -46,26 +48,13 @@ export async function createScenarioRunnerDeps(
   const toolInterceptor = new ToolInterceptor();
   const traceCollector = new TraceCollector();
 
+  // Build MockBackend from scenario setup
+  const backend = new MockBackend();
+  backend.loadFrom(buildScenarioData(scenario.setup));
+
   const mockApp = new MockNewioApp({
-    identity: scenario.setup.agent,
-    owner: scenario.setup.owner,
-    contacts: scenario.setup.contacts?.map((c) => ({
-      username: c.username,
-      displayName: c.displayName,
-      accountType: c.accountType,
-    })),
-    conversations: scenario.setup.conversations?.map((c) => ({
-      conversationId: c.conversationId,
-      type: c.type,
-      name: c.name,
-      members: c.members.map((m) => ({
-        username: m.username,
-        displayName: m.displayName,
-        accountType: m.accountType,
-        role: m.relationship === 'owner' ? 'admin' : 'member',
-      })),
-    })),
-    memoryStore: scenario.setup.memoryStore,
+    backend,
+    userId: scenario.setup.agent.userId,
   });
 
   // Hook: every MCP tool call gets recorded in the interceptor
@@ -81,18 +70,14 @@ export async function createScenarioRunnerDeps(
 
   // Create MCP server with hook, backed by mock app
   const mcpServer = new NewioEvalMcpServer({
-    app: mockApp as unknown as NewioApp,
+    app: mockApp as unknown as NewioAppForMcp,
     initiateConversation: () => {},
     sessionMode: effectiveSessionMode,
     onToolCall,
   });
 
-  const currentConversationId: { id: string | undefined } = {
-    id: undefined,
-  };
-  mcpServer.setCurrentConversationIdGetter(() => {
-    return currentConversationId.id;
-  });
+  const currentConversationId: { id: string | undefined } = { id: undefined };
+  mcpServer.setCurrentConversationIdGetter(() => currentConversationId.id);
 
   // Start UDS server
   const udsServer: Server = startUdsServer({
@@ -117,9 +102,9 @@ export async function createScenarioRunnerDeps(
 
   const mcpBridgePath = fileURLToPath(import.meta.resolve('@newio/agent-engine/mcp-bridge'));
 
-  // Build prompt manager with the requested version
+  // Build prompt formatter
   const promptFormatter = new EvalPromptFormatter(
-    { username: mockApp.identity.username, displayName: mockApp.identity.displayName },
+    { username: mockApp.identity.username, displayName: mockApp.identity.displayName ?? mockApp.identity.username },
     mockApp.getOwnerInfo(),
     effectiveSessionMode,
   );
@@ -143,19 +128,18 @@ export async function createScenarioRunnerDeps(
   await session.applySessionConfig({ acpModel: config.model });
 
   return {
-    session: session,
-    promptFormatter: promptFormatter,
+    session,
+    promptFormatter,
     toolInterceptor,
     traceCollector,
     setCurrentConversationId: (id) => {
       currentConversationId.id = id;
     },
     teardown: async () => {
+      mockApp.dispose();
       await sessionFactory.terminate();
       await new Promise<void>((resolve) => {
-        udsServer.close(() => {
-          resolve();
-        });
+        udsServer.close(() => resolve());
       });
     },
   };

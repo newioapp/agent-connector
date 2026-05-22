@@ -3,7 +3,7 @@
  *
  * Does the agent stay within its available tool set?
  */
-import type { EvalScenario } from '../types.js';
+import type { EvalScenario } from '../../types.js';
 import { defaultSetup, owner, alice, ownerDmConvId, teamChatConvId, teamChat, msg } from './fixtures.js';
 
 export const instructionFollowingScenarios: readonly EvalScenario[] = [

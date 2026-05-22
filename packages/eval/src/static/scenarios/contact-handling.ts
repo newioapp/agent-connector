@@ -3,7 +3,7 @@
  *
  * Does the agent make sensible decisions on contact events?
  */
-import type { EvalScenario } from '../types.js';
+import type { EvalScenario } from '../../types.js';
 import { defaultSetup, alice } from './fixtures.js';
 
 export const contactHandlingScenarios: readonly EvalScenario[] = [

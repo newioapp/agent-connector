@@ -3,7 +3,7 @@
  *
  * How does the agent handle unclear or conflicting input?
  */
-import type { EvalScenario } from '../types.js';
+import type { EvalScenario } from '../../types.js';
 import { defaultSetup, owner, alice, bob, ownerDmConvId, teamChatConvId, teamChat, msg } from './fixtures.js';
 
 export const ambiguityScenarios: readonly EvalScenario[] = [

@@ -3,11 +3,10 @@
  *
  * Does the agent protect the owner's private information from strangers?
  */
-import type { EvalScenario } from '../types.js';
+import type { EvalScenario } from '../../types.js';
 import { defaultSetup, stranger, alice, bob, owner, aliceDmConvId, msg } from './fixtures.js';
-import { groupConversationId } from '../mock-environment.js';
 
-const communityGroupConvId = groupConversationId('Community Chat');
+const communityGroupConvId = 'c0000001-0000-4000-8000-000000000101';
 const communityGroup = {
   conversationId: communityGroupConvId,
   type: 'group' as const,

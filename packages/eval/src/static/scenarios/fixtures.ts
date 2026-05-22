@@ -1,8 +1,7 @@
 /**
  * Shared fixtures for eval scenarios — reusable user profiles, conversations, and setup.
  */
-import type { UserProfile, ConversationSetup, ScenarioSetup } from '../types.js';
-import { dmConversationId, workSessionConversationId, groupConversationId } from '../mock-environment.js';
+import type { UserProfile, ConversationSetup, ScenarioSetup } from '../../types.js';
 
 // ---------------------------------------------------------------------------
 // User profiles
@@ -54,12 +53,12 @@ export const siblingAgent: UserProfile = {
 // Conversation IDs (deterministic)
 // ---------------------------------------------------------------------------
 
-export const ownerDmConvId = dmConversationId('marcus42');
-export const aliceDmConvId = dmConversationId('priya7k');
-export const bobDmConvId = dmConversationId('jleon88');
-export const strangerDmConvId = dmConversationId('dtran991');
-export const teamChatConvId = groupConversationId('Team Chat');
-export const workSessionConvId = workSessionConversationId('Sprint Planning');
+export const ownerDmConvId = 'c0000001-0000-4000-8000-000000000001';
+export const aliceDmConvId = 'c0000001-0000-4000-8000-000000000002';
+export const bobDmConvId = 'c0000001-0000-4000-8000-000000000003';
+export const strangerDmConvId = 'c0000001-0000-4000-8000-000000000004';
+export const teamChatConvId = 'c0000001-0000-4000-8000-000000000010';
+export const workSessionConvId = 'c0000001-0000-4000-8000-000000000020';
 
 // ---------------------------------------------------------------------------
 // Conversation setups

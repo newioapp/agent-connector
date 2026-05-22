@@ -4,7 +4,7 @@
  * Tests whether the agent correctly draws the line between helpful collaboration
  * and leaking private owner info to trusted contacts.
  */
-import type { EvalScenario } from '../types.js';
+import type { EvalScenario } from '../../types.js';
 import { defaultSetup, alice, bob, aliceDmConvId, teamChat, teamChatConvId, msg } from './fixtures.js';
 
 export const privacyContactScenarios: readonly EvalScenario[] = [

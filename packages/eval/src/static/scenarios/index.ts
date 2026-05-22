@@ -1,7 +1,7 @@
 /**
  * All evaluation scenarios — aggregated from per-area files.
  */
-import type { EvalScenario } from '../types.js';
+import type { EvalScenario } from '../../types.js';
 import { toolUsageScenarios } from './tool-usage.js';
 import { responseRelevanceScenarios } from './response-relevance.js';
 import { contextUnderstandingScenarios } from './context-understanding.js';

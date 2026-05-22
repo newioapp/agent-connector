@@ -3,7 +3,7 @@
  *
  * Does the agent execute scheduled tasks correctly?
  */
-import type { EvalScenario } from '../types.js';
+import type { EvalScenario } from '../../types.js';
 import { defaultSetup, alice } from './fixtures.js';
 
 export const cronExecutionScenarios: readonly EvalScenario[] = [

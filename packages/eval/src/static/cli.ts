@@ -11,7 +11,7 @@ import { program } from 'commander';
 
 // Load .env (secrets like ANTHROPIC_API_KEY) into process.env
 loadDotenv();
-import type { EvalConfig, EvalScenario, EvalArea, ScenarioRunResult, ScenarioAggregateResult } from './types.js';
+import type { EvalConfig, EvalScenario, EvalArea, ScenarioRunResult, ScenarioAggregateResult } from '../types.js';
 import type { AgentType, SessionMode } from '@newio/agent-engine';
 import { allScenarios } from './scenarios/index.js';
 import { runScenario } from './runner.js';
