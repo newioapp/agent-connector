@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AcpSessionConfigHandler } from '../../src/acp-session-config-handler';
-import type { SessionConfig } from '../../src/acp-session-config-handler';
+import type { SessionConfig } from '../../src/types';
 import type { ClientSideConnection, NewSessionResponse } from '@agentclientprotocol/sdk';
 
 /** Expose private methods for testing. */

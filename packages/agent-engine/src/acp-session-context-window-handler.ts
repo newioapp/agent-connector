@@ -7,18 +7,13 @@
  */
 import type * as acp from '@agentclientprotocol/sdk';
 import { getLogger } from '@newio/agent-sdk';
-import { SessionType } from './types';
+import { ContextWindow, SessionType } from './types';
 
 const log = getLogger('acp-session-context-window-handler');
 
 const MIN_INTERVAL_MS = 5_000;
 const MIN_PERCENTAGE_CHANGE = 1;
 const CONTEXT_PRESSURE_THRESHOLD = 80;
-
-export interface ContextWindow {
-  readonly size: number;
-  readonly used: number;
-}
 
 export class AcpSessionContextWindowHandler {
   private size = 0;

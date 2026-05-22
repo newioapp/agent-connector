@@ -24,7 +24,7 @@ export type {
   AgentStatusInfo,
   SessionMode,
 } from './types.js';
-export { resolveCommand, extractErrorMessage, DEFAULT_SESSION_IDLE_TIMEOUT_MS } from './types.js';
+export { DEFAULT_SESSION_IDLE_TIMEOUT_MS } from './types.js';
 export type {
   AgentInstance,
   AgentInstanceListener,
@@ -39,11 +39,9 @@ export type { StatusListener } from './agent-runtime-manager.js';
 
 // Agent instances
 export { AcpSessionFactory } from './acp-session-factory.js';
-export type { CreateSessionInput, SessionFactory } from './acp-session-factory.js';
-export type { SessionConfig } from './acp-session-config-handler.js';
-export type { ContextWindow } from './acp-session-context-window-handler.js';
-export { IsolatedSessionAgentInstance } from './isolated-session-agent-instance.js';
-export { SingleSessionAgentInstance } from './single-session-agent-instance.js';
+export { BaseAgentInstance, AgentInstanceImpl } from './agent-instance-impl.js';
+export type { CreateSessionInput, SessionFactory } from './types.js';
+export type { NewioAppForAgent, SessionManager, NewioAppForSession, InboundEvent } from './types.js';
 
 // Config manager implementation
 export { FileAgentConfigManager } from './file-agent-config-manager.js';
@@ -71,4 +69,5 @@ export type {
   NewioMcpServerOptions,
   NewioAppForMcp,
   McpContactSummary,
+  NewioMcpServerInterface,
 } from './mcp/index.js';

@@ -1,8 +1,16 @@
+import { AgentIdentity } from '../types';
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+
 export type IdGetter = () => string | undefined;
 
 /** Hook called before each MCP tool invocation. */
 export type ToolCallHook = (toolName: string, args: Readonly<Record<string, unknown>>) => void;
 
+export interface NewioMcpServerInterface {
+  setCurrentConversationIdGetter(idGetter: IdGetter): void;
+  /** Connect to a transport. */
+  connect(transport: Transport): Promise<void>;
+}
 // ---------------------------------------------------------------------------
 // Minimal structural types for the MCP ↔ App boundary
 // ---------------------------------------------------------------------------
@@ -107,13 +115,7 @@ export interface McpConversationInfo {
  * Any implementation (real SDK, mock for evals) can satisfy this contract.
  */
 export interface NewioAppForMcp {
-  readonly identity: {
-    readonly userId: string;
-    readonly username: string;
-    readonly displayName?: string;
-    readonly avatarUrl?: string;
-    readonly ownerId?: string;
-  };
+  readonly identity: AgentIdentity;
 
   // ── Identity ──
   getOwnerInfo(): { readonly username: string; readonly displayName: string };
