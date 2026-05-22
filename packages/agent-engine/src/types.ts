@@ -328,13 +328,13 @@ export interface NewioAppForSession {
   getSessionConfig(conversationId: string): Promise<{ acpModel?: string; acpMode?: string } | undefined>;
   setStatus(status: ActivityStatus, conversationId?: string): void;
   /** Get memory scope data for a conversation or user (for incremental injection in shared mode). */
-  getMemoryScope?(scope: string, scopeId: string): Promise<MemoryScopeData>;
+  getMemoryScope(scope: string, scopeId: string): Promise<MemoryScopeData>;
   /** Get member user IDs for a conversation (for incremental injection in shared mode). */
-  getConversationMemberIds?(conversationId: string): readonly string[] | undefined;
+  getConversationMemberIds(conversationId: string): readonly string[] | undefined;
   /** Get member display info (for context labels in shared mode). */
-  getMemberDisplayInfo?(conversationId: string, userId: string): { username?: string; displayName?: string } | undefined;
+  getMemberDisplayInfo(conversationId: string, userId: string): { username?: string; displayName?: string } | undefined;
   /** Get the agent's own userId (for filtering self from member lists). */
-  agentUserId?: string;
+  agentUserId: string;
 }
 
 export interface CreateSessionInput {

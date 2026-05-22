@@ -158,9 +158,6 @@ export class SharedSessionManager implements SessionManager {
    * conversation (and already-seen participants) skip fetching.
    */
   private async injectConversationContextIfNeeded(conversationId: string, session: AgentSession): Promise<void> {
-    if (!this.app.getMemoryScope) {
-      return;
-    }
     const agentId = this.app.agentUserId;
     const sections: string[] = [];
 
@@ -185,7 +182,7 @@ export class SharedSessionManager implements SessionManager {
     }
 
     // Per-user memory for unseen participants
-    const memberIds = this.app.getConversationMemberIds?.(conversationId);
+    const memberIds = this.app.getConversationMemberIds(conversationId);
     if (memberIds) {
       for (const userId of memberIds) {
         if (userId === agentId || this.injectedUserIds.has(userId)) {
@@ -202,7 +199,7 @@ export class SharedSessionManager implements SessionManager {
             parts.push(`- ${fact.text}`);
           }
           if (parts.length > 0) {
-            const info = this.app.getMemberDisplayInfo?.(conversationId, userId);
+            const info = this.app.getMemberDisplayInfo(conversationId, userId);
             const label = info?.displayName ?? info?.username ?? userId;
             sections.push(`## Memory about ${label} (${userId})\n${parts.join('\n')}`);
           }

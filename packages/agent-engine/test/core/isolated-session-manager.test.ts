@@ -56,6 +56,10 @@ function createMockApp(): NewioAppForSession {
     putHandoffNote: vi.fn().mockResolvedValue(undefined),
     getSessionConfig: vi.fn().mockResolvedValue(undefined),
     setStatus: vi.fn(),
+    getMemoryScope: vi.fn().mockResolvedValue({ summary: null, facts: [] }),
+    getConversationMemberIds: vi.fn().mockReturnValue(undefined),
+    getMemberDisplayInfo: vi.fn().mockReturnValue(undefined),
+    agentUserId: 'agent-1',
   };
 }
 
