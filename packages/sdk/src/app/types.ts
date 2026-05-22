@@ -90,10 +90,6 @@ export interface AppEventHandlers {
   'message.new': (message: IncomingMessage) => void;
   'message.updated': (message: IncomingMessage) => void;
   'message.deleted': (message: IncomingMessage) => void;
-  'contact.request_received': (info: ContactEventInfo) => void;
-  'contact.request_accepted': (info: ContactEventInfo) => void;
-  'contact.request_rejected': (username: string | undefined) => void;
-  'contact.removed': (username: string | undefined) => void;
   'contact.event': (event: ContactEvent) => void;
   'cron.triggered': (event: CronTriggerEvent) => void;
   'cron.scheduled': (def: CronJobDef) => void;
@@ -119,6 +115,17 @@ export interface AppEventHandlers {
     changes: { name?: string; acpModel?: string | null; acpMode?: string | null };
   }) => void;
 }
+
+// ── Named event handler types ──
+export type MessageNewHandler = AppEventHandlers['message.new'];
+export type MessageUpdatedHandler = AppEventHandlers['message.updated'];
+export type MessageDeletedHandler = AppEventHandlers['message.deleted'];
+export type ContactEventHandler = AppEventHandlers['contact.event'];
+export type CronTriggeredHandler = AppEventHandlers['cron.triggered'];
+export type CronScheduledHandler = AppEventHandlers['cron.scheduled'];
+export type CronCancelledHandler = AppEventHandlers['cron.cancelled'];
+export type ConversationMemberUpdatedHandler = AppEventHandlers['conversation.member_updated'];
+export type SessionUpdatedHandler = AppEventHandlers['session.updated'];
 
 /** Agent-friendly contact summary (no UUIDs). */
 export interface ContactSummary {

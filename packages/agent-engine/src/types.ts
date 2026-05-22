@@ -5,7 +5,6 @@ import type {
   ActionRequest,
   ActionResponse,
   ActivityStatus,
-  AppEventHandlers,
   CancelSessionHandler,
   CancelSessionRequest,
   CancelSessionResponse,
@@ -13,6 +12,11 @@ import type {
   CompactSessionRequest,
   CompactSessionResponse,
   ContactEvent,
+  ContactEventHandler,
+  ConversationMemberUpdatedHandler,
+  CronTriggeredHandler,
+  CronScheduledHandler,
+  CronCancelledHandler,
   CronTriggerEvent,
   IncomingMessage,
   LiveSessionInfoHandler,
@@ -20,11 +24,15 @@ import type {
   LiveSessionInfoResponse,
   LoadSessionMemoryResponse,
   MemoryScopeData,
+  MessageNewHandler,
+  MessageUpdatedHandler,
+  MessageDeletedHandler,
   ReportAgentInfoRequest,
   RotateSessionHandler,
   RotateSessionRequest,
   RotateSessionResponse,
   SessionConfigUpdate,
+  SessionUpdatedHandler,
   StartSessionHandler,
   StartSessionRequest,
   StartSessionResponse,
@@ -33,9 +41,9 @@ import type {
   UpdateMemoryResponse,
 } from '@newio/agent-sdk';
 
-import type { NewioAppForMcp } from './mcp/types.js';
 import { AgentSession } from './agent-session.js';
 import { AgentEvent } from './event-queue.js';
+import { CronJobRow } from './cron-store.js';
 
 export type SessionType = 'conversation' | 'contact' | 'cron';
 
@@ -218,14 +226,27 @@ export type PermissionHandler = (
  */
 export type SessionMode = 'isolated' | 'shared';
 
-export interface NewioAppForAgent extends NewioAppForMcp {
+export interface NewioAppForAgent {
+  readonly identity: AgentIdentity;
+
+  // ── Identity ──
+  getOwnerInfo(): { readonly username: string; readonly displayName: string };
+
   // ── Lifecycle ──
   init(): Promise<void>;
   dispose(): void;
   onDisconnect(handler: () => void): void;
 
   // ── Events ──
-  on<K extends keyof AppEventHandlers>(event: K, handler: AppEventHandlers[K]): void;
+  onMessageNew(handler: MessageNewHandler): void;
+  onMessageUpdated(handler: MessageUpdatedHandler): void;
+  onMessageDeleted(handler: MessageDeletedHandler): void;
+  onContactEvent(handler: ContactEventHandler): void;
+  onCronTriggered(handler: CronTriggeredHandler): void;
+  onCronScheduled(handler: CronScheduledHandler): void;
+  onCronCancelled(handler: CronCancelledHandler): void;
+  onConversationMemberUpdated(handler: ConversationMemberUpdatedHandler): void;
+  onSessionUpdated(handler: SessionUpdatedHandler): void;
 
   // ── Capability handlers (signal routing) ──
   onLiveSessionInfo(handler: LiveSessionInfoHandler): void;
@@ -236,6 +257,11 @@ export interface NewioAppForAgent extends NewioAppForMcp {
   onRotateSession(handler: RotateSessionHandler): void;
 
   // ── Messaging ──
+  sendMessage(
+    conversationId: string,
+    text?: string,
+    opts?: { filePaths?: readonly string[]; metadata?: Record<string, unknown>; visibleTo?: readonly string[] },
+  ): Promise<void>;
   sendActionRequest(
     conversationId: string,
     action: ActionRequest,
@@ -258,6 +284,8 @@ export interface NewioAppForAgent extends NewioAppForMcp {
   getMemberDisplayInfo(conversationId: string, userId: string): { username?: string; displayName?: string } | undefined;
   /** Get the self member's persisted session config (acpModel/acpMode). */
   getSessionConfig(conversationId: string): { acpModel?: string; acpMode?: string } | undefined;
+
+  scheduleCron(def: CronJobRow): void;
 
   // ── Memory ──
   loadSessionMemory(conversationId?: string, participantIds?: readonly string[]): Promise<LoadSessionMemoryResponse>;
