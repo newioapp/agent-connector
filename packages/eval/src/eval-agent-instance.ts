@@ -1,0 +1,104 @@
+/**
+ * EvalAgentInstance — subclass of BaseAgentInstance for agent evaluation.
+ *
+ * Uses MockNewioApp (backed by MockBackend) instead of the real Newio SDK.
+ * Runs a real ACP process for the agent, with eval-specific prompt formatting.
+ */
+import { BaseAgentInstance, PromptManager } from '@newio/agent-engine';
+import type {
+  AgentConfig,
+  NewioAppForAgent,
+  SessionMode,
+  EngineConfig,
+  AgentInstanceListener,
+} from '@newio/agent-engine';
+import type { NewioAppForMcp, NewioMcpServerInterface } from '@newio/agent-engine';
+import type { IncomingMessage } from '@newio/agent-sdk';
+import { MockNewioApp } from './mock-newio-app.js';
+import type { MockNewioAppOptions } from './mock-newio-app.js';
+import { EvalPromptFormatter } from './prompts/v1/prompt-formatter.js';
+import { NewioEvalMcpServer } from './mcp/v1/server.js';
+
+// ---------------------------------------------------------------------------
+// No-op helpers for eval (no persistence needed)
+// ---------------------------------------------------------------------------
+
+const noopConfigManager = {
+  getTokens: () => undefined,
+  setTokens: () => {},
+  setNewioIdentity: () => {},
+} as never;
+
+const noopCronStore = {
+  saveCron: () => {},
+  deleteCron: () => {},
+  listCrons: () => [],
+  close: () => {},
+} as never;
+
+const noopListener: AgentInstanceListener = {
+  onStatusChanged: () => {},
+  onApprovalUrl: () => {},
+  onPollAttempt: () => {},
+  onConfigUpdated: () => {},
+  onAgentInfo: () => {},
+};
+
+// ---------------------------------------------------------------------------
+// EvalAgentInstance
+// ---------------------------------------------------------------------------
+
+export interface EvalAgentInstanceOptions {
+  readonly config: AgentConfig;
+  readonly mockAppOptions: MockNewioAppOptions;
+  readonly sessionMode: SessionMode;
+  readonly engineConfig: EngineConfig;
+  readonly listener?: AgentInstanceListener;
+}
+
+export class EvalAgentInstance extends BaseAgentInstance {
+  private readonly mockApp: MockNewioApp;
+  private readonly sessionMode: SessionMode;
+
+  constructor(opts: EvalAgentInstanceOptions) {
+    super(opts.config, noopConfigManager, noopCronStore, opts.listener ?? noopListener, opts.engineConfig);
+    this.mockApp = new MockNewioApp(opts.mockAppOptions);
+    this.sessionMode = opts.sessionMode;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async createNewioApp(): Promise<NewioAppForAgent & NewioAppForMcp> {
+    return this.mockApp;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async createPromptManager(): Promise<PromptManager> {
+    const formatter = new EvalPromptFormatter(
+      { username: this.mockApp.identity.username, displayName: this.mockApp.identity.displayName },
+      this.mockApp.getOwnerInfo(),
+      this.sessionMode,
+    );
+    return new PromptManager([formatter], formatter);
+  }
+
+  createMcpServer(app: NewioAppForMcp): NewioMcpServerInterface {
+    return new NewioEvalMcpServer({
+      app,
+      initiateConversation: (convId, context) => {
+        if (!this.abortController.signal.aborted) {
+          this.inbound.push({ type: 'initiate_conversation', conversationId: convId, context });
+          this.drainInbound();
+        }
+      },
+      sessionMode: this.sessionMode,
+    });
+  }
+
+  /** Inject a message into the agent's inbound queue (used by driver). */
+  injectMessage(msg: IncomingMessage): void {
+    if (!this.abortController.signal.aborted) {
+      this.inbound.push({ type: 'message', msg });
+      this.drainInbound();
+    }
+  }
+}
