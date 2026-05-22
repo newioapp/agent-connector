@@ -17,7 +17,7 @@ import { registerMessagingTools } from './tools/messaging.js';
 import { registerUsersTools } from './tools/users.js';
 import { registerMediaTools } from './tools/media.js';
 import { registerMemoryTools } from './tools/memory.js';
-import type { IdGetter, NewioAppForMcp, ToolCallHook } from './types.js';
+import type { IdGetter, NewioAppForMcp, NewioMcpServerInterface, ToolCallHook } from './types.js';
 import type { SessionMode } from '../types.js';
 
 export interface NewioMcpServerOptions {
@@ -38,7 +38,7 @@ export interface NewioMcpServerOptions {
  * ```
  */
 
-export class NewioMcpServer {
+export class NewioMcpServer implements NewioMcpServerInterface {
   private readonly server: McpServer;
   private getCurrentConversationId: IdGetter;
 

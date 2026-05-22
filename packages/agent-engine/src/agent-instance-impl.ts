@@ -129,7 +129,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
       this._mcpSocketPath = mcpSocketPath;
 
       await app.init();
-      this.configureApp(app);
 
       this._promptManager = await this.createPromptManager();
 
@@ -176,8 +175,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
         this.reportAgentInfoToBackend(agentInfo);
       }
 
-      this.wireCapabilityHandlers(app);
-
       const eventProcessor = new SessionEventProcessorImpl(
         `[${app.identity.username}]`,
         {
@@ -216,6 +213,20 @@ export abstract class BaseAgentInstance implements AgentInstance {
         );
       }
       this._sessionManager.startIdleCleanup();
+
+      this.wireEventHandlers(app, this._sessionManager);
+
+      // Reload persisted cron jobs
+      const savedCrons = this.cronStore.listCrons(this.config.id);
+      for (const cron of savedCrons) {
+        try {
+          app.scheduleCron(cron);
+          log.info(`${this.logTag} Restored cron ${cron.cronId}: "${cron.label}"`);
+        } catch (err: unknown) {
+          log.warn(`${this.logTag} Failed to restore cron ${cron.cronId}`, err);
+          this.cronStore.deleteCron(cron.cronId);
+        }
+      }
 
       await this.sendGreeting();
 
@@ -340,7 +351,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
   }
 
-  private configureApp(app: NewioAppForAgent) {
+  private wireEventHandlers(app: NewioAppForAgent, sessionManager: SessionManager) {
     app.onDisconnect(() => {
       if (!this.abortController.signal.aborted) {
         log.warn(`${this.logTag} WebSocket disconnected unexpectedly`);
@@ -401,7 +412,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         );
       }
       if (changes.acpModel !== undefined || changes.acpMode !== undefined) {
-        void this.sessionManager.applySessionConfigUpdate({
+        void sessionManager.applySessionConfigUpdate({
           sessionType: 'conversation',
           externalReferenceId: conversationId,
           updates: {
@@ -412,17 +423,13 @@ export abstract class BaseAgentInstance implements AgentInstance {
       }
     });
 
-    // Reload persisted cron jobs
-    const savedCrons = this.cronStore.listCrons(this.config.id);
-    for (const cron of savedCrons) {
-      try {
-        app.scheduleCron(cron);
-        log.info(`${this.logTag} Restored cron ${cron.cronId}: "${cron.label}"`);
-      } catch (err: unknown) {
-        log.warn(`${this.logTag} Failed to restore cron ${cron.cronId}`, err);
-        this.cronStore.deleteCron(cron.cronId);
-      }
-    }
+    // Wire capability signal handlers
+    app.onLiveSessionInfo((request) => sessionManager.getLiveSessionInfo(request));
+    app.onCancelSession((request) => sessionManager.handleCancelSession(request));
+    app.onCompactSession((request) => sessionManager.handleCompactSession(request));
+    app.onStartSession((request) => sessionManager.handleStartSession(request));
+    app.onUpdateMemory((request) => sessionManager.handleUpdateMemory(request));
+    app.onRotateSession((request) => sessionManager.handleRotateSession(request));
   }
 
   private async sendGreeting() {
@@ -641,16 +648,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
   // ---------------------------------------------------------------------------
   // Capability management
   // ---------------------------------------------------------------------------
-
-  /** Wire signal handlers and register them with the app. */
-  private wireCapabilityHandlers(app: NewioAppForAgent): void {
-    app.onLiveSessionInfo((request) => this.sessionManager.getLiveSessionInfo(request));
-    app.onCancelSession((request) => this.sessionManager.handleCancelSession(request));
-    app.onCompactSession((request) => this.sessionManager.handleCompactSession(request));
-    app.onStartSession((request) => this.sessionManager.handleStartSession(request));
-    app.onUpdateMemory((request) => this.sessionManager.handleUpdateMemory(request));
-    app.onRotateSession((request) => this.sessionManager.handleRotateSession(request));
-  }
 
   // ---------------------------------------------------------------------------
   // Internal

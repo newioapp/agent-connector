@@ -18,6 +18,7 @@ import { registerUsersTools } from './tools/users.js';
 import { registerMediaTools } from './tools/media.js';
 import { registerMemoryTools } from './tools/memory.js';
 import type { IdGetter, NewioAppForMcp, SessionMode, ToolCallHook } from './types.js';
+import type { NewioMcpServerInterface } from '@newio/agent-engine';
 
 export interface NewioEvalMcpServerOptions {
   readonly app: NewioAppForMcp;
@@ -37,7 +38,7 @@ export interface NewioEvalMcpServerOptions {
  * ```
  */
 
-export class NewioEvalMcpServer {
+export class NewioEvalMcpServer implements NewioMcpServerInterface {
   private readonly server: McpServer;
   private getCurrentConversationId: IdGetter;
 
