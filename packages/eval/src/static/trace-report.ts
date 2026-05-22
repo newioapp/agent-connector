@@ -3,7 +3,13 @@
  */
 import { writeFileSync } from 'fs';
 import { join } from 'path';
-import type { ScenarioRunResult, ScenarioAggregateResult, EventTrace, ToolCallRecord, ScriptedEvent } from './types.js';
+import type {
+  ScenarioRunResult,
+  ScenarioAggregateResult,
+  EventTrace,
+  ToolCallRecord,
+  ScriptedEvent,
+} from '../types.js';
 
 function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

@@ -3,7 +3,7 @@
  *
  * Does the agent write useful, well-structured memory?
  */
-import type { EvalScenario } from '../types.js';
+import type { EvalScenario } from '../../types.js';
 import {
   defaultSetup,
   owner,
@@ -19,7 +19,8 @@ import {
   workSessionConvId,
   msg,
 } from './fixtures.js';
-import { groupConversationId } from '../mock-environment.js';
+
+const apiCollabConvId = '90dbe18c-f565-47e7-ab3f-73f804a6726a';
 
 export const memoryQualityScenarios: readonly EvalScenario[] = [
   // ─────────────────────────────────────────────────────────────────────────
@@ -296,7 +297,7 @@ export const memoryQualityScenarios: readonly EvalScenario[] = [
           members: [owner, siblingAgent],
         },
         {
-          conversationId: groupConversationId('API Collab'),
+          conversationId: apiCollabConvId,
           type: 'group',
           name: 'API Collab',
           members: [owner, alice, stranger],
@@ -333,7 +334,7 @@ export const memoryQualityScenarios: readonly EvalScenario[] = [
         type: 'message',
         messages: [
           msg({
-            conversationId: groupConversationId('API Collab'),
+            conversationId: apiCollabConvId,
             conversationType: 'group',
             sender: stranger,
             text: "Hey everyone! @nova7x i'm Derek btw, i work at Stripe on the payments infrastructure team, been there about 2 years now. Marcus invited me to this group to help with the webhook integration stuff. i've dealt with a ton of retry logic and idempotency patterns at Stripe so hopefully i can be useful here. also sorry if my messages are long, i tend to over-explain things lol. anyway happy to be here! let me know what you need help with",

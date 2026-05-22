@@ -1,7 +1,7 @@
 /**
  * Trace collector — records per-event data during scenario execution.
  */
-import type { EventTrace, ScriptedEvent, ToolCallRecord } from './types.js';
+import type { EventTrace, ScriptedEvent, ToolCallRecord } from '../types.js';
 
 export class TraceCollector {
   private readonly traces: EventTrace[] = [];

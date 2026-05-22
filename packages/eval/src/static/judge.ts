@@ -8,7 +8,7 @@ import type {
   LlmJudgeExpectation,
   AssertionResult,
   ToolCallRecord,
-} from './types.js';
+} from '../types.js';
 import { createJudgeLlm } from './judge-llm.js';
 
 interface JudgeInput {

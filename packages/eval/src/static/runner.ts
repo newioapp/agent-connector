@@ -3,7 +3,7 @@
  *
  * Flow: setup mock env → spawn ACP agent → create session → feed events → collect traces → evaluate.
  */
-import type { EvalScenario, EvalConfig, ScenarioRunResult, ScriptedEvent, ToolCallRecord } from './types.js';
+import type { EvalScenario, EvalConfig, ScenarioRunResult, ScriptedEvent, ToolCallRecord } from '../types.js';
 import type { PromptFormatter } from '@newio/agent-engine';
 import type { SessionStreamSegment } from '@newio/agent-engine';
 import { evaluateRuleBasedExpectations } from './assertions.js';

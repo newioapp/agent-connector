@@ -3,7 +3,7 @@
  *
  * Does the agent follow per-type behavioral rules?
  */
-import type { EvalScenario } from '../types.js';
+import type { EvalScenario } from '../../types.js';
 import {
   defaultSetup,
   owner,

@@ -3,7 +3,7 @@
  *
  * Can the agent track who said what, in which conversation, and reference information across conversations?
  */
-import type { EvalScenario } from '../types.js';
+import type { EvalScenario } from '../../types.js';
 import { defaultSetup, owner, alice, bob, aliceDmConvId, teamChatConvId, teamChat, msg } from './fixtures.js';
 
 export const contextUnderstandingScenarios: readonly EvalScenario[] = [

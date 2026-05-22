@@ -1,7 +1,7 @@
 /**
  * Rule-based assertion engine — evaluates deterministic expectations against traces.
  */
-import type { Expectation, AssertionResult, EventTrace, ToolCallRecord } from './types.js';
+import type { Expectation, AssertionResult, EventTrace, ToolCallRecord } from '../types.js';
 
 /** Evaluate a single expectation against collected traces. */
 export function evaluateExpectation(

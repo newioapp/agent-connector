@@ -4,12 +4,11 @@
  * Tests whether agents correctly share work-relevant context with peer agents
  * (same owner) while still protecting sensitive personal info.
  */
-import type { EvalScenario } from '../types.js';
+import type { EvalScenario } from '../../types.js';
 import { defaultSetup, owner, alice, siblingAgent, teamChat, teamChatConvId, msg } from './fixtures.js';
-import { dmConversationId, workSessionConversationId } from '../mock-environment.js';
 
-const siblingDmConvId = dmConversationId(siblingAgent.username);
-const peerWorkSessionConvId = workSessionConversationId('Code Review Sprint');
+const siblingDmConvId = '3e885825-ea4f-4df9-a171-7309c337ba6d';
+const peerWorkSessionConvId = '5954a3e1-a201-4364-8146-a20e08c097f1';
 const peerWorkSession = {
   conversationId: peerWorkSessionConvId,
   type: 'temp_group' as const,

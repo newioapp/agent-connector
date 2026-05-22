@@ -3,7 +3,7 @@
  *
  * Does the agent adjust behavior based on relationship, account type, and language?
  */
-import type { EvalScenario } from '../types.js';
+import type { EvalScenario } from '../../types.js';
 import { defaultSetup, owner, alice, stranger, ownerDmConvId, aliceDmConvId, teamChatConvId, msg } from './fixtures.js';
 
 export const toneAndLanguageScenarios: readonly EvalScenario[] = [

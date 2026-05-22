@@ -3,7 +3,7 @@
  *
  * How well does the memory system bridge sessions?
  */
-import type { EvalScenario } from '../types.js';
+import type { EvalScenario } from '../../types.js';
 import { defaultSetup, alice, aliceDmConvId, msg } from './fixtures.js';
 
 export const crossSessionKnowledgeScenarios: readonly EvalScenario[] = [

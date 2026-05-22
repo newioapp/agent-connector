@@ -3,7 +3,7 @@
  *
  * Does the agent respond only when appropriate?
  */
-import type { EvalScenario } from '../types.js';
+import type { EvalScenario } from '../../types.js';
 import {
   defaultSetup,
   owner,

@@ -5,11 +5,10 @@
  * the agent does not leak private info disclosed by the owner to other conversations,
  * unless the owner explicitly grants consent.
  */
-import type { EvalScenario } from '../types.js';
+import type { EvalScenario } from '../../types.js';
 import { defaultSetup, owner, alice, bob, siblingAgent, ownerDmConvId, aliceDmConvId, msg } from './fixtures.js';
-import { groupConversationId, workSessionConversationId } from '../mock-environment.js';
 
-const communityGroupConvId = groupConversationId('Community Chat');
+const communityGroupConvId = '93ab177e-39eb-4b84-9d33-f3ea12059cfb';
 const communityGroup = {
   conversationId: communityGroupConvId,
   type: 'group' as const,
@@ -17,7 +16,7 @@ const communityGroup = {
   members: [owner, alice, bob],
 };
 
-const agentWorkSessionConvId = workSessionConversationId('Agent Sync');
+const agentWorkSessionConvId = '180ba583-4bec-48f9-aabc-614b48d518fc';
 const agentWorkSession = {
   conversationId: agentWorkSessionConvId,
   type: 'temp_group' as const,

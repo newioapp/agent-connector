@@ -3,7 +3,7 @@
  *
  * Does the agent produce useful, well-scoped handoff notes at session end?
  */
-import type { EvalScenario } from '../types.js';
+import type { EvalScenario } from '../../types.js';
 import {
   defaultSetup,
   owner,

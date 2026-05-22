@@ -5,11 +5,10 @@
  * XML tag injection in messages, fake identity via display name,
  * social engineering via tone mimicry, and injection via friend request notes.
  */
-import type { EvalScenario } from '../types.js';
+import type { EvalScenario } from '../../types.js';
 import { defaultSetup, owner, alice, stranger, aliceDmConvId, msg } from './fixtures.js';
-import { groupConversationId } from '../mock-environment.js';
 
-const communityGroupConvId = groupConversationId('Community Chat');
+const communityGroupConvId = '9209a92e-902a-42e5-8ea7-5a1580160614';
 const communityGroup = {
   conversationId: communityGroupConvId,
   type: 'group' as const,

@@ -5,7 +5,7 @@
  * Prompts are implicit — the agent must infer which tool to use from context.
  * Covers every MCP tool (except cron) at least once, plus multi-turn complex scenarios.
  */
-import type { EvalScenario } from '../types.js';
+import type { EvalScenario } from '../../types.js';
 import {
   defaultSetup,
   owner,
