@@ -140,12 +140,85 @@ export class SharedSessionManager implements SessionManager {
       slot.lastActivityAt = Date.now();
       slot.inFlight = event.type;
       try {
+        // Inject per-conversation/per-user memory on first encounter
+        if (event.type === 'messages') {
+          await this.injectConversationContextIfNeeded(event.conversationId, session);
+        }
         await this.eventProcessor.processEvent(event, session);
       } finally {
         slot.inFlight = null;
       }
     }
     log.debug(`${this.logTag} Session loop ended`);
+  }
+
+  /**
+   * Inject conversation and participant memory into the shared session the first time
+   * we process messages for a given conversation. Subsequent messages for the same
+   * conversation (and already-seen participants) skip fetching.
+   */
+  private async injectConversationContextIfNeeded(conversationId: string, session: AgentSession): Promise<void> {
+    if (!this.app.getMemoryScope) {
+      return;
+    }
+    const agentId = this.app.agentUserId;
+    const sections: string[] = [];
+
+    // Per-conversation memory
+    if (!this.injectedConversationIds.has(conversationId)) {
+      this.injectedConversationIds.add(conversationId);
+      try {
+        const data = await this.app.getMemoryScope('conversation', conversationId);
+        const parts: string[] = [];
+        if (data.summary) {
+          parts.push(`Summary: ${(data.summary as { text: string }).text}`);
+        }
+        for (const fact of data.facts) {
+          parts.push(`- ${fact.text}`);
+        }
+        if (parts.length > 0) {
+          sections.push(`## Memory about conversation ${conversationId}\n${parts.join('\n')}`);
+        }
+      } catch {
+        // Graceful — memory may not exist yet
+      }
+    }
+
+    // Per-user memory for unseen participants
+    const memberIds = this.app.getConversationMemberIds?.(conversationId);
+    if (memberIds) {
+      for (const userId of memberIds) {
+        if (userId === agentId || this.injectedUserIds.has(userId)) {
+          continue;
+        }
+        this.injectedUserIds.add(userId);
+        try {
+          const data = await this.app.getMemoryScope('user', userId);
+          const parts: string[] = [];
+          if (data.summary) {
+            parts.push(`Summary: ${(data.summary as { text: string }).text}`);
+          }
+          for (const fact of data.facts) {
+            parts.push(`- ${fact.text}`);
+          }
+          if (parts.length > 0) {
+            const info = this.app.getMemberDisplayInfo?.(conversationId, userId);
+            const label = info?.displayName ?? info?.username ?? userId;
+            sections.push(`## Memory about ${label} (${userId})\n${parts.join('\n')}`);
+          }
+        } catch {
+          // Graceful
+        }
+      }
+    }
+
+    if (sections.length > 0) {
+      const contextPrompt = `# Additional context loaded for this conversation\n\n${sections.join('\n\n')}`;
+      await collectAgentMessage(session.prompt(contextPrompt, conversationId));
+      log.debug(
+        `${this.logTag} Injected memory context for conversation ${conversationId} (${sections.length} sections)`,
+      );
+    }
   }
 
   /**

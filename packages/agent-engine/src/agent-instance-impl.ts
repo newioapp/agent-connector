@@ -265,6 +265,10 @@ export abstract class BaseAgentInstance implements AgentInstance {
       loadMemoryForSession: (conversationId) => this.loadMemoryForSession(conversationId),
       getHandoffNote: (conversationId) => this.app.getHandoffNote(conversationId),
       putHandoffNote: (conversationId: string, note: string) => this.app.putHandoffNote(conversationId, note),
+      getMemoryScope: (scope, scopeId) => this.app.getMemoryScope(scope, scopeId),
+      getConversationMemberIds: (conversationId) => this.app.getConversationMemberIds(conversationId),
+      getMemberDisplayInfo: (conversationId, userId) => this.app.getMemberDisplayInfo(conversationId, userId),
+      agentUserId: this.app.identity.userId,
     };
   }
 
