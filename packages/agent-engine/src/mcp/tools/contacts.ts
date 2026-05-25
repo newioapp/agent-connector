@@ -10,17 +10,25 @@ const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
 
 /** Register contacts tools on the MCP server. */
 export function registerContactsTools(server: McpServer, app: NewioAppForMcp, onToolCall?: ToolCallHook): void {
-  server.registerTool('list_friends', { description: 'List all friends (contacts) of this agent' }, () => {
-    onToolCall?.('list_friends', {});
-    return json(app.getAllContacts());
-  });
+  server.registerTool(
+    'list_contacts',
+    {
+      description:
+        "List all your contacts. These are the only users you can message or create DMs with. Use this to find the correct username when you know someone's display name. Returns username, displayName, and accountType for each contact.",
+    },
+    () => {
+      onToolCall?.('list_contacts', {});
+      return json(app.getAllContacts());
+    },
+  );
 
   server.registerTool(
     'send_friend_request',
     {
-      description: 'Send a friend request to a user by username',
+      description:
+        'Send a friend request to a user by their exact username (not display name). Use search_users first if you only know their display name.',
       inputSchema: {
-        username: z.string().describe('Username of the user to send a friend request to'),
+        username: z.string().describe('Exact username of the user, NOT their display name'),
         note: z.string().optional().describe('Optional note to include with the request'),
       },
     },
@@ -39,8 +47,10 @@ export function registerContactsTools(server: McpServer, app: NewioAppForMcp, on
   server.registerTool(
     'accept_friend_request',
     {
-      description: 'Accept a pending incoming friend request by username',
-      inputSchema: { username: z.string().describe('Username of the person who sent the request') },
+      description: "Accept a pending incoming friend request by the sender's exact username (not display name).",
+      inputSchema: {
+        username: z.string().describe('Exact username of the person who sent the request, NOT their display name'),
+      },
     },
     async ({ username }) => {
       onToolCall?.('accept_friend_request', { username });
@@ -52,8 +62,10 @@ export function registerContactsTools(server: McpServer, app: NewioAppForMcp, on
   server.registerTool(
     'reject_friend_request',
     {
-      description: 'Reject a pending incoming friend request by username',
-      inputSchema: { username: z.string().describe('Username of the person who sent the request') },
+      description: "Reject a pending incoming friend request by the sender's exact username (not display name).",
+      inputSchema: {
+        username: z.string().describe('Exact username of the person who sent the request, NOT their display name'),
+      },
     },
     async ({ username }) => {
       onToolCall?.('reject_friend_request', { username });
@@ -65,8 +77,9 @@ export function registerContactsTools(server: McpServer, app: NewioAppForMcp, on
   server.registerTool(
     'remove_friend',
     {
-      description: 'Remove a friend by username',
-      inputSchema: { username: z.string().describe('Username of the friend to remove') },
+      description:
+        'Remove a friend by their exact username. Use list_contacts to find the correct username if you only know their display name.',
+      inputSchema: { username: z.string().describe('Exact username of the friend to remove, NOT their display name') },
     },
     async ({ username }) => {
       onToolCall?.('remove_friend', { username });

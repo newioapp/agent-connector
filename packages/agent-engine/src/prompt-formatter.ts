@@ -39,7 +39,7 @@ export interface PromptFormatter {
   readonly version: string;
   /** The token the agent uses to indicate "no reply needed". */
   readonly skipToken: string;
-  /** Returns true if the trimmed, lowercased text is exactly the skip token. */
+  /** Returns true if the text represents a skip/done/handoff output (not a conversation reply). */
   isSkip(text: string): boolean;
   buildNewioInstruction(customInstructions?: string): Instruction;
   buildGreetingPrompt(): string;
@@ -58,7 +58,7 @@ export interface PromptFormatter {
 
 export class PromptFormatterImpl implements PromptFormatter {
   readonly version: string = '1.0.0';
-  readonly skipToken: string = '_skip';
+  readonly skipToken: string = '<skip';
 
   constructor(
     private readonly identity: PromptFormatterIdentity,
@@ -66,8 +66,10 @@ export class PromptFormatterImpl implements PromptFormatter {
     private readonly sessionMode: SessionMode,
   ) {}
 
+  /** Detects skip, done, or handoff tags — all mean "don't send as a conversation reply". */
   isSkip(text: string): boolean {
-    return text.trim().toLowerCase() === this.skipToken;
+    const trimmed = text.trim();
+    return trimmed.startsWith('<skip') || trimmed.startsWith('<done') || trimmed.startsWith('<handoff');
   }
 
   buildNewioInstruction(customInstructions?: string): Instruction {
@@ -94,79 +96,42 @@ export class PromptFormatterImpl implements PromptFormatter {
     }
     const isGroup = first.conversationType === 'group' || first.conversationType === 'temp_group';
     return isGroup
-      ? this.formatGroupBatch(first.conversationId, first.groupName, messages)
+      ? this.formatGroupBatch(first.conversationId, first.conversationType, first.groupName, messages)
       : this.formatDmBatch(first.conversationId, messages);
   }
 
-  /**
-   * Format a batch of contact events into a prompt string.
-   *
-   * Example output:
-   * ```
-   * event: contact.batch
-   * events:
-   *   - type: contact.request_received
-   *     username: alice
-   *     displayName: Alice
-   *     accountType: human
-   *     note: "Hey, let's connect!"
-   *     timestamp: "2026-04-04T10:00:00Z"
-   *   - type: contact.request_accepted
-   *     username: helper_bot
-   *     displayName: Helper Bot
-   *     accountType: agent
-   *     ownerUsername: charlie
-   *     ownerDisplayName: Charlie
-   *     timestamp: "2026-04-04T10:01:00Z"
-   * ```
-   */
   formatContactPrompt(events: readonly ContactEvent[]): string {
     if (events.length === 0) {
       return '';
     }
-    const lines = ['event: contact.batch', 'events:'];
-    for (const e of events) {
-      lines.push(`  - type: ${e.type}`);
-      lines.push(`    username: ${e.username ?? 'unknown'}`);
-      lines.push(`    displayName: ${e.displayName ?? 'Unknown'}`);
-      lines.push(`    accountType: ${e.accountType}`);
+    const items = events.map((e) => {
+      const attrs = [
+        `type="${e.type}"`,
+        `username="${e.username ?? 'unknown'}"`,
+        `display_name="${e.displayName ?? 'Unknown'}"`,
+        `account_type="${e.accountType}"`,
+      ];
       if (e.ownerUsername) {
-        lines.push(`    ownerUsername: ${e.ownerUsername}`);
+        attrs.push(`owner_username="${e.ownerUsername}"`);
       }
       if (e.ownerDisplayName) {
-        lines.push(`    ownerDisplayName: ${e.ownerDisplayName}`);
+        attrs.push(`owner_display_name="${e.ownerDisplayName}"`);
       }
+      attrs.push(`timestamp="${e.timestamp}"`);
       if (e.note) {
-        lines.push(`    note: "${e.note}"`);
+        return `  <contact_event ${attrs.join(' ')}>${e.note}</contact_event>`;
       }
-      lines.push(`    timestamp: "${e.timestamp}"`);
-    }
-    return lines.join('\n');
+      return `  <contact_event ${attrs.join(' ')} />`;
+    });
+    return `<event type="contact.batch">\n${items.join('\n')}\n</event>`;
   }
 
-  /**
-   * Format a cron trigger event into a prompt string.
-   *
-   * Example output:
-   * ```
-   * event: cron.triggered
-   * cronId: cron_abc123
-   * label: "Send daily standup reminder to Team Chat"
-   * triggeredAt: "2026-04-05T09:00:00Z"
-   * payload: {"channel":"team-chat"}
-   * ```
-   */
   formatCronPrompt(job: CronTriggerEvent): string {
-    const lines = [
-      'event: cron.triggered',
-      `cronId: ${job.cronId}`,
-      `label: "${job.label}"`,
-      `triggeredAt: "${job.triggeredAt}"`,
-    ];
+    const attrs = `cron_id="${job.cronId}" label="${job.label}" triggered_at="${job.triggeredAt}"`;
     if (job.payload !== undefined) {
-      lines.push(`payload: ${JSON.stringify(job.payload)}`);
+      return `<event type="cron.triggered" ${attrs}>\n  <payload>${JSON.stringify(job.payload)}</payload>\n</event>`;
     }
-    return lines.join('\n');
+    return `<event type="cron.triggered" ${attrs} />`;
   }
 
   formatMemoryContext(memory: LoadSessionMemoryResponse, handoffNote?: string): string {
@@ -186,70 +151,44 @@ export class PromptFormatterImpl implements PromptFormatter {
   }
 
   // ---------------------------------------------------------------------------
-  // Private — message formatting helpers
+  // Private
   // ---------------------------------------------------------------------------
-
-  private formatSender(m: IncomingMessage): string {
-    return [
-      `    username: ${m.senderUsername ?? 'unknown'}`,
-      `    displayName: ${m.senderDisplayName ?? 'Unknown'}`,
-      `    accountType: ${m.senderAccountType ?? 'unknown'}`,
-      `    relationship: ${m.relationship}`,
-    ].join('\n');
-  }
 
   private formatDmBatch(conversationId: string, messages: readonly IncomingMessage[]): string {
     const first = messages[0];
     if (!first) {
       return '';
     }
-    const lines = [
-      'event: message.batch',
-      `conversationId: ${conversationId}`,
-      'type: dm',
-      'from:',
-      this.formatSender(first),
-      'messages:',
-    ];
-    for (const m of messages) {
-      lines.push(`  - message: ${m.text}`);
-      lines.push(`    timestamp: "${m.timestamp}"`);
-      this.formatAttachments(m, lines);
-    }
-    return lines.join('\n');
+    const fromAttrs = `username="${first.senderUsername ?? 'unknown'}" display_name="${first.senderDisplayName ?? 'Unknown'}" account_type="${first.senderAccountType ?? 'unknown'}" relationship="${first.relationship}"`;
+    const msgLines = messages.map((m) => `  ${this.formatMessageElement(m)}`);
+    return `<event type="message.batch" conversation_id="${conversationId}" conversation_type="dm">\n  <from ${fromAttrs} />\n${msgLines.join('\n')}\n</event>`;
   }
 
   private formatGroupBatch(
     conversationId: string,
+    conversationType: string,
     groupName: string | undefined,
     messages: readonly IncomingMessage[],
   ): string {
-    const lines = [
-      'event: message.batch',
-      `conversationId: ${conversationId}`,
-      'type: group',
-      `groupName: ${groupName ?? 'Unnamed Group'}`,
-      'messages:',
-    ];
-    for (const m of messages) {
-      lines.push('  - from:');
-      lines.push(this.formatSender(m));
-      lines.push(`    message: ${m.text}`);
-      lines.push(`    timestamp: "${m.timestamp}"`);
-      this.formatAttachments(m, lines);
-    }
-    return lines.join('\n');
+    const displayType = conversationType === 'temp_group' ? 'work_session' : conversationType;
+    const nameAttr = groupName ? ` group_name="${groupName}"` : '';
+    const msgLines = messages.map((m) => {
+      const fromAttrs = `from_username="${m.senderUsername ?? 'unknown'}" from_display_name="${m.senderDisplayName ?? 'Unknown'}" from_account_type="${m.senderAccountType ?? 'unknown'}" relationship="${m.relationship}"`;
+      return `  ${this.formatMessageElement(m, fromAttrs)}`;
+    });
+    return `<event type="message.batch" conversation_id="${conversationId}" conversation_type="${displayType}"${nameAttr}>\n${msgLines.join('\n')}\n</event>`;
   }
 
-  private formatAttachments(m: IncomingMessage, lines: string[]): void {
-    if (m.attachments && m.attachments.length > 0) {
-      lines.push('    attachments:');
-      for (const a of m.attachments) {
-        lines.push(`      - fileName: ${a.fileName}`);
-        lines.push(`        contentType: ${a.contentType}`);
-        lines.push(`        size: ${a.size}`);
-        lines.push(`        s3Key: ${a.s3Key}`);
-      }
+  private formatMessageElement(m: IncomingMessage, extraAttrs?: string): string {
+    const attrs = extraAttrs ? ` ${extraAttrs}` : '';
+    const hasAttachments = m.attachments && m.attachments.length > 0;
+    if (!hasAttachments) {
+      return `<message timestamp="${m.timestamp}"${attrs}>${m.text}</message>`;
     }
+    const attachmentLines = m.attachments.map(
+      (a) =>
+        `    <attachment file_name="${a.fileName}" content_type="${a.contentType}" size="${a.size}" s3_key="${a.s3Key}" />`,
+    );
+    return `<message timestamp="${m.timestamp}"${attrs}>\n    <text>${m.text}</text>\n${attachmentLines.join('\n')}\n  </message>`;
   }
 }

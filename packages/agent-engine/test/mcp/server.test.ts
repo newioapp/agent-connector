@@ -98,10 +98,10 @@ describe('MCP Server', () => {
       'get_my_profile',
       'get_user_profile',
       'initiate_conversation',
+      'list_contacts',
       'list_conversation_members',
       'list_conversations',
       'list_crons',
-      'list_friends',
       'list_incoming_friend_requests',
       'list_messages',
       'reject_friend_request',
@@ -134,10 +134,10 @@ describe('MCP Server', () => {
       'get_memory',
       'get_my_profile',
       'get_user_profile',
+      'list_contacts',
       'list_conversation_members',
       'list_conversations',
       'list_crons',
-      'list_friends',
       'list_incoming_friend_requests',
       'list_messages',
       'reject_friend_request',
@@ -164,13 +164,13 @@ describe('MCP Server', () => {
     expect(app.listConversations).toHaveBeenCalled();
   });
 
-  it('list_friends returns contacts without userIds', async () => {
+  it('list_contacts returns contacts without userIds', async () => {
     const contacts: ContactSummary[] = [
       { username: 'alice', displayName: 'Alice', accountType: 'human' },
       { username: 'bob', displayName: 'Bob', accountType: 'human' },
     ];
     const client = await createConnectedClient(mockApp(contacts));
-    const result = await client.callTool({ name: 'list_friends', arguments: {} });
+    const result = await client.callTool({ name: 'list_contacts', arguments: {} });
     const parsed = JSON.parse(getResultText(result)) as Record<string, unknown>[];
     expect(parsed).toHaveLength(2);
     expect(parsed[0]).toHaveProperty('username', 'alice');
@@ -542,17 +542,17 @@ describe('onToolCall hook', () => {
     expect(calls[0]!.args).toEqual({ username: 'alice', text: 'hello', filePaths: undefined });
   });
 
-  it('fires hook for list_friends (no args)', async () => {
+  it('fires hook for list_contacts (no args)', async () => {
     const app = mockApp();
     const calls: Array<{ tool: string; args: Record<string, unknown> }> = [];
     const client = await createClientWithHook(app, (tool, args) => {
       calls.push({ tool, args: { ...args } });
     });
 
-    await client.callTool({ name: 'list_friends', arguments: {} });
+    await client.callTool({ name: 'list_contacts', arguments: {} });
 
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.tool).toBe('list_friends');
+    expect(calls[0]!.tool).toBe('list_contacts');
     expect(calls[0]!.args).toEqual({});
   });
 
@@ -578,10 +578,10 @@ describe('onToolCall hook', () => {
       calls.push({ tool });
     });
 
-    await client.callTool({ name: 'list_friends', arguments: {} });
+    await client.callTool({ name: 'list_contacts', arguments: {} });
     await client.callTool({ name: 'list_conversations', arguments: {} });
     await client.callTool({ name: 'send_dm', arguments: { username: 'marcus42', text: 'hi' } });
 
-    expect(calls.map((c) => c.tool)).toEqual(['list_friends', 'list_conversations', 'send_dm']);
+    expect(calls.map((c) => c.tool)).toEqual(['list_contacts', 'list_conversations', 'send_dm']);
   });
 });
