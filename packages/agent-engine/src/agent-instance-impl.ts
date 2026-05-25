@@ -194,6 +194,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
       );
 
       if (this.config.sessionMode === 'shared') {
+        const ownerDmConversationId = await app.getOrCreateOwnerDmConversationId();
+        this._ownerDmConversationId = ownerDmConversationId;
         this._sessionManager = new SharedSessionManager(
           `[${app.identity.username}]`,
           eventProcessor,
@@ -201,6 +203,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
           (correlationId) => this.sessionFactory.destroySession(correlationId),
           this._promptManager,
           this.getNewioAppForSession(),
+          ownerDmConversationId,
         );
       } else {
         this._sessionManager = new IsolatedSessionManager(
@@ -279,14 +282,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       getMemoryScope: (scope, scopeId) => this.app.getMemoryScope(scope, scopeId),
       getConversationMemberIds: (conversationId) => this.app.getConversationMemberIds(conversationId),
       getMemberDisplayInfo: (conversationId, userId) => this.app.getMemberDisplayInfo(conversationId, userId),
-      updateAgentMemberConfig: (conversationId, config) => this.app.updateAgentMemberConfig(conversationId, config),
       agentUserId: this.app.identity.userId,
-      getOwnerDmConversationId: () => {
-        if (!this._ownerDmConversationId) {
-          throw new Error('Owner DM conversation ID not yet resolved');
-        }
-        return this._ownerDmConversationId;
-      },
     };
   }
 
@@ -343,6 +339,17 @@ export abstract class BaseAgentInstance implements AgentInstance {
             acpModel: config.acpModel,
             acpMode: config.acpMode,
           });
+          // In shared mode, also persist to the owner DM as the canonical config source
+          if (
+            this.config.sessionMode === 'shared' &&
+            this._ownerDmConversationId &&
+            externalReferenceId !== this._ownerDmConversationId
+          ) {
+            await this.app.updateAgentMemberConfig(this._ownerDmConversationId, {
+              acpModel: config.acpModel,
+              acpMode: config.acpMode,
+            });
+          }
         },
         reportContextWindow: async (context) => {
           await this.app.sendContextWindowUpdate(ownerId, type, externalReferenceId, context.size, context.used);

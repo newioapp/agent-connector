@@ -16,7 +16,7 @@ function createMockSession(correlationId = 'session-1'): AgentSession {
     type: 'conversation',
     externalReferenceId: SHARED_SESSION_ID,
     promptFormatterVersion: '1.0.0',
-    currentConversationId: undefined,
+    currentConversationId: undefined as string | undefined,
     prompt: vi.fn(async function* () {
       yield { type: 'agent_message_chunk' as const, text: '' };
     }),
@@ -56,13 +56,11 @@ function createMockApp(): NewioAppForSession {
     getHandoffNote: vi.fn().mockResolvedValue(null),
     putHandoffNote: vi.fn().mockResolvedValue(undefined),
     getSessionConfig: vi.fn().mockResolvedValue(undefined),
-    updateAgentMemberConfig: vi.fn().mockResolvedValue(undefined),
     setStatus: vi.fn(),
     getMemoryScope: vi.fn().mockResolvedValue({ summary: null, facts: [] }),
     getConversationMemberIds: vi.fn().mockReturnValue(undefined),
     getMemberDisplayInfo: vi.fn().mockReturnValue(undefined),
     agentUserId: 'agent-1',
-    getOwnerDmConversationId: vi.fn().mockReturnValue('owner-dm-conv'),
   };
 }
 
@@ -134,7 +132,15 @@ describe('SharedSessionManager', () => {
     const promptManager = createMockPromptManager();
     app = createMockApp();
 
-    manager = new SharedSessionManager('[test]', eventProcessor, newSessionFn, endSessionFn, promptManager, app);
+    manager = new SharedSessionManager(
+      '[test]',
+      eventProcessor,
+      newSessionFn,
+      endSessionFn,
+      promptManager,
+      app,
+      'owner-dm-conv',
+    );
   });
 
   afterEach(() => {
@@ -207,9 +213,14 @@ describe('SharedSessionManager', () => {
       // Make processEvent block so we can test mid-processing
       let resolveProcessing: (() => void) | undefined;
       (eventProcessor.processEvent as ReturnType<typeof vi.fn>).mockImplementation(
-        () =>
+        (_event: unknown, session: AgentSession) =>
           new Promise<void>((resolve) => {
-            resolveProcessing = resolve;
+            // Simulate the session tracking the active conversation
+            (session as unknown as { currentConversationId: string | undefined }).currentConversationId = 'conv-a';
+            resolveProcessing = () => {
+              (session as unknown as { currentConversationId: string | undefined }).currentConversationId = undefined;
+              resolve();
+            };
           }),
       );
 
@@ -227,9 +238,13 @@ describe('SharedSessionManager', () => {
     it('cancels successfully when session is processing the target conversation', async () => {
       let resolveProcessing: (() => void) | undefined;
       (eventProcessor.processEvent as ReturnType<typeof vi.fn>).mockImplementation(
-        () =>
+        (_event: unknown, session: AgentSession) =>
           new Promise<void>((resolve) => {
-            resolveProcessing = resolve;
+            (session as unknown as { currentConversationId: string | undefined }).currentConversationId = 'conv-a';
+            resolveProcessing = () => {
+              (session as unknown as { currentConversationId: string | undefined }).currentConversationId = undefined;
+              resolve();
+            };
           }),
       );
 
@@ -267,7 +282,7 @@ describe('SharedSessionManager', () => {
   });
 
   describe('applySessionConfigUpdate', () => {
-    it('persists config back to owner DM when change comes from a different conversation', async () => {
+    it('applies config to the singleton session regardless of which conversation triggered it', async () => {
       manager.routeInboundEvent({ type: 'message', msg: makeMessage('conv-a') });
       await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalled());
 
@@ -277,23 +292,17 @@ describe('SharedSessionManager', () => {
         updates: { acpModel: 'new-model' },
       });
 
-      expect(app.updateAgentMemberConfig).toHaveBeenCalledWith('owner-dm-conv', {
-        acpModel: 'new-model',
-        acpMode: undefined,
-      });
+      expect(mockSession.applySessionConfig).toHaveBeenCalledWith({ acpModel: 'new-model' });
     });
 
-    it('does not double-persist when change comes from owner DM itself', async () => {
-      manager.routeInboundEvent({ type: 'message', msg: makeMessage('conv-a') });
-      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalled());
-
+    it('ignores config changes when session is not active', async () => {
       await manager.applySessionConfigUpdate({
         sessionType: 'conversation',
-        externalReferenceId: 'owner-dm-conv',
+        externalReferenceId: 'conv-other',
         updates: { acpModel: 'new-model' },
       });
 
-      expect(app.updateAgentMemberConfig).not.toHaveBeenCalled();
+      expect(mockSession.applySessionConfig).not.toHaveBeenCalled();
     });
   });
 });

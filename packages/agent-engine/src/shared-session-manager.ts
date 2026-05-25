@@ -37,8 +37,6 @@ interface SessionSlot {
   lastActivityAt: number;
   /** Non-null while the session loop is processing any event. */
   inFlight: AgentEvent['type'] | null;
-  /** The conversationId currently being processed (set for message events). */
-  activeConversationId: string | null;
 }
 
 const SESSION_TYPE: SessionType = 'conversation';
@@ -61,6 +59,7 @@ export class SharedSessionManager implements SessionManager {
     private readonly endSession: (correlationId: string) => Promise<void>,
     private readonly promptManager: PromptManager,
     private readonly app: NewioAppForSession,
+    private readonly ownerDmConversationId: string,
   ) {}
 
   getDmSession(_convId: string): Promise<AgentSession> {
@@ -115,7 +114,6 @@ export class SharedSessionManager implements SessionManager {
       sessionPromise,
       lastActivityAt: Date.now(),
       inFlight: null,
-      activeConversationId: null,
     };
 
     void sessionPromise.then(
@@ -143,11 +141,6 @@ export class SharedSessionManager implements SessionManager {
       slot.lastActivityAt = Date.now();
       slot.inFlight = event.type;
 
-      // Track which conversation is actively being processed
-      if (event.type === 'messages') {
-        slot.activeConversationId = event.conversationId;
-      }
-
       try {
         // Inject per-conversation/per-user memory on first encounter
         if (event.type === 'messages') {
@@ -156,7 +149,6 @@ export class SharedSessionManager implements SessionManager {
         await this.eventProcessor.processEvent(event, session);
       } finally {
         slot.inFlight = null;
-        slot.activeConversationId = null;
       }
     }
     log.debug(`${this.logTag} Session loop ended`);
@@ -281,8 +273,7 @@ export class SharedSessionManager implements SessionManager {
   /** Load and apply the persisted session config from the owner DM member record. */
   private async applyPersistedSessionConfig(session: AgentSession): Promise<void> {
     try {
-      const ownerDmId = this.app.getOwnerDmConversationId();
-      const config = await this.app.getSessionConfig(ownerDmId);
+      const config = await this.app.getSessionConfig(this.ownerDmConversationId);
       if (config) {
         await session.applySessionConfig(config);
         log.info(
@@ -393,7 +384,7 @@ export class SharedSessionManager implements SessionManager {
         error: 'Session is idle — not processing any conversation',
       };
     }
-    if (slot.activeConversationId !== request.externalReferenceId) {
+    if (slot.session.currentConversationId !== request.externalReferenceId) {
       return {
         success: false,
         errorCode: 'not_active_for_conversation',
@@ -483,7 +474,7 @@ export class SharedSessionManager implements SessionManager {
   /**
    * Apply acpModel/acpMode changes to the singleton session.
    * In shared mode, config changes from any conversation apply to the single session.
-   * The corrected config is persisted back to the owner DM member record.
+   * Persistence back to the owner DM is handled by the session's updateConfig callback.
    */
   async applySessionConfigUpdate(request: ApplySessionConfigUpdateRequest): Promise<void> {
     const slot = this.sharedSessionSlot;
@@ -494,20 +485,6 @@ export class SharedSessionManager implements SessionManager {
       return;
     }
     await slot.session.applySessionConfig(request.updates);
-
-    // Persist config to the owner DM as the canonical source for shared mode
-    try {
-      const ownerDmId = this.app.getOwnerDmConversationId();
-      // Only persist to owner DM if the change came from a different conversation
-      if (request.externalReferenceId !== ownerDmId) {
-        await this.app.updateAgentMemberConfig(ownerDmId, {
-          acpModel: request.updates.acpModel,
-          acpMode: request.updates.acpMode,
-        });
-      }
-    } catch (err: unknown) {
-      log.warn(`${this.logTag} Failed to persist config to owner DM`, err);
-    }
   }
 
   async terminate(): Promise<void> {

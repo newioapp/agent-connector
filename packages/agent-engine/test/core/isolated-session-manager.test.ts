@@ -59,9 +59,7 @@ function createMockApp(): NewioAppForSession {
     getMemoryScope: vi.fn().mockResolvedValue({ summary: null, facts: [] }),
     getConversationMemberIds: vi.fn().mockReturnValue(undefined),
     getMemberDisplayInfo: vi.fn().mockReturnValue(undefined),
-    updateAgentMemberConfig: vi.fn().mockResolvedValue(undefined),
     agentUserId: 'agent-1',
-    getOwnerDmConversationId: vi.fn().mockReturnValue('owner-dm-conv'),
   };
 }
 
