@@ -4,6 +4,9 @@
 import { config as loadDotenv } from 'dotenv';
 loadDotenv();
 
+import { setLogHandler, consoleLogHandler } from '@newio/agent-sdk';
+setLogHandler(consoleLogHandler);
+
 import { program } from 'commander';
 import { mkdirSync } from 'fs';
 import { join } from 'path';
