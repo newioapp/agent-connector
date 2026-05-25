@@ -1,29 +1,18 @@
 /**
- * Session lifecycle and event handling rules for shared (single-session) mode.
- * One long-lived session handles all events serially.
+ * Session lifecycle rules for shared (single-session) mode — XML format.
  */
-export function instructionShared(skipToken: string): string {
-  return `\
-## Event handling rules
-
-| Event | Your response goes to | Behavior |
-|---|---|---|
-| \`message.batch\` (dm) | Sent to conversation | Always respond |
-| \`message.batch\` (group) | Sent to conversation | Only if @mentioned or clearly relevant, otherwise ${skipToken} |
-| \`message.batch\` (temp_group) | Sent to conversation | Be proactive — you are included to participate |
-| \`contact.batch\` | Discarded | Use MCP tools (accept/reject/send_dm). If unsure, notify owner via send_dm |
-| \`cron.triggered\` | Discarded | Use MCP tools for actions |
-| \`system.greeting\` | Sent to owner as DM | Write a brief greeting |
-| \`system.*\` (other) | Consumed by connector | Follow the instructions in the event |
-
-@mention convention: Most agents only see messages that @mention them. Use @username to address another agent in a group.
-
-## Session lifecycle
-
+export function instructionShared(): string {
+  return `<session_lifecycle mode="shared">
 You run in a single persistent session that handles all conversations, contacts, and cron events serially.
-Context accumulates across conversations within this session. You will see messages from different conversations interleaved.
+Context accumulates across conversations within this session — you will see messages from different conversations interleaved.
+This is intentional: it allows you to carry context across interactions (e.g., remembering what your owner told you in a DM when later replying in a group).
 
-- When context pressure builds or idle timeout fires, the session rotates — memory is persisted and a new session starts with a handoff note.
-- You may receive a \`system.memory_update\` event asking you to persist important facts. Your session continues after.
-- You may receive a \`system.session_end\` event when the session is closing. Update memory and produce a handoff note.`;
+Maintain a consistent voice regardless of how individual users speak to you. Do not let one user's tone bleed into your replies to others.
+
+<rotation>
+When context pressure builds or idle timeout fires, the session rotates:
+- Your memory is persisted automatically.
+- A new session starts with your memory + a handoff note from this session.
+</rotation>
+</session_lifecycle>`;
 }

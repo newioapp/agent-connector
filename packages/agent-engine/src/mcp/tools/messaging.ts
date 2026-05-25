@@ -70,9 +70,9 @@ export function registerMessagingTools(
       'send_dm',
       {
         description:
-          'Send a direct message to a user by username, optionally with attachments. \u26a0\ufe0f Only use this to INITIATE a message to another user. If you are responding to a DM from that user, your reply is delivered automatically — do NOT use this tool or the message will be sent twice.',
+          'Send a direct message to a user by their exact username (not display name), optionally with attachments. \u26a0\ufe0f Only use this to INITIATE a message to another user. If you are responding to a DM from that user, your reply is delivered automatically — do NOT use this tool or the message will be sent twice.',
         inputSchema: {
-          username: z.string().describe('Username of the recipient'),
+          username: z.string().describe('Exact username of the recipient, NOT their display name'),
           text: z.string().describe('Message text (supports markdown)'),
           filePaths: z
             .array(z.string())

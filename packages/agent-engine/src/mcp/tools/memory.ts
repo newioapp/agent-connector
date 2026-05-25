@@ -20,9 +20,12 @@ export function registerMemoryTools(server: McpServer, app: NewioAppForMcp, onTo
     'get_memory',
     {
       description:
-        'Load memory about a person or conversation that was not pre-loaded at session start (e.g., a new participant joined). Requires either a username or conversationId.',
+        "Load memory about a person or conversation that was not pre-loaded at session start. Requires either an exact username or conversationId. IMPORTANT: A person's username is often different from their display name. Use list_contacts first to find the correct username if you only know their display name.",
       inputSchema: {
-        username: z.string().optional().describe('Username of the person'),
+        username: z
+          .string()
+          .optional()
+          .describe('Exact username of the person, NOT their display name. Use list_contacts to resolve.'),
         conversationId: z.string().optional().describe('Conversation ID'),
       },
     },
@@ -44,11 +47,17 @@ export function registerMemoryTools(server: McpServer, app: NewioAppForMcp, onTo
     'add_memory',
     {
       description:
-        'Store a new fact in memory. Facts must be self-contained, third-person statements (15-50 words). Omit username and conversationId to store about yourself.',
+        'Store a new fact in memory. Facts must be self-contained, third-person statements (15-50 words). Use username for facts about a specific person (their job, preferences, schedule). Use conversationId for facts about a conversation itself (group decisions, project goals, recurring topics that belong to the group — not any one individual). Omit both to store about yourself (global scope). IMPORTANT: Use list_contacts to find the exact username — do not guess from display names.',
       inputSchema: {
         text: z.string().describe('The fact to store (self-contained, third-person)'),
-        username: z.string().optional().describe('Username of the person this fact is about (omit for self)'),
-        conversationId: z.string().optional().describe('Conversation ID this fact is about (omit for self)'),
+        username: z
+          .string()
+          .optional()
+          .describe('Exact username of the person this fact is about, NOT their display name'),
+        conversationId: z
+          .string()
+          .optional()
+          .describe('Conversation ID this fact belongs to (for group decisions, conversation-level context)'),
       },
     },
     async ({ text, username, conversationId }) => {
@@ -63,11 +72,14 @@ export function registerMemoryTools(server: McpServer, app: NewioAppForMcp, onTo
     'update_memory',
     {
       description:
-        'Update an existing memory fact. Use when information has materially changed — not for cosmetic rewording.',
+        'Update an existing memory fact. Use when information has materially changed — not for cosmetic rewording. Use list_contacts to find the exact username if you only know their display name.',
       inputSchema: {
         factId: z.string().describe('The ID of the fact to update'),
         text: z.string().describe('The updated fact text'),
-        username: z.string().optional().describe('Username of the person this fact is about (omit for self)'),
+        username: z
+          .string()
+          .optional()
+          .describe('Exact username of the person this fact is about, NOT their display name'),
         conversationId: z.string().optional().describe('Conversation ID this fact is about (omit for self)'),
       },
     },
@@ -82,10 +94,14 @@ export function registerMemoryTools(server: McpServer, app: NewioAppForMcp, onTo
   server.registerTool(
     'delete_memory',
     {
-      description: 'Delete a memory fact. Use when information is contradicted or no longer relevant.',
+      description:
+        'Delete a memory fact. Use when information is contradicted or no longer relevant. Use list_contacts to find the exact username if you only know their display name.',
       inputSchema: {
         factId: z.string().describe('The ID of the fact to delete'),
-        username: z.string().optional().describe('Username of the person this fact is about (omit for self)'),
+        username: z
+          .string()
+          .optional()
+          .describe('Exact username of the person this fact is about, NOT their display name'),
         conversationId: z.string().optional().describe('Conversation ID this fact is about (omit for self)'),
       },
     },
@@ -104,7 +120,10 @@ export function registerMemoryTools(server: McpServer, app: NewioAppForMcp, onTo
         'Update the summary for a memory scope. Summaries are always loaded at session start — keep them concise (max 10 lines for user/conversation).',
       inputSchema: {
         text: z.string().describe('The new summary text'),
-        username: z.string().optional().describe('Username of the person this summary is about (omit for self)'),
+        username: z
+          .string()
+          .optional()
+          .describe('Exact username of the person this summary is about, NOT their display name'),
         conversationId: z.string().optional().describe('Conversation ID this summary is about (omit for self)'),
       },
     },

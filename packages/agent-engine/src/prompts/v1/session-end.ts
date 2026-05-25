@@ -1,22 +1,28 @@
 /**
  * Session-end prompt — update memory and produce a handoff note.
+ * Output is <handoff> tag (not <done />), since the connector parses the handoff content.
  */
 import { memoryRules } from './memory-rules.js';
 
 export function sessionEndPrompt(): string {
-  return `\
-event: system.session_end
-instructions: |
-  Your session is ending. Complete these two steps:
+  return `<event type="system.session_end">
+<instructions>
+Your session is ending. Complete these two steps:
 
-  ## Step 1: Update memory
+<step name="update_memory">
+${memoryRules()}
+</step>
 
-  ${memoryRules().split('\n').join('\n  ')}
+<step name="handoff">
+Write a handoff note so the next session can pick up exactly where you left off — as if continuing the same session.
 
-  ## Step 2: Handoff note
+Include: what was being discussed, what was tried or decided, any pending questions or tasks, and recent context the next session needs (even transient topics like someone venting or a request in progress).
 
-  Output 2-4 sentences describing the current state of work so the next session can pick up context.
-  This should capture what was happening, not durable facts (those go in memory).
+Keep it 2-4 sentences for simple sessions. For longer or multi-conversation sessions, you may write more to capture the full state, but stay concise.
 
-  Output the handoff note as your final message, prefixed with exactly "HANDOFF:" on its own line.`;
+Your final output must be exactly:
+<handoff>Your handoff note here.</handoff>
+</step>
+</instructions>
+</event>`;
 }

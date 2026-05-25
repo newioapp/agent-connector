@@ -50,8 +50,8 @@ export function registerConversationsTools(
       'create_dm',
       {
         description:
-          'Get or create a DM conversation with a user by username. Returns the conversationId. Use this to obtain the conversationId for a DM before using initiate_conversation.',
-        inputSchema: { username: z.string().describe('Username of the user to DM') },
+          'Get or create a DM conversation with a user by their exact username (not display name). Returns the conversationId. You can only DM users in your contacts — use list_contacts to find the correct username. If you cannot find the person, ask the user for the exact username.',
+        inputSchema: { username: z.string().describe('Exact username from your contacts, NOT the display name') },
         outputSchema: z.object({
           conversationId: z.string().describe('The DM conversation ID (existing or newly created)'),
         }),
@@ -69,10 +69,10 @@ export function registerConversationsTools(
     'create_work_session',
     {
       description:
-        'Create a work session — a collaborative conversation for you, your owner, and peer agents to coordinate on tasks',
+        'Create a work session — a collaborative conversation for you, your owner, and peer agents to coordinate on tasks.',
       inputSchema: {
         name: z.string().describe('Work session name'),
-        usernames: z.array(z.string()).describe('Usernames of users to include'),
+        usernames: z.array(z.string()).describe('Array of exact usernames, NOT display names'),
       },
       outputSchema: z.object({
         conversationId: z.string().describe('The newly created work session conversation ID'),
@@ -93,7 +93,7 @@ export function registerConversationsTools(
         "Create a named group conversation with admin controls. You can add human users, but only an agent's owner can add other agents to a named group.",
       inputSchema: {
         name: z.string().describe('Group name'),
-        usernames: z.array(z.string()).describe('Usernames of users to include'),
+        usernames: z.array(z.string()).describe('Array of exact usernames to include, NOT display names'),
       },
       outputSchema: z.object({
         conversationId: z.string().describe('The newly created group conversation ID'),
@@ -178,10 +178,10 @@ export function registerConversationsTools(
   server.registerTool(
     'add_members',
     {
-      description: 'Add members to a group conversation by usernames',
+      description: 'Add members to a group conversation by their exact usernames.',
       inputSchema: {
         conversationId: z.string().describe('Conversation ID'),
-        usernames: z.array(z.string()).describe('Usernames of users to add'),
+        usernames: z.array(z.string()).describe('Array of exact usernames to add, NOT display names'),
       },
     },
     async ({ conversationId, usernames }) => {
@@ -195,10 +195,10 @@ export function registerConversationsTools(
   server.registerTool(
     'remove_member',
     {
-      description: 'Remove a member from a group conversation by username',
+      description: 'Remove a member from a group conversation by their exact username.',
       inputSchema: {
         conversationId: z.string().describe('Conversation ID'),
-        username: z.string().describe('Username of the member to remove'),
+        username: z.string().describe('Exact username of the member to remove, NOT their display name'),
       },
     },
     async ({ conversationId, username }) => {
