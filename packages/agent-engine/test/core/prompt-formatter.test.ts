@@ -112,7 +112,13 @@ describe('PromptFormatterImpl', () => {
         makeMsg({
           text: 'Here is the file',
           attachments: [
-            { fileName: 'report.pdf', contentType: 'application/pdf', size: 245000, s3Key: 'media/conv-1/report.pdf' },
+            {
+              fileName: 'report.pdf',
+              contentType: 'application/pdf',
+              size: 245000,
+              s3Key: 'media/conv-1/report.pdf',
+              attachmentType: 'file',
+            },
           ],
         }),
       ]);
