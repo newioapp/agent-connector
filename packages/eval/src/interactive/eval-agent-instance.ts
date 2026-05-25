@@ -80,6 +80,9 @@ export class EvalAgentInstance extends BaseAgentInstance {
     return new PromptManager([formatter], formatter);
   }
 
+  /** Optional hook called when the target agent invokes an MCP tool. */
+  onToolCall?: (toolName: string, args: Readonly<Record<string, unknown>>) => void;
+
   createMcpServer(app: NewioAppForMcp): NewioMcpServerInterface {
     return new NewioEvalMcpServer({
       app,
@@ -90,6 +93,9 @@ export class EvalAgentInstance extends BaseAgentInstance {
         }
       },
       sessionMode: this.sessionMode,
+      onToolCall: (tool, args) => {
+        this.onToolCall?.(tool, args);
+      },
     });
   }
 
