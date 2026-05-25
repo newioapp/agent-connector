@@ -279,7 +279,14 @@ export abstract class BaseAgentInstance implements AgentInstance {
       getMemoryScope: (scope, scopeId) => this.app.getMemoryScope(scope, scopeId),
       getConversationMemberIds: (conversationId) => this.app.getConversationMemberIds(conversationId),
       getMemberDisplayInfo: (conversationId, userId) => this.app.getMemberDisplayInfo(conversationId, userId),
+      updateAgentMemberConfig: (conversationId, config) => this.app.updateAgentMemberConfig(conversationId, config),
       agentUserId: this.app.identity.userId,
+      getOwnerDmConversationId: () => {
+        if (!this._ownerDmConversationId) {
+          throw new Error('Owner DM conversation ID not yet resolved');
+        }
+        return this._ownerDmConversationId;
+      },
     };
   }
 
@@ -569,6 +576,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         agentProtocol: agentInfo.protocol,
         agentVendor: agentInfo.agentName ?? this.config.type,
         agentVendorVersion: agentInfo.agentVersion,
+        sessionMode: this.config.sessionMode === 'shared' ? 'shared' : 'isolated',
         host: {
           hostname: hostname(),
           workingDirectory: this.config.acp?.cwd,

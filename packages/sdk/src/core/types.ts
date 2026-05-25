@@ -908,6 +908,7 @@ export interface ReportAgentInfoRequest {
   readonly agentProtocol: string;
   readonly agentVendor: string;
   readonly agentVendorVersion?: string;
+  readonly sessionMode?: 'isolated' | 'shared';
   readonly host?: ReportAgentHostInfo;
 }
 
@@ -936,6 +937,13 @@ export interface SessionConfigUpdate {
 }
 
 export type SessionType = 'conversation' | 'contact' | 'cron';
+
+/**
+ * ExternalReferenceId used by agents running in shared session mode.
+ * A single session serves all conversations, so there is no per-conversation
+ * externalReferenceId.
+ */
+export const SHARED_SESSION_ID = '__shared__' as const;
 
 // ---------------------------------------------------------------------------
 // Capabilities — agent remote control
@@ -975,7 +983,8 @@ export type SignalErrorCode =
   | 'session_busy'
   | 'operation_in_progress'
   | 'invalid_session_type'
-  | 'not_implemented';
+  | 'not_implemented'
+  | 'not_active_for_conversation';
 
 export interface ModelOption {
   readonly value: string;
