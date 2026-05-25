@@ -9,7 +9,7 @@ import type {
   AssertionResult,
   ToolCallRecord,
 } from '../types.js';
-import { createJudgeLlm } from './judge-llm.js';
+import { createJudgeLlm } from '../judge-llm.js';
 
 interface JudgeInput {
   readonly criteria: string;

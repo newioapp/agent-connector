@@ -619,6 +619,7 @@ export class MockBackend {
     list.push(msg);
     this.messages.set(input.conversationId, list);
     conv.lastMessageAt = msg.createdAt;
+    this.notifyObservers(msg);
     for (const member of conv.members) {
       this.emit(member.userId, { type: 'message.new', message: msg, conversation: conv });
     }
@@ -718,9 +719,89 @@ export class MockBackend {
     this.emit(targetUserId, { type: 'signal', targetUserId, signal });
   }
 
+  // ── Event Observation (for eval driver) ──
+
+  private readonly observers = new Map<string, (msg: BackendMessage) => void>();
+
+  /**
+   * Subscribe to messages sent by specific users. The callback fires on each
+   * message from any of the watched senderIds.
+   */
+  observeMessages(observerId: string, senderIds: ReadonlySet<string>, cb: (msg: BackendMessage) => void): void {
+    // We register a post-send hook keyed by observerId
+    this.observers.set(observerId, (msg) => {
+      if (senderIds.has(msg.senderId)) {
+        cb(msg);
+      }
+    });
+  }
+
+  /** Unsubscribe an observer. */
+  unobserveMessages(observerId: string): void {
+    this.observers.delete(observerId);
+  }
+
+  /**
+   * Collect messages from observed senders. Blocks until at least one message
+   * arrives, then waits for `idleMs` of silence before returning the batch.
+   * Returns empty array on overall timeout.
+   */
+  async collectEvents(opts: {
+    readonly senderIds: ReadonlySet<string>;
+    readonly idleMs?: number;
+    readonly timeoutMs?: number;
+  }): Promise<BackendMessage[]> {
+    const idleMs = opts.idleMs ?? 5000;
+    const timeoutMs = opts.timeoutMs ?? 60000;
+    const batch: BackendMessage[] = [];
+    const observerId = `collect-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    return new Promise<BackendMessage[]>((resolve) => {
+      let idleTimer: ReturnType<typeof setTimeout> | undefined;
+
+      const cleanup = (): void => {
+        if (idleTimer) {
+          clearTimeout(idleTimer);
+        }
+        clearTimeout(overallTimer);
+        this.unobserveMessages(observerId);
+      };
+
+      const finish = (): void => {
+        cleanup();
+        resolve(batch);
+      };
+
+      const resetIdle = (): void => {
+        if (idleTimer) {
+          clearTimeout(idleTimer);
+        }
+        idleTimer = setTimeout(finish, idleMs);
+      };
+
+      this.observeMessages(observerId, opts.senderIds, (msg) => {
+        batch.push(msg);
+        resetIdle();
+      });
+
+      // Overall timeout
+      const overallTimer = setTimeout(() => {
+        cleanup();
+        resolve(batch);
+      }, timeoutMs);
+    });
+  }
+
   // ── Internal ──
 
   private emit(userId: string, event: BackendEvent): void {
     this.listeners.get(userId)?.(event);
+  }
+
+  /** Notify observers when a message is sent. Called from sendMessage. */
+  private notifyObservers(msg: BackendMessage): void {
+    for (const cb of this.observers.values()) {
+      cb(msg);
+    }
   }
 }

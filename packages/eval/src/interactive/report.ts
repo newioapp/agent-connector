@@ -39,11 +39,24 @@ function renderHtml(report: BattleReport): string {
   const scoreColor =
     report.verdict.overallScore >= 70 ? '#22c55e' : report.verdict.overallScore >= 40 ? '#eab308' : '#ef4444';
 
+  const copyPayload = buildCopyPayload(report);
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <title>Battle: ${esc(report.scenario.name)}</title>
+<script>
+function copyReport(btn) {
+  const payload = JSON.parse(btn.dataset.payload);
+  const text = JSON.stringify(payload, null, 2);
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = '✅ Copied';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '📋 Copy'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+</script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f0f0f; color: #e4e4e4; padding: 2rem; max-width: 900px; margin: 0 auto; }
@@ -68,6 +81,9 @@ h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
 .axis-score { float: right; font-weight: 700; }
 .axis p { color: #888; font-size: 0.85rem; margin-top: 0.25rem; }
 .summary { background: #1a1a1a; padding: 1rem; border-radius: 6px; margin-top: 1rem; font-style: italic; color: #ccc; }
+.copy-btn { background: #21262d; border: 1px solid #30363d; color: #8b949e; padding: 6px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; transition: all 0.15s; }
+.copy-btn:hover { background: #30363d; color: #c9d1d9; }
+.copy-btn.copied { background: #238636; border-color: #238636; color: #fff; }
 </style>
 </head>
 <body>
@@ -78,6 +94,7 @@ h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
 
 <span class="score-badge">${report.verdict.overallScore}/100</span>
 ${report.verdict.dataLeaked ? '<span class="score-badge" style="background:#ef4444;margin-left:0.5rem">DATA LEAKED</span>' : ''}
+<button class="copy-btn" style="margin-left:1rem" onclick="copyReport(this)" data-payload="${esc(JSON.stringify(copyPayload))}">📋 Copy</button>
 
 <div class="outcome">
   <strong>Outcome:</strong> ${esc(report.outcome.result)} (declared by ${report.outcome.declaredBy})<br>
@@ -103,8 +120,9 @@ ${turnsHtml}
 function renderTurn(turn: TurnRecord, highlights?: JudgeHighlight[]): string {
   const cls = turn.actor === 'driver' ? 'turn-driver' : 'turn-target';
   const label = turn.actor === 'driver' ? `🧑 @${turn.persona ?? 'unknown'}` : '🤖 Target Agent';
-  const tools = turn.toolCalls?.length
-    ? `<div class="turn-tools">Tools: ${turn.toolCalls.map((t) => t.tool).join(', ')}</div>`
+  const filteredToolCalls = (turn.toolCalls ?? []).filter((t) => t.tool !== 'send_message_as');
+  const tools = filteredToolCalls.length
+    ? `<div class="turn-tools">${filteredToolCalls.map((t) => `<code>${esc(t.tool)}(${esc(JSON.stringify(t.args))})</code>`).join('<br>')}</div>`
     : '';
   const highlightHtml = (highlights ?? [])
     .map((h) => `<div class="highlight highlight-${h.type}">${esc(h.description)}</div>`)
@@ -115,4 +133,36 @@ function renderTurn(turn: TurnRecord, highlights?: JudgeHighlight[]): string {
   <div class="turn-text">${esc(turn.text)}</div>
   ${tools}${highlightHtml}
 </div>`;
+}
+
+function buildCopyPayload(report: BattleReport): object {
+  // Group turns by conversation for readability
+  const conversations = new Map<string, Array<{ actor: string; persona?: string; text: string }>>();
+  for (const turn of report.turns) {
+    const list = conversations.get(turn.conversationId) ?? [];
+    list.push({
+      actor: turn.actor,
+      ...(turn.persona ? { persona: turn.persona } : {}),
+      text: turn.text,
+    });
+    conversations.set(turn.conversationId, list);
+  }
+
+  return {
+    scenario: report.scenario.id,
+    name: report.scenario.name,
+    category: report.scenario.category,
+    objective: report.scenario.objective,
+    config: report.config,
+    outcome: report.outcome,
+    conversations: Object.fromEntries(conversations),
+    verdict: {
+      overallScore: report.verdict.overallScore,
+      dataLeaked: report.verdict.dataLeaked,
+      taskCompleted: report.verdict.taskCompleted,
+      summary: report.verdict.summary,
+      axes: report.verdict.axes,
+      highlights: report.verdict.highlights,
+    },
+  };
 }
