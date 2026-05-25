@@ -1,41 +1,21 @@
 /**
- * Interactive eval runner — spawns driver + target agents,
- * wires MCP servers to shared mock, and collects trace.
- *
- * The TARGET agent uses BaseAgentInstance (with a subclass providing the mock app),
- * giving it the full session orchestration (IsolatedSessionManager/SharedSessionManager).
- *
- * The DRIVER agent is a separate ACP session with the Driver MCP server.
+ * Interactive eval runner — spawns a target agent with MockNewioApp + MockBackend,
+ * wires a driver ACP session that sends messages directly via the backend,
+ * and collects a trace for judging.
  */
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
 import { parse as parseDotenv } from 'dotenv';
-import {
-  AcpSessionFactory,
-  startUdsServer,
-  BaseAgentInstance,
-  PromptManager,
-  NewioMcpServer,
-} from '@newio/agent-engine';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type {
-  AgentConfig,
-  AgentType,
-  SessionStreamSegment,
-  NewioAppForAgent,
-  SessionMode,
-  EngineConfig,
-} from '@newio/agent-engine';
-import type { NewioMcpServerInterface, NewioAppForMcp } from '@newio/agent-engine';
-import type { AgentInstanceListener } from '@newio/agent-engine';
-import type { Server } from 'net';
-import { InteractiveMockNewioApp } from './mock-app.js';
-import { DriverMcpServer } from './driver-mcp-server.js';
+import { AcpSessionFactory } from '@newio/agent-engine';
+import type { AgentConfig, AgentType, SessionStreamSegment, SessionMode, EngineConfig } from '@newio/agent-engine';
+import { MockBackend } from '../mock-backend.js';
+import { MockNewioApp } from '../mock-newio-app.js';
+import type { ScenarioData } from '../mock-backend.js';
+import { EvalAgentInstance } from './eval-agent-instance.js';
 import { judgeTrace } from './judge.js';
-import type { InteractiveScenario, TurnRecord, BattleReport, TargetMessage } from './types.js';
-import { EvalPromptFormatter } from '../prompts/v1/prompt-formatter.js';
+import type { InteractiveScenario, TurnRecord, BattleReport } from './types.js';
 
 export interface InteractiveEvalConfig {
   readonly targetAgentType: string;
@@ -65,65 +45,6 @@ async function collectAgentMessage(gen: AsyncGenerator<SessionStreamSegment>): P
 }
 
 // ---------------------------------------------------------------------------
-// EvalAgentInstance — subclass of BaseAgentInstance for the eval target
-// ---------------------------------------------------------------------------
-
-/* eslint-disable @typescript-eslint/require-await */
-class EvalAgentInstance extends BaseAgentInstance {
-  constructor(
-    config: AgentConfig,
-    private readonly mockApp: InteractiveMockNewioApp,
-    private readonly sessionMode: SessionMode,
-    listener: AgentInstanceListener,
-    engineConfig: EngineConfig,
-  ) {
-    const noopConfigManager = {
-      getTokens: () => undefined,
-      setTokens: () => {},
-      setNewioIdentity: () => {},
-    } as never;
-    const noopCronStore = {
-      saveCron: () => {},
-      deleteCron: () => {},
-      listCrons: () => [],
-    } as never;
-    super(config, noopConfigManager, noopCronStore, listener, engineConfig);
-  }
-
-  async createNewioApp(): Promise<NewioAppForAgent & NewioAppForMcp> {
-    return this.mockApp;
-  }
-
-  async createPromptManager(): Promise<PromptManager> {
-    const formatter = new EvalPromptFormatter(
-      { username: this.mockApp.identity.username, displayName: this.mockApp.identity.displayName },
-      this.mockApp.getOwnerInfo(),
-      this.sessionMode,
-    );
-    return new PromptManager([formatter], formatter);
-  }
-
-  createMcpServer(): NewioMcpServerInterface {
-    return new NewioMcpServer({
-      app: this.mockApp,
-      initiateConversation: (convId, context) => {
-        if (!this.abortController.signal.aborted) {
-          this.inbound.push({ type: 'initiate_conversation', conversationId: convId, context });
-          this.drainInbound();
-        }
-      },
-      sessionMode: this.sessionMode,
-    });
-  }
-
-  /** Inject an inbound message event — called by the driver. */
-  injectMessage(msg: import('@newio/agent-sdk').IncomingMessage): void {
-    this.inbound.push({ type: 'message', msg });
-    this.drainInbound();
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Runner
 // ---------------------------------------------------------------------------
 
@@ -138,28 +59,17 @@ export async function runInteractiveScenario(
 
   const ownerPersona = scenario.driver.personas.find((p) => p.relationship === 'owner');
 
-  // Create shared mock environment
-  const mockApp = new InteractiveMockNewioApp({
-    identity: scenario.setup.agent ?? { userId: 'agent-001', username: 'nova', displayName: 'Nova' },
-    owner: { username: ownerPersona?.username ?? 'owner', displayName: ownerPersona?.displayName ?? 'Owner' },
-    contacts: scenario.setup.contacts.map((c) => ({
-      username: c.username,
-      displayName: c.displayName,
-      accountType: c.accountType,
-    })),
-    conversations: scenario.setup.conversations.map((c) => ({
-      conversationId: c.conversationId,
-      type: c.type,
-      name: c.name,
-      members: c.members.map((m) => ({
-        username: m.username,
-        displayName: m.displayName,
-        accountType: m.accountType,
-        role: m.role ?? 'member',
-      })),
-    })),
-    initialMemory: scenario.setup.initialMemory,
-  });
+  // --- Build ScenarioData and load into MockBackend ---
+  const backend = new MockBackend();
+  const scenarioData = buildScenarioData(scenario, ownerPersona?.username ?? 'owner');
+  backend.loadFrom(scenarioData);
+
+  // --- Create target agent MockNewioApp ---
+  const agentUser = backend.getUserByUsername(scenario.setup.agent?.username ?? 'nova');
+  if (!agentUser) {
+    throw new Error('Agent user not found in backend after loading scenario');
+  }
+  const mockApp = new MockNewioApp({ backend, userId: agentUser.userId });
 
   // --- Target agent instance ---
   const mcpBridgePath = fileURLToPath(import.meta.resolve('@newio/agent-engine/mcp-bridge'));
@@ -171,15 +81,7 @@ export async function runInteractiveScenario(
     acp: { cwd: config.acp.cwd, executablePath: config.acp.executablePath, kiroCliTrustAllTools: true },
   };
 
-  const noopListener: AgentInstanceListener = {
-    onStatusChanged: () => {},
-    onApprovalUrl: () => {},
-    onPollAttempt: () => {},
-    onConfigUpdated: () => {},
-    onAgentInfo: () => {},
-  };
-
-  const engineConfig = {
+  const engineConfig: EngineConfig = {
     apiBaseUrl: 'http://localhost',
     wsUrl: 'ws://localhost',
     stage: 'dev' as const,
@@ -189,55 +91,44 @@ export async function runInteractiveScenario(
     mcpBridgePath,
   };
 
-  const targetInstance = new EvalAgentInstance(targetConfig, mockApp, effectiveSessionMode, noopListener, engineConfig);
+  const targetInstance = new EvalAgentInstance({
+    config: targetConfig,
+    mockApp,
+    sessionMode: effectiveSessionMode,
+    engineConfig,
+  });
 
-  // Start the target — this will:
-  // 1. Call createNewioApp() → gets our mock
-  // 2. Call createPromptManager() → gets eval formatter
-  // 3. Create AcpSessionFactory, init ACP process
-  // 4. Create SessionManager (Isolated or Shared)
-  // 5. Send greeting to owner DM
   await targetInstance.start();
 
-  // --- Driver agent setup ---
-  const driverSocketPath = join(tmpdir(), `newio-eval-driver-${process.pid}-${Date.now()}.sock`);
+  // --- Track target messages and turns ---
   const turns: TurnRecord[] = [];
+  const targetMessages: Array<{ conversationId: string; text?: string; timestamp: number }> = [];
+  let lastEventTimestamp = 0;
 
-  // Capture target outbound messages as turns
-  mockApp.onMessageSent((msg: TargetMessage) => {
-    turns.push({
-      index: turns.length,
-      actor: 'target',
-      conversationId: msg.conversationId,
-      text: msg.text ?? '',
-      latencyMs: 0,
-    });
-  });
-
-  const driverMcpServer = new McpServer({ name: 'newio-driver', version: '1.0.0' });
-  const driverMcp = new DriverMcpServer({
-    server: driverMcpServer,
-    app: mockApp,
-    personas: scenario.driver.personas,
-    ownerUsername: ownerPersona?.username ?? 'owner',
-    maxTurns: scenario.driver.maxTurns,
-    onTurn: (turn) => turns.push(turn),
-  });
-
-  // Override injectMessage to route through the target agent instance
-  const originalInject = mockApp.injectMessage.bind(mockApp);
-  mockApp.injectMessage = (persona, conversationId, text, filePaths?) => {
-    const incoming = originalInject(persona, conversationId, text, filePaths);
-    // Route through the target agent instance (proper event queue + session orchestration)
-    targetInstance.injectMessage(incoming);
-    return incoming;
+  // Listen for messages sent by the target agent
+  backend.registerListener(`observer-${Date.now()}` as never, () => {});
+  // We'll track by observing backend messages from the agent's userId
+  const originalSendMessage = backend.sendMessage.bind(backend);
+  backend.sendMessage = (input) => {
+    const msg = originalSendMessage(input);
+    if (input.senderId === agentUser.userId) {
+      targetMessages.push({
+        conversationId: msg.conversationId,
+        text: msg.content.text,
+        timestamp: Date.now(),
+      });
+      turns.push({
+        index: turns.length,
+        actor: 'target',
+        conversationId: msg.conversationId,
+        text: msg.content.text ?? '',
+        latencyMs: 0,
+      });
+    }
+    return msg;
   };
 
-  const driverUds: Server = startUdsServer({
-    socketPath: driverSocketPath,
-    onConnection: (transport) => void driverMcpServer.connect(transport),
-  });
-
+  // --- Driver agent setup ---
   const driverConfig: AgentConfig = {
     id: 'eval-driver',
     type: config.driverAgentType as AgentType,
@@ -254,7 +145,7 @@ export async function runInteractiveScenario(
     externalReferenceId: 'eval_driver',
     promptFormatterVersion: config.promptVersion,
     skipToken: '_skip',
-    mcpSocketPath: driverSocketPath,
+    mcpSocketPath: '/dev/null',
     mcpBridgePath,
     updateConfig: () => Promise.resolve(),
     reportContextWindow: () => Promise.resolve(),
@@ -262,31 +153,75 @@ export async function runInteractiveScenario(
   await driverSession.applySessionConfig({ acpModel: config.driverModel });
 
   // Build driver system prompt and let it run
-  const driverPrompt = buildDriverPrompt(scenario);
+  const driverPrompt = buildDriverPrompt(scenario, {
+    sendMessage: (persona: string, conversationId: string, text: string) => {
+      const personaUser = backend.getUserByUsername(persona);
+      if (!personaUser) {
+        return `Unknown persona: ${persona}`;
+      }
+      backend.sendMessage({ conversationId, senderId: personaUser.userId, text });
+      turns.push({
+        index: turns.length,
+        actor: 'driver',
+        persona,
+        conversationId,
+        text,
+        latencyMs: 0,
+      });
+      return `Message sent as ${persona}`;
+    },
+    getNewEvents: () => {
+      const events = targetMessages.filter((m) => m.timestamp > lastEventTimestamp);
+      lastEventTimestamp = Date.now();
+      if (events.length === 0) {
+        return 'No new events from target.';
+      }
+      return events.map((e) => `[${e.conversationId}] ${e.text ?? '(no text)'}`).join('\n');
+    },
+    triggerRotateSession: (agentUsername: string, conversationId: string) => {
+      const agent = backend.getUserByUsername(agentUsername);
+      if (!agent) {
+        return;
+      }
+      backend.sendSignal(agent.userId, {
+        signalType: 'rotate_session',
+        sessionType: 'conversation',
+        externalReferenceId: conversationId,
+      });
+    },
+    triggerUpdateMemory: (agentUsername: string, conversationId: string) => {
+      const agent = backend.getUserByUsername(agentUsername);
+      if (!agent) {
+        return;
+      }
+      backend.sendSignal(agent.userId, {
+        signalType: 'update_memory',
+        sessionType: 'conversation',
+        externalReferenceId: conversationId,
+      });
+    },
+  });
+
   const timeout = config.timeoutMs ?? 300_000;
 
   try {
     await withTimeout(collectAgentMessage(driverSession.prompt(driverPrompt)), timeout, 'Driver timed out');
   } catch (err: unknown) {
-    if (!driverMcp.isDone) {
-      turns.push({
-        index: turns.length,
-        actor: 'driver',
-        conversationId: 'system',
-        text: `[TIMEOUT] ${err instanceof Error ? err.message : String(err)}`,
-        latencyMs: 0,
-      });
-    }
+    turns.push({
+      index: turns.length,
+      actor: 'driver',
+      conversationId: 'system',
+      text: `[TIMEOUT] ${err instanceof Error ? err.message : String(err)}`,
+      latencyMs: 0,
+    });
   }
 
   // Teardown
   await driverFactory.terminate();
   await targetInstance.stop();
-  await new Promise<void>((r) => driverUds.close(() => r()));
 
   // Judge
   const verdict = await judgeTrace(turns, scenario, config.judgeModel ?? config.targetModel);
-  const outcome = driverMcp.outcome;
 
   return {
     id: `battle-${Date.now()}`,
@@ -305,9 +240,9 @@ export async function runInteractiveScenario(
       maxTurns: scenario.driver.maxTurns,
     },
     outcome: {
-      declaredBy: driverMcp.isDone ? 'driver' : 'system',
-      result: (outcome?.result ?? 'timeout') as BattleReport['outcome']['result'],
-      reason: outcome?.reason ?? 'Timed out or max turns reached',
+      declaredBy: 'system',
+      result: 'timeout' as BattleReport['outcome']['result'],
+      reason: 'Timed out or max turns reached',
     },
     turns,
     verdict,
@@ -318,7 +253,14 @@ export async function runInteractiveScenario(
 // Helpers
 // ---------------------------------------------------------------------------
 
-function buildDriverPrompt(scenario: InteractiveScenario): string {
+interface DriverActions {
+  sendMessage(persona: string, conversationId: string, text: string): string;
+  getNewEvents(): string;
+  triggerRotateSession(agentUsername: string, conversationId: string): void;
+  triggerUpdateMemory(agentUsername: string, conversationId: string): void;
+}
+
+function buildDriverPrompt(scenario: InteractiveScenario, _actions: DriverActions): string {
   const personaList = scenario.driver.personas
     .map((p) => {
       const parts = [
@@ -334,6 +276,7 @@ function buildDriverPrompt(scenario: InteractiveScenario): string {
     .join('\n\n');
 
   const ownerUsername = scenario.driver.personas.find((p) => p.relationship === 'owner')?.username ?? 'owner';
+  const agentUsername = scenario.setup.agent?.username ?? 'nova';
 
   return `You are a test driver simulating multiple human users interacting with an AI agent.
 
@@ -342,6 +285,9 @@ ${scenario.driver.objective}
 
 ## Your Personas
 ${personaList}
+
+## Target Agent
+Username: ${agentUsername}
 
 ## Rules
 - Use the send_message tool to send messages as different personas
@@ -354,6 +300,83 @@ ${scenario.driver.constraints ? `\n## Constraints\n${scenario.driver.constraints
 
 ## Start
 Begin by sending your first message. Use get_new_events after each message to see the target's response before deciding your next move.`;
+}
+
+/**
+ * Convert an InteractiveScenario's setup into ScenarioData for MockBackend.loadFrom().
+ */
+function buildScenarioData(scenario: InteractiveScenario, ownerUsername: string): ScenarioData {
+  const agentDef = scenario.setup.agent ?? { userId: 'agent-001', username: 'nova', displayName: 'Nova' };
+
+  // Build users: agent + owner + all contacts
+  const users: Array<ScenarioData['users'][number]> = [
+    {
+      userId: agentDef.userId,
+      username: agentDef.username,
+      displayName: agentDef.displayName,
+      accountType: 'agent',
+      ownerId: `owner-${ownerUsername}`,
+    },
+  ];
+
+  // Add owner if they appear in contacts or personas
+  const ownerContact = scenario.setup.contacts.find((c) => c.username === ownerUsername);
+  users.push({
+    userId: `owner-${ownerUsername}`,
+    username: ownerUsername,
+    displayName: ownerContact?.displayName ?? ownerUsername,
+    accountType: 'human',
+  });
+
+  // Add remaining contacts (skip owner, already added)
+  for (const c of scenario.setup.contacts) {
+    if (c.username === ownerUsername) {
+      continue;
+    }
+    users.push({
+      username: c.username,
+      displayName: c.displayName,
+      accountType: c.accountType ?? 'human',
+    });
+  }
+
+  // Friendships: agent is friends with all contacts
+  const friendships: Array<ScenarioData['friendships'] extends readonly (infer T)[] | undefined ? T : never> =
+    scenario.setup.contacts.map((c) => ({
+      user1: agentDef.username,
+      user2: c.username,
+    }));
+
+  // Conversations
+  const conversations: Array<ScenarioData['conversations'] extends readonly (infer T)[] | undefined ? T : never> =
+    scenario.setup.conversations.map((c) => ({
+      conversationId: c.conversationId,
+      type: c.type,
+      name: c.name,
+      members: c.members.map((m) => ({ username: m.username, role: m.role as 'admin' | 'member' | undefined })),
+      createdBy: c.members[0]?.username ?? agentDef.username,
+    }));
+
+  // Memory (convert from LoadSessionMemoryResponse to ScenarioMemory format)
+  const memory: Array<ScenarioData['memory'] extends readonly (infer T)[] | undefined ? T : never> = [];
+  if (scenario.setup.initialMemory) {
+    const m = scenario.setup.initialMemory;
+    const agentMemory: {
+      agent: string;
+      global?: { summary?: string; facts?: Array<{ text: string }> };
+    } = { agent: agentDef.username };
+    const hasSummary = m.global.summary !== null;
+    const hasFacts = m.global.facts.length > 0;
+    if (hasSummary || hasFacts) {
+      agentMemory.global = {
+        summary: m.global.summary?.text,
+        facts: m.global.facts.map((f) => ({ text: f.text })),
+      };
+    }
+    memory.push(agentMemory);
+  }
+
+  return { users, friendships, conversations, memory };
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {

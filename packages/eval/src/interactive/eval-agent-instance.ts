@@ -1,5 +1,5 @@
 /**
- * EvalAgentInstance — subclass of BaseAgentInstance for agent evaluation.
+ * EvalAgentInstance — subclass of BaseAgentInstance for interactive evaluation.
  *
  * Uses MockNewioApp (backed by MockBackend) instead of the real Newio SDK.
  * Runs a real ACP process for the agent, with eval-specific prompt formatting.
@@ -14,10 +14,9 @@ import type {
 } from '@newio/agent-engine';
 import type { NewioAppForMcp, NewioMcpServerInterface } from '@newio/agent-engine';
 import type { IncomingMessage } from '@newio/agent-sdk';
-import { MockNewioApp } from './mock-newio-app.js';
-import type { MockNewioAppOptions } from './mock-newio-app.js';
-import { EvalPromptFormatter } from './prompts/v1/prompt-formatter.js';
-import { NewioEvalMcpServer } from './mcp/v1/server.js';
+import { MockNewioApp } from '../mock-newio-app.js';
+import { EvalPromptFormatter } from '../prompts/v1/prompt-formatter.js';
+import { NewioEvalMcpServer } from '../mcp/v1/server.js';
 
 // ---------------------------------------------------------------------------
 // No-op helpers for eval (no persistence needed)
@@ -50,7 +49,7 @@ const noopListener: AgentInstanceListener = {
 
 export interface EvalAgentInstanceOptions {
   readonly config: AgentConfig;
-  readonly mockAppOptions: MockNewioAppOptions;
+  readonly mockApp: MockNewioApp;
   readonly sessionMode: SessionMode;
   readonly engineConfig: EngineConfig;
   readonly listener?: AgentInstanceListener;
@@ -62,7 +61,7 @@ export class EvalAgentInstance extends BaseAgentInstance {
 
   constructor(opts: EvalAgentInstanceOptions) {
     super(opts.config, noopConfigManager, noopCronStore, opts.listener ?? noopListener, opts.engineConfig);
-    this.mockApp = new MockNewioApp(opts.mockAppOptions);
+    this.mockApp = opts.mockApp;
     this.sessionMode = opts.sessionMode;
   }
 
