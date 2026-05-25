@@ -47,6 +47,13 @@ pnpm build
 pnpm test
 ```
 
+**Note:** `better-sqlite3` is a native module used by both the Electron app (compiled for Electron's Node ABI) and the `newio-connectord` daemon (compiled for plain Node). In a dev environment they share the same pnpm store entry, so running one after the other requires a rebuild:
+
+- After running `pnpm install` or building the Electron app: run `pnpm rebuild better-sqlite3` to restore the plain Node build before running the daemon.
+- After running `electron-rebuild` (connector postinstall): same — run `pnpm rebuild better-sqlite3` before running the daemon.
+
+This is a dev-only issue; in production the daemon and Electron app have separate `node_modules`.
+
 ## Contributing
 
 This project is in early development. We're not accepting external contributions at this time, but you're welcome to open issues for bugs or feature requests.
