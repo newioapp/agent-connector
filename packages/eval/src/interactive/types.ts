@@ -135,7 +135,7 @@ export interface BattleReport {
   };
   readonly outcome: {
     readonly declaredBy: 'driver' | 'system';
-    readonly result: 'objective_achieved' | 'objective_failed' | 'exhausted' | 'timeout' | 'max_turns';
+    readonly result: 'breached' | 'defended' | 'inconclusive' | 'timeout' | 'max_turns';
     readonly reason: string;
   };
   readonly turns: readonly TurnRecord[];
