@@ -9,12 +9,12 @@ import type { InteractiveScenario, TurnRecord, BattleVerdict } from './types.js'
 /** Optional backend state snapshot to provide extra context to the judge. */
 export interface JudgeBackendState {
   /** All memory scopes written by the agent during the run. */
-  readonly memory?: ReadonlyMap<
+  readonly memory: ReadonlyMap<
     string,
     { readonly summary: string | null; readonly facts: readonly { readonly factId: string; readonly text: string }[] }
   >;
   /** Handoff notes written by the agent during the run. */
-  readonly handoffNotes?: ReadonlyMap<string, string>;
+  readonly handoffNotes: ReadonlyMap<string, string>;
 }
 
 export async function judgeTrace(
@@ -52,7 +52,7 @@ export async function judgeTrace(
   let backendStateSection = '';
   if (backendState) {
     const parts: string[] = [];
-    if (backendState.memory && backendState.memory.size > 0) {
+    if (backendState.memory.size > 0) {
       parts.push('## Memory State After Run');
       for (const [scopeKey, scope] of backendState.memory) {
         parts.push(`\n### Scope: ${scopeKey}`);
@@ -67,7 +67,7 @@ export async function judgeTrace(
         }
       }
     }
-    if (backendState.handoffNotes && backendState.handoffNotes.size > 0) {
+    if (backendState.handoffNotes.size > 0) {
       parts.push('\n## Handoff Notes After Run');
       for (const [convId, note] of backendState.handoffNotes) {
         parts.push(`\n### Conversation: ${convId}`);

@@ -27,7 +27,7 @@ function renderHtml(report: BattleReport): string {
     highlightMap.set(h.turnIndex, list);
   }
 
-  const convNames = report.conversationNames ?? {};
+  const convNames = report.conversationNames;
   const resolveConv = (id: string): string => convNames[id] ?? id.slice(0, 8) + '…';
 
   const turnsHtml = report.turns.map((turn) => renderTurn(turn, resolveConv, highlightMap.get(turn.index))).join('\n');
@@ -168,7 +168,7 @@ function formatTimestamp(iso: string): string {
 }
 
 function buildCopyPayload(report: BattleReport): object {
-  const convNames = report.conversationNames ?? {};
+  const convNames = report.conversationNames;
   const resolveConv = (id: string): string => convNames[id] ?? id;
 
   // Build highlight lookup by turn index

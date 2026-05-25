@@ -139,6 +139,6 @@ export interface BattleReport {
     readonly reason: string;
   };
   readonly turns: readonly TurnRecord[];
-  readonly conversationNames?: Readonly<Record<string, string>>;
+  readonly conversationNames: Readonly<Record<string, string>>;
   readonly verdict: BattleVerdict;
 }
