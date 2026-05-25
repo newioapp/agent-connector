@@ -7,10 +7,8 @@
  * - MockMemoryStore: in-memory memory store that records operations
  */
 import { createHash, randomUUID } from 'crypto';
-import type { IncomingMessage } from '@newio/agent-sdk';
 import type { ToolCallRecord } from './types.js';
 import type { NewioAppForMcp, McpContactSummary } from './mcp/v1/types.js';
-import type { NewioAppForDriverMcp, TargetMessage } from './interactive/types.js';
 
 // ---------------------------------------------------------------------------
 // Deterministic UUID helper — derives a UUID v4-shaped ID from a stable key.
@@ -156,7 +154,7 @@ export interface MockNewioAppOptions {
  * In-memory NewioApp mock that holds mutable state for contacts, conversations,
  * members, messages, friend requests, and memory. All IDs are UUIDs.
  */
-export class MockNewioApp implements NewioAppForMcp, NewioAppForDriverMcp {
+export class MockNewioApp implements NewioAppForMcp {
   readonly identity: MockIdentity;
   private readonly owner: MockOwnerInfo;
   private readonly contacts: Map<string, MockContact>;
@@ -167,8 +165,6 @@ export class MockNewioApp implements NewioAppForMcp, NewioAppForDriverMcp {
   private readonly memoryStore: Record<string, { summary: string | null; facts: { factId: string; text: string }[] }>;
   private readonly cronJobs: Map<string, MockCronJob>;
   private nextFactId = 1;
-  private readonly targetMessageListeners: Array<(msg: TargetMessage) => void> = [];
-  private readonly targetMessages: TargetMessage[] = [];
 
   constructor(opts: MockNewioAppOptions) {
     this.identity = opts.identity;
@@ -443,17 +439,6 @@ export class MockNewioApp implements NewioAppForMcp, NewioAppForDriverMcp {
     if (conv) {
       conv.lastMessageAt = msg.createdAt;
     }
-    // Record as target outbound for driver observation
-    const targetMsg: TargetMessage = {
-      messageId: msg.messageId,
-      conversationId,
-      text: text ?? undefined,
-      timestamp: Date.now(),
-    };
-    this.targetMessages.push(targetMsg);
-    for (const listener of this.targetMessageListeners) {
-      listener(targetMsg);
-    }
     return Promise.resolve();
   }
 
@@ -683,169 +668,6 @@ export class MockNewioApp implements NewioAppForMcp, NewioAppForDriverMcp {
       displayName: username,
       accountType: 'human',
     });
-  }
-
-  // ── NewioAppForDriverMcp implementation ───────────────────────────────────
-
-  /** Register a listener for target outbound messages. */
-  onMessageSent(callback: (msg: TargetMessage) => void): void {
-    this.targetMessageListeners.push(callback);
-  }
-
-  injectMessage(
-    persona: string,
-    conversationId: string,
-    text: string,
-    _filePaths?: readonly string[],
-  ): IncomingMessage {
-    const conv = this.conversations.get(conversationId);
-    const member = conv?.members.find((m) => m.username === persona);
-    const senderId = member?.userId ?? deterministicUuid(`user:${persona}`);
-    const senderDisplayName = member?.displayName ?? persona;
-
-    // Store in mock messages
-    const mockMsg: MockMessage = {
-      messageId: randomUUID(),
-      conversationId,
-      senderId,
-      content: { text },
-      createdAt: new Date().toISOString(),
-    };
-    const list = this.messages.get(conversationId) ?? [];
-    list.push(mockMsg);
-    this.messages.set(conversationId, list);
-
-    // Build IncomingMessage for target's event pipeline
-    const incoming: IncomingMessage = {
-      messageId: mockMsg.messageId,
-      conversationId,
-      conversationType: (conv?.type ?? 'dm') as IncomingMessage['conversationType'],
-      senderUserId: senderId,
-      senderUsername: persona,
-      senderDisplayName,
-      senderAccountType: (member?.accountType ?? 'human') as IncomingMessage['senderAccountType'],
-      text,
-      isOwnMessage: false,
-      timestamp: mockMsg.createdAt,
-      status: 'new',
-      relationship: 'in-contact',
-      ...(conv?.name ? { groupName: conv.name } : {}),
-    };
-    return incoming;
-  }
-
-  getTargetMessagesSince(sinceTimestamp: number): readonly TargetMessage[] {
-    return this.targetMessages.filter((m) => m.timestamp > sinceTimestamp);
-  }
-
-  getPersonaConversations(
-    persona: string,
-  ): readonly { readonly conversationId: string; readonly type: string; readonly name?: string }[] {
-    const result: { conversationId: string; type: string; name?: string }[] = [];
-    for (const conv of this.conversations.values()) {
-      if (conv.members.some((m) => m.username === persona)) {
-        result.push({
-          conversationId: conv.conversationId,
-          type: conv.type,
-          ...(conv.name ? { name: conv.name } : {}),
-        });
-      }
-    }
-    return result;
-  }
-
-  getConversationHistory(
-    persona: string,
-    conversationId: string,
-    limit?: number,
-  ): readonly { readonly from: string; readonly text: string; readonly timestamp: number }[] {
-    const conv = this.conversations.get(conversationId);
-    if (!conv?.members.some((m) => m.username === persona)) {
-      return [];
-    }
-    const all = this.messages.get(conversationId) ?? [];
-    const recent = all.slice(-(limit ?? 50));
-    return recent.map((m) => {
-      const sender = conv.members.find((member) => member.userId === m.senderId);
-      return {
-        from: sender?.username ?? m.senderId,
-        text: m.content.text ?? '',
-        timestamp: new Date(m.createdAt).getTime(),
-      };
-    });
-  }
-
-  createConversationAsPersona(
-    persona: string,
-    type: 'group' | 'temp_group',
-    name: string,
-    memberUsernames: readonly string[],
-  ): string {
-    const convId = type === 'group' ? groupConversationId(name) : workSessionConversationId(name);
-    const personaUserId = deterministicUuid(`user:${persona}`);
-    const members: MockMember[] = [
-      {
-        userId: personaUserId,
-        username: persona,
-        displayName: this.users.get(persona)?.displayName ?? persona,
-        accountType: 'human',
-        role: 'admin',
-      },
-    ];
-    for (const u of memberUsernames) {
-      const contact = this.contacts.get(u) ?? this.users.get(u);
-      members.push({
-        userId: contact?.userId ?? deterministicUuid(`user:${u}`),
-        username: u,
-        displayName: contact?.displayName ?? u,
-        accountType: contact?.accountType ?? 'agent',
-        role: 'member',
-      });
-    }
-    this.conversations.set(convId, {
-      conversationId: convId,
-      type,
-      name,
-      members,
-      createdBy: personaUserId,
-      createdAt: new Date().toISOString(),
-    });
-    return convId;
-  }
-
-  addMemberAsPersona(_persona: string, conversationId: string, username: string): void {
-    const conv = this.conversations.get(conversationId);
-    if (conv) {
-      const userId = deterministicUuid(`user:${username}`);
-      if (!conv.members.some((m) => m.userId === userId)) {
-        const user = this.contacts.get(username) ?? this.users.get(username);
-        conv.members.push({
-          userId,
-          username,
-          displayName: user?.displayName ?? username,
-          accountType: user?.accountType ?? 'human',
-          role: 'member',
-        });
-      }
-    }
-  }
-
-  leaveConversation(persona: string, conversationId: string): void {
-    const conv = this.conversations.get(conversationId);
-    if (conv) {
-      const userId = deterministicUuid(`user:${persona}`);
-      conv.members = conv.members.filter((m) => m.userId !== userId);
-    }
-  }
-
-  async triggerRotateSession(_conversationId: string): Promise<void> {
-    // In the interactive runner, this will be wired to the target agent's handleRotateSession.
-    // Placeholder — the runner injects the actual implementation.
-  }
-
-  async triggerUpdateMemory(_conversationId: string): Promise<void> {
-    // In the interactive runner, this will be wired to the target agent's handleUpdateMemory.
-    // Placeholder — the runner injects the actual implementation.
   }
 }
 

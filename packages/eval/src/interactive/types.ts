@@ -1,69 +1,8 @@
 /**
  * Interactive eval types — driver MCP interface, scenarios, turns, and reports.
  */
-import type { IncomingMessage, AccountType, ConversationType, LoadSessionMemoryResponse } from '@newio/agent-sdk';
+import type { AccountType, ConversationType, LoadSessionMemoryResponse } from '@newio/agent-sdk';
 import type { SessionMode } from '@newio/agent-engine';
-
-// ---------------------------------------------------------------------------
-// NewioAppForDriverMcp — the contract the Driver MCP server requires
-// ---------------------------------------------------------------------------
-
-/** A message sent by the target agent that the driver can observe. */
-export interface TargetMessage {
-  readonly messageId: string;
-  readonly conversationId: string;
-  readonly text?: string;
-  readonly toolCalls?: readonly { readonly tool: string; readonly args: Record<string, unknown> }[];
-  readonly timestamp: number;
-}
-
-/**
- * Interface that decouples the Driver MCP server from the mock environment.
- * Focused on: injecting messages as users, reading target output, and owner controls.
- */
-export interface NewioAppForDriverMcp {
-  // ── Message injection ──
-  /** Inject a message into the target's event pipeline as a specific user. */
-  injectMessage(persona: string, conversationId: string, text: string, filePaths?: readonly string[]): IncomingMessage;
-
-  // ── Target observation ──
-  /** Get all messages sent by the target since the given timestamp. */
-  getTargetMessagesSince(sinceTimestamp: number): readonly TargetMessage[];
-
-  // ── Conversation management (as a user) ──
-  /** Get conversations a persona is a member of. */
-  getPersonaConversations(
-    persona: string,
-  ): readonly { readonly conversationId: string; readonly type: string; readonly name?: string }[];
-
-  /** Get message history for a conversation (what the persona can see). */
-  getConversationHistory(
-    persona: string,
-    conversationId: string,
-    limit?: number,
-  ): readonly { readonly from: string; readonly text: string; readonly timestamp: number }[];
-
-  /** Create a group conversation as a persona. */
-  createConversationAsPersona(
-    persona: string,
-    type: 'group' | 'temp_group',
-    name: string,
-    memberUsernames: readonly string[],
-  ): string;
-
-  /** Add a member to a conversation. */
-  addMemberAsPersona(persona: string, conversationId: string, username: string): void;
-
-  /** Remove persona from a conversation. */
-  leaveConversation(persona: string, conversationId: string): void;
-
-  // ── Owner controls ──
-  /** Trigger session rotation on the target agent for a conversation. */
-  triggerRotateSession(conversationId: string): Promise<void>;
-
-  /** Trigger memory update on the target agent for a conversation. */
-  triggerUpdateMemory(conversationId: string): Promise<void>;
-}
 
 // ---------------------------------------------------------------------------
 // Driver persona & scenario definition
