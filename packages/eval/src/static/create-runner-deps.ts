@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
 import { parse as parseDotenv } from 'dotenv';
 import { AcpSessionFactory, startUdsServer } from '@newio/agent-engine';
+import { getLogger } from '@newio/agent-sdk';
 import { NewioEvalMcpServer } from '../mcp/v1/server.js';
 import { EvalPromptFormatter } from '../prompts/v1/prompt-formatter.js';
 import { MockBackend } from '../mock-backend.js';
@@ -23,6 +24,8 @@ import type { NewioAppForMcp } from '../mcp/v1/types.js';
 import type { Server } from 'net';
 import type { EvalConfig, EvalScenario } from '../types.js';
 import type { AgentSession } from '@newio/agent-engine';
+
+const log = getLogger('static-runner');
 
 export interface ScenarioRunnerDeps {
   /** Tool interceptor populated by MCP server hook. Source of truth for tool call assertions. */
@@ -123,6 +126,14 @@ export async function createScenarioRunnerDeps(
     mcpBridgePath,
     updateConfig: () => Promise.resolve(),
     reportContextWindow: () => Promise.resolve(),
+  });
+
+  // Always approve permission requests (pick best "allow" option)
+  session.onPermissionRequest((title, options) => {
+    const allow =
+      options.find((o) => o.kind === 'allow_always') ?? options.find((o) => o.kind === 'allow_once') ?? options[0];
+    log.info(`[eval] Auto-approving permission request: "${title}" with option: ${allow?.optionId ?? 'allow'}`);
+    return Promise.resolve(allow?.optionId ?? 'allow');
   });
 
   await session.applySessionConfig({ acpModel: config.model });

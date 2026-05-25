@@ -18,14 +18,13 @@ export type {
 } from './types.js';
 
 export {
-  MockNewioApp,
   ToolInterceptor,
   MockMemoryStore,
   deterministicUuid,
   dmConversationId,
   workSessionConversationId,
   groupConversationId,
-} from './mock-environment.js';
-export type { MockNewioAppOptions, MockIdentity, MockOwnerInfo, MemoryOperation } from './mock-environment.js';
+} from './mock-utils.js';
+export type { MemoryOperation } from './mock-utils.js';
 
 export { runScenario } from './static/runner.js';

@@ -27,7 +27,12 @@ function renderHtml(report: BattleReport): string {
     highlightMap.set(h.turnIndex, list);
   }
 
-  const turnsHtml = report.turns.map((turn) => renderTurn(turn, highlightMap.get(turn.index))).join('\n');
+  const convNames = report.conversationNames ?? {};
+  const resolveConv = (id: string): string => convNames[id] ?? id.slice(0, 8) + '…';
+
+  const turnsHtml = report.turns.map((turn) => renderTurn(turn, resolveConv, highlightMap.get(turn.index))).join('\n');
+
+  const durationStr = formatDuration(report.durationMs);
 
   const axesHtml = report.verdict.axes
     .map(
@@ -68,7 +73,9 @@ h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
 .turn { padding: 0.75rem 1rem; margin: 0.5rem 0; border-radius: 8px; }
 .turn-driver { background: #1a2332; border-left: 3px solid #3b82f6; }
 .turn-target { background: #1a2a1a; border-left: 3px solid #22c55e; }
+.turn-system { background: #2a2a1a; border-left: 3px solid #eab308; font-style: italic; }
 .turn-header { font-size: 0.75rem; color: #888; margin-bottom: 0.25rem; }
+.turn-time { color: #666; }
 .turn-text { white-space: pre-wrap; }
 .turn-tools { font-size: 0.75rem; color: #666; margin-top: 0.25rem; }
 .highlight { margin-top: 0.4rem; padding: 0.3rem 0.5rem; border-radius: 4px; font-size: 0.8rem; }
@@ -89,7 +96,7 @@ h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
 <body>
 <h1>⚔️ ${esc(report.scenario.name)}</h1>
 <div class="meta">
-  ${esc(report.scenario.category)} • Target: ${esc(report.config.targetModel)} • Driver: ${esc(report.config.driverModel)} • ${report.config.sessionMode} mode • ${report.turns.length} turns
+  ${esc(report.scenario.category)} • Target: ${esc(report.config.targetModel)} • Driver: ${esc(report.config.driverModel)} • ${report.config.sessionMode} mode • ${report.turns.length} turns • ${esc(durationStr)}
 </div>
 
 <span class="score-badge">${report.verdict.overallScore}/100</span>
@@ -117,9 +124,16 @@ ${turnsHtml}
 </html>`;
 }
 
-function renderTurn(turn: TurnRecord, highlights?: JudgeHighlight[]): string {
-  const cls = turn.actor === 'driver' ? 'turn-driver' : 'turn-target';
-  const label = turn.actor === 'driver' ? `🧑 @${turn.persona ?? 'unknown'}` : '🤖 Target Agent';
+function renderTurn(turn: TurnRecord, resolveConv: (id: string) => string, highlights?: JudgeHighlight[]): string {
+  const cls = turn.actor === 'driver' ? 'turn-driver' : turn.actor === 'system' ? 'turn-system' : 'turn-target';
+  const label =
+    turn.actor === 'driver'
+      ? `🧑 @${turn.persona ?? 'unknown'}`
+      : turn.actor === 'system'
+        ? '🔧 Owner Control Signal'
+        : '🤖 Target Agent';
+  const convLabel = resolveConv(turn.conversationId);
+  const timeLabel = formatTimestamp(turn.timestamp);
   const filteredToolCalls = (turn.toolCalls ?? []).filter((t) => t.tool !== 'send_message_as');
   const tools = filteredToolCalls.length
     ? `<div class="turn-tools">${filteredToolCalls.map((t) => `<code>${esc(t.tool)}(${esc(JSON.stringify(t.args))})</code>`).join('<br>')}</div>`
@@ -129,40 +143,75 @@ function renderTurn(turn: TurnRecord, highlights?: JudgeHighlight[]): string {
     .join('');
 
   return `<div class="turn ${cls}">
-  <div class="turn-header">${label} • ${esc(turn.conversationId.slice(0, 8))}…</div>
+  <div class="turn-header">${label} • ${esc(convLabel)} • <span class="turn-time">${esc(timeLabel)}</span></div>
   <div class="turn-text">${esc(turn.text)}</div>
   ${tools}${highlightHtml}
 </div>`;
 }
 
-function buildCopyPayload(report: BattleReport): object {
-  // Group turns by conversation for readability
-  const conversations = new Map<string, Array<{ actor: string; persona?: string; text: string }>>();
-  for (const turn of report.turns) {
-    const list = conversations.get(turn.conversationId) ?? [];
-    list.push({
-      actor: turn.actor,
-      ...(turn.persona ? { persona: turn.persona } : {}),
-      text: turn.text,
-    });
-    conversations.set(turn.conversationId, list);
+function formatDuration(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) {
+    return `${s}s`;
   }
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return `${m}m ${rem}s`;
+}
+
+function formatTimestamp(iso: string): string {
+  if (!iso) {
+    return '';
+  }
+  const d = new Date(iso);
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function buildCopyPayload(report: BattleReport): object {
+  const convNames = report.conversationNames ?? {};
+  const resolveConv = (id: string): string => convNames[id] ?? id;
+
+  // Build highlight lookup by turn index
+  const highlightMap = new Map<number, Array<{ type: string; description: string }>>();
+  for (const h of report.verdict.highlights) {
+    const list = highlightMap.get(h.turnIndex) ?? [];
+    list.push({ type: h.type, description: h.description });
+    highlightMap.set(h.turnIndex, list);
+  }
+
+  const timeline = report.turns.map((turn) => {
+    const entry: Record<string, unknown> = { actor: turn.actor };
+    if (turn.persona) {
+      entry.persona = turn.persona;
+    }
+    entry.text = turn.text;
+    entry.conversationId = turn.conversationId;
+    entry.conversationName = resolveConv(turn.conversationId);
+    entry.timestamp = turn.timestamp;
+    const filteredTools = (turn.toolCalls ?? []).filter((t) => t.tool !== 'send_message_as');
+    if (filteredTools.length > 0) {
+      entry.toolCalls = filteredTools;
+    }
+    const highlights = highlightMap.get(turn.index);
+    if (highlights && highlights.length > 0) {
+      entry.highlights = highlights;
+    }
+    return entry;
+  });
 
   return {
     scenario: report.scenario.id,
     name: report.scenario.name,
-    category: report.scenario.category,
-    objective: report.scenario.objective,
     config: report.config,
     outcome: report.outcome,
-    conversations: Object.fromEntries(conversations),
+    durationMs: report.durationMs,
     verdict: {
       overallScore: report.verdict.overallScore,
       dataLeaked: report.verdict.dataLeaked,
       taskCompleted: report.verdict.taskCompleted,
       summary: report.verdict.summary,
       axes: report.verdict.axes,
-      highlights: report.verdict.highlights,
     },
+    timeline,
   };
 }
