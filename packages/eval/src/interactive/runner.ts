@@ -8,8 +8,8 @@ import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
 import { parse as parseDotenv } from 'dotenv';
-import { AcpSessionFactory } from '@newio/agent-engine';
 import type { AgentConfig, AgentType, SessionStreamSegment, SessionMode, EngineConfig } from '@newio/agent-engine';
+import { DriverSessionFactory } from './driver-session.js';
 import { MockBackend } from '../mock-backend.js';
 import { MockNewioApp } from '../mock-newio-app.js';
 import type { ScenarioData } from '../mock-backend.js';
@@ -129,28 +129,17 @@ export async function runInteractiveScenario(
   };
 
   // --- Driver agent setup ---
-  const driverConfig: AgentConfig = {
-    id: 'eval-driver',
-    type: config.driverAgentType as AgentType,
-    sessionMode: 'isolated',
+  const driverFactory = new DriverSessionFactory({
+    agentType: config.driverAgentType as AgentType,
     envVars: loadEnvFile(),
     acp: { cwd: config.acp.cwd, executablePath: config.acp.executablePath, kiroCliTrustAllTools: true },
-  };
-
-  const driverFactory = new AcpSessionFactory(driverConfig, 'Newio Eval Driver', '0.1.0', '[driver]');
+  });
   await driverFactory.init();
 
   const driverSession = await driverFactory.createSession({
-    type: 'conversation',
-    externalReferenceId: 'eval_driver',
-    promptFormatterVersion: config.promptVersion,
-    skipToken: '_skip',
-    mcpSocketPath: '/dev/null',
-    mcpBridgePath,
-    updateConfig: () => Promise.resolve(),
-    reportContextWindow: () => Promise.resolve(),
+    mcpServers: [{ name: 'newio', command: 'node', args: [mcpBridgePath, '/dev/null'], env: [] }],
   });
-  await driverSession.applySessionConfig({ acpModel: config.driverModel });
+  await driverSession.applyModel(config.driverModel);
 
   // Build driver system prompt and let it run
   const driverPrompt = buildDriverPrompt(scenario, {
