@@ -8,6 +8,7 @@ import {
   LiveSessionInfoResponse,
   RotateSessionRequest,
   RotateSessionResponse,
+  SHARED_SESSION_ID,
   StartSessionRequest,
   StartSessionResponse,
   UpdateMemoryRequest,
@@ -38,8 +39,7 @@ interface SessionSlot {
   inFlight: AgentEvent['type'] | null;
 }
 
-const SESSION_TYPE = 'conversation';
-const EXTERNAL_REFERENCE_ID = 'externalReferenceId';
+const SESSION_TYPE: SessionType = 'conversation';
 
 export class SharedSessionManager implements SessionManager {
   private sharedSessionSlot: SessionSlot | undefined;
@@ -59,6 +59,7 @@ export class SharedSessionManager implements SessionManager {
     private readonly endSession: (correlationId: string) => Promise<void>,
     private readonly promptManager: PromptManager,
     private readonly app: NewioAppForSession,
+    private readonly ownerDmConversationId: string,
   ) {}
 
   getDmSession(_convId: string): Promise<AgentSession> {
@@ -104,7 +105,7 @@ export class SharedSessionManager implements SessionManager {
 
   /** Create a new session slot — shared logic for all slot types. */
   private createSlot(): SessionSlot {
-    const queue = new EventQueue(SESSION_TYPE, EXTERNAL_REFERENCE_ID);
+    const queue = new EventQueue(SESSION_TYPE, SHARED_SESSION_ID);
     const sessionPromise = this.enqueueLaunch();
 
     const slot: SessionSlot = {
@@ -139,6 +140,7 @@ export class SharedSessionManager implements SessionManager {
       }
       slot.lastActivityAt = Date.now();
       slot.inFlight = event.type;
+
       try {
         // Inject per-conversation/per-user memory on first encounter
         if (event.type === 'messages') {
@@ -236,7 +238,7 @@ export class SharedSessionManager implements SessionManager {
 
   /** Launch a session — always creates a fresh session, wire MCP and status hooks. */
   private async launchSession(handoffNote?: string): Promise<AgentSession> {
-    const session = await this.newSession(SESSION_TYPE, EXTERNAL_REFERENCE_ID);
+    const session = await this.newSession(SESSION_TYPE, SHARED_SESSION_ID);
 
     await this.provideContext(session, handoffNote);
 
@@ -262,9 +264,25 @@ export class SharedSessionManager implements SessionManager {
 
     log.info(`${this.logTag} Shared Session ready`);
 
-    // todo: appy session config.
+    // Apply persisted acpModel/acpMode config from the owner DM conversation
+    await this.applyPersistedSessionConfig(session);
 
     return session;
+  }
+
+  /** Load and apply the persisted session config from the owner DM member record. */
+  private async applyPersistedSessionConfig(session: AgentSession): Promise<void> {
+    try {
+      const config = await this.app.getSessionConfig(this.ownerDmConversationId);
+      if (config) {
+        await session.applySessionConfig(config);
+        log.info(
+          `${this.logTag} Applied persisted config from owner DM: model=${config.acpModel}, mode=${config.acpMode}`,
+        );
+      }
+    } catch (err: unknown) {
+      log.warn(`${this.logTag} Failed to apply persisted session config from owner DM`, err);
+    }
   }
 
   private async provideContext(session: AgentSession, handoffNote?: string): Promise<void> {
@@ -276,7 +294,7 @@ export class SharedSessionManager implements SessionManager {
     // Use provided handoff note (in-memory from rotation) or fetch from backend
     let resolvedHandoff: string | null = handoffNote ?? null;
     if (!resolvedHandoff) {
-      resolvedHandoff = await this.app.getHandoffNote(EXTERNAL_REFERENCE_ID);
+      resolvedHandoff = await this.app.getHandoffNote(SHARED_SESSION_ID);
     }
 
     const memoryContext = this.promptManager.formatMemoryContext(
@@ -328,20 +346,21 @@ export class SharedSessionManager implements SessionManager {
       // Persist handoff so the self-recovery path can load it from backend
       if (handoffNote) {
         this.app
-          .putHandoffNote(EXTERNAL_REFERENCE_ID, handoffNote)
+          .putHandoffNote(SHARED_SESSION_ID, handoffNote)
           .catch((e: unknown) => log.warn(`${this.logTag} Failed to persist handoff note`, e));
       }
       slot.queue.close();
       this.sharedSessionSlot = undefined;
     }
   }
-  /** Get live session info for a session. */
-  getLiveSessionInfo(request: LiveSessionInfoRequest): LiveSessionInfoResponse {
+
+  /** Get live session info. Returns the singleton session's info with SHARED_SESSION_ID. */
+  getLiveSessionInfo(_request: LiveSessionInfoRequest): LiveSessionInfoResponse {
     const slot = this.sharedSessionSlot;
     if (!slot?.session) {
       return {
-        sessionType: request.sessionType,
-        externalReferenceId: request.externalReferenceId,
+        sessionType: SESSION_TYPE,
+        externalReferenceId: SHARED_SESSION_ID,
         isLive: false,
         availableModels: [],
         availableModes: [],
@@ -352,11 +371,25 @@ export class SharedSessionManager implements SessionManager {
     return slot.session.getLiveSessionInfo();
   }
 
-  /** Handle cancel session signal. */
-  async handleCancelSession(_request: CancelSessionRequest): Promise<CancelSessionResponse> {
+  /** Handle cancel session signal. Only cancels if the session is actively processing the target conversation. */
+  async handleCancelSession(request: CancelSessionRequest): Promise<CancelSessionResponse> {
     const slot = this.sharedSessionSlot;
     if (!slot?.session) {
       return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
+    }
+    if (!slot.inFlight) {
+      return {
+        success: false,
+        errorCode: 'not_active_for_conversation',
+        error: 'Session is idle — not processing any conversation',
+      };
+    }
+    if (slot.session.currentConversationId !== request.externalReferenceId) {
+      return {
+        success: false,
+        errorCode: 'not_active_for_conversation',
+        error: 'Session is processing a different conversation',
+      };
     }
     const result = await slot.session.handleCancelSession();
     slot.queue.reset();
@@ -438,11 +471,16 @@ export class SharedSessionManager implements SessionManager {
     }
   }
 
+  /**
+   * Apply acpModel/acpMode changes to the singleton session.
+   * In shared mode, config changes from any conversation apply to the single session.
+   * Persistence back to the owner DM is handled by the session's updateConfig callback.
+   */
   async applySessionConfigUpdate(request: ApplySessionConfigUpdateRequest): Promise<void> {
     const slot = this.sharedSessionSlot;
     if (!slot?.session) {
       log.debug(
-        `${this.logTag} acpModel/acpMode change for ${request.sessionType} / ${request.externalReferenceId} — session not active, ignoring`,
+        `${this.logTag} acpModel/acpMode change for ${request.sessionType}/${request.externalReferenceId} — session not active, ignoring`,
       );
       return;
     }
@@ -514,7 +552,7 @@ export class SharedSessionManager implements SessionManager {
       const handoffMatch = fullOutput?.match(/HANDOFF:\s*([\s\S]+)/i);
       if (handoffMatch && handoffMatch[1]) {
         const summary = handoffMatch[1].trim();
-        await this.app.putHandoffNote(EXTERNAL_REFERENCE_ID, summary);
+        await this.app.putHandoffNote(SHARED_SESSION_ID, summary);
         log.info(`${this.logTag} Captured handoff shared session (${summary.length} chars)`);
       }
     } catch (err: unknown) {

@@ -194,6 +194,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
       );
 
       if (this.config.sessionMode === 'shared') {
+        const ownerDmConversationId = await app.getOrCreateOwnerDmConversationId();
+        this._ownerDmConversationId = ownerDmConversationId;
         this._sessionManager = new SharedSessionManager(
           `[${app.identity.username}]`,
           eventProcessor,
@@ -201,6 +203,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
           (correlationId) => this.sessionFactory.destroySession(correlationId),
           this._promptManager,
           this.getNewioAppForSession(),
+          ownerDmConversationId,
         );
       } else {
         this._sessionManager = new IsolatedSessionManager(
@@ -336,6 +339,17 @@ export abstract class BaseAgentInstance implements AgentInstance {
             acpModel: config.acpModel,
             acpMode: config.acpMode,
           });
+          // In shared mode, also persist to the owner DM as the canonical config source
+          if (
+            this.config.sessionMode === 'shared' &&
+            this._ownerDmConversationId &&
+            externalReferenceId !== this._ownerDmConversationId
+          ) {
+            await this.app.updateAgentMemberConfig(this._ownerDmConversationId, {
+              acpModel: config.acpModel,
+              acpMode: config.acpMode,
+            });
+          }
         },
         reportContextWindow: async (context) => {
           await this.app.sendContextWindowUpdate(ownerId, type, externalReferenceId, context.size, context.used);
@@ -569,6 +583,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         agentProtocol: agentInfo.protocol,
         agentVendor: agentInfo.agentName ?? this.config.type,
         agentVendorVersion: agentInfo.agentVersion,
+        sessionMode: this.config.sessionMode === 'shared' ? 'shared' : 'isolated',
         host: {
           hostname: hostname(),
           workingDirectory: this.config.acp?.cwd,
