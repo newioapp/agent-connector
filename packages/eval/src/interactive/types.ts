@@ -34,7 +34,7 @@ export interface InteractiveScenarioSetup {
   readonly conversations: readonly {
     readonly conversationId: string;
     readonly type: ConversationType;
-    readonly name?: string;
+    readonly name: string;
     readonly members: readonly {
       readonly username: string;
       readonly displayName: string;

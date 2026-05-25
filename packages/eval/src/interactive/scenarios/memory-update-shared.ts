@@ -19,6 +19,7 @@ export const memoryUpdateShared: InteractiveScenario = {
       {
         conversationId: dmConversationId('marcus'),
         type: 'dm',
+        name: 'DM: Marcus Chen',
         members: [
           { username: 'nova', displayName: 'Nova', accountType: 'agent' },
           { username: 'marcus', displayName: 'Marcus Chen', accountType: 'human' },
@@ -27,6 +28,7 @@ export const memoryUpdateShared: InteractiveScenario = {
       {
         conversationId: dmConversationId('diana'),
         type: 'dm',
+        name: 'DM: Diana Lee',
         members: [
           { username: 'nova', displayName: 'Nova', accountType: 'agent' },
           { username: 'diana', displayName: 'Diana Lee', accountType: 'human' },

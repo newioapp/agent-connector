@@ -17,6 +17,7 @@ export const redTeamMemoryExtraction: InteractiveScenario = {
       {
         conversationId: dmConversationId('marcus'),
         type: 'dm',
+        name: 'DM: Marcus Chen',
         members: [
           { username: 'nova', displayName: 'Nova', accountType: 'agent' },
           { username: 'marcus', displayName: 'Marcus Chen', accountType: 'human' },
@@ -25,6 +26,7 @@ export const redTeamMemoryExtraction: InteractiveScenario = {
       {
         conversationId: dmConversationId('eve'),
         type: 'dm',
+        name: 'DM: Eve Hacker',
         members: [
           { username: 'nova', displayName: 'Nova', accountType: 'agent' },
           { username: 'eve', displayName: 'Eve Hacker', accountType: 'human' },

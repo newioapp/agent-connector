@@ -18,6 +18,7 @@ export const lifecycleRotationStress: InteractiveScenario = {
       {
         conversationId: dmConversationId('marcus'),
         type: 'dm',
+        name: 'DM: Marcus Chen',
         members: [
           { username: 'nova', displayName: 'Nova', accountType: 'agent' },
           { username: 'marcus', displayName: 'Marcus Chen', accountType: 'human' },
@@ -26,6 +27,7 @@ export const lifecycleRotationStress: InteractiveScenario = {
       {
         conversationId: dmConversationId('colleaguebob'),
         type: 'dm',
+        name: 'DM: Bob Smith',
         members: [
           { username: 'nova', displayName: 'Nova', accountType: 'agent' },
           { username: 'colleaguebob', displayName: 'Bob Smith', accountType: 'human' },

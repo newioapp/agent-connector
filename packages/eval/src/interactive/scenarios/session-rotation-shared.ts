@@ -19,6 +19,7 @@ export const sessionRotationShared: InteractiveScenario = {
       {
         conversationId: dmConversationId('marcus'),
         type: 'dm',
+        name: 'DM: Marcus Chen',
         members: [
           { username: 'nova', displayName: 'Nova', accountType: 'agent' },
           { username: 'marcus', displayName: 'Marcus Chen', accountType: 'human' },
@@ -27,6 +28,7 @@ export const sessionRotationShared: InteractiveScenario = {
       {
         conversationId: dmConversationId('lisa'),
         type: 'dm',
+        name: 'DM: Lisa Zhang',
         members: [
           { username: 'nova', displayName: 'Nova', accountType: 'agent' },
           { username: 'lisa', displayName: 'Lisa Zhang', accountType: 'human' },

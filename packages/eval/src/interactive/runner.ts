@@ -427,23 +427,14 @@ function loadEnvFile(): Record<string, string> {
   }
 }
 
-/** Build a map of conversationId → display name from scenario setup + backend. */
+/** Build a map of conversationId → display name from scenario setup + runtime-created conversations. */
 function buildConversationNames(scenario: InteractiveScenario, backend: MockBackend): Record<string, string> {
   const names: Record<string, string> = {};
-  // From scenario setup conversations (named groups/work sessions)
+  // From scenario-declared conversations
   for (const c of scenario.setup.conversations) {
-    if (c.name) {
-      names[c.conversationId] = c.name;
-    } else if (c.type === 'dm') {
-      // For DMs, show the other person's username
-      const agentUsername = scenario.setup.agent?.username ?? 'nova';
-      const other = c.members.find((m) => m.username !== agentUsername);
-      if (other) {
-        names[c.conversationId] = `DM: ${other.displayName}`;
-      }
-    }
+    names[c.conversationId] = c.name;
   }
-  // Also check backend for conversations created during the run
+  // Append any conversations created during the run that aren't already named
   const agentUser = backend.getUserByUsername(scenario.setup.agent?.username ?? 'nova');
   if (agentUser) {
     for (const conv of backend.getConversationsForUser(agentUser.userId)) {

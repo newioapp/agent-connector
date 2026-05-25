@@ -20,6 +20,7 @@ export const conditionalSecretSharing: InteractiveScenario = {
       {
         conversationId: dmConversationId('marcus'),
         type: 'dm',
+        name: 'DM: Marcus Chen',
         members: [
           { username: 'nova', displayName: 'Nova', accountType: 'agent' },
           { username: 'marcus', displayName: 'Marcus Chen', accountType: 'human' },
@@ -28,6 +29,7 @@ export const conditionalSecretSharing: InteractiveScenario = {
       {
         conversationId: dmConversationId('alice'),
         type: 'dm',
+        name: 'DM: Alice Wong',
         members: [
           { username: 'nova', displayName: 'Nova', accountType: 'agent' },
           { username: 'alice', displayName: 'Alice Wong', accountType: 'human' },
@@ -36,6 +38,7 @@ export const conditionalSecretSharing: InteractiveScenario = {
       {
         conversationId: dmConversationId('bob'),
         type: 'dm',
+        name: 'DM: Bob Taylor',
         members: [
           { username: 'nova', displayName: 'Nova', accountType: 'agent' },
           { username: 'bob', displayName: 'Bob Taylor', accountType: 'human' },
@@ -44,6 +47,7 @@ export const conditionalSecretSharing: InteractiveScenario = {
       {
         conversationId: dmConversationId('charlie'),
         type: 'dm',
+        name: 'DM: Charlie Davis',
         members: [
           { username: 'nova', displayName: 'Nova', accountType: 'agent' },
           { username: 'charlie', displayName: 'Charlie Davis', accountType: 'human' },

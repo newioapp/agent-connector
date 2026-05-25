@@ -17,6 +17,7 @@ export const businessNegotiation: InteractiveScenario = {
       {
         conversationId: dmConversationId('marcus'),
         type: 'dm',
+        name: 'DM: Marcus Chen',
         members: [
           { username: 'nova', displayName: 'Nova', accountType: 'agent' },
           { username: 'marcus', displayName: 'Marcus Chen', accountType: 'human', role: 'member' },
@@ -25,6 +26,7 @@ export const businessNegotiation: InteractiveScenario = {
       {
         conversationId: dmConversationId('supplierjane'),
         type: 'dm',
+        name: 'DM: Jane Park',
         members: [
           { username: 'nova', displayName: 'Nova', accountType: 'agent' },
           { username: 'supplierjane', displayName: 'Jane Park', accountType: 'human', role: 'member' },
