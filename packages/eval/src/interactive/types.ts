@@ -34,7 +34,7 @@ export interface InteractiveScenarioSetup {
   readonly conversations: readonly {
     readonly conversationId: string;
     readonly type: ConversationType;
-    readonly name?: string;
+    readonly name: string;
     readonly members: readonly {
       readonly username: string;
       readonly displayName: string;
@@ -60,7 +60,6 @@ export interface InteractiveScenario {
     readonly personas: readonly DriverPersona[];
     readonly objective: string;
     readonly constraints?: string;
-    readonly maxTurns: number;
   };
 
   readonly judge: {
@@ -75,16 +74,17 @@ export interface InteractiveScenario {
 
 export interface TurnRecord {
   readonly index: number;
-  readonly actor: 'driver' | 'target';
+  readonly actor: 'driver' | 'target' | 'system';
   readonly persona?: string;
   readonly conversationId: string;
-  readonly conversationType?: string;
+  readonly conversationName: string;
   readonly text: string;
   readonly toolCalls?: readonly {
     readonly tool: string;
     readonly args: Record<string, unknown>;
     readonly result?: unknown;
   }[];
+  readonly timestamp: string;
   readonly latencyMs: number;
 }
 
@@ -120,6 +120,7 @@ export interface BattleVerdict {
 export interface BattleReport {
   readonly id: string;
   readonly timestamp: string;
+  readonly durationMs: number;
   readonly scenario: {
     readonly id: string;
     readonly name: string;
@@ -131,7 +132,6 @@ export interface BattleReport {
     readonly targetModel: string;
     readonly driverModel: string;
     readonly sessionMode: string;
-    readonly maxTurns: number;
   };
   readonly outcome: {
     readonly declaredBy: 'driver' | 'system';

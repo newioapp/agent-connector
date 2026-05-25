@@ -19,6 +19,7 @@ import { MockNewioApp } from '../mock-newio-app.js';
 import type { ScenarioData } from '../mock-backend.js';
 import { EvalAgentInstance } from './eval-agent-instance.js';
 import { judgeTrace } from './judge.js';
+import type { JudgeBackendState } from './judge.js';
 
 const log = getLogger('interactive-runner');
 
@@ -63,6 +64,7 @@ export async function runInteractiveScenario(
   scenario: InteractiveScenario,
   config: InteractiveEvalConfig,
 ): Promise<BattleReport> {
+  const startTime = Date.now();
   const effectiveSessionMode: SessionMode = scenario.sessionMode === 'both' ? config.sessionMode : scenario.sessionMode;
 
   const ownerPersona = scenario.driver.personas.find((p) => p.relationship === 'owner');
@@ -112,6 +114,25 @@ export async function runInteractiveScenario(
   const turns: TurnRecord[] = [];
   const pendingTargetToolCalls: Array<{ tool: string; args: Record<string, unknown> }> = [];
 
+  // Build conversation name map from scenario setup (mutable — runtime-created convos appended)
+  const convNameMap = new Map<string, string>();
+  for (const c of scenario.setup.conversations) {
+    convNameMap.set(c.conversationId, c.name);
+  }
+  const resolveConvName = (id: string): string => {
+    const cached = convNameMap.get(id);
+    if (cached) {
+      return cached;
+    }
+    // Check backend for runtime-created conversations
+    const conv = backend.getConversation(id);
+    if (conv?.name) {
+      convNameMap.set(id, conv.name);
+      return conv.name;
+    }
+    return id.slice(0, 8) + '…';
+  };
+
   targetInstance.onToolCall = (tool, args) => {
     log.debug(`[target] Tool call: ${tool}(${JSON.stringify(args)})`);
     pendingTargetToolCalls.push({ tool, args: { ...args } });
@@ -123,12 +144,31 @@ export async function runInteractiveScenario(
 
   const pendingDriverToolCalls: Array<{ tool: string; args: Record<string, unknown> }> = [];
 
+  /** Tools that represent lifecycle signals — emitted as system turns. */
+  const lifecycleTools = new Set(['update_memory', 'rotate_session', 'declare_done']);
+  /** Tools that are just polling — omitted from the trace entirely. */
+  const noiseTools = new Set(['get_new_events']);
+
   const driverMcpServer = new DriverMcpServer({
     backend,
     targetAgentUserIds: [agentUser.userId],
     onToolCall: (tool, args) => {
       console.log(`  🔧 [driver] ${tool}(${JSON.stringify(args)})`);
-      pendingDriverToolCalls.push({ tool, args: { ...args } });
+      if (lifecycleTools.has(tool)) {
+        // Emit as a system turn immediately
+        turns.push({
+          index: turns.length,
+          actor: 'system',
+          conversationId: (args as Record<string, string>).conversationId ?? 'system',
+          conversationName: resolveConvName((args as Record<string, string>).conversationId ?? 'system'),
+          text: `${tool}(${JSON.stringify(args)})`,
+          toolCalls: [{ tool, args: { ...args } }],
+          timestamp: new Date().toISOString(),
+          latencyMs: 0,
+        });
+      } else if (!noiseTools.has(tool)) {
+        pendingDriverToolCalls.push({ tool, args: { ...args } });
+      }
     },
   });
 
@@ -154,8 +194,10 @@ export async function runInteractiveScenario(
         index: turns.length,
         actor: 'target',
         conversationId: msg.conversationId,
+        conversationName: resolveConvName(msg.conversationId),
         text: msg.content.text ?? '',
         toolCalls,
+        timestamp: new Date().toISOString(),
         latencyMs: 0,
       });
     } else {
@@ -170,8 +212,10 @@ export async function runInteractiveScenario(
         actor: 'driver',
         persona: sender?.username,
         conversationId: msg.conversationId,
+        conversationName: resolveConvName(msg.conversationId),
         text: msg.content.text ?? '',
         toolCalls,
+        timestamp: new Date().toISOString(),
         latencyMs: 0,
       });
     }
@@ -210,7 +254,9 @@ export async function runInteractiveScenario(
       index: turns.length,
       actor: 'driver',
       conversationId: 'system',
+      conversationName: 'system',
       text: `[TIMEOUT] ${err instanceof Error ? err.message : String(err)}`,
+      timestamp: new Date().toISOString(),
       latencyMs: 0,
     });
   }
@@ -220,14 +266,19 @@ export async function runInteractiveScenario(
   await driverFactory.terminate();
   await targetInstance.stop();
 
-  // Judge
-  const verdict = await judgeTrace(turns, scenario, config.judgeModel ?? config.targetModel);
+  // Judge — include backend state for memory/handoff scenarios
+  const memory = backend.getAllMemory(agentUser.userId);
+  const handoffNotes = backend.getAllHandoffNotes(agentUser.userId);
+  const hasBackendState = memory.size > 0 || handoffNotes.size > 0;
+  const backendState: JudgeBackendState | undefined = hasBackendState ? { memory, handoffNotes } : undefined;
+  const verdict = await judgeTrace(turns, scenario, config.judgeModel ?? config.targetModel, backendState);
 
   const doneSignal = driverMcpServer.getDoneSignal();
 
   return {
     id: `battle-${Date.now()}`,
     timestamp: new Date().toISOString(),
+    durationMs: Date.now() - startTime,
     scenario: {
       id: scenario.id,
       name: scenario.name,
@@ -239,7 +290,6 @@ export async function runInteractiveScenario(
       targetModel: config.targetModel,
       driverModel: config.driverModel,
       sessionMode: effectiveSessionMode,
-      maxTurns: scenario.driver.maxTurns,
     },
     outcome: {
       declaredBy: doneSignal ? 'driver' : 'system',

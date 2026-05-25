@@ -687,6 +687,16 @@ export class MockBackend {
 
   // ── Handoff ──
 
+  /** Get all memory scopes for an agent (for eval judge context). */
+  getAllMemory(agentId: string): Map<string, BackendMemoryScope> {
+    return this.memory.get(agentId) ?? new Map<string, BackendMemoryScope>();
+  }
+
+  /** Get all handoff notes for an agent (for eval judge context). */
+  getAllHandoffNotes(agentId: string): Map<string, string> {
+    return this.handoffNotes.get(agentId) ?? new Map<string, string>();
+  }
+
   getHandoffNote(agentId: string, conversationId: string): string | null {
     return this.handoffNotes.get(agentId)?.get(conversationId) ?? null;
   }
