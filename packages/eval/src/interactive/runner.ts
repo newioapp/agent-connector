@@ -114,6 +114,25 @@ export async function runInteractiveScenario(
   const turns: TurnRecord[] = [];
   const pendingTargetToolCalls: Array<{ tool: string; args: Record<string, unknown> }> = [];
 
+  // Build conversation name map from scenario setup (mutable — runtime-created convos appended)
+  const convNameMap = new Map<string, string>();
+  for (const c of scenario.setup.conversations) {
+    convNameMap.set(c.conversationId, c.name);
+  }
+  const resolveConvName = (id: string): string => {
+    const cached = convNameMap.get(id);
+    if (cached) {
+      return cached;
+    }
+    // Check backend for runtime-created conversations
+    const conv = backend.getConversation(id);
+    if (conv?.name) {
+      convNameMap.set(id, conv.name);
+      return conv.name;
+    }
+    return id.slice(0, 8) + '…';
+  };
+
   targetInstance.onToolCall = (tool, args) => {
     log.debug(`[target] Tool call: ${tool}(${JSON.stringify(args)})`);
     pendingTargetToolCalls.push({ tool, args: { ...args } });
@@ -141,6 +160,7 @@ export async function runInteractiveScenario(
           index: turns.length,
           actor: 'system',
           conversationId: (args as Record<string, string>).conversationId ?? 'system',
+          conversationName: resolveConvName((args as Record<string, string>).conversationId ?? 'system'),
           text: `${tool}(${JSON.stringify(args)})`,
           toolCalls: [{ tool, args: { ...args } }],
           timestamp: new Date().toISOString(),
@@ -174,6 +194,7 @@ export async function runInteractiveScenario(
         index: turns.length,
         actor: 'target',
         conversationId: msg.conversationId,
+        conversationName: resolveConvName(msg.conversationId),
         text: msg.content.text ?? '',
         toolCalls,
         timestamp: new Date().toISOString(),
@@ -191,6 +212,7 @@ export async function runInteractiveScenario(
         actor: 'driver',
         persona: sender?.username,
         conversationId: msg.conversationId,
+        conversationName: resolveConvName(msg.conversationId),
         text: msg.content.text ?? '',
         toolCalls,
         timestamp: new Date().toISOString(),
@@ -232,6 +254,7 @@ export async function runInteractiveScenario(
       index: turns.length,
       actor: 'driver',
       conversationId: 'system',
+      conversationName: 'system',
       text: `[TIMEOUT] ${err instanceof Error ? err.message : String(err)}`,
       timestamp: new Date().toISOString(),
       latencyMs: 0,
@@ -274,7 +297,6 @@ export async function runInteractiveScenario(
       reason: doneSignal?.reason ?? 'Timed out or max turns reached',
     },
     turns,
-    conversationNames: buildConversationNames(scenario, backend),
     verdict,
   };
 }
@@ -425,23 +447,4 @@ function loadEnvFile(): Record<string, string> {
   } catch {
     return { ...process.env } as Record<string, string>;
   }
-}
-
-/** Build a map of conversationId → display name from scenario setup + runtime-created conversations. */
-function buildConversationNames(scenario: InteractiveScenario, backend: MockBackend): Record<string, string> {
-  const names: Record<string, string> = {};
-  // From scenario-declared conversations
-  for (const c of scenario.setup.conversations) {
-    names[c.conversationId] = c.name;
-  }
-  // Append any conversations created during the run that aren't already named
-  const agentUser = backend.getUserByUsername(scenario.setup.agent?.username ?? 'nova');
-  if (agentUser) {
-    for (const conv of backend.getConversationsForUser(agentUser.userId)) {
-      if (!names[conv.conversationId] && conv.name) {
-        names[conv.conversationId] = conv.name;
-      }
-    }
-  }
-  return names;
 }

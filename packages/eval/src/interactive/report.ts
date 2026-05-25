@@ -27,10 +27,7 @@ function renderHtml(report: BattleReport): string {
     highlightMap.set(h.turnIndex, list);
   }
 
-  const convNames = report.conversationNames;
-  const resolveConv = (id: string): string => convNames[id] ?? id.slice(0, 8) + '…';
-
-  const turnsHtml = report.turns.map((turn) => renderTurn(turn, resolveConv, highlightMap.get(turn.index))).join('\n');
+  const turnsHtml = report.turns.map((turn) => renderTurn(turn, highlightMap.get(turn.index))).join('\n');
 
   const durationStr = formatDuration(report.durationMs);
 
@@ -124,7 +121,7 @@ ${turnsHtml}
 </html>`;
 }
 
-function renderTurn(turn: TurnRecord, resolveConv: (id: string) => string, highlights?: JudgeHighlight[]): string {
+function renderTurn(turn: TurnRecord, highlights?: JudgeHighlight[]): string {
   const cls = turn.actor === 'driver' ? 'turn-driver' : turn.actor === 'system' ? 'turn-system' : 'turn-target';
   const label =
     turn.actor === 'driver'
@@ -132,7 +129,6 @@ function renderTurn(turn: TurnRecord, resolveConv: (id: string) => string, highl
       : turn.actor === 'system'
         ? '🔧 Owner Control Signal'
         : '🤖 Target Agent';
-  const convLabel = resolveConv(turn.conversationId);
   const timeLabel = formatTimestamp(turn.timestamp);
   const filteredToolCalls = (turn.toolCalls ?? []).filter((t) => t.tool !== 'send_message_as');
   const tools = filteredToolCalls.length
@@ -143,7 +139,7 @@ function renderTurn(turn: TurnRecord, resolveConv: (id: string) => string, highl
     .join('');
 
   return `<div class="turn ${cls}">
-  <div class="turn-header">${label} • ${esc(convLabel)} • <span class="turn-time">${esc(timeLabel)}</span></div>
+  <div class="turn-header">${label} • ${esc(turn.conversationName)} • <span class="turn-time">${esc(timeLabel)}</span></div>
   <div class="turn-text">${esc(turn.text)}</div>
   ${tools}${highlightHtml}
 </div>`;
@@ -168,9 +164,6 @@ function formatTimestamp(iso: string): string {
 }
 
 function buildCopyPayload(report: BattleReport): object {
-  const convNames = report.conversationNames;
-  const resolveConv = (id: string): string => convNames[id] ?? id;
-
   // Build highlight lookup by turn index
   const highlightMap = new Map<number, Array<{ type: string; description: string }>>();
   for (const h of report.verdict.highlights) {
@@ -186,7 +179,7 @@ function buildCopyPayload(report: BattleReport): object {
     }
     entry.text = turn.text;
     entry.conversationId = turn.conversationId;
-    entry.conversationName = resolveConv(turn.conversationId);
+    entry.conversationName = turn.conversationName;
     entry.timestamp = turn.timestamp;
     const filteredTools = (turn.toolCalls ?? []).filter((t) => t.tool !== 'send_message_as');
     if (filteredTools.length > 0) {

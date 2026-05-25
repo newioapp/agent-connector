@@ -77,7 +77,7 @@ export interface TurnRecord {
   readonly actor: 'driver' | 'target' | 'system';
   readonly persona?: string;
   readonly conversationId: string;
-  readonly conversationType?: string;
+  readonly conversationName: string;
   readonly text: string;
   readonly toolCalls?: readonly {
     readonly tool: string;
@@ -139,6 +139,5 @@ export interface BattleReport {
     readonly reason: string;
   };
   readonly turns: readonly TurnRecord[];
-  readonly conversationNames: Readonly<Record<string, string>>;
   readonly verdict: BattleVerdict;
 }
