@@ -892,24 +892,28 @@ export class NewioApp {
 
   /** Get self member's persisted acpModel/acpMode config. */
   getSessionConfig(conversationId: string): { acpModel?: string; acpMode?: string } | undefined {
+    // Try cached members first (available after getConversation call)
     const members = this.store.getMembers(conversationId);
     const self = members?.get(this.identity.userId);
-    if (!self) {
-      return undefined;
+    if (self) {
+      return { acpModel: self.acpModel, acpMode: self.acpMode };
     }
-    return { acpModel: self.acpModel, acpMode: self.acpMode };
+    // Fall back to conversation list item (available after init)
+    const conv = this.store.getConversation(conversationId);
+    if (conv) {
+      return { acpModel: conv.acpModel, acpMode: conv.acpMode };
+    }
+    return undefined;
   }
 
-  /** Get all persisted conversation flags (showToolCalls/showThoughts) from cached members. */
+  /** Get all persisted conversation flags (showToolCalls/showThoughts) from cached conversations. */
   getAllConversationFlags(): Map<string, { showToolCalls: boolean; showThoughts: boolean }> {
     const result = new Map<string, { showToolCalls: boolean; showThoughts: boolean }>();
     for (const conv of this.store.getAllConversations()) {
-      const members = this.store.getMembers(conv.conversationId);
-      const self = members?.get(this.identity.userId);
-      if (self?.showToolCalls || self?.showThoughts) {
+      if (conv.showToolCalls || conv.showThoughts) {
         result.set(conv.conversationId, {
-          showToolCalls: self.showToolCalls ?? false,
-          showThoughts: self.showThoughts ?? false,
+          showToolCalls: conv.showToolCalls ?? false,
+          showThoughts: conv.showThoughts ?? false,
         });
       }
     }
