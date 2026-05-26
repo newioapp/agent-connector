@@ -27,7 +27,7 @@ import type {
   NewioAppForSession,
   SessionType,
 } from './types';
-import type { AgentInfo, PermissionRequestOption, ConversationFlags } from './types';
+import type { AgentInfo, PermissionRequestOption } from './types';
 import type { AgentInstance, AgentInstanceListener } from './agent-instance';
 import type { CronStore } from './cron-store';
 import type { EngineConfig } from './engine-config';
@@ -67,8 +67,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
   /** Socket path for the MCP UDS server. Set after auth in start(). */
   private _mcpSocketPath?: string;
 
-  /** Per-conversation flags toggled by the owner (e.g. show_tool_call, show_thoughts). */
-  private readonly conversationFlags = new Map<string, ConversationFlags>();
   /** Inbound event buffer — events captured synchronously, routed serially. */
   protected readonly inbound: InboundEvent[] = [];
   private draining = false;
@@ -179,7 +177,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         `[${app.identity.username}]`,
         {
           identity: app.identity,
-          getConversationFlags: (convId) => this.getConversationFlags(convId),
+          getConversationFlags: (convId) => app.getConversationFlags(convId),
           isConversationMember: (conversationId: string, userId: string) =>
             this.app.isConversationMember(conversationId, userId),
           sendMessage: (conversationId, text, opts) => this.app.sendMessage(conversationId, text, opts),
@@ -403,9 +401,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
     });
 
     // React to persisted changes from the owner on this agent's member record:
-    // - showToolCalls/showThoughts → conversation flags
     // - acpModel/acpMode → apply to live session
     // (session.updated is deprecated; acpModel/acpMode now flow through conversation.member_updated)
+    // (showToolCalls/showThoughts are handled by the SDK's internal cache)
     app.onConversationMemberUpdated((event) => {
       const { conversationId, userId, updatedBy, changes } = event;
       if (userId !== app.identity.userId) {
@@ -414,16 +412,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
       // Ignore self-updates — the agent already applied the change locally
       if (updatedBy === app.identity.userId) {
         return;
-      }
-      if (changes.showToolCalls !== undefined || changes.showThoughts !== undefined) {
-        const prev = this.conversationFlags.get(conversationId) ?? { showToolCalls: false, showThoughts: false };
-        this.conversationFlags.set(conversationId, {
-          showToolCalls: changes.showToolCalls ?? prev.showToolCalls,
-          showThoughts: changes.showThoughts ?? prev.showThoughts,
-        });
-        log.info(
-          `${this.logTag} Updated conversation flags for ${conversationId}: showToolCalls=${changes.showToolCalls ?? prev.showToolCalls}, showThoughts=${changes.showThoughts ?? prev.showThoughts}`,
-        );
       }
       if (changes.acpModel !== undefined || changes.acpMode !== undefined) {
         void sessionManager.applySessionConfigUpdate({
@@ -491,7 +479,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
     // Drain inbound queue
     this.inbound.length = 0;
-    this.conversationFlags.clear();
 
     await this.sessionManager.terminate();
 
@@ -672,11 +659,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
     this.status = status;
     this.error = error;
     this.listener.onStatusChanged(status, error);
-  }
-
-  /** Get the conversation flags for a conversation (defaults to all off). */
-  private getConversationFlags(conversationId: string): ConversationFlags {
-    return this.conversationFlags.get(conversationId) ?? { showToolCalls: false, showThoughts: false };
   }
 }
 

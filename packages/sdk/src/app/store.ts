@@ -158,6 +158,19 @@ export class NewioAppStore {
     return this.conversations.get(conversationId);
   }
 
+  /** Update conversation flags in the cached record. */
+  updateConversationFlags(conversationId: string, flags: { showToolCalls?: boolean; showThoughts?: boolean }): void {
+    const conv = this.conversations.get(conversationId);
+    if (!conv) {
+      return;
+    }
+    this.conversations.set(conversationId, {
+      ...conv,
+      showToolCalls: flags.showToolCalls ?? conv.showToolCalls,
+      showThoughts: flags.showThoughts ?? conv.showThoughts,
+    });
+  }
+
   /** Check if a conversation exists. */
   hasConversation(conversationId: string): boolean {
     return this.conversations.has(conversationId);

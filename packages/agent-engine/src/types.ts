@@ -284,6 +284,8 @@ export interface NewioAppForAgent {
   getMemberDisplayInfo(conversationId: string, userId: string): { username?: string; displayName?: string } | undefined;
   /** Get the self member's persisted session config (acpModel/acpMode). */
   getSessionConfig(conversationId: string): { acpModel?: string; acpMode?: string } | undefined;
+  /** Get conversation flags (showToolCalls/showThoughts) for a conversation. */
+  getConversationFlags(conversationId: string): ConversationFlags;
 
   scheduleCron(def: CronJobRow): void;
 

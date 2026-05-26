@@ -892,12 +892,27 @@ export class NewioApp {
 
   /** Get self member's persisted acpModel/acpMode config. */
   getSessionConfig(conversationId: string): { acpModel?: string; acpMode?: string } | undefined {
+    // Try cached members first (available after getConversation call)
     const members = this.store.getMembers(conversationId);
     const self = members?.get(this.identity.userId);
-    if (!self) {
-      return undefined;
+    if (self) {
+      return { acpModel: self.acpModel, acpMode: self.acpMode };
     }
-    return { acpModel: self.acpModel, acpMode: self.acpMode };
+    // Fall back to conversation list item (available after init)
+    const conv = this.store.getConversation(conversationId);
+    if (conv) {
+      return { acpModel: conv.acpModel, acpMode: conv.acpMode };
+    }
+    return undefined;
+  }
+
+  /** Get conversation flags for a specific conversation (from cached ConversationListItem). */
+  getConversationFlags(conversationId: string): { showToolCalls: boolean; showThoughts: boolean } {
+    const conv = this.store.getConversation(conversationId);
+    return {
+      showToolCalls: conv?.showToolCalls ?? false,
+      showThoughts: conv?.showThoughts ?? false,
+    };
   }
 
   /** Load session memory (delegates agentId). */

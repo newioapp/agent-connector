@@ -68,6 +68,10 @@ export interface ConversationListItem {
   readonly notifyLevel?: NotifyLevel;
   /** Session ID for agent members. Only present when the caller is an agent. */
   readonly sessionId?: string;
+  readonly showToolCalls?: boolean;
+  readonly showThoughts?: boolean;
+  readonly acpModel?: string;
+  readonly acpMode?: string;
 }
 
 /** A conversation member record. */

@@ -127,6 +127,12 @@ export function wireEvents(
       if (event.payload.changes.notifyLevel) {
         store.setNotifyLevel(event.payload.conversationId, event.payload.changes.notifyLevel);
       }
+      if (event.payload.changes.showToolCalls !== undefined || event.payload.changes.showThoughts !== undefined) {
+        store.updateConversationFlags(event.payload.conversationId, {
+          showToolCalls: event.payload.changes.showToolCalls,
+          showThoughts: event.payload.changes.showThoughts,
+        });
+      }
     }
     // App handler fires for all member updates
     getHandlers()['conversation.member_updated']?.({
