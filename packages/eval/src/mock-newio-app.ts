@@ -600,6 +600,10 @@ export class MockNewioApp implements NewioAppForAgent, NewioAppForMcp {
     return undefined;
   }
 
+  getConversationFlags(_conversationId: string): { showToolCalls: boolean; showThoughts: boolean } {
+    return { showToolCalls: false, showThoughts: false };
+  }
+
   // ── Backend reporting (no-ops) ─────────────────────────────────────────────
 
   async reportAgentInfo(_request: ReportAgentInfoRequest): Promise<void> {}
