@@ -900,6 +900,22 @@ export class NewioApp {
     return { acpModel: self.acpModel, acpMode: self.acpMode };
   }
 
+  /** Get all persisted conversation flags (showToolCalls/showThoughts) from cached members. */
+  getAllConversationFlags(): Map<string, { showToolCalls: boolean; showThoughts: boolean }> {
+    const result = new Map<string, { showToolCalls: boolean; showThoughts: boolean }>();
+    for (const conv of this.store.getAllConversations()) {
+      const members = this.store.getMembers(conv.conversationId);
+      const self = members?.get(this.identity.userId);
+      if (self?.showToolCalls || self?.showThoughts) {
+        result.set(conv.conversationId, {
+          showToolCalls: self.showToolCalls ?? false,
+          showThoughts: self.showThoughts ?? false,
+        });
+      }
+    }
+    return result;
+  }
+
   /** Load session memory (delegates agentId). */
   async loadSessionMemory(
     conversationId?: string,

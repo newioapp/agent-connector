@@ -130,6 +130,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
       await app.init();
 
+      // Preload persisted conversation flags
+      for (const [convId, flags] of app.getAllConversationFlags()) {
+        this.conversationFlags.set(convId, flags);
+      }
+
       this._promptManager = await this.createPromptManager();
 
       this.udsServer = startUdsServer({
