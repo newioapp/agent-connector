@@ -906,18 +906,13 @@ export class NewioApp {
     return undefined;
   }
 
-  /** Get all persisted conversation flags (showToolCalls/showThoughts) from cached conversations. */
-  getAllConversationFlags(): Map<string, { showToolCalls: boolean; showThoughts: boolean }> {
-    const result = new Map<string, { showToolCalls: boolean; showThoughts: boolean }>();
-    for (const conv of this.store.getAllConversations()) {
-      if (conv.showToolCalls || conv.showThoughts) {
-        result.set(conv.conversationId, {
-          showToolCalls: conv.showToolCalls ?? false,
-          showThoughts: conv.showThoughts ?? false,
-        });
-      }
-    }
-    return result;
+  /** Get conversation flags for a specific conversation (from cached ConversationListItem). */
+  getConversationFlags(conversationId: string): { showToolCalls: boolean; showThoughts: boolean } {
+    const conv = this.store.getConversation(conversationId);
+    return {
+      showToolCalls: conv?.showToolCalls ?? false,
+      showThoughts: conv?.showThoughts ?? false,
+    };
   }
 
   /** Load session memory (delegates agentId). */
