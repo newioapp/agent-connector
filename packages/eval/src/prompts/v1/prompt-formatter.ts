@@ -31,6 +31,11 @@ export class EvalPromptFormatter implements PromptFormatter {
     return trimmed.startsWith('<skip') || trimmed.startsWith('<done') || trimmed.startsWith('<handoff');
   }
 
+  extractHandoff(text: string): string | undefined {
+    const match = text.match(/<handoff>([\s\S]+?)<\/handoff>/i);
+    return match?.[1]?.trim() || undefined;
+  }
+
   buildNewioInstruction(customInstructions?: string) {
     const prompt = instructionPrompt({
       username: this.identity.username,

@@ -75,6 +75,10 @@ export class PromptManager {
     return this.findCompatiblePromptFormatter(promptVersion).isSkip(text);
   }
 
+  extractHandoff(promptVersion: string, text: string): string | undefined {
+    return this.findCompatiblePromptFormatter(promptVersion).extractHandoff(text);
+  }
+
   assertPromptFormatterVersion(version: string): void {
     this.findCompatiblePromptFormatter(version);
   }
