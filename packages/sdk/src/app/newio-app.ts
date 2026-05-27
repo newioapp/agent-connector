@@ -1143,32 +1143,14 @@ export class NewioApp {
   }
 
   private async loadConversations(): Promise<void> {
-    const conversationIds: string[] = [];
     let cursor: string | undefined;
     do {
       const resp = await this.client.listConversations({ cursor, limit: 100 });
       for (const conv of resp.conversations) {
         this.store.setConversation(conv);
-        conversationIds.push(conv.conversationId);
       }
       cursor = resp.cursor;
     } while (cursor);
-
-    // Fetch full details (including members) for each conversation in parallel batches
-    const BATCH_SIZE = 10;
-    for (let i = 0; i < conversationIds.length; i += BATCH_SIZE) {
-      const batch = conversationIds.slice(i, i + BATCH_SIZE);
-      await Promise.all(
-        batch.map(async (conversationId) => {
-          try {
-            const conv = await this.client.getConversation({ conversationId });
-            this.store.setMembers(conversationId, conv.members);
-          } catch (err) {
-            log.warn(`Failed to load members for conversation ${conversationId}`, err);
-          }
-        }),
-      );
-    }
   }
 
   private async loadIncomingRequests(): Promise<void> {
