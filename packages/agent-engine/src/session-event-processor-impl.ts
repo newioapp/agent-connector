@@ -181,16 +181,7 @@ export class SessionEventProcessorImpl implements SessionEventProcessor {
         return;
       }
 
-      // Extract message content after the MESSAGE: keyword
-      const messageMatch = output.match(/MESSAGE:\s*([\s\S]+)/i);
-      const message = messageMatch?.[1]?.trim();
-
-      if (!message) {
-        log.debug(`${this.logTag} Conversation initiation for ${conversationId} — no MESSAGE: keyword found, skipping`);
-        return;
-      }
-
-      await this.app.sendMessage(conversationId, message);
+      await this.app.sendMessage(conversationId, output);
       log.info(`${this.logTag} Delegated message sent to ${conversationId}`);
     } catch (err: unknown) {
       log.error(`${this.logTag} Conversation initiation failed for ${conversationId}`, err);

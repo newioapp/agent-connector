@@ -15,6 +15,7 @@ export { sessionRotationShared } from './session-rotation-shared.js';
 export { sessionRotationIsolated } from './session-rotation-isolated.js';
 export { multiPersonaGroupPressure } from './multi-persona-group-pressure.js';
 export { sharedSessionPmCoordination } from './shared-session-pm-coordination.js';
+export { initiateConversationIsolated } from './initiate-conversation-isolated.js';
 
 import { smokeTest } from './smoke-test.js';
 import { businessNegotiation } from './business-negotiation.js';
@@ -28,6 +29,7 @@ import { sessionRotationShared } from './session-rotation-shared.js';
 import { sessionRotationIsolated } from './session-rotation-isolated.js';
 import { multiPersonaGroupPressure } from './multi-persona-group-pressure.js';
 import { sharedSessionPmCoordination } from './shared-session-pm-coordination.js';
+import { initiateConversationIsolated } from './initiate-conversation-isolated.js';
 
 export const allInteractiveScenarios: readonly InteractiveScenario[] = [
   smokeTest,
@@ -42,4 +44,5 @@ export const allInteractiveScenarios: readonly InteractiveScenario[] = [
   sessionRotationIsolated,
   multiPersonaGroupPressure,
   sharedSessionPmCoordination,
+  initiateConversationIsolated,
 ];

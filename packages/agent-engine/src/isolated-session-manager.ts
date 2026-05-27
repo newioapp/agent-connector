@@ -302,9 +302,10 @@ export class IsolatedSessionManager implements SessionManager {
         const fullOutput = await collectAgentMessage(
           oldSession.prompt(this.promptManager.buildSessionEndPrompt(oldSession.promptFormatterVersion)),
         );
-        const handoffMatch = fullOutput?.match(/HANDOFF:\s*([\s\S]+)/i);
-        if (handoffMatch && handoffMatch[1]) {
-          handoffNote = handoffMatch[1].trim();
+        handoffNote = fullOutput
+          ? this.promptManager.extractHandoff(oldSession.promptFormatterVersion, fullOutput)
+          : undefined;
+        if (handoffNote) {
           log.info(`${this.logTag} Captured handoff for ${type}:${externalReferenceId} (${handoffNote.length} chars)`);
         }
       } catch (err: unknown) {
@@ -571,12 +572,13 @@ export class IsolatedSessionManager implements SessionManager {
           session.prompt(this.promptManager.buildSessionEndPrompt(session.promptFormatterVersion)),
         );
 
-        const handoffMatch = fullOutput?.match(/HANDOFF:\s*([\s\S]+)/i);
-        if (handoffMatch && handoffMatch[1]) {
-          const summary = handoffMatch[1].trim();
-          await this.app.putHandoffNote(slot.externalReferenceId, summary);
+        const handoff = fullOutput
+          ? this.promptManager.extractHandoff(session.promptFormatterVersion, fullOutput)
+          : undefined;
+        if (handoff) {
+          await this.app.putHandoffNote(slot.externalReferenceId, handoff);
           log.info(
-            `${this.logTag} Captured handoff for ${slot.type}:${slot.externalReferenceId} (${summary.length} chars)`,
+            `${this.logTag} Captured handoff for ${slot.type}:${slot.externalReferenceId} (${handoff.length} chars)`,
           );
         }
       } catch (err: unknown) {

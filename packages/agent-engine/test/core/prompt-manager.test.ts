@@ -26,6 +26,10 @@ function mockFormatter(version: string): PromptFormatter {
     version,
     skipToken: '_skip',
     isSkip: vi.fn().mockImplementation((text: string) => text.trim().toLowerCase() === '_skip'),
+    extractHandoff: vi.fn().mockImplementation((text: string) => {
+      const match = text.match(/<handoff>([\s\S]+?)<\/handoff>/i);
+      return match?.[1]?.trim() || undefined;
+    }),
     buildNewioInstruction: vi.fn().mockReturnValue({ prompt: `instruction-${version}`, version }),
     buildGreetingPrompt: vi.fn().mockReturnValue(`greeting-${version}`),
     formatMessagePrompt: vi.fn().mockReturnValue(`messages-${version}`),

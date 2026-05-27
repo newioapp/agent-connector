@@ -41,6 +41,8 @@ export interface PromptFormatter {
   readonly skipToken: string;
   /** Returns true if the text represents a skip/done/handoff output (not a conversation reply). */
   isSkip(text: string): boolean;
+  /** Extract the handoff note from session-end output, or undefined if not found. */
+  extractHandoff(text: string): string | undefined;
   buildNewioInstruction(customInstructions?: string): Instruction;
   buildGreetingPrompt(): string;
   formatMessagePrompt(messages: readonly IncomingMessage[]): string;
@@ -70,6 +72,11 @@ export class PromptFormatterImpl implements PromptFormatter {
   isSkip(text: string): boolean {
     const trimmed = text.trim();
     return trimmed.startsWith('<skip') || trimmed.startsWith('<done') || trimmed.startsWith('<handoff');
+  }
+
+  extractHandoff(text: string): string | undefined {
+    const match = text.match(/<handoff>([\s\S]+?)<\/handoff>/i);
+    return match?.[1]?.trim() || undefined;
   }
 
   buildNewioInstruction(customInstructions?: string): Instruction {

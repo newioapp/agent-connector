@@ -321,9 +321,10 @@ export class SharedSessionManager implements SessionManager {
       const fullOutput = await collectAgentMessage(
         oldSession.prompt(this.promptManager.buildSessionEndPrompt(oldSession.promptFormatterVersion)),
       );
-      const handoffMatch = fullOutput?.match(/HANDOFF:\s*([\s\S]+)/i);
-      if (handoffMatch && handoffMatch[1]) {
-        handoffNote = handoffMatch[1].trim();
+      handoffNote = fullOutput
+        ? this.promptManager.extractHandoff(oldSession.promptFormatterVersion, fullOutput)
+        : undefined;
+      if (handoffNote) {
         log.info(`${this.logTag} Captured handoff for shared session (${handoffNote.length} chars)`);
       }
     } catch (err: unknown) {
@@ -549,11 +550,12 @@ export class SharedSessionManager implements SessionManager {
         session.prompt(this.promptManager.buildSessionEndPrompt(session.promptFormatterVersion)),
       );
 
-      const handoffMatch = fullOutput?.match(/HANDOFF:\s*([\s\S]+)/i);
-      if (handoffMatch && handoffMatch[1]) {
-        const summary = handoffMatch[1].trim();
-        await this.app.putHandoffNote(SHARED_SESSION_ID, summary);
-        log.info(`${this.logTag} Captured handoff shared session (${summary.length} chars)`);
+      const handoff = fullOutput
+        ? this.promptManager.extractHandoff(session.promptFormatterVersion, fullOutput)
+        : undefined;
+      if (handoff) {
+        await this.app.putHandoffNote(SHARED_SESSION_ID, handoff);
+        log.info(`${this.logTag} Captured handoff shared session (${handoff.length} chars)`);
       }
     } catch (err: unknown) {
       log.warn(`${this.logTag} Session-end prompt failed for shared session`, err);
