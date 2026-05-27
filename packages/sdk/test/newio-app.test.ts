@@ -448,6 +448,7 @@ describe('NewioApp', () => {
         payload: {
           contact: makeContact({
             contactId: 'req-1',
+            requesterId: 'req-1',
             friendUsername: 'bob',
             friendDisplayName: 'Bob',
             status: 'pending',
@@ -470,7 +471,13 @@ describe('NewioApp', () => {
         type: 'contact.request_received',
         timestamp: '2026-01-01T00:00:00Z',
         payload: {
-          contact: makeContact({ userId: 'req-bob', contactId: 'me', friendUsername: 'bob', status: 'pending' }),
+          contact: makeContact({
+            userId: 'req-bob',
+            contactId: 'me',
+            requesterId: 'req-bob',
+            friendUsername: 'bob',
+            status: 'pending',
+          }),
         },
       });
 
@@ -489,7 +496,13 @@ describe('NewioApp', () => {
         type: 'contact.request_received',
         timestamp: '2026-01-01T00:00:00Z',
         payload: {
-          contact: makeContact({ userId: 'req-bob', contactId: 'me', friendUsername: 'bob', status: 'pending' }),
+          contact: makeContact({
+            userId: 'req-bob',
+            contactId: 'me',
+            requesterId: 'req-bob',
+            friendUsername: 'bob',
+            status: 'pending',
+          }),
         },
       });
 

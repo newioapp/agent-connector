@@ -269,6 +269,25 @@ describe('wireEvents', () => {
     );
   });
 
+  it('ignores contact.request_received for self-initiated requests', () => {
+    const contact: ContactRecord = {
+      contactId: 'u2',
+      requesterId: 'me', // agent sent this request
+      friendUsername: 'alice',
+      friendDisplayName: 'Alice',
+      friendAccountType: 'human',
+      status: 'pending',
+      createdAt: ts,
+    };
+    const eventHandler = vi.fn();
+    handlers['contact.event'] = eventHandler;
+
+    ws.fire('contact.request_received', { type: 'contact.request_received', timestamp: ts, payload: { contact } });
+
+    expect(store.findIncomingRequestByUsername('alice')).toBeUndefined();
+    expect(eventHandler).not.toHaveBeenCalled();
+  });
+
   it('handles contact.request_accepted', () => {
     // Incoming request: userId = sender, contactId = me (recipient)
     store.addIncomingRequest({

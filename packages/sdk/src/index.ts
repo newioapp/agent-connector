@@ -23,7 +23,7 @@ export type {
 
 // Auth
 export { AuthManager, InMemoryTokenStore } from './core/auth.js';
-export type { TokenStore, ApprovalHandle, WaitForApprovalOptions } from './core/auth.js';
+export type { TokenStore, ApprovalHandle, WaitForApprovalOptions, AuthManagerOptions } from './core/auth.js';
 
 // HTTP
 export type { TokenProvider } from './core/http.js';

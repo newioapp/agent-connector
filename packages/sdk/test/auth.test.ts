@@ -133,7 +133,7 @@ describe('AuthManager', () => {
       ]);
 
       const store = new InMemoryTokenStore();
-      const auth = new AuthManager('https://api.newio.dev', store);
+      const auth = new AuthManager('https://api.newio.dev', { store });
       const handle = await auth.register({ name: 'Test Agent' });
 
       const approvalPromise = handle.waitForApproval({ intervalMs: 100 });
@@ -258,7 +258,7 @@ describe('AuthManager', () => {
       const store = new InMemoryTokenStore();
       store.setTokens(oldToken, 'refresh-1');
 
-      const auth = new AuthManager('https://api.newio.dev', store);
+      const auth = new AuthManager('https://api.newio.dev', { store });
       await auth.forceRefresh();
 
       expect(store.getAccessToken()).toBe(newToken);
@@ -276,7 +276,7 @@ describe('AuthManager', () => {
       const store = new InMemoryTokenStore();
       store.setTokens(fakeJwt(exp), 'refresh-1');
 
-      const auth = new AuthManager('https://api.newio.dev', store);
+      const auth = new AuthManager('https://api.newio.dev', { store });
 
       // Call forceRefresh twice concurrently
       const [r1, r2] = await Promise.all([auth.forceRefresh(), auth.forceRefresh()]);
@@ -298,7 +298,7 @@ describe('AuthManager', () => {
       const store = new InMemoryTokenStore();
       store.setTokens(fakeJwt(exp), 'refresh-1');
 
-      const auth = new AuthManager('https://api.newio.dev', store);
+      const auth = new AuthManager('https://api.newio.dev', { store });
       await auth.revoke();
 
       expect(store.getAccessToken()).toBeUndefined();
@@ -314,7 +314,7 @@ describe('AuthManager', () => {
       const store = new InMemoryTokenStore();
       store.setTokens(fakeJwt(exp), 'refresh-1');
 
-      const auth = new AuthManager('https://api.newio.dev', store);
+      const auth = new AuthManager('https://api.newio.dev', { store });
       await auth.revoke();
 
       expect(store.getAccessToken()).toBeUndefined();
@@ -348,7 +348,7 @@ describe('AuthManager', () => {
       const store = new InMemoryTokenStore();
       store.setTokens(fakeJwt(exp), 'refresh-1');
 
-      const auth = new AuthManager('https://api.newio.dev', store);
+      const auth = new AuthManager('https://api.newio.dev', { store });
       await expect(auth.forceRefresh()).rejects.toThrow(TokenRefreshError);
 
       expect(store.getAccessToken()).toBeUndefined();
@@ -366,19 +366,19 @@ describe('AuthManager', () => {
 
   describe('auto-refresh scheduling', () => {
     it('should auto-refresh before token expires', async () => {
-      // Token expires in 90 seconds — refresh should fire at 30s (90 - 60 buffer)
-      const exp = Math.floor(Date.now() / 1000) + 90;
+      // Token expires in 10 minutes — refresh should fire at 5min (600 - 300 buffer)
+      const exp = Math.floor(Date.now() / 1000) + 600;
       const oldToken = fakeJwt(exp);
       const newToken = fakeJwt(Math.floor(Date.now() / 1000) + 3600);
 
       mockFetch([{ status: 200, body: { accessToken: newToken, refreshToken: 'refresh-2' } }]);
 
       const store = new InMemoryTokenStore();
-      const auth = new AuthManager('https://api.newio.dev', store);
+      const auth = new AuthManager('https://api.newio.dev', { store });
       auth.setTokens(oldToken, 'refresh-1');
 
-      // Advance past the scheduled refresh time (90s - 60s buffer = 30s)
-      await vi.advanceTimersByTimeAsync(31_000);
+      // Advance past the scheduled refresh time (600s - 300s buffer = 300s)
+      await vi.advanceTimersByTimeAsync(301_000);
 
       expect(store.getAccessToken()).toBe(newToken);
 
@@ -422,5 +422,69 @@ describe('AuthManager', () => {
 
       auth.dispose();
     });
+  });
+});
+
+describe('AuthManager — onTokensChanged callback', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('should call onTokensChanged on successful auto-refresh', async () => {
+    const exp = Math.floor(Date.now() / 1000) + 600;
+    const oldToken = fakeJwt(exp);
+    const newToken = fakeJwt(Math.floor(Date.now() / 1000) + 3600);
+
+    mockFetch([{ status: 200, body: { accessToken: newToken, refreshToken: 'refresh-2' } }]);
+
+    const onTokensChanged = vi.fn();
+    const store = new InMemoryTokenStore();
+    const auth = new AuthManager('https://api.newio.dev', { store, onTokensChanged });
+    auth.setTokens(oldToken, 'refresh-1');
+
+    await vi.advanceTimersByTimeAsync(301_000);
+
+    expect(onTokensChanged).toHaveBeenCalledOnce();
+    expect(onTokensChanged).toHaveBeenCalledWith(newToken, 'refresh-2');
+
+    auth.dispose();
+  });
+
+  it('should call onTokensChanged on forceRefresh', async () => {
+    const exp = Math.floor(Date.now() / 1000) + 3600;
+    const newToken = fakeJwt(exp);
+
+    mockFetch([{ status: 200, body: { accessToken: newToken, refreshToken: 'refresh-new' } }]);
+
+    const onTokensChanged = vi.fn();
+    const store = new InMemoryTokenStore();
+    const auth = new AuthManager('https://api.newio.dev', { store, onTokensChanged });
+    auth.setTokens(fakeJwt(Math.floor(Date.now() / 1000) + 60), 'refresh-old');
+
+    await auth.forceRefresh();
+
+    expect(onTokensChanged).toHaveBeenCalledOnce();
+    expect(onTokensChanged).toHaveBeenCalledWith(newToken, 'refresh-new');
+
+    auth.dispose();
+  });
+
+  it('should not call onTokensChanged when refresh fails', async () => {
+    mockFetch([{ status: 401, body: { message: 'invalid' } }]);
+
+    const onTokensChanged = vi.fn();
+    const store = new InMemoryTokenStore();
+    const auth = new AuthManager('https://api.newio.dev', { store, onTokensChanged });
+    auth.setTokens(fakeJwt(Math.floor(Date.now() / 1000) + 60), 'refresh-old');
+
+    await expect(auth.forceRefresh()).rejects.toThrow(TokenRefreshError);
+    expect(onTokensChanged).not.toHaveBeenCalled();
+
+    auth.dispose();
   });
 });

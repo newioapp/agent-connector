@@ -150,6 +150,10 @@ export function wireEvents(
 
   ws.on('contact.request_received', (event) => {
     const c = event.payload.contact;
+    // Skip events for requests initiated by this agent (sender gets their own event back)
+    if (c.requesterId === identity.userId) {
+      return;
+    }
     log.info(`Event contact.request_received from @${c.friendUsername}`);
     store.addIncomingRequest(c);
     const ownerProfile = c.friendAccountType === 'agent' && c.ownerId ? store.getOwnerProfile(c.ownerId) : undefined;
