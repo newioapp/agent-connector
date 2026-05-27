@@ -364,4 +364,37 @@ describe('PromptFormatterImpl', () => {
       expect(pf.isSkip('I will skip that')).toBe(false);
     });
   });
+
+  describe('extractHandoff', () => {
+    it('extracts content from handoff tags', () => {
+      const pf = mockApp();
+      expect(pf.extractHandoff('<handoff>Session was about planning a trip.</handoff>')).toBe(
+        'Session was about planning a trip.',
+      );
+    });
+
+    it('extracts multiline handoff content', () => {
+      const pf = mockApp();
+      const input = '<handoff>\nLine 1.\nLine 2.\n</handoff>';
+      expect(pf.extractHandoff(input)).toBe('Line 1.\nLine 2.');
+    });
+
+    it('returns undefined when no handoff tag present', () => {
+      const pf = mockApp();
+      expect(pf.extractHandoff('<done action="memory_updated" />')).toBeUndefined();
+      expect(pf.extractHandoff('plain text')).toBeUndefined();
+      expect(pf.extractHandoff('')).toBeUndefined();
+    });
+
+    it('is case-insensitive', () => {
+      const pf = mockApp();
+      expect(pf.extractHandoff('<HANDOFF>Note here.</HANDOFF>')).toBe('Note here.');
+      expect(pf.extractHandoff('<Handoff>Mixed case.</Handoff>')).toBe('Mixed case.');
+    });
+
+    it('extracts only the first handoff tag', () => {
+      const pf = mockApp();
+      expect(pf.extractHandoff('<handoff>First.</handoff> extra <handoff>Second.</handoff>')).toBe('First.');
+    });
+  });
 });
