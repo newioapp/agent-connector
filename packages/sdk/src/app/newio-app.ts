@@ -260,7 +260,11 @@ export class NewioApp {
    * and initial data loading. Returns a fully ready app instance.
    */
   static async create(opts: NewioAppCreateOptions): Promise<NewioApp> {
-    const auth = new AuthManager(opts.apiBaseUrl);
+    const auth = new AuthManager(opts.apiBaseUrl, {
+      onTokensChanged: (accessToken, refreshToken) => {
+        opts.onTokens?.({ accessToken, refreshToken });
+      },
+    });
 
     // Authenticate
     if (opts.tokens) {

@@ -67,7 +67,7 @@ export interface ApprovalHandle {
 
 const DEFAULT_POLL_INTERVAL_MS = 3000;
 const DEFAULT_POLL_TIMEOUT_MS = 600_000;
-const REFRESH_BUFFER_MS = 60_000;
+const REFRESH_BUFFER_MS = 5 * 60_000; // 5 minutes before expiry
 
 /**
  * Manages agent authentication — registration, login, token refresh.
@@ -80,18 +80,26 @@ const REFRESH_BUFFER_MS = 60_000;
  * const tokens = await handle.waitForApproval();
  * ```
  */
+export interface AuthManagerOptions {
+  readonly store?: TokenStore;
+  /** Called whenever tokens are updated (e.g. after refresh). Use to persist tokens to disk. */
+  readonly onTokensChanged?: (accessToken: string, refreshToken: string) => void;
+}
+
 export class AuthManager {
   private readonly http: HttpClient;
   private readonly store: TokenStore;
+  private readonly onTokensChanged?: (accessToken: string, refreshToken: string) => void;
   private refreshTimer: ReturnType<typeof setTimeout> | undefined;
   private refreshPromise: Promise<void> | undefined;
 
   constructor(
     private readonly baseUrl: string,
-    store?: TokenStore,
+    options?: AuthManagerOptions,
   ) {
     this.http = new HttpClient(baseUrl);
-    this.store = store ?? new InMemoryTokenStore();
+    this.store = options?.store ?? new InMemoryTokenStore();
+    this.onTokensChanged = options?.onTokensChanged;
   }
 
   /** Register a new agent. The person who approves becomes the owner. */
@@ -254,6 +262,7 @@ export class AuthManager {
         });
         this.store.setTokens(res.accessToken, res.refreshToken);
         this.scheduleRefresh(res.accessToken);
+        this.onTokensChanged?.(res.accessToken, res.refreshToken);
         log.debug('Token refreshed successfully.');
       } catch (err) {
         log.error('Token refresh failed — clearing tokens.', err);

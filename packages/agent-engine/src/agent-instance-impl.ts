@@ -475,12 +475,13 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   /** Shared cleanup — tears down sessions, MCP server, WebSocket, and timers. */
   private async cleanup(): Promise<void> {
+    log.info(`${this.logTag} Running cleanup`);
     this.abortController.abort();
 
     // Drain inbound queue
     this.inbound.length = 0;
 
-    await this.sessionManager.terminate();
+    await this._sessionManager?.terminate();
 
     if (this.udsServer) {
       this.udsServer.close();
