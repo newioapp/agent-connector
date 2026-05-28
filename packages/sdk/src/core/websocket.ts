@@ -427,6 +427,7 @@ export class NewioWebSocket {
       if (this.ws && this.state === 'connected') {
         try {
           // Set pong timeout before sending — the pong handler may fire synchronously
+          clearTimeout(this.pongTimeoutTimer ?? undefined);
           this.pongTimeoutTimer = setTimeout(() => {
             log.warn('Pong timeout — connection appears dead, reconnecting');
             this.cleanup();
@@ -434,8 +435,8 @@ export class NewioWebSocket {
             this.scheduleReconnect();
           }, PONG_TIMEOUT_MS);
           this.ws.send(JSON.stringify({ action: 'ping' }));
-        } catch {
-          log.warn('Keepalive ping failed.');
+        } catch (err) {
+          log.warn('Keepalive ping send failed.', err);
           // Will trigger onclose → reconnect
         }
       }
