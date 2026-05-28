@@ -12,7 +12,7 @@
   "main": "./out/main/index.js",
   "scripts": {
     "postinstall": "electron-rebuild",
-    "dev": "dotenv -e .env -- electron-vite dev",
+    "dev": "WS_PROACTIVE_RECONNECT_MS=300000 dotenv -e .env -- electron-vite dev",
     "build": "electron-vite build",
     "build:mac": "bash scripts/build-signed.sh",
     "build:mac:unsigned": "bash scripts/build-unsigned.sh",

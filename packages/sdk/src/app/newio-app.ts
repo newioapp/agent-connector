@@ -152,6 +152,8 @@ export interface NewioAppCreateOptions {
   readonly downloadDir?: string;
   /** Optional persistence layer for durable storage. */
   readonly persistence?: StorePersistence;
+  /** Override the proactive WebSocket reconnect interval in ms (default: 1h50m). */
+  readonly proactiveReconnectMs?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -310,6 +312,7 @@ export class NewioApp {
       url: opts.wsUrl,
       tokenProvider: auth.tokenProvider,
       wsFactory: opts.wsFactory,
+      proactiveReconnectMs: opts.proactiveReconnectMs,
     });
     await ws.connect();
 

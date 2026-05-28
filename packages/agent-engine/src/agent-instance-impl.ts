@@ -672,6 +672,7 @@ export class AgentInstanceImpl extends BaseAgentInstance {
       apiBaseUrl: this.engineConfig.apiBaseUrl,
       wsUrl: this.engineConfig.wsUrl,
       wsFactory: (url) => new WebSocket(url) as never,
+      proactiveReconnectMs: this.engineConfig.wsProactiveReconnectMs,
       tokens: this.configManager.getTokens(this.config.id),
       signal: this.abortController.signal,
       onApprovalUrl: (url) => {
