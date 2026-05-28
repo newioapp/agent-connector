@@ -21,6 +21,15 @@ function createMockWs() {
     close: vi.fn(),
     send: vi.fn((data: string) => {
       ws.sent.push(data);
+      // Auto-reply with pong when ping is sent, so pong timeout doesn't fire in tests
+      try {
+        const parsed = JSON.parse(data) as { action?: string };
+        if (parsed.action === 'ping') {
+          ws.onmessage?.({ data: JSON.stringify({ action: 'pong' }) });
+        }
+      } catch {
+        /* ignore */
+      }
     }),
     triggerOpen() {
       ws.onopen?.(null);
@@ -262,13 +271,13 @@ describe('NewioWebSocket', () => {
   });
 
   describe('keepalive', () => {
-    it('should send ping every 5 minutes', async () => {
+    it('should send ping every 30 seconds', async () => {
       const ws = createMockWs();
       const client = createClient(ws);
       await client.connect();
 
       const initialSent = ws.sent.length;
-      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+      await vi.advanceTimersByTimeAsync(30_000);
 
       const pings = ws.sent.slice(initialSent).filter((s) => s.includes('ping'));
       expect(pings).toHaveLength(1);

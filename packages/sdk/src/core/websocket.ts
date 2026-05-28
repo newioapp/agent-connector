@@ -61,8 +61,10 @@ export interface WebSocketLike {
 /** Factory function to create a WebSocket instance. */
 export type WebSocketFactory = (url: string) => WebSocketLike;
 
-/** Keepalive interval: 5 minutes. */
-const KEEPALIVE_MS = 5 * 60 * 1000;
+/** Keepalive interval: 30 seconds. */
+const KEEPALIVE_MS = 30_000;
+/** Pong timeout: if no pong received within this window after a ping, reconnect. */
+const PONG_TIMEOUT_MS = 10_000;
 /** Default proactive reconnect before API Gateway 2-hour hard limit. */
 const DEFAULT_PROACTIVE_RECONNECT_MS = 110 * 60 * 1000;
 /** Timeout waiting for connection.accepted during proactive reconnect. Falls back to closing old connection. */
@@ -105,6 +107,7 @@ export class NewioWebSocket {
   private keepaliveTimer: ReturnType<typeof setInterval> | undefined;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private proactiveReconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  private pongTimeoutTimer: ReturnType<typeof setTimeout> | undefined;
   private intentionalClose = false;
   private rejected = false;
 
@@ -379,7 +382,12 @@ export class NewioWebSocket {
 
       // Ack messages use 'action' field
       if (typeof parsed['action'] === 'string') {
-        if (parsed['action'] === 'subscribe_ack') {
+        if (parsed['action'] === 'pong') {
+          if (this.pongTimeoutTimer !== undefined) {
+            clearTimeout(this.pongTimeoutTimer);
+            this.pongTimeoutTimer = undefined;
+          }
+        } else if (parsed['action'] === 'subscribe_ack') {
           log.debug('Received subscribe_ack.');
           this.onSubscribeAckHandler?.(parsed as unknown as SubscribeAck);
         } else if (parsed['action'] === 'unsubscribe_ack') {
@@ -418,9 +426,17 @@ export class NewioWebSocket {
     this.keepaliveTimer = setInterval(() => {
       if (this.ws && this.state === 'connected') {
         try {
+          // Set pong timeout before sending — the pong handler may fire synchronously
+          clearTimeout(this.pongTimeoutTimer ?? undefined);
+          this.pongTimeoutTimer = setTimeout(() => {
+            log.warn('Pong timeout — connection appears dead, reconnecting');
+            this.cleanup();
+            this.setState('disconnected');
+            this.scheduleReconnect();
+          }, PONG_TIMEOUT_MS);
           this.ws.send(JSON.stringify({ action: 'ping' }));
-        } catch {
-          log.warn('Keepalive ping failed.');
+        } catch (err) {
+          log.warn('Keepalive ping send failed.', err);
           // Will trigger onclose → reconnect
         }
       }
@@ -530,6 +546,10 @@ export class NewioWebSocket {
     if (this.proactiveReconnectTimer !== undefined) {
       clearTimeout(this.proactiveReconnectTimer);
       this.proactiveReconnectTimer = undefined;
+    }
+    if (this.pongTimeoutTimer !== undefined) {
+      clearTimeout(this.pongTimeoutTimer);
+      this.pongTimeoutTimer = undefined;
     }
   }
 
