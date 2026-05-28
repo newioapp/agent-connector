@@ -1,5 +1,5 @@
 import { HttpClient } from './http.js';
-import { ApprovalTimeoutError, TokenRefreshError } from './errors.js';
+import { ApprovalTimeoutError, TokenRefreshError, UnauthenticatedApiError, ForbiddenApiError } from './errors.js';
 import { getLogger } from './logger.js';
 import type {
   RegisterRequest,
@@ -219,16 +219,23 @@ export class AuthManager {
 
       const pollUrl = `/approvals/${approvalId}/status${this.http.qs({ token: approvalToken })}`;
       options?.onPollAttempt?.();
-      const res = await this.http.request<PollApprovalStatusResponse>(pollUrl);
+      try {
+        const res = await this.http.request<PollApprovalStatusResponse>(pollUrl);
 
-      if (res.status === 'active' && res.accessToken && res.refreshToken) {
-        log.info('Approval granted — tokens received.');
-        this.store.setTokens(res.accessToken, res.refreshToken);
-        this.scheduleRefresh(res.accessToken);
-        return { accessToken: res.accessToken, refreshToken: res.refreshToken };
+        if (res.status === 'active' && res.accessToken && res.refreshToken) {
+          log.info('Approval granted — tokens received.');
+          this.store.setTokens(res.accessToken, res.refreshToken);
+          this.scheduleRefresh(res.accessToken);
+          return { accessToken: res.accessToken, refreshToken: res.refreshToken };
+        }
+
+        log.debug(`Approval status: ${res.status}. Retrying in ${intervalMs / 1000}s...`);
+      } catch (err) {
+        if (err instanceof UnauthenticatedApiError || err instanceof ForbiddenApiError) {
+          throw err;
+        }
+        log.warn(`Poll attempt failed (network error?), retrying in ${intervalMs / 1000}s...`, err);
       }
-
-      log.debug(`Approval status: ${res.status}. Retrying in ${intervalMs / 1000}s...`);
 
       // Sleep for the interval, but cap at the remaining time until deadline
       const remaining = deadline - Date.now();
@@ -265,9 +272,12 @@ export class AuthManager {
         this.onTokensChanged?.(res.accessToken, res.refreshToken);
         log.debug('Token refreshed successfully.');
       } catch (err) {
-        log.error('Token refresh failed — clearing tokens.', err);
-        this.store.clear();
-        this.clearRefreshTimer();
+        log.error('Token refresh failed.', err);
+        if (err instanceof UnauthenticatedApiError) {
+          log.warn('Refresh token rejected by server — clearing tokens.');
+          this.store.clear();
+          this.clearRefreshTimer();
+        }
         throw new TokenRefreshError(err instanceof Error ? err.message : 'Token refresh failed.');
       }
     })();
