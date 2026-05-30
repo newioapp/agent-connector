@@ -75,7 +75,9 @@ export function wireEvents(
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
-    void loadConversation(store, client, identity, event.payload.conversationId);
+    void loadConversation(store, client, identity, event.payload.conversationId).catch((err: unknown) =>
+      log.error(`Failed to load conversation ${event.payload.conversationId}.`, err),
+    );
   });
 
   ws.on('conversation.updated', (event) => {
@@ -105,7 +107,9 @@ export function wireEvents(
 
     if (!store.hasConversation(conversationId)) {
       log.info(`Added to unknown conversation ${conversationId} — loading details.`);
-      void loadConversation(store, client, identity, conversationId);
+      void loadConversation(store, client, identity, conversationId).catch((err: unknown) =>
+        log.error(`Failed to load conversation ${conversationId}.`, err),
+      );
     }
   });
 
@@ -361,36 +365,32 @@ export function wireEvents(
 // Internal — conversation loading
 // ---------------------------------------------------------------------------
 
-async function loadConversation(
+export async function loadConversation(
   store: NewioAppStore,
   client: NewioClient,
   identity: NewioIdentity,
   conversationId: string,
 ): Promise<void> {
-  try {
-    log.debug(`Loading conversation ${conversationId}...`);
-    const conv = await client.getConversation({ conversationId });
-    store.setConversation({
-      conversationId: conv.conversationId,
-      type: conv.type,
-      name: conv.name,
-      description: conv.description,
-      avatarUrl: conv.avatarUrl,
-      createdBy: conv.createdBy,
-      createdAt: conv.createdAt,
-      updatedAt: conv.updatedAt,
-      lastMessageAt: conv.lastMessageAt,
-    });
-    store.setMembers(conversationId, conv.members);
+  log.debug(`Loading conversation ${conversationId}...`);
+  const conv = await client.getConversation({ conversationId });
+  store.setConversation({
+    conversationId: conv.conversationId,
+    type: conv.type,
+    name: conv.name,
+    description: conv.description,
+    avatarUrl: conv.avatarUrl,
+    createdBy: conv.createdBy,
+    createdAt: conv.createdAt,
+    updatedAt: conv.updatedAt,
+    lastMessageAt: conv.lastMessageAt,
+  });
+  store.setMembers(conversationId, conv.members);
 
-    const self = conv.members.find((m) => m.userId === identity.userId);
-    if (self) {
-      if (self.notifyLevel) {
-        store.setNotifyLevel(conversationId, self.notifyLevel);
-      }
+  const self = conv.members.find((m) => m.userId === identity.userId);
+  if (self) {
+    if (self.notifyLevel) {
+      store.setNotifyLevel(conversationId, self.notifyLevel);
     }
-    log.debug(`Loaded conversation ${conversationId} (${conv.members.length} members).`);
-  } catch (err) {
-    log.error(`Failed to load conversation ${conversationId}.`, err);
   }
+  log.debug(`Loaded conversation ${conversationId} (${conv.members.length} members).`);
 }
