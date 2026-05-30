@@ -265,29 +265,29 @@ describe('MockNewioApp', () => {
   });
 
   describe('cache methods (NewioAppForAgent)', () => {
-    it('getCachedConversationInfo returns info', async () => {
+    it('getConversationInfo returns info', async () => {
       const convId = await app.createGroup('Team', ['alice']);
-      const info = app.getCachedConversationInfo(convId);
+      const info = await app.getConversationInfo(convId);
       expect(info?.type).toBe('group');
       expect(info?.name).toBe('Team');
     });
 
     it('isConversationMember checks membership', async () => {
       const convId = await app.createGroup('Team', ['alice']);
-      expect(app.isConversationMember(convId, agent.userId)).toBe(true);
-      expect(app.isConversationMember(convId, 'nonexistent')).toBe(false);
+      expect(await app.isConversationMember(convId, agent.userId)).toBe(true);
+      expect(await app.isConversationMember(convId, 'nonexistent')).toBe(false);
     });
 
     it('getConversationMemberIds returns all member ids', async () => {
       const convId = await app.createGroup('Team', ['alice']);
-      const ids = app.getConversationMemberIds(convId);
+      const ids = await app.getConversationMemberIds(convId);
       expect(ids).toContain(agent.userId);
       expect(ids).toContain(owner.userId);
     });
 
-    it('getMemberDisplayInfo returns user info', async () => {
+    it('getMemberInfo returns user info', async () => {
       const convId = await app.createGroup('Team', ['alice']);
-      const info = app.getMemberDisplayInfo(convId, owner.userId);
+      const info = await app.getMemberInfo(convId, owner.userId);
       expect(info?.username).toBe('alice');
       expect(info?.displayName).toBe('Alice');
     });

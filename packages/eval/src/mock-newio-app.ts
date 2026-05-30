@@ -568,26 +568,18 @@ export class MockNewioApp implements NewioAppForAgent, NewioAppForMcp {
     return this.getOrCreateDm(owner.username);
   }
 
-  getCachedConversationInfo(conversationId: string): { type: string; name?: string } | undefined {
-    const conv = this.backend.getConversation(conversationId);
-    if (!conv) {
-      return undefined;
-    }
-    return { type: conv.type, ...(conv.name ? { name: conv.name } : {}) };
-  }
-
-  isConversationMember(conversationId: string, userId: string): boolean {
+  async isConversationMember(conversationId: string, userId: string): Promise<boolean> {
     return this.backend.getConversation(conversationId)?.members.some((m) => m.userId === userId) ?? false;
   }
 
-  getConversationMemberIds(conversationId: string): readonly string[] | undefined {
-    return this.backend.getConversation(conversationId)?.members.map((m) => m.userId);
+  async getConversationMemberIds(conversationId: string): Promise<readonly string[]> {
+    return this.backend.getConversation(conversationId)?.members.map((m) => m.userId) ?? [];
   }
 
-  getMemberDisplayInfo(
+  async getMemberInfo(
     conversationId: string,
     userId: string,
-  ): { username?: string; displayName?: string } | undefined {
+  ): Promise<{ username?: string; displayName?: string } | undefined> {
     const conv = this.backend.getConversation(conversationId);
     if (!conv?.members.some((m) => m.userId === userId)) {
       return undefined;

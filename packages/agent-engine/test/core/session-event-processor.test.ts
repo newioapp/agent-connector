@@ -13,7 +13,7 @@ function createMockApp(): NewioAppForSessionEventProcessor {
   return {
     identity: { userId: 'agent-1', username: 'test-agent', displayName: 'Test Agent', ownerId: 'owner-1' },
     getConversationFlags: vi.fn().mockReturnValue({ showToolCalls: false, showThoughts: false }),
-    isConversationMember: vi.fn().mockReturnValue(true),
+    isConversationMember: vi.fn().mockResolvedValue(true),
     sendMessage: vi.fn().mockResolvedValue(undefined),
     setStatus: vi.fn(),
     rotateSession: vi.fn().mockResolvedValue(undefined),
@@ -145,7 +145,15 @@ describe('SessionEventProcessorImpl', () => {
       await processor.processEvent(
         {
           type: 'contact',
-          events: [{ type: 'contact.request_received', username: 'bob', displayName: 'Bob', accountType: 'human', timestamp: new Date().toISOString() }],
+          events: [
+            {
+              type: 'contact.request_received',
+              username: 'bob',
+              displayName: 'Bob',
+              accountType: 'human',
+              timestamp: new Date().toISOString(),
+            },
+          ],
         },
         session,
       );
