@@ -274,14 +274,17 @@ export interface NewioAppForAgent {
   getOrCreateOwnerDmConversationId(): Promise<string>;
 
   // ── Conversations ──
-  /** Get conversation type and name (from cache). */
-  getCachedConversationInfo(conversationId: string): { type: string; name?: string } | undefined;
-  /** Check if a userId is a member of the conversation (from cache). */
-  isConversationMember(conversationId: string, userId: string): boolean;
-  /** Get all member userIds for a conversation (from cache). */
-  getConversationMemberIds(conversationId: string): readonly string[] | undefined;
-  /** Get a member's display info (for context messages). */
-  getMemberDisplayInfo(conversationId: string, userId: string): { username?: string; displayName?: string } | undefined;
+  /** Get conversation type and name. Fetches from API if not cached. */
+  getConversationInfo(conversationId: string): Promise<{ type: string; name?: string }>;
+  /** Check if a userId is a member of the conversation. Fetches from API if not cached. */
+  isConversationMember(conversationId: string, userId: string): Promise<boolean>;
+  /** Get all member userIds for a conversation. Fetches from API if not cached. */
+  getConversationMemberIds(conversationId: string): Promise<readonly string[]>;
+  /** Get a member's display info. Fetches from API if not cached. */
+  getMemberInfo(
+    conversationId: string,
+    userId: string,
+  ): Promise<{ username?: string; displayName?: string } | undefined>;
   /** Get the self member's persisted session config (acpModel/acpMode). */
   getSessionConfig(conversationId: string): { acpModel?: string; acpMode?: string } | undefined;
   /** Get conversation flags (showToolCalls/showThoughts) for a conversation. */
@@ -360,9 +363,12 @@ export interface NewioAppForSession {
   /** Get memory scope data for a conversation or user (for incremental injection in shared mode). */
   getMemoryScope(scope: string, scopeId: string): Promise<MemoryScopeData>;
   /** Get member user IDs for a conversation (for incremental injection in shared mode). */
-  getConversationMemberIds(conversationId: string): readonly string[] | undefined;
-  /** Get member display info (for context labels in shared mode). */
-  getMemberDisplayInfo(conversationId: string, userId: string): { username?: string; displayName?: string } | undefined;
+  getConversationMemberIds(conversationId: string): Promise<readonly string[]>;
+  /** Get member display info. Fetches from API if not cached. */
+  getMemberInfo(
+    conversationId: string,
+    userId: string,
+  ): Promise<{ username?: string; displayName?: string } | undefined>;
   /** Get the agent's own userId (for filtering self from member lists). */
   agentUserId: string;
 }

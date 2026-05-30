@@ -184,30 +184,28 @@ export class SharedSessionManager implements SessionManager {
     }
 
     // Per-user memory for unseen participants
-    const memberIds = this.app.getConversationMemberIds(conversationId);
-    if (memberIds) {
-      for (const userId of memberIds) {
-        if (userId === agentId || this.injectedUserIds.has(userId)) {
-          continue;
+    const memberIds = await this.app.getConversationMemberIds(conversationId);
+    for (const userId of memberIds) {
+      if (userId === agentId || this.injectedUserIds.has(userId)) {
+        continue;
+      }
+      this.injectedUserIds.add(userId);
+      try {
+        const data = await this.app.getMemoryScope('user', userId);
+        const parts: string[] = [];
+        if (data.summary) {
+          parts.push(`Summary: ${(data.summary as { text: string }).text}`);
         }
-        this.injectedUserIds.add(userId);
-        try {
-          const data = await this.app.getMemoryScope('user', userId);
-          const parts: string[] = [];
-          if (data.summary) {
-            parts.push(`Summary: ${(data.summary as { text: string }).text}`);
-          }
-          for (const fact of data.facts) {
-            parts.push(`- ${fact.text}`);
-          }
-          if (parts.length > 0) {
-            const info = this.app.getMemberDisplayInfo(conversationId, userId);
-            const label = info?.displayName ?? info?.username ?? userId;
-            sections.push(`## Memory about ${label} (${userId})\n${parts.join('\n')}`);
-          }
-        } catch {
-          // Graceful
+        for (const fact of data.facts) {
+          parts.push(`- ${fact.text}`);
         }
+        if (parts.length > 0) {
+          const info = await this.app.getMemberInfo(conversationId, userId);
+          const label = info?.displayName ?? info?.username ?? userId;
+          sections.push(`## Memory about ${label} (${userId})\n${parts.join('\n')}`);
+        }
+      } catch {
+        // Graceful
       }
     }
 

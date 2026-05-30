@@ -10,7 +10,7 @@ export interface NewioAppForSessionEventProcessor {
 
   getConversationFlags(conversationId: string): ConversationFlags;
 
-  isConversationMember(conversationId: string, userId: string): boolean;
+  isConversationMember(conversationId: string, userId: string): Promise<boolean>;
 
   sendMessage(
     conversationId: string,
@@ -66,7 +66,7 @@ export class SessionEventProcessorImpl implements SessionEventProcessor {
     const userText = this.promptManager.formatMessagePrompt(session.promptFormatterVersion, messages);
     const flags = this.app.getConversationFlags(conversationId);
     const ownerId = this.app.identity.ownerId;
-    const ownerVisible = ownerId && this.app.isConversationMember(conversationId, ownerId);
+    const ownerVisible = ownerId && (await this.app.isConversationMember(conversationId, ownerId));
     try {
       for await (const segment of session.prompt(userText, conversationId)) {
         const text = segment.text.trim();

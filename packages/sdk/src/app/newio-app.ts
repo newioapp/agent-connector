@@ -15,7 +15,7 @@ import { NewioWebSocket } from '../core/websocket.js';
 import { getLogger } from '../core/logger.js';
 import { ActivityThrottle } from '../core/activity-throttle.js';
 import { NewioAppStore } from './store.js';
-import { wireEvents } from './events.js';
+import { loadConversation, wireEvents } from './events.js';
 import { uploadFiles, downloadAttachment } from './media.js';
 import { CronScheduler } from './cron.js';
 import { buildMentions } from './mentions.js';
@@ -29,12 +29,19 @@ import type {
   ActionRequest,
   ActionResponse,
   ContactRecord,
+  GetMeResponse,
+  GetUserByUsernameResponse,
+  ListMessagesResponse,
+  LoadSessionMemoryResponse,
   MemberRecord,
   Mentions,
-  MessageContent,
-  ConversationType,
   MemoryScope,
   MemoryScopeData,
+  MessageContent,
+  ConversationType,
+  ReportAgentInfoRequest,
+  SearchUsersResponse,
+  SessionType,
 } from '../core/types.js';
 import type {
   IncomingMessage,
@@ -789,10 +796,17 @@ export class NewioApp {
     return { members: page, hasMore };
   }
 
-  /** Get conversation info with admins list. */
+  /** Get conversation info with admins list. Reads from cache if available, otherwise fetches from API. */
   async getConversationInfo(conversationId: string): Promise<ConversationInfo> {
-    const conv = await this.client.getConversation({ conversationId });
-    const admins = conv.members.filter((m) => m.role === 'admin').map((m) => m.username ?? m.userId);
+    if (!this.store.getConversation(conversationId)) {
+      await loadConversation(this.store, this.client, this.identity, conversationId);
+    }
+    const conv = this.store.getConversation(conversationId);
+    if (!conv) {
+      throw new Error(`Failed to load conversation ${conversationId}`);
+    }
+    const members = await this.getMembersRaw(conversationId);
+    const admins = members.filter((m) => m.role === 'admin').map((m) => m.username ?? m.userId);
     return {
       conversationId: conv.conversationId,
       type: conv.type,
@@ -803,24 +817,14 @@ export class NewioApp {
 
   /** Check if a user is a member of a conversation. */
   async checkIsMember(conversationId: string, username: string): Promise<boolean> {
-    const conv = await this.client.getConversation({ conversationId });
-    return conv.members.some((m) => m.username?.toLowerCase() === username.toLowerCase());
-  }
-
-  /** Add members to a conversation by their userIds. */
-  async addMembers(conversationId: string, memberIds: readonly string[]): Promise<void> {
-    await this.client.addMembers({ conversationId, memberIds: [...memberIds] });
+    const members = await this.getMembersRaw(conversationId);
+    return members.some((m) => m.username?.toLowerCase() === username.toLowerCase());
   }
 
   /** Add members to a conversation by usernames. */
   async addMembersByUsername(conversationId: string, usernames: readonly string[]): Promise<void> {
     const memberIds = await Promise.all(usernames.map((u) => this.resolveUsername(u)));
     await this.client.addMembers({ conversationId, memberIds });
-  }
-
-  /** Remove a member from a conversation by userId. */
-  async removeMember(conversationId: string, userId: string): Promise<void> {
-    await this.client.removeMember({ conversationId, userId });
   }
 
   /** Remove a member from a conversation by username. */
@@ -830,26 +834,22 @@ export class NewioApp {
   }
 
   /** List messages in a conversation (paginated, newest first). */
-  async listMessages(
-    conversationId: string,
-    limit?: number,
-    beforeMessageId?: string,
-  ): Promise<import('../core/types.js').ListMessagesResponse> {
+  async listMessages(conversationId: string, limit?: number, beforeMessageId?: string): Promise<ListMessagesResponse> {
     return this.client.listMessages({ conversationId, limit: limit ?? 20, beforeMessageId });
   }
 
   /** Get this agent's own profile. */
-  async getMe(): Promise<import('../core/types.js').GetMeResponse> {
+  async getMe(): Promise<GetMeResponse> {
     return this.client.getMe({});
   }
 
   /** Search users by display name or username (partial match). */
-  async searchUsers(query: string): Promise<import('../core/types.js').SearchUsersResponse> {
+  async searchUsers(query: string): Promise<SearchUsersResponse> {
     return this.client.searchUsers({ query });
   }
 
   /** Get a user's public profile by exact username. */
-  async getUserByUsername(username: string): Promise<import('../core/types.js').GetUserByUsernameResponse> {
+  async getUserByUsername(username: string): Promise<GetUserByUsernameResponse> {
     return this.client.getUserByUsername({ username });
   }
 
@@ -858,36 +858,25 @@ export class NewioApp {
   // ---------------------------------------------------------------------------
 
   /** Get conversation type and name from cache. */
-  getCachedConversationInfo(conversationId: string): { type: string; name?: string } | undefined {
-    const conv = this.store.getConversation(conversationId);
-    if (!conv) {
-      return undefined;
-    }
-    return { type: conv.type, name: conv.name };
+  /** Check if a userId is a member of a conversation. Fetches from API if not cached. */
+  async isConversationMember(conversationId: string, userId: string): Promise<boolean> {
+    const members = await this.getMembersRaw(conversationId);
+    return members.some((m) => m.userId === userId);
   }
 
-  /** Check if a userId is a member of a conversation (in-memory). */
-  isConversationMember(conversationId: string, userId: string): boolean {
-    const members = this.store.getMembers(conversationId);
-    return members?.has(userId) ?? false;
+  /** Get all member userIds for a conversation. Fetches from API if not cached. */
+  async getConversationMemberIds(conversationId: string): Promise<readonly string[]> {
+    const members = await this.getMembersRaw(conversationId);
+    return members.map((m) => m.userId);
   }
 
-  /** Get all member userIds for a conversation from cache. */
-  getConversationMemberIds(conversationId: string): readonly string[] | undefined {
-    const members = this.store.getMembers(conversationId);
-    if (!members) {
-      return undefined;
-    }
-    return [...members.keys()];
-  }
-
-  /** Get display info for a specific member. */
-  getMemberDisplayInfo(
+  /** Get display info for a specific member. Fetches from API if not cached. */
+  async getMemberInfo(
     conversationId: string,
     userId: string,
-  ): { username?: string; displayName?: string } | undefined {
-    const members = this.store.getMembers(conversationId);
-    const member = members?.get(userId);
+  ): Promise<{ username?: string; displayName?: string } | undefined> {
+    const members = await this.getMembersRaw(conversationId);
+    const member = members.find((m) => m.userId === userId);
     if (!member) {
       return undefined;
     }
@@ -923,7 +912,7 @@ export class NewioApp {
   async loadSessionMemory(
     conversationId?: string,
     participantIds?: readonly string[],
-  ): Promise<import('../core/types.js').LoadSessionMemoryResponse> {
+  ): Promise<LoadSessionMemoryResponse> {
     return this.client.loadSessionMemory({
       agentId: this.identity.userId,
       conversationId,
@@ -932,10 +921,10 @@ export class NewioApp {
   }
 
   /** Get memory for a specific scope. */
-  async getMemoryScope(scope: string, scopeId: string): Promise<import('../core/types.js').MemoryScopeData> {
+  async getMemoryScope(scope: string, scopeId: string): Promise<MemoryScopeData> {
     const result = await this.client.getMemory({
       agentId: this.identity.userId,
-      scope: scope as import('../core/types.js').MemoryScope,
+      scope: scope as MemoryScope,
       scopeId,
     });
     return result.data;
@@ -957,7 +946,7 @@ export class NewioApp {
   }
 
   /** Report agent info to the backend. */
-  async reportAgentInfo(request: import('../core/types.js').ReportAgentInfoRequest): Promise<void> {
+  async reportAgentInfo(request: ReportAgentInfoRequest): Promise<void> {
     await this.client.reportAgentInfo(request);
   }
 
@@ -977,7 +966,7 @@ export class NewioApp {
   /** Send a context window update signal to the owner. */
   async sendContextWindowUpdate(
     targetUserId: string,
-    sessionType: import('../core/types.js').SessionType,
+    sessionType: SessionType,
     externalReferenceId: string,
     contextWindowSize: number,
     contextWindowUsed: number,
@@ -1169,13 +1158,10 @@ export class NewioApp {
   // ---------------------------------------------------------------------------
 
   private async getMembersRaw(conversationId: string): Promise<MemberRecord[]> {
-    const cached = this.store.getMembers(conversationId);
-    if (cached) {
-      return [...cached.values()];
+    if (!this.store.getMembers(conversationId)) {
+      await loadConversation(this.store, this.client, this.identity, conversationId);
     }
-    const resp = await this.client.getConversation({ conversationId });
-    this.store.setMembers(conversationId, resp.members);
-    return [...resp.members];
+    return [...(this.store.getMembers(conversationId)?.values() ?? [])];
   }
 
   private async findIncomingRequestByUsername(username: string): Promise<ContactRecord> {

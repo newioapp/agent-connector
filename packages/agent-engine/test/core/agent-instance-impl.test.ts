@@ -32,27 +32,27 @@ function createMockApp(
   return {
     identity: { userId: 'agent-1', username: 'test-agent', displayName: 'Test Agent', ownerId },
     sendActionRequest,
-    getCachedConversationInfo: vi.fn((conversationId: string) => {
+    getConversationInfo: vi.fn((conversationId: string) => {
       const conv = conversations?.get(conversationId);
       if (!conv?.type) {
-        return undefined;
+        return Promise.resolve({ type: 'dm' });
       }
-      return { type: conv.type, name: conv.name };
+      return Promise.resolve({ type: conv.type, name: conv.name });
     }),
     isConversationMember: vi.fn((conversationId: string, userId: string) => {
       const m = members.get(conversationId);
-      return m?.has(userId) ?? false;
+      return Promise.resolve(m?.has(userId) ?? false);
     }),
     getConversationMemberIds: vi.fn((conversationId: string) => {
       const m = members.get(conversationId);
-      return m ? [...m.keys()] : undefined;
+      return Promise.resolve(m ? [...m.keys()] : []);
     }),
-    getMemberDisplayInfo: vi.fn((conversationId: string, userId: string) => {
+    getMemberInfo: vi.fn((conversationId: string, userId: string) => {
       const m = members.get(conversationId)?.get(userId);
       if (!m) {
-        return undefined;
+        return Promise.resolve(undefined);
       }
-      return { username: m.username, displayName: m.displayName };
+      return Promise.resolve({ username: m.username, displayName: m.displayName });
     }),
   };
 }

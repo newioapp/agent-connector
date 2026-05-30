@@ -279,7 +279,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       putHandoffNote: (conversationId: string, note: string) => this.app.putHandoffNote(conversationId, note),
       getMemoryScope: (scope, scopeId) => this.app.getMemoryScope(scope, scopeId),
       getConversationMemberIds: (conversationId) => this.app.getConversationMemberIds(conversationId),
-      getMemberDisplayInfo: (conversationId, userId) => this.app.getMemberDisplayInfo(conversationId, userId),
+      getMemberInfo: (conversationId, userId) => this.app.getMemberInfo(conversationId, userId),
       agentUserId: this.app.identity.userId,
     };
   }
@@ -287,13 +287,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private async loadMemoryForSession(conversationId?: string) {
     let participantIds: string[] | undefined = undefined;
     if (typeof conversationId === 'string') {
-      const meta = this.app.getCachedConversationInfo(conversationId);
+      const meta = await this.app.getConversationInfo(conversationId);
       // For DMs, load full memory for the other participant
-      if (meta?.type === 'dm') {
-        const memberIds = this.app.getConversationMemberIds(conversationId);
-        if (memberIds) {
-          participantIds = memberIds.filter((id) => id !== this.app.identity.userId);
-        }
+      if (meta.type === 'dm') {
+        const memberIds = await this.app.getConversationMemberIds(conversationId);
+        participantIds = memberIds.filter((id) => id !== this.app.identity.userId);
       } else {
         participantIds = [];
       }
@@ -614,13 +612,13 @@ export abstract class BaseAgentInstance implements AgentInstance {
     if (!ownerId) {
       throw new Error('Cannot route permission request — agent has no owner');
     }
-    const ownerIsInConversation = conversationId && this.app.isConversationMember(conversationId, ownerId);
+    const ownerIsInConversation = conversationId && (await this.app.isConversationMember(conversationId, ownerId));
     const convId = ownerIsInConversation ? conversationId : this.ownerDmConversationId;
 
     // When rerouting to the owner DM, include context about the source conversation
     let text: string | undefined;
     if (conversationId && !ownerIsInConversation) {
-      text = this.buildPermissionContextText(conversationId);
+      text = await this.buildPermissionContextText(conversationId);
     }
 
     log.info(`${this.logTag} Sending permission request ${requestId} to ${convId}`);
@@ -629,22 +627,20 @@ export abstract class BaseAgentInstance implements AgentInstance {
   }
 
   /** Build a human-readable context message for a rerouted permission request. */
-  private buildPermissionContextText(conversationId: string): string {
-    const meta = this.app.getCachedConversationInfo(conversationId);
-    if (meta?.type === 'dm') {
-      const memberIds = this.app.getConversationMemberIds(conversationId);
-      if (memberIds) {
-        for (const userId of memberIds) {
-          if (userId !== this.app.identity.userId) {
-            const info = this.app.getMemberDisplayInfo(conversationId, userId);
-            const name = info?.displayName ?? info?.username ?? userId;
-            return `Requesting permission for a DM conversation with ${name}`;
-          }
+  private async buildPermissionContextText(conversationId: string): Promise<string> {
+    const meta = await this.app.getConversationInfo(conversationId);
+    if (meta.type === 'dm') {
+      const memberIds = await this.app.getConversationMemberIds(conversationId);
+      for (const userId of memberIds) {
+        if (userId !== this.app.identity.userId) {
+          const info = await this.app.getMemberInfo(conversationId, userId);
+          const name = info?.displayName ?? info?.username ?? userId;
+          return `Requesting permission for a DM conversation with ${name}`;
         }
       }
       return `Requesting permission for a DM conversation`;
     }
-    const label = meta?.name ?? conversationId;
+    const label = meta.name ?? conversationId;
     return `Requesting permission for ${label} conversation`;
   }
 
