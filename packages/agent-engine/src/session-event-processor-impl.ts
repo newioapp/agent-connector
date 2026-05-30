@@ -3,12 +3,13 @@ import { AgentSession } from './agent-session';
 import { AgentEvent, OwnerOpCallback } from './event-queue';
 import { PromptManager } from './prompt-manager';
 import { collectAgentMessage } from './utils';
-import { AgentIdentity, ConversationFlags, SessionType, SessionEventProcessor } from './types';
+import type { ConversationControls } from '@newio/agent-sdk';
+import { AgentIdentity, SessionType, SessionEventProcessor } from './types';
 
 export interface NewioAppForSessionEventProcessor {
   readonly identity: AgentIdentity;
 
-  getConversationFlags(conversationId: string): ConversationFlags;
+  getConversationControls(conversationId: string): Promise<ConversationControls | undefined>;
 
   isConversationMember(conversationId: string, userId: string): Promise<boolean>;
 
@@ -64,7 +65,7 @@ export class SessionEventProcessorImpl implements SessionEventProcessor {
     messages: readonly IncomingMessage[],
   ): Promise<void> {
     const userText = this.promptManager.formatMessagePrompt(session.promptFormatterVersion, messages);
-    const flags = this.app.getConversationFlags(conversationId);
+    const controls = await this.app.getConversationControls(conversationId);
     const ownerId = this.app.identity.ownerId;
     const ownerVisible = ownerId && (await this.app.isConversationMember(conversationId, ownerId));
     try {
@@ -76,12 +77,12 @@ export class SessionEventProcessorImpl implements SessionEventProcessor {
           !this.promptManager.isSkip(session.promptFormatterVersion, segment.text)
         ) {
           await this.app.sendMessage(conversationId, text);
-        } else if (segment.type === 'agent_thought_chunk' && flags.showThoughts && text && ownerVisible) {
+        } else if (segment.type === 'agent_thought_chunk' && controls?.showThoughts && text && ownerVisible) {
           await this.app.sendMessage(conversationId, text, {
             metadata: { type: 'agent_thought' },
             visibleTo: [ownerId],
           });
-        } else if (segment.type === 'tool_call' && flags.showToolCalls && text && ownerVisible) {
+        } else if (segment.type === 'tool_call' && controls?.showToolCalls && text && ownerVisible) {
           await this.app.sendMessage(conversationId, text, {
             metadata: { type: 'tool_call', toolCallId: segment.toolCallId, status: segment.toolCallStatus },
             visibleTo: [ownerId],

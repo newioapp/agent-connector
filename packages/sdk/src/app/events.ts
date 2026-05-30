@@ -20,6 +20,7 @@ import type {
 import type { NewioAppStore } from './store.js';
 import type {
   AppEventHandlers,
+  ConversationControls,
   NewioIdentity,
   LiveSessionInfoHandler,
   CancelSessionHandler,
@@ -128,14 +129,31 @@ export function wireEvents(
     // Store updates only for self
     if (event.payload.userId === identity.userId) {
       log.debug(`Event conversation.member_updated (self): ${event.payload.conversationId}`);
-      if (event.payload.changes.notifyLevel) {
-        store.setNotifyLevel(event.payload.conversationId, event.payload.changes.notifyLevel);
+      const { showToolCalls, showThoughts, notifyLevel, role, canSend, acpMode, acpModel } = event.payload.changes;
+      const updates: Record<string, unknown> = {};
+      if (showToolCalls !== undefined) {
+        updates.showToolCalls = showToolCalls;
       }
-      if (event.payload.changes.showToolCalls !== undefined || event.payload.changes.showThoughts !== undefined) {
-        store.updateConversationFlags(event.payload.conversationId, {
-          showToolCalls: event.payload.changes.showToolCalls,
-          showThoughts: event.payload.changes.showThoughts,
-        });
+      if (showThoughts !== undefined) {
+        updates.showThoughts = showThoughts;
+      }
+      if (notifyLevel !== undefined) {
+        updates.notifyLevel = notifyLevel;
+      }
+      if (role !== undefined) {
+        updates.role = role;
+      }
+      if (canSend !== undefined) {
+        updates.canSend = canSend;
+      }
+      if (acpMode !== undefined) {
+        updates.acpMode = acpMode;
+      }
+      if (acpModel !== undefined) {
+        updates.acpModel = acpModel;
+      }
+      if (Object.keys(updates).length > 0) {
+        store.updateConversationControls(event.payload.conversationId, updates as Partial<ConversationControls>);
       }
     }
     // App handler fires for all member updates
@@ -378,19 +396,27 @@ export async function loadConversation(
     type: conv.type,
     name: conv.name,
     description: conv.description,
+    disabledAt: conv.disabledAt,
     avatarUrl: conv.avatarUrl,
     createdBy: conv.createdBy,
     createdAt: conv.createdAt,
     updatedAt: conv.updatedAt,
     lastMessageAt: conv.lastMessageAt,
   });
+
   store.setMembers(conversationId, conv.members);
 
   const self = conv.members.find((m) => m.userId === identity.userId);
   if (self) {
-    if (self.notifyLevel) {
-      store.setNotifyLevel(conversationId, self.notifyLevel);
-    }
+    store.setConversationControls(conv.conversationId, {
+      role: self.role,
+      canSend: self.canSend,
+      notifyLevel: self.notifyLevel,
+      acpMode: self.acpMode,
+      acpModel: self.acpModel,
+      showThoughts: self.showThoughts,
+      showToolCalls: self.showToolCalls,
+    });
   }
   log.debug(`Loaded conversation ${conversationId} (${conv.members.length} members).`);
 }

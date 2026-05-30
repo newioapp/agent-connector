@@ -76,7 +76,7 @@ export class MessageProcessor {
     const inserted = this.store.insertMessage(payload.conversationId, message);
 
     if (inserted && !message.isOwnMessage) {
-      const level = this.store.getNotifyLevel(payload.conversationId) ?? 'all';
+      const level = this.store.getConversationControls(payload.conversationId)?.notifyLevel ?? 'all';
       const shouldNotify =
         level === 'all' || (level === 'mentions' && isMentioned(payload.content, this.identity.userId));
       if (shouldNotify) {

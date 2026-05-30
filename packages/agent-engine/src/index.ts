@@ -18,7 +18,6 @@ export type {
   SessionStreamSegment,
   SessionStatus,
   SessionStatusListener,
-  ConversationFlags,
   PermissionHandler,
   PermissionRequestOption,
   AgentStatusInfo,

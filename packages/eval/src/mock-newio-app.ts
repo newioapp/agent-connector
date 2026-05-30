@@ -16,6 +16,7 @@ import type {
   CompactSessionResponse,
   ContactEvent,
   ContactEventHandler,
+  ConversationControls,
   ConversationMemberUpdatedHandler,
   CronScheduledHandler,
   CronCancelledHandler,
@@ -588,11 +589,7 @@ export class MockNewioApp implements NewioAppForAgent, NewioAppForMcp {
     return { username: user?.username, displayName: user?.displayName };
   }
 
-  getSessionConfig(_conversationId: string): { acpModel?: string; acpMode?: string } | undefined {
-    return undefined;
-  }
-
-  getConversationFlags(_conversationId: string): { showToolCalls: boolean; showThoughts: boolean } {
+  async getConversationControls(_conversationId: string): Promise<ConversationControls | undefined> {
     return { showToolCalls: false, showThoughts: false };
   }
 

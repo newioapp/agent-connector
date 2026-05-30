@@ -55,7 +55,7 @@ function createMockApp(): NewioAppForSession {
     }),
     getHandoffNote: vi.fn().mockResolvedValue(null),
     putHandoffNote: vi.fn().mockResolvedValue(undefined),
-    getSessionConfig: vi.fn().mockResolvedValue(undefined),
+    getConversationControls: vi.fn().mockResolvedValue(undefined),
     setStatus: vi.fn(),
     getMemoryScope: vi.fn().mockResolvedValue({ summary: null, facts: [] }),
     getConversationMemberIds: vi.fn().mockResolvedValue([]),
@@ -269,11 +269,14 @@ describe('SharedSessionManager', () => {
   describe('config loading', () => {
     it('loads session config from owner DM at launch', async () => {
       manager.routeInboundEvent({ type: 'message', msg: makeMessage('conv-a') });
-      await vi.waitFor(() => expect(app.getSessionConfig).toHaveBeenCalledWith('owner-dm-conv'));
+      await vi.waitFor(() => expect(app.getConversationControls).toHaveBeenCalledWith('owner-dm-conv'));
     });
 
     it('applies config from owner DM when available', async () => {
-      (app.getSessionConfig as ReturnType<typeof vi.fn>).mockResolvedValue({ acpModel: 'claude-4', acpMode: 'agent' });
+      (app.getConversationControls as ReturnType<typeof vi.fn>).mockResolvedValue({
+        acpModel: 'claude-4',
+        acpMode: 'agent',
+      });
       manager.routeInboundEvent({ type: 'message', msg: makeMessage('conv-a') });
       await vi.waitFor(() =>
         expect(mockSession.applySessionConfig).toHaveBeenCalledWith({ acpModel: 'claude-4', acpMode: 'agent' }),

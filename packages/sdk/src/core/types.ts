@@ -66,6 +66,8 @@ export interface ConversationListItem {
   readonly updatedAt: string;
   readonly readUntil?: string;
   readonly notifyLevel?: NotifyLevel;
+  readonly role?: MemberRole;
+  readonly canSend?: boolean;
   /** Session ID for agent members. Only present when the caller is an agent. */
   readonly sessionId?: string;
   readonly showToolCalls?: boolean;

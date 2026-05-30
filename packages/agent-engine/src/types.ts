@@ -13,6 +13,7 @@ import type {
   CompactSessionResponse,
   ContactEvent,
   ContactEventHandler,
+  ConversationControls,
   ConversationMemberUpdatedHandler,
   CronTriggeredHandler,
   CronScheduledHandler,
@@ -285,10 +286,8 @@ export interface NewioAppForAgent {
     conversationId: string,
     userId: string,
   ): Promise<{ username?: string; displayName?: string } | undefined>;
-  /** Get the self member's persisted session config (acpModel/acpMode). */
-  getSessionConfig(conversationId: string): { acpModel?: string; acpMode?: string } | undefined;
-  /** Get conversation flags (showToolCalls/showThoughts) for a conversation. */
-  getConversationFlags(conversationId: string): ConversationFlags;
+  /** Get self member's conversation controls (role, canSend, acpModel, acpMode, showToolCalls, showThoughts). Loads from backend if not cached. */
+  getConversationControls(conversationId: string): Promise<ConversationControls | undefined>;
 
   scheduleCron(def: CronJobRow): void;
 
@@ -358,7 +357,7 @@ export interface NewioAppForSession {
   loadMemoryForSession(conversationId?: string): Promise<LoadSessionMemoryResponse>;
   getHandoffNote(conversationId: string): Promise<string | null>;
   putHandoffNote(conversationId: string, note: string): Promise<void>;
-  getSessionConfig(conversationId: string): Promise<{ acpModel?: string; acpMode?: string } | undefined>;
+  getConversationControls(conversationId: string): Promise<ConversationControls | undefined>;
   setStatus(status: ActivityStatus, conversationId?: string): void;
   /** Get memory scope data for a conversation or user (for incremental injection in shared mode). */
   getMemoryScope(scope: string, scopeId: string): Promise<MemoryScopeData>;

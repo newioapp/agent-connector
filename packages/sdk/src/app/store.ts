@@ -7,16 +7,14 @@
  * Optionally writes through to a {@link StorePersistence} implementation
  * (e.g., sqlite) for durable storage. Reads always hit in-memory maps.
  */
+import type { AccountType, ContactRecord, ConversationType, MemberRecord, MessageRecord } from '../core/types.js';
 import type {
-  AccountType,
-  ContactRecord,
-  ConversationListItem,
-  ConversationType,
-  MemberRecord,
-  MessageRecord,
-  NotifyLevel,
-} from '../core/types.js';
-import type { IncomingMessage, NewioIdentity, SenderRelationship } from './types.js';
+  ConversationControls,
+  ConversationMetadata,
+  IncomingMessage,
+  NewioIdentity,
+  SenderRelationship,
+} from './types.js';
 
 /** How long received messages are kept in the cache (ms). */
 const MESSAGE_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -40,7 +38,7 @@ export interface StorePersistence {
   /** Remove a contact record. */
   removeContact(contactId: string): void;
   /** Persist a conversation record. */
-  saveConversation(conv: ConversationListItem): void;
+  saveConversation(conv: ConversationMetadata): void;
   /** Remove a conversation record. */
   removeConversation(conversationId: string): void;
   /** Persist a message. */
@@ -60,13 +58,12 @@ export class NewioAppStore {
   /** username (lowercase) → contactId */
   private readonly usernameToContactId = new Map<string, string>();
   /** conversationId → ConversationListItem */
-  private readonly conversations = new Map<string, ConversationListItem>();
+  private readonly conversations = new Map<string, ConversationMetadata>();
+  private readonly conversationControls = new Map<string, ConversationControls>();
   /** conversationId → Map<userId, MemberRecord> (lazily populated) */
   private readonly conversationMembers = new Map<string, Map<string, MemberRecord>>();
   /** conversationId → next sequenceNumber */
   private readonly sequenceNumbers = new Map<string, number>();
-  /** conversationId → notification preference (missing = 'all') */
-  private readonly notifyLevels = new Map<string, NotifyLevel>();
   /** conversationId → ULID-sorted message list (recent cache, evicted by TTL) */
   private readonly messageCache = new Map<string, IncomingMessage[]>();
   /** contactId → pending incoming friend request */
@@ -138,11 +135,8 @@ export class NewioAppStore {
   // ---------------------------------------------------------------------------
 
   /** Store a conversation (and persist if configured). */
-  setConversation(conv: ConversationListItem): void {
+  setConversation(conv: ConversationMetadata): void {
     this.conversations.set(conv.conversationId, conv);
-    if (conv.notifyLevel) {
-      this.notifyLevels.set(conv.conversationId, conv.notifyLevel);
-    }
     this.persistence?.saveConversation(conv);
   }
 
@@ -154,20 +148,24 @@ export class NewioAppStore {
   }
 
   /** Get a conversation by ID. */
-  getConversation(conversationId: string): ConversationListItem | undefined {
+  getConversation(conversationId: string): ConversationMetadata | undefined {
     return this.conversations.get(conversationId);
   }
 
   /** Update conversation flags in the cached record. */
-  updateConversationFlags(conversationId: string, flags: { showToolCalls?: boolean; showThoughts?: boolean }): void {
-    const conv = this.conversations.get(conversationId);
-    if (!conv) {
-      return;
-    }
-    this.conversations.set(conversationId, {
-      ...conv,
-      showToolCalls: flags.showToolCalls ?? conv.showToolCalls,
-      showThoughts: flags.showThoughts ?? conv.showThoughts,
+  setConversationControls(conversationId: string, controls: ConversationControls): void {
+    this.conversationControls.set(conversationId, controls);
+  }
+
+  getConversationControls(conversationId: string): ConversationControls | undefined {
+    return this.conversationControls.get(conversationId);
+  }
+
+  updateConversationControls(conversationId: string, controls: Partial<ConversationControls>): void {
+    const _controls = this.conversationControls.get(conversationId);
+    this.conversationControls.set(conversationId, {
+      ..._controls,
+      ...controls,
     });
   }
 
@@ -177,7 +175,7 @@ export class NewioAppStore {
   }
 
   /** Get all conversations (raw records). */
-  getAllConversations(): ConversationListItem[] {
+  getAllConversations(): ConversationMetadata[] {
     return [...this.conversations.values()];
   }
 
@@ -226,16 +224,6 @@ export class NewioAppStore {
   /** Set the sequence number for a conversation. */
   setSequenceNumber(conversationId: string, seq: number): void {
     this.sequenceNumbers.set(conversationId, seq);
-  }
-
-  /** Get the notification level for a conversation. */
-  getNotifyLevel(conversationId: string): NotifyLevel | undefined {
-    return this.notifyLevels.get(conversationId);
-  }
-
-  /** Set the notification level for a conversation. */
-  setNotifyLevel(conversationId: string, level: NotifyLevel): void {
-    this.notifyLevels.set(conversationId, level);
   }
 
   // ---------------------------------------------------------------------------

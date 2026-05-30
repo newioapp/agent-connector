@@ -332,4 +332,5 @@ export type {
   CronCancelledHandler,
   ConversationMemberUpdatedHandler,
   SessionUpdatedHandler,
+  ConversationControls,
 } from './app/index.js';

@@ -277,9 +277,9 @@ export class IsolatedSessionManager implements SessionManager {
       return;
     }
     try {
-      const config = await this.app.getSessionConfig(externalReferenceId);
+      const config = await this.app.getConversationControls(externalReferenceId);
       if (config) {
-        await session.applySessionConfig(config);
+        await session.applySessionConfig({ acpModel: config.acpModel, acpMode: config.acpMode });
       }
     } catch (err: unknown) {
       log.warn(`${this.logTag} Failed to apply persisted session config for ${type}/${externalReferenceId}`, err);

@@ -177,7 +177,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         `[${app.identity.username}]`,
         {
           identity: app.identity,
-          getConversationFlags: (convId) => app.getConversationFlags(convId),
+          getConversationControls: (convId) => app.getConversationControls(convId),
           isConversationMember: (conversationId: string, userId: string) =>
             this.app.isConversationMember(conversationId, userId),
           sendMessage: (conversationId, text, opts) => this.app.sendMessage(conversationId, text, opts),
@@ -273,7 +273,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       handlePermissionRequest: (title, options, conversationId) =>
         this.handlePermissionRequest(title, options, conversationId),
       setStatus: (status, conversationId) => this.app.setStatus(status, conversationId),
-      getSessionConfig: (convId) => Promise.resolve(this.app.getSessionConfig(convId)),
+      getConversationControls: (convId) => this.app.getConversationControls(convId),
       loadMemoryForSession: (conversationId) => this.loadMemoryForSession(conversationId),
       getHandoffNote: (conversationId) => this.app.getHandoffNote(conversationId),
       putHandoffNote: (conversationId: string, note: string) => this.app.putHandoffNote(conversationId, note),

@@ -271,9 +271,9 @@ export class SharedSessionManager implements SessionManager {
   /** Load and apply the persisted session config from the owner DM member record. */
   private async applyPersistedSessionConfig(session: AgentSession): Promise<void> {
     try {
-      const config = await this.app.getSessionConfig(this.ownerDmConversationId);
+      const config = await this.app.getConversationControls(this.ownerDmConversationId);
       if (config) {
-        await session.applySessionConfig(config);
+        await session.applySessionConfig({ acpModel: config.acpModel, acpMode: config.acpMode });
         log.info(
           `${this.logTag} Applied persisted config from owner DM: model=${config.acpModel}, mode=${config.acpMode}`,
         );
