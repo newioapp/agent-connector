@@ -20,6 +20,7 @@ const appDisplayName = process.env.APP_DISPLAY_NAME ?? 'Agent Connector';
 const newioStage = process.env.NEWIO_STAGE ?? 'prod';
 const enableDevTools = process.env.ENABLE_DEV_TOOLS ?? 'false';
 const logLevel = process.env.LOG_LEVEL ?? 'info';
+const wsProactiveReconnectMs = process.env.WS_PROACTIVE_RECONNECT_MS ?? '';
 
 // Read version from package.json for build-time injection.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -47,6 +48,7 @@ export default defineConfig({
       __ENABLE_DEV_TOOLS__: JSON.stringify(enableDevTools === 'true'),
       __LOG_LEVEL__: JSON.stringify(logLevel),
       __NEWIO_STAGE__: JSON.stringify(newioStage),
+      __WS_PROACTIVE_RECONNECT_MS__: JSON.stringify(wsProactiveReconnectMs),
     },
   },
   preload: {

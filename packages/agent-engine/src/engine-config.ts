@@ -21,4 +21,6 @@ export interface EngineConfig {
   readonly dataDir: string;
   /** Absolute path to the MCP bridge script (node entrypoint). */
   readonly mcpBridgePath: string;
+  /** Override the proactive WebSocket reconnect interval in ms (default: 1h50m). */
+  readonly wsProactiveReconnectMs?: number;
 }

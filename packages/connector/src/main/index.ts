@@ -79,6 +79,7 @@ void app.whenReady().then(async () => {
     appVersion: __APP_VERSION__,
     dataDir,
     mcpBridgePath: require.resolve('@newio/agent-engine/mcp-bridge').replace('app.asar', 'app.asar.unpacked'),
+    wsProactiveReconnectMs: __WS_PROACTIVE_RECONNECT_MS__ ? Number(__WS_PROACTIVE_RECONNECT_MS__) : undefined,
   };
 
   const agentConfigManager = new FileAgentConfigManager(dataDir);
