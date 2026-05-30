@@ -17,10 +17,39 @@ import type {
   UpdateMemoryResponse,
   RotateSessionRequest,
   RotateSessionResponse,
+  ConversationSettings,
+  MemberRole,
+  NotifyLevel,
 } from '../core/types.js';
 
 /** A processed incoming message with sender metadata resolved from caches. */
 export type SenderRelationship = 'owner' | 'peer' | 'in-contact' | 'stranger';
+
+/** A conversation list item (per-user view including read state). */
+export interface ConversationMetadata {
+  readonly conversationId: string;
+  readonly type: ConversationType;
+  readonly name?: string;
+  readonly description?: string;
+  readonly avatarUrl?: string;
+  readonly createdBy: string;
+  readonly settings?: ConversationSettings;
+  readonly lastMessageAt?: string;
+  readonly disabledAt?: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+/** per member */
+export interface ConversationControls {
+  readonly role?: MemberRole;
+  readonly canSend?: boolean;
+  readonly notifyLevel?: NotifyLevel;
+  readonly showToolCalls?: boolean;
+  readonly showThoughts?: boolean;
+  readonly acpModel?: string;
+  readonly acpMode?: string;
+}
 
 export interface IncomingMessage {
   readonly messageId: string;

@@ -201,7 +201,7 @@ describe('MessageProcessor', () => {
     it('suppresses message when notifyLevel is nothing', async () => {
       const handler = vi.fn();
       const { processor, store } = createProcessor({ handlers: { 'message.new': handler } });
-      store.setNotifyLevel('conv-1', 'nothing');
+      store.setConversationControls('conv-1', { notifyLevel: 'nothing' });
 
       await processor.handleMessageNew(makePayload());
 
@@ -211,7 +211,7 @@ describe('MessageProcessor', () => {
     it('suppresses message when notifyLevel is mentions and user is not mentioned', async () => {
       const handler = vi.fn();
       const { processor, store } = createProcessor({ handlers: { 'message.new': handler } });
-      store.setNotifyLevel('conv-1', 'mentions');
+      store.setConversationControls('conv-1', { notifyLevel: 'mentions' });
 
       await processor.handleMessageNew(makePayload({ content: { text: 'no mentions here' } }));
 
@@ -221,7 +221,7 @@ describe('MessageProcessor', () => {
     it('delivers message when notifyLevel is mentions and user IS mentioned', async () => {
       const handler = vi.fn();
       const { processor, store } = createProcessor({ handlers: { 'message.new': handler } });
-      store.setNotifyLevel('conv-1', 'mentions');
+      store.setConversationControls('conv-1', { notifyLevel: 'mentions' });
 
       await processor.handleMessageNew(
         makePayload({
@@ -235,7 +235,7 @@ describe('MessageProcessor', () => {
     it('delivers message when notifyLevel is mentions and @everyone is used', async () => {
       const handler = vi.fn();
       const { processor, store } = createProcessor({ handlers: { 'message.new': handler } });
-      store.setNotifyLevel('conv-1', 'mentions');
+      store.setConversationControls('conv-1', { notifyLevel: 'mentions' });
 
       await processor.handleMessageNew(
         makePayload({

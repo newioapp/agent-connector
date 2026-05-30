@@ -72,6 +72,7 @@ import type {
   CronCancelledHandler,
   ConversationMemberUpdatedHandler,
   SessionUpdatedHandler,
+  ConversationControls,
 } from './types.js';
 
 const log = getLogger('newio-app');
@@ -886,29 +887,15 @@ export class NewioApp {
     return { username: member.username, displayName: member.displayName };
   }
 
-  /** Get self member's persisted acpModel/acpMode config. */
-  getSessionConfig(conversationId: string): { acpModel?: string; acpMode?: string } | undefined {
-    // Try cached members first (available after getConversation call)
-    const members = this.store.getMembers(conversationId);
-    const self = members?.get(this.identity.userId);
-    if (self) {
-      return { acpModel: self.acpModel, acpMode: self.acpMode };
+  /** Get self member's conversation controls (role, canSend, acpModel, etc.). Loads from backend if not cached. */
+  async getConversationControls(conversationId: string): Promise<ConversationControls | undefined> {
+    const cached = this.store.getConversationControls(conversationId);
+    if (cached) {
+      return cached;
     }
-    // Fall back to conversation list item (available after init)
-    const conv = this.store.getConversation(conversationId);
-    if (conv) {
-      return { acpModel: conv.acpModel, acpMode: conv.acpMode };
-    }
-    return undefined;
-  }
-
-  /** Get conversation flags for a specific conversation (from cached ConversationListItem). */
-  getConversationFlags(conversationId: string): { showToolCalls: boolean; showThoughts: boolean } {
-    const conv = this.store.getConversation(conversationId);
-    return {
-      showToolCalls: conv?.showToolCalls ?? false,
-      showThoughts: conv?.showThoughts ?? false,
-    };
+    // Load from backend on demand
+    await loadConversation(this.store, this.client, this.identity, conversationId);
+    return this.store.getConversationControls(conversationId);
   }
 
   /** Load session memory (delegates agentId). */
@@ -1013,9 +1000,13 @@ export class NewioApp {
       conversationId: resp.conversationId,
       type: resp.type,
       name: resp.name,
+      description: resp.description,
+      avatarUrl: resp.avatarUrl,
+      disabledAt: resp.disabledAt,
       createdBy: resp.createdBy,
       createdAt: resp.createdAt,
       updatedAt: resp.updatedAt,
+      settings: resp.settings,
       lastMessageAt: resp.lastMessageAt,
     });
     this.store.setMembers(resp.conversationId, resp.members);
@@ -1038,9 +1029,13 @@ export class NewioApp {
       conversationId: resp.conversationId,
       type: resp.type,
       name: resp.name,
+      description: resp.description,
+      avatarUrl: resp.avatarUrl,
+      disabledAt: resp.disabledAt,
       createdBy: resp.createdBy,
       createdAt: resp.createdAt,
       updatedAt: resp.updatedAt,
+      settings: resp.settings,
       lastMessageAt: resp.lastMessageAt,
     });
     this.store.setMembers(resp.conversationId, resp.members);
@@ -1061,10 +1056,14 @@ export class NewioApp {
       conversationId: resp.conversationId,
       type: resp.type,
       name: resp.name,
+      description: resp.description,
+      avatarUrl: resp.avatarUrl,
       createdBy: resp.createdBy,
       createdAt: resp.createdAt,
       updatedAt: resp.updatedAt,
+      settings: resp.settings,
       lastMessageAt: resp.lastMessageAt,
+      disabledAt: resp.disabledAt,
     });
     this.store.setMembers(resp.conversationId, resp.members);
     return resp.conversationId;
@@ -1139,7 +1138,29 @@ export class NewioApp {
     do {
       const resp = await this.client.listConversations({ cursor, limit: 100 });
       for (const conv of resp.conversations) {
-        this.store.setConversation(conv);
+        this.store.setConversation({
+          conversationId: conv.conversationId,
+          type: conv.type,
+          name: conv.name,
+          description: conv.description,
+          avatarUrl: conv.avatarUrl,
+          createdBy: conv.createdBy,
+          createdAt: conv.createdAt,
+          updatedAt: conv.updatedAt,
+          disabledAt: conv.disabledAt,
+          settings: conv.settings,
+          lastMessageAt: conv.lastMessageAt,
+        });
+
+        this.store.setConversationControls(conv.conversationId, {
+          role: conv.role,
+          canSend: conv.canSend,
+          notifyLevel: conv.notifyLevel,
+          acpMode: conv.acpMode,
+          acpModel: conv.acpModel,
+          showThoughts: conv.showThoughts,
+          showToolCalls: conv.showToolCalls,
+        });
       }
       cursor = resp.cursor;
     } while (cursor);

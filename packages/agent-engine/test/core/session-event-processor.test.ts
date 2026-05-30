@@ -12,7 +12,7 @@ import type { IncomingMessage } from '@newio/agent-sdk';
 function createMockApp(): NewioAppForSessionEventProcessor {
   return {
     identity: { userId: 'agent-1', username: 'test-agent', displayName: 'Test Agent', ownerId: 'owner-1' },
-    getConversationFlags: vi.fn().mockReturnValue({ showToolCalls: false, showThoughts: false }),
+    getConversationControls: vi.fn().mockResolvedValue({ showToolCalls: false, showThoughts: false }),
     isConversationMember: vi.fn().mockResolvedValue(true),
     sendMessage: vi.fn().mockResolvedValue(undefined),
     setStatus: vi.fn(),
@@ -111,7 +111,7 @@ describe('SessionEventProcessorImpl', () => {
 
     it('sends thoughts when showThoughts is enabled and owner is in conversation', async () => {
       const app = createMockApp();
-      (app.getConversationFlags as ReturnType<typeof vi.fn>).mockReturnValue({
+      (app.getConversationControls as ReturnType<typeof vi.fn>).mockResolvedValue({
         showToolCalls: false,
         showThoughts: true,
       });

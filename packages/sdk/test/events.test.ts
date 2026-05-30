@@ -233,7 +233,7 @@ describe('wireEvents', () => {
       timestamp: ts,
       payload: { conversationId: 'c1', userId: 'me', changes: { notifyLevel: 'nothing' } },
     });
-    expect(store.getNotifyLevel('c1')).toBe('nothing');
+    expect(store.getConversationControls('c1')?.notifyLevel).toBe('nothing');
   });
 
   it('ignores member_updated for other users', () => {
@@ -242,7 +242,7 @@ describe('wireEvents', () => {
       timestamp: ts,
       payload: { conversationId: 'c1', userId: 'other', changes: { notifyLevel: 'nothing' } },
     });
-    expect(store.getNotifyLevel('c1')).toBeUndefined();
+    expect(store.getConversationControls('c1')).toBeUndefined();
   });
 
   // -----------------------------------------------------------------------

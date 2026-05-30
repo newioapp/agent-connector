@@ -1,6 +1,7 @@
 import type {
   ContactRecord,
   MemberRecord,
+  MemberRole,
   MessageContent,
   AgentSettings,
   ActivityStatus,
@@ -118,7 +119,7 @@ export interface ConversationMemberUpdatedEvent extends WebSocketEvent {
     readonly userId: string;
     readonly updatedBy?: string;
     readonly changes: {
-      readonly role?: string;
+      readonly role?: MemberRole;
       readonly canSend?: boolean;
       readonly notifyLevel?: NotifyLevel;
       readonly sessionId?: string;

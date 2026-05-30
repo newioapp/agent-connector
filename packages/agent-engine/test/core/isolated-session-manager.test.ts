@@ -54,7 +54,7 @@ function createMockApp(): NewioAppForSession {
     }),
     getHandoffNote: vi.fn().mockResolvedValue(null),
     putHandoffNote: vi.fn().mockResolvedValue(undefined),
-    getSessionConfig: vi.fn().mockResolvedValue(undefined),
+    getConversationControls: vi.fn().mockResolvedValue(undefined),
     setStatus: vi.fn(),
     getMemoryScope: vi.fn().mockResolvedValue({ summary: null, facts: [] }),
     getConversationMemberIds: vi.fn().mockResolvedValue([]),

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NewioAppStore } from '../src/app/store.js';
-import type { ContactRecord, ConversationListItem, MemberRecord, MessageRecord } from '../src/core/types.js';
-import type { NewioIdentity } from '../src/app/types.js';
+import type { ContactRecord, MemberRecord, MessageRecord } from '../src/core/types.js';
+import type { ConversationMetadata, NewioIdentity } from '../src/app/types.js';
 
 const makeContact = (overrides: Partial<ContactRecord> = {}): ContactRecord => ({
   contactId: 'user-1',
@@ -12,9 +12,10 @@ const makeContact = (overrides: Partial<ContactRecord> = {}): ContactRecord => (
   ...overrides,
 });
 
-const makeConversation = (overrides: Partial<ConversationListItem> = {}): ConversationListItem => ({
+const makeConversation = (overrides: Partial<ConversationMetadata> = {}): ConversationMetadata => ({
   conversationId: 'conv-1',
   type: 'dm',
+  createdBy: 'user-1',
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',
   ...overrides,
@@ -96,11 +97,12 @@ describe('NewioAppStore', () => {
 
   describe('conversations', () => {
     it('stores and retrieves conversations', () => {
-      const conv = makeConversation({ conversationId: 'c1', notifyLevel: 'mentions' });
+      const conv = makeConversation({ conversationId: 'c1' });
       store.setConversation(conv);
+      store.setConversationControls('c1', { notifyLevel: 'mentions' });
       expect(store.getConversation('c1')).toEqual(conv);
       expect(store.hasConversation('c1')).toBe(true);
-      expect(store.getNotifyLevel('c1')).toBe('mentions');
+      expect(store.getConversationControls('c1')?.notifyLevel).toBe('mentions');
     });
 
     it('removes a conversation and its members', () => {
@@ -169,9 +171,9 @@ describe('NewioAppStore', () => {
 
   describe('notify levels', () => {
     it('stores and retrieves', () => {
-      store.setNotifyLevel('c1', 'nothing');
-      expect(store.getNotifyLevel('c1')).toBe('nothing');
-      expect(store.getNotifyLevel('unknown')).toBeUndefined();
+      store.setConversationControls('c1', { notifyLevel: 'nothing' });
+      expect(store.getConversationControls('c1')?.notifyLevel).toBe('nothing');
+      expect(store.getConversationControls('unknown')).toBeUndefined();
     });
   });
 

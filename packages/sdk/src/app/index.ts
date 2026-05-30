@@ -40,4 +40,5 @@ export type {
   CronCancelledHandler,
   ConversationMemberUpdatedHandler,
   SessionUpdatedHandler,
+  ConversationControls,
 } from './types.js';
