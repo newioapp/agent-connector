@@ -436,6 +436,50 @@ describe('MessageProcessor', () => {
       });
       expect(onUpdated).toHaveBeenCalledWith(expect.objectContaining({ messageId: 'msg-1', text: 'backfilled edit' }));
     });
+
+    // Regression: listMessages is newest-first, so a backfill page can return an edit/delete
+    // ref BEFORE its target. We must apply oldest-first so the target is cached first.
+    it('applies a backfilled ref after its target even when the page lists the ref first', async () => {
+      const now = new Date().toISOString();
+      // Newest-first: the edit ref (seq 3) comes before its target (seq 2).
+      const listMessages = vi.fn().mockResolvedValue({
+        messages: [
+          {
+            conversationId: 'conv-1',
+            messageId: 'ref-edit',
+            senderId: 'other-user',
+            content: { text: 'final text', ref: { type: 'edit', targetMessageId: 'msg-target' } },
+            sequenceNumber: 3,
+            createdAt: now,
+          },
+          {
+            conversationId: 'conv-1',
+            messageId: 'msg-target',
+            senderId: 'other-user',
+            content: { text: 'first text' },
+            sequenceNumber: 2,
+            createdAt: now,
+          },
+        ],
+      });
+      const onUpdated = vi.fn();
+      const { processor, store } = createProcessor({
+        client: mockClient({ listMessages }),
+        handlers: { 'message.updated': onUpdated },
+      });
+      seedCachedMessage(store, 'msg-anchor');
+      store.setSequenceNumber('conv-1', 1);
+
+      // Incoming seq 4 with current 1 → gap → backfill returns [ref(seq3), target(seq2)].
+      await processor.handleMessage(makePayload({ messageId: 'msg-4', sequenceNumber: 4 }));
+
+      // The target was inserted first, then the edit applied on top — final text wins.
+      expect(store.getRecentMessages('conv-1').find((m) => m.messageId === 'msg-target')).toMatchObject({
+        text: 'final text',
+        status: 'edited',
+      });
+      expect(onUpdated).toHaveBeenCalledWith(expect.objectContaining({ messageId: 'msg-target', text: 'final text' }));
+    });
   });
 });
 

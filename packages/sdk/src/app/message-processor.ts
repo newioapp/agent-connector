@@ -121,7 +121,10 @@ export class MessageProcessor {
     rollbackSeq: number,
   ): Promise<void> {
     try {
-      let count = 0;
+      // Collect the whole gap first. listMessages returns newest-first (and the gap may
+      // span pages), so we can't apply as we go: an edit/delete ref could be processed
+      // before its target is cached, leaving the target stale/undeleted.
+      const collected: MessageRecord[] = [];
       let cursor: string | undefined;
       do {
         const resp = await this.client.listMessages({
@@ -138,17 +141,21 @@ export class MessageProcessor {
           if (msg.messageId === afterMessageId || msg.messageId === beforeMessageId) {
             continue;
           }
-          if (msg.content.response) {
-            this.pendingActions.resolve(msg.content.response);
-          }
-          // Route through the same path as live events so a backfilled edit/delete ref
-          // message updates/removes its cached target instead of being silently dropped.
-          this.applyMessage(conversationId, msg);
-          count++;
+          collected.push(msg);
         }
         cursor = resp.cursor;
       } while (cursor);
-      log.info(`Backfilled ${count} messages in ${conversationId}.`);
+
+      // Apply oldest-first so a target message is always cached before any edit/delete
+      // ref that points at it. Routes through the same path as live events.
+      collected.sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+      for (const msg of collected) {
+        if (msg.content.response) {
+          this.pendingActions.resolve(msg.content.response);
+        }
+        this.applyMessage(conversationId, msg);
+      }
+      log.info(`Backfilled ${collected.length} messages in ${conversationId}.`);
     } catch (err) {
       log.error(`Failed to backfill messages in ${conversationId}. Rolling back sequence number.`, err);
       this.store.setSequenceNumber(conversationId, rollbackSeq);
