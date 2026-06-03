@@ -286,6 +286,108 @@ describe('MessageProcessor', () => {
       expect(handler).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('handleMessageUpdated / handleMessageDeleted', () => {
+    function seedCachedMessage(store: NewioAppStore, messageId = 'msg-1'): void {
+      store.insertMessage('conv-1', {
+        messageId,
+        conversationId: 'conv-1',
+        conversationType: 'dm',
+        senderUserId: 'other-user',
+        isOwnMessage: false,
+        relationship: 'in-contact' as const,
+        text: 'original',
+        timestamp: new Date().toISOString(),
+        status: 'new',
+      });
+    }
+
+    it('applies the edit to the cached target message and advances the sequence', async () => {
+      const { processor, store } = createProcessor();
+      seedCachedMessage(store);
+      store.setSequenceNumber('conv-1', 1);
+
+      const updated = await processor.handleMessageUpdated(
+        makePayload({
+          messageId: 'ref-edit',
+          sequenceNumber: 2,
+          content: { text: 'edited!', ref: { type: 'edit', targetMessageId: 'msg-1' } },
+        }),
+      );
+
+      expect(updated).toMatchObject({ messageId: 'msg-1', text: 'edited!', status: 'edited' });
+      expect(store.getSequenceNumber('conv-1')).toBe(2);
+    });
+
+    it('marks the cached target message deleted and advances the sequence', async () => {
+      const { processor, store } = createProcessor();
+      seedCachedMessage(store);
+      store.setSequenceNumber('conv-1', 1);
+
+      const deleted = await processor.handleMessageDeleted(
+        makePayload({
+          messageId: 'ref-del',
+          sequenceNumber: 2,
+          content: { ref: { type: 'delete', targetMessageId: 'msg-1' } },
+        }),
+      );
+
+      expect(deleted).toMatchObject({ messageId: 'msg-1', status: 'deleted' });
+      expect(store.getSequenceNumber('conv-1')).toBe(2);
+    });
+
+    it('returns undefined when the edit/delete targets an uncached message', async () => {
+      const { processor, store } = createProcessor();
+      store.setSequenceNumber('conv-1', 1);
+
+      const updated = await processor.handleMessageUpdated(
+        makePayload({ sequenceNumber: 2, content: { text: 'x', ref: { type: 'edit', targetMessageId: 'gone' } } }),
+      );
+
+      expect(updated).toBeUndefined();
+      // Sequence still advances even though there's nothing to mutate.
+      expect(store.getSequenceNumber('conv-1')).toBe(2);
+    });
+
+    // Regression: edit/delete ref messages carry their own sequenceNumber, so tracking
+    // them must prevent the *next* real message from being seen as a gap.
+    it('does not trigger backfill on the next message after an edit', async () => {
+      const listMessages = vi.fn().mockResolvedValue({ messages: [] });
+      const { processor, store } = createProcessor({ client: mockClient({ listMessages }) });
+      seedCachedMessage(store);
+      store.setSequenceNumber('conv-1', 1);
+
+      // Edit arrives as seq 2 (a ref message).
+      await processor.handleMessageUpdated(
+        makePayload({
+          messageId: 'ref-edit',
+          sequenceNumber: 2,
+          content: { text: 'edited', ref: { type: 'edit', targetMessageId: 'msg-1' } },
+        }),
+      );
+
+      // Next real message is seq 3 — contiguous with the edit, so NO gap / NO backfill.
+      await processor.handleMessageNew(makePayload({ messageId: 'msg-3', sequenceNumber: 3 }));
+
+      expect(listMessages).not.toHaveBeenCalled();
+      expect(store.getSequenceNumber('conv-1')).toBe(3);
+    });
+
+    it('does not surface edit/delete ref messages as new messages', async () => {
+      const handler = vi.fn();
+      const { processor } = createProcessor({ handlers: { 'message.new': handler } });
+
+      // A ref message mistakenly arriving on message.new must not be delivered.
+      await processor.handleMessageNew(
+        makePayload({
+          sequenceNumber: 2,
+          content: { text: 'edited', ref: { type: 'edit', targetMessageId: 'msg-1' } },
+        }),
+      );
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('shouldSkipMessage', () => {

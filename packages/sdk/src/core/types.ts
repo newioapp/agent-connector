@@ -158,6 +158,18 @@ export interface MessageContent {
   readonly response?: ActionResponse;
   /** Opaque metadata bag — stored and returned as-is by the backend. */
   readonly metadata?: Readonly<Record<string, unknown>>;
+  /**
+   * Present on append-only "ref" messages that edit or delete an earlier message.
+   * Edits/deletes are delivered as their own message (with their own sequenceNumber)
+   * whose `ref.targetMessageId` points at the message being edited/deleted.
+   */
+  readonly ref?: MessageRef;
+}
+
+/** Links an edit/delete ref message to the message it edits or deletes. */
+export interface MessageRef {
+  readonly type: 'edit' | 'delete';
+  readonly targetMessageId: string;
 }
 
 /** A file or image attachment. */

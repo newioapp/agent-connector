@@ -244,22 +244,46 @@ export function wireEvents(
     store.updateContact(event.payload.contactId, { friendName: event.payload.friendName });
   });
 
+  // Edits/deletes arrive as their own ref message (with a sequenceNumber) on these
+  // topics. Route them through the same per-conversation queue as message.new so
+  // sequence tracking / gap detection stays serialized and correct; the processor
+  // applies the change to the cached target message rather than surfacing a new one.
   ws.on('message.updated', (event) => {
-    const { conversationId, messageId, content } = event.payload;
-    log.debug(`Event message.updated: ${conversationId}/${messageId}`);
-    const updated = store.updateMessage(conversationId, messageId, content.text ?? '');
-    if (updated) {
-      getHandlers()['message.updated']?.(updated);
-    }
+    const convId = event.payload.conversationId;
+    log.debug(`Event message.updated in ${convId} (ref=${event.payload.messageId})`);
+    const prev = messageQueue.get(convId) ?? Promise.resolve();
+    const next = prev
+      .then(() => processor.handleMessageUpdated(event.payload))
+      .then((updated) => {
+        if (updated) {
+          getHandlers()['message.updated']?.(updated);
+        }
+      });
+    messageQueue.set(
+      convId,
+      next.catch((err: unknown) => {
+        log.error(`Error processing message.updated in ${convId}`, err);
+      }),
+    );
   });
 
   ws.on('message.deleted', (event) => {
-    const { conversationId, messageId } = event.payload;
-    log.debug(`Event message.deleted: ${conversationId}/${messageId}`);
-    const deleted = store.removeMessage(conversationId, messageId);
-    if (deleted) {
-      getHandlers()['message.deleted']?.(deleted);
-    }
+    const convId = event.payload.conversationId;
+    log.debug(`Event message.deleted in ${convId} (ref=${event.payload.messageId})`);
+    const prev = messageQueue.get(convId) ?? Promise.resolve();
+    const next = prev
+      .then(() => processor.handleMessageDeleted(event.payload))
+      .then((deleted) => {
+        if (deleted) {
+          getHandlers()['message.deleted']?.(deleted);
+        }
+      });
+    messageQueue.set(
+      convId,
+      next.catch((err: unknown) => {
+        log.error(`Error processing message.deleted in ${convId}`, err);
+      }),
+    );
   });
 
   ws.on('block.created', () => {

@@ -86,7 +86,11 @@ describe('wireEvents', () => {
     store = new NewioAppStore();
     client = createMockClient();
     handlers = {};
-    processor = { handleMessageNew: vi.fn().mockResolvedValue(undefined) } as unknown as MessageProcessor;
+    processor = {
+      handleMessageNew: vi.fn().mockResolvedValue(undefined),
+      handleMessageUpdated: vi.fn().mockResolvedValue(undefined),
+      handleMessageDeleted: vi.fn().mockResolvedValue(undefined),
+    } as unknown as MessageProcessor;
     signalHandlers = {
       liveSessionInfo: vi.fn().mockReturnValue({
         sessionId: 's1',
@@ -409,52 +413,70 @@ describe('wireEvents', () => {
   // message.updated / message.deleted
   // -----------------------------------------------------------------------
 
-  it('handles message.updated', () => {
-    store.insertMessage('c1', {
-      messageId: 'm1',
-      conversationId: 'c1',
-      conversationType: 'dm',
-      senderUserId: 'u1',
-      text: 'old',
-      timestamp: new Date().toISOString(),
-      isOwnMessage: false,
-      relationship: 'in-contact' as const,
-      status: 'new',
-    });
+  it('delegates message.updated to processor and fires handler with the updated message', async () => {
+    const updated = { messageId: 'm1', status: 'edited', text: 'new' };
+    (processor.handleMessageUpdated as ReturnType<typeof vi.fn>).mockResolvedValue(updated);
     const handler = vi.fn();
     handlers['message.updated'] = handler;
 
-    ws.fire('message.updated', {
-      type: 'message.updated',
-      timestamp: ts,
-      payload: { conversationId: 'c1', messageId: 'm1', senderId: 'u1', content: { text: 'new' }, updatedAt: ts },
-    });
+    // Ref message: its own messageId/sequenceNumber, with content.ref pointing at the target.
+    const payload = {
+      conversationId: 'c1',
+      messageId: 'ref1',
+      senderId: 'u1',
+      content: { text: 'new', ref: { type: 'edit' as const, targetMessageId: 'm1' } },
+      sequenceNumber: 5,
+      createdAt: ts,
+      senderDisplayName: 'U1',
+      conversationType: 'dm' as const,
+    };
+    ws.fire('message.updated', { type: 'message.updated', timestamp: ts, payload });
 
-    expect(handler).toHaveBeenCalledWith(expect.objectContaining({ text: 'new', status: 'edited' }));
+    await vi.waitFor(() => expect(processor.handleMessageUpdated).toHaveBeenCalledWith(payload));
+    await vi.waitFor(() => expect(handler).toHaveBeenCalledWith(updated));
   });
 
-  it('handles message.deleted', () => {
-    store.insertMessage('c1', {
-      messageId: 'm1',
+  it('does not fire handler when message.updated targets an uncached message', async () => {
+    (processor.handleMessageUpdated as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    const handler = vi.fn();
+    handlers['message.updated'] = handler;
+
+    const payload = {
       conversationId: 'c1',
-      conversationType: 'dm',
-      senderUserId: 'u1',
-      text: 'hi',
-      timestamp: new Date().toISOString(),
-      isOwnMessage: false,
-      relationship: 'in-contact' as const,
-      status: 'new',
-    });
+      messageId: 'ref1',
+      senderId: 'u1',
+      content: { text: 'new', ref: { type: 'edit' as const, targetMessageId: 'gone' } },
+      sequenceNumber: 5,
+      createdAt: ts,
+      senderDisplayName: 'U1',
+      conversationType: 'dm' as const,
+    };
+    ws.fire('message.updated', { type: 'message.updated', timestamp: ts, payload });
+
+    await vi.waitFor(() => expect(processor.handleMessageUpdated).toHaveBeenCalledWith(payload));
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('delegates message.deleted to processor and fires handler with the deleted message', async () => {
+    const deleted = { messageId: 'm1', status: 'deleted', text: '' };
+    (processor.handleMessageDeleted as ReturnType<typeof vi.fn>).mockResolvedValue(deleted);
     const handler = vi.fn();
     handlers['message.deleted'] = handler;
 
-    ws.fire('message.deleted', {
-      type: 'message.deleted',
-      timestamp: ts,
-      payload: { conversationId: 'c1', messageId: 'm1', senderId: 'u1', deletedAt: ts },
-    });
+    const payload = {
+      conversationId: 'c1',
+      messageId: 'ref1',
+      senderId: 'u1',
+      content: { ref: { type: 'delete' as const, targetMessageId: 'm1' } },
+      sequenceNumber: 6,
+      createdAt: ts,
+      senderDisplayName: 'U1',
+      conversationType: 'dm' as const,
+    };
+    ws.fire('message.deleted', { type: 'message.deleted', timestamp: ts, payload });
 
-    expect(handler).toHaveBeenCalledWith(expect.objectContaining({ status: 'deleted' }));
+    await vi.waitFor(() => expect(processor.handleMessageDeleted).toHaveBeenCalledWith(payload));
+    await vi.waitFor(() => expect(handler).toHaveBeenCalledWith(deleted));
   });
 
   // -----------------------------------------------------------------------
