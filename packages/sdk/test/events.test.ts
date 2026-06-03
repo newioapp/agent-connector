@@ -86,7 +86,7 @@ describe('wireEvents', () => {
     store = new NewioAppStore();
     client = createMockClient();
     handlers = {};
-    processor = { handleMessageNew: vi.fn().mockResolvedValue(undefined) } as unknown as MessageProcessor;
+    processor = { handleMessage: vi.fn().mockResolvedValue(undefined) } as unknown as MessageProcessor;
     signalHandlers = {
       liveSessionInfo: vi.fn().mockReturnValue({
         sessionId: 's1',
@@ -130,7 +130,7 @@ describe('wireEvents', () => {
     };
     ws.fire('message.new', { type: 'message.new', timestamp: ts, payload });
     // Let the microtask queue flush
-    await vi.waitFor(() => expect(processor.handleMessageNew).toHaveBeenCalledWith(payload));
+    await vi.waitFor(() => expect(processor.handleMessage).toHaveBeenCalledWith(payload));
   });
 
   // -----------------------------------------------------------------------
@@ -409,52 +409,37 @@ describe('wireEvents', () => {
   // message.updated / message.deleted
   // -----------------------------------------------------------------------
 
-  it('handles message.updated', () => {
-    store.insertMessage('c1', {
-      messageId: 'm1',
+  it('delegates message.updated to the processor (delivery handled inside the queue)', async () => {
+    // Ref message: its own messageId/sequenceNumber, with content.ref pointing at the target.
+    const payload = {
       conversationId: 'c1',
-      conversationType: 'dm',
-      senderUserId: 'u1',
-      text: 'old',
-      timestamp: new Date().toISOString(),
-      isOwnMessage: false,
-      relationship: 'in-contact' as const,
-      status: 'new',
-    });
-    const handler = vi.fn();
-    handlers['message.updated'] = handler;
+      messageId: 'ref1',
+      senderId: 'u1',
+      content: { text: 'new', ref: { type: 'edit' as const, targetMessageId: 'm1' } },
+      sequenceNumber: 5,
+      createdAt: ts,
+      senderDisplayName: 'U1',
+      conversationType: 'dm' as const,
+    };
+    ws.fire('message.updated', { type: 'message.updated', timestamp: ts, payload });
 
-    ws.fire('message.updated', {
-      type: 'message.updated',
-      timestamp: ts,
-      payload: { conversationId: 'c1', messageId: 'm1', senderId: 'u1', content: { text: 'new' }, updatedAt: ts },
-    });
-
-    expect(handler).toHaveBeenCalledWith(expect.objectContaining({ text: 'new', status: 'edited' }));
+    await vi.waitFor(() => expect(processor.handleMessage).toHaveBeenCalledWith(payload));
   });
 
-  it('handles message.deleted', () => {
-    store.insertMessage('c1', {
-      messageId: 'm1',
+  it('delegates message.deleted to the processor (delivery handled inside the queue)', async () => {
+    const payload = {
       conversationId: 'c1',
-      conversationType: 'dm',
-      senderUserId: 'u1',
-      text: 'hi',
-      timestamp: new Date().toISOString(),
-      isOwnMessage: false,
-      relationship: 'in-contact' as const,
-      status: 'new',
-    });
-    const handler = vi.fn();
-    handlers['message.deleted'] = handler;
+      messageId: 'ref1',
+      senderId: 'u1',
+      content: { ref: { type: 'delete' as const, targetMessageId: 'm1' } },
+      sequenceNumber: 6,
+      createdAt: ts,
+      senderDisplayName: 'U1',
+      conversationType: 'dm' as const,
+    };
+    ws.fire('message.deleted', { type: 'message.deleted', timestamp: ts, payload });
 
-    ws.fire('message.deleted', {
-      type: 'message.deleted',
-      timestamp: ts,
-      payload: { conversationId: 'c1', messageId: 'm1', senderId: 'u1', deletedAt: ts },
-    });
-
-    expect(handler).toHaveBeenCalledWith(expect.objectContaining({ status: 'deleted' }));
+    await vi.waitFor(() => expect(processor.handleMessage).toHaveBeenCalledWith(payload));
   });
 
   // -----------------------------------------------------------------------

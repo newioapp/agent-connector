@@ -26,42 +26,41 @@ export interface WebSocketEvent {
 // Message Events
 // ---------------------------------------------------------------------------
 
+/**
+ * Payload shared by message.new, message.updated, and message.deleted.
+ *
+ * Edits and deletes are delivered as their own append-only "ref" message — a full
+ * message with its own `messageId` and `sequenceNumber` whose `content.ref` points
+ * at the target. Carrying a sequenceNumber means clients must track these like any
+ * other message so gap detection doesn't misfire on the next message.
+ */
+export interface MessageEventPayload {
+  readonly conversationId: string;
+  readonly messageId: string;
+  readonly senderId: string;
+  readonly senderDisplayName: string;
+  readonly senderAvatarUrl?: string;
+  readonly conversationType: ConversationType;
+  readonly conversationName?: string;
+  readonly content: MessageContent;
+  readonly sequenceNumber: number;
+  readonly visibleTo?: ReadonlyArray<string>;
+  readonly createdAt: string;
+}
+
 export interface MessageNewEvent extends WebSocketEvent {
   readonly type: 'message.new';
-  readonly payload: {
-    readonly conversationId: string;
-    readonly messageId: string;
-    readonly senderId: string;
-    readonly senderDisplayName: string;
-    readonly senderAvatarUrl?: string;
-    readonly conversationType: ConversationType;
-    readonly conversationName?: string;
-    readonly content: MessageContent;
-    readonly sequenceNumber: number;
-    readonly visibleTo?: ReadonlyArray<string>;
-    readonly createdAt: string;
-  };
+  readonly payload: MessageEventPayload;
 }
 
 export interface MessageUpdatedEvent extends WebSocketEvent {
   readonly type: 'message.updated';
-  readonly payload: {
-    readonly conversationId: string;
-    readonly messageId: string;
-    readonly senderId: string;
-    readonly content: MessageContent;
-    readonly updatedAt: string;
-  };
+  readonly payload: MessageEventPayload;
 }
 
 export interface MessageDeletedEvent extends WebSocketEvent {
   readonly type: 'message.deleted';
-  readonly payload: {
-    readonly conversationId: string;
-    readonly messageId: string;
-    readonly senderId: string;
-    readonly deletedAt: string;
-  };
+  readonly payload: MessageEventPayload;
 }
 
 // ---------------------------------------------------------------------------

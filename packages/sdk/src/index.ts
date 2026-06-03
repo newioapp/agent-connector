@@ -66,6 +66,7 @@ export type {
   MemberRecord,
   MessageRecord,
   MessageContent,
+  MessageRef,
   Mentions,
   Attachment,
   ImageMetadata,
@@ -265,6 +266,7 @@ export type {
 // Events
 export type {
   WebSocketEvent,
+  MessageEventPayload,
   MessageNewEvent,
   MessageUpdatedEvent,
   MessageDeletedEvent,
