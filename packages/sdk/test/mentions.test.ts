@@ -64,6 +64,16 @@ describe('buildMentions', () => {
     expect(result).toEqual({ userIds: ['u1'], everyone: true });
   });
 
+  it('combines @everyone and @here in one message', () => {
+    const result = buildMentions('@everyone and also @here', members);
+    expect(result).toEqual({ everyone: true, here: true });
+  });
+
+  it('resolves overlapping members @helper and @helper_bot distinctly', () => {
+    const result = buildMentions('@helper and @helper_bot', members);
+    expect(result).toEqual({ userIds: ['u5', 'u4'] });
+  });
+
   it('requires whitespace or start-of-line before @', () => {
     // email-like patterns should not match
     expect(buildMentions('email@alice.com', members)).toBeUndefined();
