@@ -8,6 +8,7 @@ import { getLogger } from '../core/logger.js';
 import type { NewioWebSocket } from '../core/websocket.js';
 import type { NewioClient } from '../core/client.js';
 import type { ConversationType } from '../core/types.js';
+import type { MessageEventPayload } from '../core/events.js';
 import type {
   LiveSessionInfoRequest,
   CancelSessionRequest,
@@ -53,17 +54,35 @@ export function wireEvents(
   /** Per-conversation queue to serialize message processing and prevent duplicate backfills. */
   const messageQueue = new Map<string, Promise<void>>();
 
-  ws.on('message.new', (event) => {
-    log.debug(`Event message.new in ${event.payload.conversationId} from ${event.payload.senderId}`);
-    const convId = event.payload.conversationId;
+  // message.new, message.updated, and message.deleted are all messages with a
+  // sequenceNumber (edits/deletes are append-only ref messages). They share one
+  // per-conversation queue so sequence tracking, gap detection, backfill, and delivery
+  // stay serialized and ordered. The processor decides how each is applied/delivered.
+  const enqueueMessage = (type: string, payload: MessageEventPayload): void => {
+    const convId = payload.conversationId;
     const prev = messageQueue.get(convId) ?? Promise.resolve();
-    const next = prev.then(() => processor.handleMessageNew(event.payload));
+    const next = prev.then(() => processor.handleMessage(payload));
     messageQueue.set(
       convId,
       next.catch((err: unknown) => {
-        log.error(`Error processing message.new in ${convId}`, err);
+        log.error(`Error processing ${type} in ${convId}`, err);
       }),
     );
+  };
+
+  ws.on('message.new', (event) => {
+    log.debug(`Event message.new in ${event.payload.conversationId} from ${event.payload.senderId}`);
+    enqueueMessage('message.new', event.payload);
+  });
+
+  ws.on('message.updated', (event) => {
+    log.debug(`Event message.updated in ${event.payload.conversationId} (ref=${event.payload.messageId})`);
+    enqueueMessage('message.updated', event.payload);
+  });
+
+  ws.on('message.deleted', (event) => {
+    log.debug(`Event message.deleted in ${event.payload.conversationId} (ref=${event.payload.messageId})`);
+    enqueueMessage('message.deleted', event.payload);
   });
 
   ws.on('conversation.new', (event) => {
@@ -242,48 +261,6 @@ export function wireEvents(
   ws.on('contact.friend_name_updated', (event) => {
     log.debug(`Event contact.friend_name_updated: ${event.payload.contactId}`);
     store.updateContact(event.payload.contactId, { friendName: event.payload.friendName });
-  });
-
-  // Edits/deletes arrive as their own ref message (with a sequenceNumber) on these
-  // topics. Route them through the same per-conversation queue as message.new so
-  // sequence tracking / gap detection stays serialized and correct; the processor
-  // applies the change to the cached target message rather than surfacing a new one.
-  ws.on('message.updated', (event) => {
-    const convId = event.payload.conversationId;
-    log.debug(`Event message.updated in ${convId} (ref=${event.payload.messageId})`);
-    const prev = messageQueue.get(convId) ?? Promise.resolve();
-    const next = prev
-      .then(() => processor.handleMessageUpdated(event.payload))
-      .then((updated) => {
-        if (updated) {
-          getHandlers()['message.updated']?.(updated);
-        }
-      });
-    messageQueue.set(
-      convId,
-      next.catch((err: unknown) => {
-        log.error(`Error processing message.updated in ${convId}`, err);
-      }),
-    );
-  });
-
-  ws.on('message.deleted', (event) => {
-    const convId = event.payload.conversationId;
-    log.debug(`Event message.deleted in ${convId} (ref=${event.payload.messageId})`);
-    const prev = messageQueue.get(convId) ?? Promise.resolve();
-    const next = prev
-      .then(() => processor.handleMessageDeleted(event.payload))
-      .then((deleted) => {
-        if (deleted) {
-          getHandlers()['message.deleted']?.(deleted);
-        }
-      });
-    messageQueue.set(
-      convId,
-      next.catch((err: unknown) => {
-        log.error(`Error processing message.deleted in ${convId}`, err);
-      }),
-    );
   });
 
   ws.on('block.created', () => {

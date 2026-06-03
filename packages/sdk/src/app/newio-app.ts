@@ -249,6 +249,8 @@ export class NewioApp {
       client,
       identity,
       () => app.eventHandlers['message.new'],
+      () => app.eventHandlers['message.updated'],
+      () => app.eventHandlers['message.deleted'],
       app.pendingActions,
     );
     wireEvents(
@@ -331,6 +333,8 @@ export class NewioApp {
       client,
       identity,
       () => app.eventHandlers['message.new'],
+      () => app.eventHandlers['message.updated'],
+      () => app.eventHandlers['message.deleted'],
       app.pendingActions,
     );
     wireEvents(

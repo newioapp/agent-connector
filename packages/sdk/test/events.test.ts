@@ -86,11 +86,7 @@ describe('wireEvents', () => {
     store = new NewioAppStore();
     client = createMockClient();
     handlers = {};
-    processor = {
-      handleMessageNew: vi.fn().mockResolvedValue(undefined),
-      handleMessageUpdated: vi.fn().mockResolvedValue(undefined),
-      handleMessageDeleted: vi.fn().mockResolvedValue(undefined),
-    } as unknown as MessageProcessor;
+    processor = { handleMessage: vi.fn().mockResolvedValue(undefined) } as unknown as MessageProcessor;
     signalHandlers = {
       liveSessionInfo: vi.fn().mockReturnValue({
         sessionId: 's1',
@@ -134,7 +130,7 @@ describe('wireEvents', () => {
     };
     ws.fire('message.new', { type: 'message.new', timestamp: ts, payload });
     // Let the microtask queue flush
-    await vi.waitFor(() => expect(processor.handleMessageNew).toHaveBeenCalledWith(payload));
+    await vi.waitFor(() => expect(processor.handleMessage).toHaveBeenCalledWith(payload));
   });
 
   // -----------------------------------------------------------------------
@@ -413,12 +409,7 @@ describe('wireEvents', () => {
   // message.updated / message.deleted
   // -----------------------------------------------------------------------
 
-  it('delegates message.updated to processor and fires handler with the updated message', async () => {
-    const updated = { messageId: 'm1', status: 'edited', text: 'new' };
-    (processor.handleMessageUpdated as ReturnType<typeof vi.fn>).mockResolvedValue(updated);
-    const handler = vi.fn();
-    handlers['message.updated'] = handler;
-
+  it('delegates message.updated to the processor (delivery handled inside the queue)', async () => {
     // Ref message: its own messageId/sequenceNumber, with content.ref pointing at the target.
     const payload = {
       conversationId: 'c1',
@@ -432,37 +423,10 @@ describe('wireEvents', () => {
     };
     ws.fire('message.updated', { type: 'message.updated', timestamp: ts, payload });
 
-    await vi.waitFor(() => expect(processor.handleMessageUpdated).toHaveBeenCalledWith(payload));
-    await vi.waitFor(() => expect(handler).toHaveBeenCalledWith(updated));
+    await vi.waitFor(() => expect(processor.handleMessage).toHaveBeenCalledWith(payload));
   });
 
-  it('does not fire handler when message.updated targets an uncached message', async () => {
-    (processor.handleMessageUpdated as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
-    const handler = vi.fn();
-    handlers['message.updated'] = handler;
-
-    const payload = {
-      conversationId: 'c1',
-      messageId: 'ref1',
-      senderId: 'u1',
-      content: { text: 'new', ref: { type: 'edit' as const, targetMessageId: 'gone' } },
-      sequenceNumber: 5,
-      createdAt: ts,
-      senderDisplayName: 'U1',
-      conversationType: 'dm' as const,
-    };
-    ws.fire('message.updated', { type: 'message.updated', timestamp: ts, payload });
-
-    await vi.waitFor(() => expect(processor.handleMessageUpdated).toHaveBeenCalledWith(payload));
-    expect(handler).not.toHaveBeenCalled();
-  });
-
-  it('delegates message.deleted to processor and fires handler with the deleted message', async () => {
-    const deleted = { messageId: 'm1', status: 'deleted', text: '' };
-    (processor.handleMessageDeleted as ReturnType<typeof vi.fn>).mockResolvedValue(deleted);
-    const handler = vi.fn();
-    handlers['message.deleted'] = handler;
-
+  it('delegates message.deleted to the processor (delivery handled inside the queue)', async () => {
     const payload = {
       conversationId: 'c1',
       messageId: 'ref1',
@@ -475,8 +439,7 @@ describe('wireEvents', () => {
     };
     ws.fire('message.deleted', { type: 'message.deleted', timestamp: ts, payload });
 
-    await vi.waitFor(() => expect(processor.handleMessageDeleted).toHaveBeenCalledWith(payload));
-    await vi.waitFor(() => expect(handler).toHaveBeenCalledWith(deleted));
+    await vi.waitFor(() => expect(processor.handleMessage).toHaveBeenCalledWith(payload));
   });
 
   // -----------------------------------------------------------------------
