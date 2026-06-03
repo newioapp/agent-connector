@@ -5,12 +5,19 @@
  */
 import type { Mentions } from '../core/types.js';
 
+// Username grammar — must stay in sync with the canonical USERNAME_REGEX in
+// @conduit/shared and the desktop mention parser: starts with a letter, letters/
+// numbers/single internal underscores, no trailing or repeated underscore, 3–24 chars.
+const USERNAME = '[a-zA-Z](?:[a-zA-Z0-9]|_(?=[a-zA-Z0-9])){1,22}[a-zA-Z0-9]';
+// Reject a match that runs into another username char, or a `.`/`-` joined to one
+// (so `@alice.bob`, `@here-now`, `@user__name` don't partially match).
+const TOKEN_BOUNDARY = '(?![a-zA-Z0-9_]|[.-][a-zA-Z0-9_])';
+const MENTION_PREFIX = '(?:^|[\\s])@';
+
 /** Extract all @username tokens from a message (preceded by whitespace or start-of-line). */
-const MENTION_BOUNDARY_RE = /(?![a-zA-Z0-9_]|[.-][a-zA-Z0-9_])/;
-const MENTION_EXTRACT_RE =
-  /(?:^|[\s])@([a-zA-Z](?:[a-zA-Z0-9]|_(?=[a-zA-Z0-9])){1,22}[a-zA-Z0-9])(?![a-zA-Z0-9_]|[.-][a-zA-Z0-9_])/g;
-const EVERYONE_RE = new RegExp(`(?:^|[\\s])@everyone${MENTION_BOUNDARY_RE.source}`);
-const HERE_RE = new RegExp(`(?:^|[\\s])@here${MENTION_BOUNDARY_RE.source}`);
+const MENTION_EXTRACT_RE = new RegExp(`${MENTION_PREFIX}(${USERNAME})${TOKEN_BOUNDARY}`, 'g');
+const EVERYONE_RE = new RegExp(`${MENTION_PREFIX}everyone${TOKEN_BOUNDARY}`);
+const HERE_RE = new RegExp(`${MENTION_PREFIX}here${TOKEN_BOUNDARY}`);
 
 /**
  * Parse @mentions from text and resolve usernames to userIds using the member list.
