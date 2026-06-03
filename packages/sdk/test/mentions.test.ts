@@ -5,6 +5,8 @@ const members = [
   { userId: 'u1', username: 'alice' },
   { userId: 'u2', username: 'bob' },
   { userId: 'u3', username: 'charlie' },
+  { userId: 'u4', username: 'helper_bot' },
+  { userId: 'u5', username: 'helper' },
 ];
 
 describe('buildMentions', () => {
@@ -30,6 +32,16 @@ describe('buildMentions', () => {
   it('is case-insensitive', () => {
     const result = buildMentions('@Alice and @BOB', members);
     expect(result).toEqual({ userIds: ['u1', 'u2'] });
+  });
+
+  it('resolves usernames with internal underscores', () => {
+    const result = buildMentions('hey @helper_bot please review', members);
+    expect(result).toEqual({ userIds: ['u4'] });
+  });
+
+  it('resolves underscored usernames case-insensitively', () => {
+    const result = buildMentions('hey @Helper_Bot', members);
+    expect(result).toEqual({ userIds: ['u4'] });
   });
 
   it('ignores @usernames not in member list', () => {
@@ -60,6 +72,30 @@ describe('buildMentions', () => {
   it('matches @username at start of line', () => {
     const result = buildMentions('@bob hello', members);
     expect(result).toEqual({ userIds: ['u2'] });
+  });
+
+  it('allows punctuation after a valid mention', () => {
+    expect(buildMentions('thanks @alice, noted', members)).toEqual({ userIds: ['u1'] });
+    expect(buildMentions('thanks @helper_bot.', members)).toEqual({ userIds: ['u4'] });
+  });
+
+  it('does not partially resolve usernames with trailing underscores', () => {
+    expect(buildMentions('@helper_', members)).toBeUndefined();
+    expect(buildMentions('@helper_bot_', members)).toBeUndefined();
+  });
+
+  it('does not partially resolve usernames with repeated underscores', () => {
+    expect(buildMentions('@helper__bot', members)).toBeUndefined();
+  });
+
+  it('does not partially resolve dot or hyphen continuations', () => {
+    expect(buildMentions('@alice.bob', members)).toBeUndefined();
+    expect(buildMentions('@alice-bob', members)).toBeUndefined();
+  });
+
+  it('does not detect special mentions inside dot or underscore continuations', () => {
+    expect(buildMentions('@everyone.com', members)).toBeUndefined();
+    expect(buildMentions('@here_now', members)).toBeUndefined();
   });
 
   it('handles empty member list', () => {

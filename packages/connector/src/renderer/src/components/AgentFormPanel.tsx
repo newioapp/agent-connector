@@ -213,7 +213,7 @@ export function AgentFormPanel({
               : 'Enter an existing agent username to login. Leave blank to register a new agent.'
           }
         >
-          <Input placeholder="myagent" value={newioUsername} onChange={(e) => setNewioUsername(e.target.value)} />
+          <Input placeholder="my_agent" value={newioUsername} onChange={(e) => setNewioUsername(e.target.value)} />
         </Label>
       </div>
 

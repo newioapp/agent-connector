@@ -30,7 +30,7 @@ function createMockApp(
   const sendActionRequest = vi.fn().mockResolvedValue({ requestId: 'req-1', selectedOptionId: 'allow_once' });
 
   return {
-    identity: { userId: 'agent-1', username: 'test-agent', displayName: 'Test Agent', ownerId },
+    identity: { userId: 'agent-1', username: 'test_agent', displayName: 'Test Agent', ownerId },
     sendActionRequest,
     getConversationInfo: vi.fn((conversationId: string) => {
       const conv = conversations?.get(conversationId);

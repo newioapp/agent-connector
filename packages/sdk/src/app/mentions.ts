@@ -6,7 +6,11 @@
 import type { Mentions } from '../core/types.js';
 
 /** Extract all @username tokens from a message (preceded by whitespace or start-of-line). */
-const MENTION_EXTRACT_RE = /(?:^|[\s])@([a-zA-Z][a-zA-Z0-9]*)/g;
+const MENTION_BOUNDARY_RE = /(?![a-zA-Z0-9_]|[.-][a-zA-Z0-9_])/;
+const MENTION_EXTRACT_RE =
+  /(?:^|[\s])@([a-zA-Z](?:[a-zA-Z0-9]|_(?=[a-zA-Z0-9])){1,22}[a-zA-Z0-9])(?![a-zA-Z0-9_]|[.-][a-zA-Z0-9_])/g;
+const EVERYONE_RE = new RegExp(`(?:^|[\\s])@everyone${MENTION_BOUNDARY_RE.source}`);
+const HERE_RE = new RegExp(`(?:^|[\\s])@here${MENTION_BOUNDARY_RE.source}`);
 
 /**
  * Parse @mentions from text and resolve usernames to userIds using the member list.
@@ -19,8 +23,8 @@ export function buildMentions(
   text: string,
   members: ReadonlyArray<{ readonly userId: string; readonly username?: string }>,
 ): Mentions | undefined {
-  const everyone = /(?:^|[\s])@everyone\b/.test(text);
-  const here = /(?:^|[\s])@here\b/.test(text);
+  const everyone = EVERYONE_RE.test(text);
+  const here = HERE_RE.test(text);
 
   const usernameToUserId = new Map<string, string>();
   for (const m of members) {

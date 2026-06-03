@@ -101,7 +101,7 @@ describe('AuthManager', () => {
       ]);
 
       const auth = new AuthManager('https://api.newio.dev');
-      const handle = await auth.login({ username: 'my-agent' });
+      const handle = await auth.login({ username: 'my_agent' });
 
       expect(handle.agentId).toBe('agent-1');
       expect(handle.approvalId).toBe('approval-3');

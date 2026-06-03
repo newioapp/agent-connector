@@ -59,11 +59,12 @@ export class AgentRuntimeManager {
 
     // Prevent two agents with the same Newio username from running simultaneously
     const username = config.newio?.username;
-    if (username) {
+    const normalizedUsername = username?.toLowerCase();
+    if (normalizedUsername) {
       for (const [id, instance] of this.instances) {
         if (id !== agentId && instance.status !== 'stopped' && instance.status !== 'error') {
           const otherConfig = this.configManager.get(id);
-          if (otherConfig?.newio?.username === username) {
+          if (otherConfig?.newio?.username?.toLowerCase() === normalizedUsername) {
             throw new Error(
               `Another agent "${otherConfig.newio.displayName ?? id}" is already running with username @${username}`,
             );
