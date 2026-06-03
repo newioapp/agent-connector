@@ -11,7 +11,7 @@ import type { IncomingMessage } from '@newio/agent-sdk';
 
 function createMockApp(): NewioAppForSessionEventProcessor {
   return {
-    identity: { userId: 'agent-1', username: 'test-agent', displayName: 'Test Agent', ownerId: 'owner-1' },
+    identity: { userId: 'agent-1', username: 'test_agent', displayName: 'Test Agent', ownerId: 'owner-1' },
     getConversationControls: vi.fn().mockResolvedValue({ showToolCalls: false, showThoughts: false }),
     isConversationMember: vi.fn().mockResolvedValue(true),
     sendMessage: vi.fn().mockResolvedValue(undefined),

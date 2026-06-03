@@ -150,6 +150,14 @@ describe('AgentRuntimeManager', () => {
       expect(() => manager.start('agent-2')).toThrow('already running with username @alice');
     });
 
+    it('prevents two agents with the same username using different casing', () => {
+      configManager = mockConfigManager([makeConfig('agent-1', 'Alice'), makeConfig('agent-2', 'alice')]);
+      manager = new AgentRuntimeManager(configManager, sessionStore, listener, mockEngineConfig);
+
+      manager.start('agent-1');
+      expect(() => manager.start('agent-2')).toThrow('already running with username @alice');
+    });
+
     it('allows same username if the other agent is stopped', async () => {
       configManager = mockConfigManager([makeConfig('agent-1', 'alice'), makeConfig('agent-2', 'alice')]);
       manager = new AgentRuntimeManager(configManager, sessionStore, listener, mockEngineConfig);
