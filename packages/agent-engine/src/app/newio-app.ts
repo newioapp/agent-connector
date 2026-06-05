@@ -74,6 +74,8 @@ import type {
   SessionUpdatedHandler,
   ConversationControls,
 } from './types.js';
+import type { NewioAppForAgent } from '../types.js';
+import type { NewioAppForMcp } from '../mcp/types.js';
 
 const log = getLogger('newio-app');
 
@@ -175,7 +177,7 @@ export interface NewioAppCreateOptions {
  * and {@link NewioAppStore} into a single object with username resolution,
  * system prompt generation, and a clean event interface.
  */
-export class NewioApp {
+export class NewioApp implements NewioAppForAgent, NewioAppForMcp {
   readonly identity: NewioIdentity;
   readonly client: NewioClient;
   readonly auth: AuthManager;
