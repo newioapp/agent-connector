@@ -29,11 +29,9 @@
   },
   "dependencies": {
     "@newio/agent-engine": "workspace:*",
-    "@newio/agent-sdk": "workspace:*",
-    "better-sqlite3": "^12.8.0"
+    "@newio/agent-sdk": "workspace:*"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.19.15",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",

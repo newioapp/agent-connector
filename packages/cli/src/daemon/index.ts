@@ -13,12 +13,12 @@ import { setLogHandler, getLogger } from '@newio/agent-sdk';
 import {
   FileAgentConfigManager,
   AgentRuntimeManager,
+  JsonCronStore,
   type EngineConfig,
   type StatusListener,
 } from '@newio/agent-engine';
 import { DaemonServer } from './server.js';
 import { DaemonHandler } from './handler.js';
-import { SqliteCronStore } from './sqlite-cron-store.js';
 import { version } from '../../package.json';
 
 const log = getLogger('daemon');
@@ -68,7 +68,7 @@ async function main(): Promise<void> {
   };
 
   const agentConfigManager = new FileAgentConfigManager(dataDir);
-  const cronStore = new SqliteCronStore(join(dataDir, 'cron.db'));
+  const cronStore = new JsonCronStore(join(dataDir, 'cron.json'));
 
   // Runtime manager is recreated on reload; handler holds a mutable reference.
   const makeListener = (_handler: DaemonHandler): StatusListener => ({

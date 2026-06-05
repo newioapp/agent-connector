@@ -4,11 +4,11 @@
  * Platform-agnostic (pure node:fs + node:os). Used by both the Electron desktop app
  * and a future CLI.
  *
- * Files:
+ * Files (both 0o600 — config.json carries per-agent envVars, which may hold secrets):
  *   config.json  — AgentConfig[]
- *   tokens.json  — Record<string, AgentTokens>  (mode 0o600)
+ *   tokens.json  — Record<string, AgentTokens>
  */
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from 'fs';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
 import type { AgentConfig, AddAgentInput, UpdateAgentInput, NewioIdentity } from './types';
@@ -152,6 +152,10 @@ export class FileAgentConfigManager implements AgentConfigManager {
 
   private writeJson(path: string, data: unknown, mode?: number): void {
     this.ensureDir();
-    writeFileSync(path, JSON.stringify(data, null, 2) + '\n', { encoding: 'utf8', mode: mode ?? 0o644 });
+    const fileMode = mode ?? 0o600;
+    writeFileSync(path, JSON.stringify(data, null, 2) + '\n', { encoding: 'utf8', mode: fileMode });
+    // mode on writeFileSync only applies when creating the file; enforce it on
+    // pre-existing files too (older installs wrote config.json at 0o644).
+    chmodSync(path, fileMode);
   }
 }
