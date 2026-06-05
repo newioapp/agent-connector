@@ -7,6 +7,7 @@
  */
 import { join } from 'path';
 import { mkdirSync, existsSync, writeFileSync, unlinkSync } from 'fs';
+import { createConnection } from 'net';
 import { createRequire } from 'module';
 import { setLogHandler, getLogger } from '@newio/agent-sdk';
 import {
@@ -22,6 +23,27 @@ import { resolveStage, getDaemonPaths, getDefaultUrls } from '../paths.js';
 import { version } from '../../package.json';
 
 const log = getLogger('daemon');
+
+/**
+ * Probe whether a daemon is already listening on the socket. Returns true only
+ * if a live process accepts a connection — a leftover socket file from a crashed
+ * daemon reports false (and is safe to unlink).
+ */
+function isSocketAlive(socketPath: string): Promise<boolean> {
+  if (!existsSync(socketPath)) {
+    return Promise.resolve(false);
+  }
+  return new Promise((resolve) => {
+    const socket = createConnection(socketPath);
+    const finish = (alive: boolean): void => {
+      socket.destroy();
+      resolve(alive);
+    };
+    socket.once('connect', () => finish(true));
+    socket.once('error', () => finish(false));
+    setTimeout(() => finish(false), 1000);
+  });
+}
 
 /**
  * Boot the daemon. Resolves config from the environment, sets up the agent
@@ -58,6 +80,11 @@ export async function runDaemon(): Promise<void> {
   const require = createRequire(import.meta.url);
   const mcpBridgePath = require.resolve('@newio/agent-engine/mcp-bridge');
 
+  // Refuse to start if another daemon already owns this stage's socket —
+  // otherwise we'd unlink a live socket and become a second writer of dataDir.
+  if (await isSocketAlive(socketPath)) {
+    throw new Error(`A daemon is already running for stage ${stage} (socket ${socketPath}).`);
+  }
   if (existsSync(socketPath)) {
     try {
       unlinkSync(socketPath);

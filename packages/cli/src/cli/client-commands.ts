@@ -43,8 +43,7 @@ Other:
 
 const KNOWN_GROUPS = new Set(['daemon', 'agent', 'env', 'status']);
 
-// eslint-disable-next-line @typescript-eslint/require-await -- stub; command bodies (async DaemonConnector calls) land in a follow-up
-export async function runClientCommand(command: string | undefined, _args: string[]): Promise<void> {
+export async function runClientCommand(command: string | undefined, args: string[]): Promise<void> {
   if (command === undefined || command === 'help' || command === '--help' || command === '-h') {
     console.log(USAGE);
     return;
@@ -57,8 +56,14 @@ export async function runClientCommand(command: string | undefined, _args: strin
     return;
   }
 
-  // TODO(cli): implement the daemon/agent/env command bodies (auto-spawn,
-  // DaemonConnector calls, notification streaming).
+  if (command === 'daemon') {
+    const { runDaemonCommand } = await import('./daemon-commands.js');
+    runDaemonCommand(args[0], args.slice(1));
+    return;
+  }
+
+  // TODO(cli): implement agent/env command bodies (auto-spawn, DaemonConnector
+  // calls, notification streaming).
   console.error(`'${command}' is not implemented yet.`);
   process.exitCode = 1;
 }
