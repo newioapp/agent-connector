@@ -1,0 +1,5 @@
+22
+# Pinned to Node 22 for the Electron connector app (packages/connector).
+# Electron's npm postinstall uses extract-zip, which silently stalls on Node 24
+# (the extraction promise never settles, so the Electron binary is never unpacked
+# and `pnpm run dev` fails with "Error: Electron uninstall"). Node 22 extracts fine.

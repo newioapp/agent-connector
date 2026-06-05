@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { MockBackend } from '../src/mock-backend.js';
 import { MockNewioApp } from '../src/mock-newio-app.js';
 import type { BackendUser } from '../src/mock-backend.js';
-import type { IncomingMessage, ContactEvent } from '@newio/agent-sdk';
+import type { IncomingMessage, ContactEvent } from '@newio/agent-engine';
 
 describe('Multi-agent integration', () => {
   let backend: MockBackend;

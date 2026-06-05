@@ -70,3 +70,47 @@ export type {
   McpContactSummary,
   NewioMcpServerInterface,
 } from './mcp/index.js';
+
+// NewioApp — high-level agent client (moved here from @newio/agent-sdk).
+// NewioIdentity/NewioTokens are intentionally not re-exported: the app layer's
+// NewioIdentity collides with the engine's own (agent-config) NewioIdentity above.
+export { NewioApp, NEWIO_API_BASE_URL, NEWIO_WS_URL, getClientConfig, NewioAppStore } from './app/index.js';
+export { ActionTimeoutError, ActionAbortedError } from './app/index.js';
+export { MessageProcessor, shouldSkipMessage, isMentioned } from './app/index.js';
+export { buildMentions } from './app/index.js';
+export { CronScheduler, parseCronExpression } from './app/index.js';
+export type {
+  NewioClientConfig,
+  NewioAppCreateOptions,
+  StorePersistence,
+  IncomingMessage,
+  SenderRelationship,
+  OwnerInfo,
+  ContactSummary,
+  ConversationSummary,
+  FriendRequestSummary,
+  MemberSummary,
+  MessageHandler,
+  AppEventHandlers,
+  ContactEventInfo,
+  ContactEvent,
+  ContactEventType,
+  CronJobDef,
+  CronTriggerEvent,
+  LiveSessionInfoHandler,
+  CancelSessionHandler,
+  CompactSessionHandler,
+  StartSessionHandler,
+  UpdateMemoryHandler,
+  RotateSessionHandler,
+  MessageNewHandler,
+  MessageUpdatedHandler,
+  MessageDeletedHandler,
+  ContactEventHandler,
+  CronTriggeredHandler,
+  CronScheduledHandler,
+  CronCancelledHandler,
+  ConversationMemberUpdatedHandler,
+  SessionUpdatedHandler,
+  ConversationControls,
+} from './app/index.js';

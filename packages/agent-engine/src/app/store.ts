@@ -7,7 +7,7 @@
  * Optionally writes through to a {@link StorePersistence} implementation
  * (e.g., sqlite) for durable storage. Reads always hit in-memory maps.
  */
-import type { AccountType, ContactRecord, ConversationType, MemberRecord, MessageRecord } from '../core/types.js';
+import type { AccountType, ContactRecord, ConversationType, MemberRecord, MessageRecord } from '@newio/agent-sdk';
 import type {
   ConversationControls,
   ConversationMetadata,

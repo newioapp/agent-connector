@@ -4,11 +4,11 @@
  * Subscribes to all relevant WebSocket events and updates the store accordingly.
  * Message processing is delegated to {@link MessageProcessor}.
  */
-import { getLogger } from '../core/logger.js';
-import type { NewioWebSocket } from '../core/websocket.js';
-import type { NewioClient } from '../core/client.js';
-import type { ConversationType } from '../core/types.js';
-import type { MessageEventPayload } from '../core/events.js';
+import { getLogger } from '@newio/agent-sdk';
+import type { NewioWebSocket } from '@newio/agent-sdk';
+import type { NewioClient } from '@newio/agent-sdk';
+import type { ConversationType } from '@newio/agent-sdk';
+import type { MessageEventPayload } from '@newio/agent-sdk';
 import type {
   LiveSessionInfoRequest,
   CancelSessionRequest,
@@ -17,7 +17,7 @@ import type {
   UpdateMemoryRequest,
   RotateSessionRequest,
   SignalPayload,
-} from '../core/types.js';
+} from '@newio/agent-sdk';
 import type { NewioAppStore } from './store.js';
 import type {
   AppEventHandlers,

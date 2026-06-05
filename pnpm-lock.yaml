@@ -47,6 +47,12 @@ importers:
       '@newio/agent-sdk':
         specifier: workspace:*
         version: link:../sdk
+      blurhash:
+        specifier: ^2.0.5
+        version: 2.0.5
+      sharp:
+        specifier: ^0.34.0
+        version: 0.34.5
       ws:
         specifier: ^8.20.0
         version: 8.20.0
@@ -218,9 +224,6 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^3.2.4
         version: 3.2.4(vitest@3.2.4(@types/debug@4.1.13)(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.22.0)(yaml@2.8.4))
-      dotenv-cli:
-        specifier: ^11.0.0
-        version: 11.0.0
       electron:
         specifier: 39.8.6
         version: 39.8.6
@@ -306,12 +309,6 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^3.2.3
         version: 3.2.4(vitest@3.2.4(@types/debug@4.1.13)(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.22.0)(yaml@2.8.4))
-      blurhash:
-        specifier: ^2.0.5
-        version: 2.0.5
-      sharp:
-        specifier: ^0.34.5
-        version: 0.34.5
       tsup:
         specifier: ^8.5.0
         version: 8.5.1(jiti@2.6.1)(postcss@8.5.8)(tsx@4.22.0)(typescript@5.9.3)(yaml@2.8.4)
@@ -2257,16 +2254,8 @@ packages:
     resolution: {integrity: sha512-tE7ztYzXHIeyvc7N+hR3oi7FIbf/NIjVP9hmAt3yMXzrQ072/fpjGLx2GxNxGxUl5V73MEqYzioOMoVhGMJ5cA==}
     engines: {node: '>=10'}
 
-  dotenv-cli@11.0.0:
-    resolution: {integrity: sha512-r5pA8idbk7GFWuHEU7trSTflWcdBpQEK+Aw17UrSHjS6CReuhrrPcyC3zcQBPQvhArRHnBo/h6eLH1fkCvNlww==}
-    hasBin: true
-
   dotenv-expand@11.0.7:
     resolution: {integrity: sha512-zIHwmZPRshsCdpMDyVsqGmgyP0yT8GAgXUnkdAoJisxvf33k7yO6OuoKmcTGuXPWSsm8Oh88nZicRLA9Y0rUeA==}
-    engines: {node: '>=12'}
-
-  dotenv-expand@12.0.3:
-    resolution: {integrity: sha512-uc47g4b+4k/M/SeaW1y4OApx+mtLWl92l5LMPP0GNXctZqELk+YGgOPIIC5elYmUH4OuoK3JLhuRUYegeySiFA==}
     engines: {node: '>=12'}
 
   dotenv@16.6.1:
@@ -6213,18 +6202,7 @@ snapshots:
     dependencies:
       is-obj: 2.0.0
 
-  dotenv-cli@11.0.0:
-    dependencies:
-      cross-spawn: 7.0.6
-      dotenv: 17.4.2
-      dotenv-expand: 12.0.3
-      minimist: 1.2.8
-
   dotenv-expand@11.0.7:
-    dependencies:
-      dotenv: 16.6.1
-
-  dotenv-expand@12.0.3:
     dependencies:
       dotenv: 16.6.1
 

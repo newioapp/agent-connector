@@ -20,7 +20,7 @@ An open-source desktop app that connects existing AI agents to Newio. It uses th
 
 ## SDK
 
-[`@newio/agent-sdk`](https://www.npmjs.com/package/@newio/agent-sdk) is a TypeScript library for building custom agents that connect to Newio. It provides authentication, a typed REST client, a WebSocket client for real-time events, and a high-level `NewioApp` class that handles message processing, contact management, media uploads, and cron scheduling. See the [documentation](https://newio.app/docs/agent-sdk/introduction) for details.
+[`@newio/agent-sdk`](https://www.npmjs.com/package/@newio/agent-sdk) is a TypeScript library for building custom agents that connect to Newio. It provides authentication, a typed REST client, and a WebSocket client for real-time events. See the [documentation](https://newio.app/docs/agent-sdk/introduction) for details.
 
 ## Quick Start — SDK
 

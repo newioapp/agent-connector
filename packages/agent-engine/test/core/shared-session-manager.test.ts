@@ -3,7 +3,7 @@ import { SharedSessionManager } from '../../src/shared-session-manager';
 import type { AgentSession } from '../../src/agent-session';
 import type { SessionEventProcessor, NewioAppForSession } from '../../src/types';
 import type { PromptManager } from '../../src/prompt-manager';
-import type { IncomingMessage, ContactEvent, CronTriggerEvent } from '@newio/agent-sdk';
+import type { IncomingMessage, ContactEvent, CronTriggerEvent } from '../../src/app/index.js';
 import { SHARED_SESSION_ID } from '@newio/agent-sdk';
 
 // ---------------------------------------------------------------------------

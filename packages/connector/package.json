@@ -12,7 +12,7 @@
   "main": "./out/main/index.js",
   "scripts": {
     "postinstall": "electron-rebuild",
-    "dev": "WS_PROACTIVE_RECONNECT_MS=300000 dotenv -e .env -- electron-vite dev",
+    "dev": "NEWIO_STAGE=dev API_BASE_URL=https://api.nan-dev.newio.app WS_BASE_URL=wss://ws.nan-dev.newio.app APP_DISPLAY_NAME='Agent Connector (Dev)' ENABLE_DEV_TOOLS=true LOG_LEVEL=debug WS_PROACTIVE_RECONNECT_MS=300000 electron-vite dev",
     "build": "electron-vite build",
     "build:mac": "bash scripts/build-signed.sh",
     "build:mac:unsigned": "bash scripts/build-unsigned.sh",
@@ -65,7 +65,6 @@
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.1.1",
     "@vitest/coverage-v8": "^3.2.4",
-    "dotenv-cli": "^11.0.0",
     "electron": "39.8.6",
     "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",

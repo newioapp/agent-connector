@@ -8,14 +8,8 @@
  * - Cron events: no batching, yielded individually
  * - Owner ops: batched by op type, all waiting callbacks resolved together
  */
-import type {
-  IncomingMessage,
-  ContactEvent,
-  CronTriggerEvent,
-  CompactSessionResponse,
-  UpdateMemoryResponse,
-  RotateSessionResponse,
-} from '@newio/agent-sdk';
+import type { CompactSessionResponse, UpdateMemoryResponse, RotateSessionResponse } from '@newio/agent-sdk';
+import type { IncomingMessage, ContactEvent, CronTriggerEvent } from './app/index.js';
 import type { SessionType } from './types';
 
 /** Owner-initiated lifecycle operations that can run on a slot. */

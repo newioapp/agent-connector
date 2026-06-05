@@ -1,2 +1,14 @@
 packages:
   - 'packages/*'
+
+# Dependencies whose install/build scripts (e.g. postinstall) pnpm is allowed to run.
+# pnpm blocks dependency build scripts by default; Electron's postinstall downloads
+# and extracts the platform binary, so it must be approved here or `pnpm run dev`
+# fails with "Error: Electron uninstall".
+# NOTE: As of pnpm 10, this setting lives in pnpm-workspace.yaml — the old
+# `pnpm.onlyBuiltDependencies` field in package.json is no longer read.
+onlyBuiltDependencies:
+  - esbuild
+  - electron
+  - better-sqlite3
+  - sharp

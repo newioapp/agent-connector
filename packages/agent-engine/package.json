@@ -60,5 +60,17 @@
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",
     "vitest": "^3.2.3"
+  },
+  "peerDependencies": {
+    "blurhash": "^2.0.5",
+    "sharp": "^0.34.0"
+  },
+  "peerDependenciesMeta": {
+    "sharp": {
+      "optional": true
+    },
+    "blurhash": {
+      "optional": true
+    }
   }
 }

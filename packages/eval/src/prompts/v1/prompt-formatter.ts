@@ -1,8 +1,8 @@
 /**
  * Eval prompt formatter — XML format, self-contained prompts.
  */
-import type { IncomingMessage, ContactEvent, CronTriggerEvent, LoadSessionMemoryResponse } from '@newio/agent-sdk';
-import type { PromptFormatter } from '@newio/agent-engine';
+import type { LoadSessionMemoryResponse } from '@newio/agent-sdk';
+import type { PromptFormatter, IncomingMessage, ContactEvent, CronTriggerEvent } from '@newio/agent-engine';
 import type { SessionMode } from './instruction.js';
 import {
   instructionPrompt,

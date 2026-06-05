@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NewioApp } from '../src/app/newio-app.js';
 import type { IncomingMessage } from '../src/app/types.js';
-import type { AuthManager } from '../src/core/auth.js';
-import type { NewioClient } from '../src/core/client.js';
-import type { NewioWebSocket } from '../src/core/websocket.js';
-import type { ContactRecord, ConversationListItem } from '../src/core/types.js';
+import type { AuthManager } from '@newio/agent-sdk';
+import type { NewioClient } from '@newio/agent-sdk';
+import type { NewioWebSocket } from '@newio/agent-sdk';
+import type { ContactRecord, ConversationListItem } from '@newio/agent-sdk';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -223,9 +223,9 @@ describe('NewioApp', () => {
       await new Promise((r) => setTimeout(r, 0));
 
       expect(received).toHaveLength(1);
-      expect(received[0].text).toBe('hello');
-      expect(received[0].senderUsername).toBe('alice');
-      expect(received[0].relationship).toBe('in-contact');
+      expect(received[0]!.text).toBe('hello');
+      expect(received[0]!.senderUsername).toBe('alice');
+      expect(received[0]!.relationship).toBe('in-contact');
     });
 
     it('ignores own messages', async () => {
@@ -278,7 +278,7 @@ describe('NewioApp', () => {
       await new Promise((r) => setTimeout(r, 0));
 
       expect(received).toHaveLength(1);
-      expect(received[0].text).toBe('');
+      expect(received[0]!.text).toBe('');
     });
   });
 
@@ -459,8 +459,8 @@ describe('NewioApp', () => {
 
       const requests = app.listIncomingFriendRequests();
       expect(requests).toHaveLength(1);
-      expect(requests[0].username).toBe('bob');
-      expect(requests[0].note).toBe('Hey!');
+      expect(requests[0]!.username).toBe('bob');
+      expect(requests[0]!.note).toBe('Hey!');
     });
 
     it('acceptFriendRequestByUsername accepts and indexes contact', async () => {
@@ -546,7 +546,7 @@ describe('NewioApp', () => {
 
       await app.createGroup('My Group', ['myagent', 'stranger1']);
 
-      const call = (client.createConversation as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      const call = (client.createConversation as ReturnType<typeof vi.fn>).mock.calls[0]![0];
       expect(call.memberIds).toHaveLength(1); // myagent filtered out
     });
   });
@@ -715,8 +715,8 @@ describe('NewioApp', () => {
       });
       app.onLiveSessionInfo(handler);
       const handlers = app._getSignalHandlers();
-      handlers.liveSessionInfo({ sessionId: 's1' });
-      expect(handler).toHaveBeenCalledWith({ sessionId: 's1' });
+      handlers.liveSessionInfo({ sessionType: 'conversation', externalReferenceId: 's1' });
+      expect(handler).toHaveBeenCalledWith({ sessionType: 'conversation', externalReferenceId: 's1' });
     });
 
     it('onCancelSession registers handler accessible via _getSignalHandlers', async () => {
@@ -724,8 +724,8 @@ describe('NewioApp', () => {
       const handler = vi.fn().mockResolvedValue({ success: true });
       app.onCancelSession(handler);
       const handlers = app._getSignalHandlers();
-      await handlers.cancelSession({ sessionId: 's1' });
-      expect(handler).toHaveBeenCalledWith({ sessionId: 's1' });
+      await handlers.cancelSession({ sessionType: 'conversation', externalReferenceId: 's1' });
+      expect(handler).toHaveBeenCalledWith({ sessionType: 'conversation', externalReferenceId: 's1' });
     });
 
     it('onCompactSession registers handler accessible via _getSignalHandlers', async () => {
@@ -733,8 +733,8 @@ describe('NewioApp', () => {
       const handler = vi.fn().mockResolvedValue({ success: true });
       app.onCompactSession(handler);
       const handlers = app._getSignalHandlers();
-      await handlers.compactSession({ sessionId: 's1' });
-      expect(handler).toHaveBeenCalledWith({ sessionId: 's1' });
+      await handlers.compactSession({ sessionType: 'conversation', externalReferenceId: 's1' });
+      expect(handler).toHaveBeenCalledWith({ sessionType: 'conversation', externalReferenceId: 's1' });
     });
 
     it('default liveSessionInfo handler returns empty info', async () => {
@@ -755,13 +755,17 @@ describe('NewioApp', () => {
 
     it('default cancelSession handler returns error', async () => {
       const { app } = await createApp();
-      const result = await app._getSignalHandlers().cancelSession({ sessionId: 's1' });
+      const result = await app
+        ._getSignalHandlers()
+        .cancelSession({ sessionType: 'conversation', externalReferenceId: 's1' });
       expect(result).toEqual({ success: false, errorCode: 'not_implemented', error: 'No handler registered' });
     });
 
     it('default compactSession handler returns error', async () => {
       const { app } = await createApp();
-      const result = await app._getSignalHandlers().compactSession({ sessionId: 's1' });
+      const result = await app
+        ._getSignalHandlers()
+        .compactSession({ sessionType: 'conversation', externalReferenceId: 's1' });
       expect(result).toEqual({ success: false, errorCode: 'not_implemented', error: 'No handler registered' });
     });
 

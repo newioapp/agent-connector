@@ -7,12 +7,5 @@ export { memoryUpdatePrompt } from './memory-update.js';
 export { sessionEndPrompt } from './session-end.js';
 export { initiateConversationPrompt, type InitiateConversationProps } from './initiate-conversation.js';
 export { memoryContextPrompt, type MemoryContextProps } from './memory-context.js';
-export type {
-  IncomingMessage,
-  ContactEvent,
-  CronTriggerEvent,
-  LoadSessionMemoryResponse,
-  AccountType,
-  SenderRelationship,
-  Attachment,
-} from '@newio/agent-sdk';
+export type { LoadSessionMemoryResponse, AccountType, Attachment } from '@newio/agent-sdk';
+export type { IncomingMessage, ContactEvent, CronTriggerEvent, SenderRelationship } from '@newio/agent-engine';

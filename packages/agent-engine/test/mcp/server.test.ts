@@ -3,7 +3,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { NewioMcpServer } from '../../src/mcp/server.js';
 import type { SessionMode } from '../../src/types.js';
-import type { NewioApp, ContactSummary, ConversationSummary, FriendRequestSummary } from '@newio/agent-sdk';
+import type { NewioApp, ContactSummary, ConversationSummary, FriendRequestSummary } from '../../src/app/index.js';
 
 /** Extract text from MCP callTool result (handles unknown content type). */
 function getResultText(result: Awaited<ReturnType<Client['callTool']>>): string {

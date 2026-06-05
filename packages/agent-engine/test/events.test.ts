@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { wireEvents } from '../src/app/events.js';
 import { NewioAppStore } from '../src/app/store.js';
-import type { NewioWebSocket } from '../src/core/websocket.js';
-import type { NewioClient } from '../src/core/client.js';
-import type { EventMap } from '../src/core/events.js';
+import type { NewioWebSocket } from '@newio/agent-sdk';
+import type { NewioClient } from '@newio/agent-sdk';
+import type { EventMap } from '@newio/agent-sdk';
 import type {
   AppEventHandlers,
   NewioIdentity,
@@ -15,7 +15,7 @@ import type {
   RotateSessionHandler,
 } from '../src/app/types.js';
 import type { MessageProcessor } from '../src/app/message-processor.js';
-import type { ContactRecord } from '../src/core/types.js';
+import type { ContactRecord } from '@newio/agent-sdk';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -153,7 +153,14 @@ describe('wireEvents', () => {
   // -----------------------------------------------------------------------
 
   it('updates existing conversation fields', () => {
-    store.setConversation({ conversationId: 'c1', type: 'dm', name: 'Old', createdAt: ts, updatedAt: ts });
+    store.setConversation({
+      conversationId: 'c1',
+      type: 'dm',
+      name: 'Old',
+      createdBy: 'u1',
+      createdAt: ts,
+      updatedAt: ts,
+    });
     ws.fire('conversation.updated', {
       type: 'conversation.updated',
       timestamp: ts,
@@ -184,7 +191,7 @@ describe('wireEvents', () => {
       payload: {
         conversationId: 'c1',
         addedBy: 'u1',
-        members: [{ userId: 'u2', displayName: 'U2', accountType: 'human' }],
+        members: [{ userId: 'u2', displayName: 'U2', accountType: 'human', role: 'member', joinedAt: ts }],
       },
     });
     expect(store.getMembers('c1')?.has('u2')).toBe(true);
@@ -194,7 +201,11 @@ describe('wireEvents', () => {
     ws.fire('conversation.member_added', {
       type: 'conversation.member_added',
       timestamp: ts,
-      payload: { conversationId: 'c-unknown', addedBy: 'u1', members: [{ userId: 'me' }] },
+      payload: {
+        conversationId: 'c-unknown',
+        addedBy: 'u1',
+        members: [{ userId: 'me', role: 'member', accountType: 'human', joinedAt: ts }],
+      },
     });
     await vi.waitFor(() => expect(client.getConversation).toHaveBeenCalledWith({ conversationId: 'c-unknown' }));
   });
@@ -214,7 +225,7 @@ describe('wireEvents', () => {
   });
 
   it('removes conversation when self is removed', () => {
-    store.setConversation({ conversationId: 'c1', type: 'dm', createdAt: ts, updatedAt: ts });
+    store.setConversation({ conversationId: 'c1', type: 'dm', createdBy: 'u1', createdAt: ts, updatedAt: ts });
     ws.fire('conversation.member_removed', {
       type: 'conversation.member_removed',
       timestamp: ts,
@@ -251,12 +262,15 @@ describe('wireEvents', () => {
 
   it('handles contact.request_received', () => {
     const contact: ContactRecord = {
+      userId: 'me',
       contactId: 'u2',
+      requesterId: 'u2',
       friendUsername: 'alice',
       friendDisplayName: 'Alice',
       friendAccountType: 'human',
       status: 'pending',
       createdAt: ts,
+      updatedAt: ts,
     };
     const eventHandler = vi.fn();
     handlers['contact.event'] = eventHandler;
@@ -271,6 +285,7 @@ describe('wireEvents', () => {
 
   it('ignores contact.request_received for self-initiated requests', () => {
     const contact: ContactRecord = {
+      userId: 'me',
       contactId: 'u2',
       requesterId: 'me', // agent sent this request
       friendUsername: 'alice',
@@ -278,6 +293,7 @@ describe('wireEvents', () => {
       friendAccountType: 'human',
       status: 'pending',
       createdAt: ts,
+      updatedAt: ts,
     };
     const eventHandler = vi.fn();
     handlers['contact.event'] = eventHandler;
@@ -293,21 +309,25 @@ describe('wireEvents', () => {
     store.addIncomingRequest({
       userId: 'u2',
       contactId: 'me',
+      requesterId: 'u2',
       friendUsername: 'alice',
       friendDisplayName: 'Alice',
       friendAccountType: 'human',
       status: 'pending',
       createdAt: ts,
+      updatedAt: ts,
     });
     // Accepted contact: agent's own view — userId = me, contactId = other party
     const acceptedContact: ContactRecord = {
       userId: 'me',
       contactId: 'u2',
+      requesterId: 'u2',
       friendUsername: 'alice',
       friendDisplayName: 'Alice',
       friendAccountType: 'human',
       status: 'accepted',
       createdAt: ts,
+      updatedAt: ts,
     };
     const eventHandler = vi.fn();
     handlers['contact.event'] = eventHandler;
@@ -329,11 +349,13 @@ describe('wireEvents', () => {
     store.addIncomingRequest({
       userId: 'u2',
       contactId: 'me',
+      requesterId: 'u2',
       friendUsername: 'alice',
       friendDisplayName: 'Alice',
       friendAccountType: 'human',
       status: 'pending',
       createdAt: ts,
+      updatedAt: ts,
     });
     const eventHandler = vi.fn();
     handlers['contact.event'] = eventHandler;
@@ -352,11 +374,13 @@ describe('wireEvents', () => {
     store.addIncomingRequest({
       userId: 'u2',
       contactId: 'me',
+      requesterId: 'u2',
       friendUsername: 'alice',
       friendDisplayName: 'Alice',
       friendAccountType: 'human',
       status: 'pending',
       createdAt: ts,
+      updatedAt: ts,
     });
 
     ws.fire('contact.request_revoked', {
@@ -370,12 +394,15 @@ describe('wireEvents', () => {
 
   it('handles contact.removed', () => {
     store.indexContact({
+      userId: 'me',
       contactId: 'u2',
+      requesterId: 'u2',
       friendUsername: 'alice',
       friendDisplayName: 'Alice',
       friendAccountType: 'human',
       status: 'accepted',
       createdAt: ts,
+      updatedAt: ts,
     });
     const eventHandler = vi.fn();
     handlers['contact.event'] = eventHandler;
@@ -388,12 +415,15 @@ describe('wireEvents', () => {
 
   it('handles contact.friend_name_updated', () => {
     store.indexContact({
+      userId: 'me',
       contactId: 'u2',
+      requesterId: 'u2',
       friendUsername: 'alice',
       friendDisplayName: 'Alice',
       friendAccountType: 'human',
       status: 'accepted',
       createdAt: ts,
+      updatedAt: ts,
     });
 
     ws.fire('contact.friend_name_updated', {
@@ -448,12 +478,15 @@ describe('wireEvents', () => {
 
   it('updates contact on user.profile_updated', () => {
     store.indexContact({
+      userId: 'me',
       contactId: 'u2',
+      requesterId: 'u2',
       friendUsername: 'alice',
       friendDisplayName: 'Alice',
       friendAccountType: 'human',
       status: 'accepted',
       createdAt: ts,
+      updatedAt: ts,
     });
 
     ws.fire('user.profile_updated', {
@@ -506,13 +539,16 @@ describe('wireEvents', () => {
   it('includes owner info in contact.event for agent contacts', () => {
     store.setOwnerProfile('owner-1', { username: 'nan', displayName: 'Nan' });
     const contact: ContactRecord = {
+      userId: 'me',
       contactId: 'agent-1',
+      requesterId: 'agent-1',
       friendUsername: 'agentbot',
       friendDisplayName: 'AgentBot',
       friendAccountType: 'agent',
       ownerId: 'owner-1',
       status: 'pending',
       createdAt: ts,
+      updatedAt: ts,
     };
     const eventHandler = vi.fn();
     handlers['contact.event'] = eventHandler;
@@ -540,11 +576,14 @@ describe('wireEvents', () => {
         requestId: 'req-1',
         intent: 'request',
         type: 'live_session_info',
-        payload: { sessionId: 's1' },
+        payload: { sessionType: 'conversation', externalReferenceId: 's1' },
       },
     });
 
-    expect(signalHandlers.liveSessionInfo).toHaveBeenCalledWith({ sessionId: 's1' });
+    expect(signalHandlers.liveSessionInfo).toHaveBeenCalledWith({
+      sessionType: 'conversation',
+      externalReferenceId: 's1',
+    });
     expect(sendSignal).toHaveBeenCalledWith(
       expect.objectContaining({
         targetUserId: 'owner-1',
@@ -567,7 +606,7 @@ describe('wireEvents', () => {
         requestId: 'req-2',
         intent: 'request',
         type: 'cancel_session',
-        payload: { sessionId: 's1' },
+        payload: { sessionType: 'conversation', externalReferenceId: 's1' },
       },
     });
 
@@ -575,7 +614,10 @@ describe('wireEvents', () => {
       expect(sendSignal).toHaveBeenCalled();
     });
 
-    expect(signalHandlers.cancelSession).toHaveBeenCalledWith({ sessionId: 's1' });
+    expect(signalHandlers.cancelSession).toHaveBeenCalledWith({
+      sessionType: 'conversation',
+      externalReferenceId: 's1',
+    });
     expect(sendSignal).toHaveBeenCalledWith(
       expect.objectContaining({
         targetUserId: 'owner-1',
@@ -666,7 +708,7 @@ describe('wireEvents', () => {
         requestId: 'req-3',
         intent: 'notification',
         type: 'capabilities_report',
-        payload: {},
+        payload: { sessionType: 'conversation', externalReferenceId: 'x' },
       },
     });
 

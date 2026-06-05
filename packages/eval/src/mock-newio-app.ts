@@ -9,11 +9,24 @@ import type {
   ActionRequest,
   ActionResponse,
   ActivityStatus,
-  AppEventHandlers,
   CancelSessionRequest,
   CancelSessionResponse,
   CompactSessionRequest,
   CompactSessionResponse,
+  LiveSessionInfoRequest,
+  LiveSessionInfoResponse,
+  LoadSessionMemoryResponse,
+  MemoryScopeData,
+  ReportAgentInfoRequest,
+  RotateSessionRequest,
+  RotateSessionResponse,
+  StartSessionRequest,
+  StartSessionResponse,
+  UpdateMemoryRequest,
+  UpdateMemoryResponse,
+} from '@newio/agent-sdk';
+import type {
+  AppEventHandlers,
   ContactEvent,
   ContactEventHandler,
   ConversationControls,
@@ -22,25 +35,15 @@ import type {
   CronCancelledHandler,
   CronTriggeredHandler,
   IncomingMessage,
-  LiveSessionInfoRequest,
-  LiveSessionInfoResponse,
-  LoadSessionMemoryResponse,
-  MemoryScopeData,
   MessageDeletedHandler,
   MessageNewHandler,
   MessageUpdatedHandler,
-  ReportAgentInfoRequest,
-  RotateSessionRequest,
-  RotateSessionResponse,
   SenderRelationship,
   SessionUpdatedHandler,
-  StartSessionRequest,
-  StartSessionResponse,
-  UpdateMemoryRequest,
-  UpdateMemoryResponse,
-} from '@newio/agent-sdk';
-import type { NewioAppForAgent, SessionType } from '@newio/agent-engine';
-import type { CronJobRow } from '@newio/agent-engine';
+  NewioAppForAgent,
+  SessionType,
+  CronJobRow,
+} from '@newio/agent-engine';
 import type { NewioAppForMcp, McpContactSummary, McpMemoryData } from './mcp/v1/types.js';
 import type { MockBackend, BackendEvent, BackendMemoryScope, BackendSignal } from './mock-backend.js';
 

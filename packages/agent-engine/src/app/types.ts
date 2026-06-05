@@ -20,7 +20,7 @@ import type {
   ConversationSettings,
   MemberRole,
   NotifyLevel,
-} from '../core/types.js';
+} from '@newio/agent-sdk';
 
 /** A processed incoming message with sender metadata resolved from caches. */
 export type SenderRelationship = 'owner' | 'peer' | 'in-contact' | 'stranger';

@@ -5,7 +5,8 @@
  * The {@link PromptManager} selects a compatible formatter based on the
  * major version stored with each session.
  */
-import type { IncomingMessage, ContactEvent, CronTriggerEvent, LoadSessionMemoryResponse } from '@newio/agent-sdk';
+import type { LoadSessionMemoryResponse } from '@newio/agent-sdk';
+import type { IncomingMessage, ContactEvent, CronTriggerEvent } from './app/index.js';
 import type { SessionMode } from './prompts/v1/index.js';
 import {
   instructionPrompt,
