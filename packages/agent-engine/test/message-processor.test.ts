@@ -2,14 +2,14 @@ import { describe, it, expect, vi } from 'vitest';
 import { MessageProcessor, shouldSkipMessage, isMentioned } from '../src/app/message-processor.js';
 import { NewioAppStore } from '../src/app/store.js';
 import { PendingActions } from '../src/app/pending-actions.js';
-import type { NewioClient } from '../src/core/client.js';
+import type { NewioClient } from '@newio/agent-sdk';
 import type {
   MessageDeletedHandler,
   MessageNewHandler,
   MessageUpdatedHandler,
   NewioIdentity,
 } from '../src/app/types.js';
-import type { MessageNewEvent } from '../src/core/events.js';
+import type { MessageNewEvent } from '@newio/agent-sdk';
 
 const identity: NewioIdentity = { userId: 'me', username: 'myagent', displayName: 'My Agent' };
 
@@ -85,8 +85,8 @@ describe('MessageProcessor', () => {
       await processor.handleMessage(makePayload());
 
       expect(handler).toHaveBeenCalledTimes(1);
-      expect(handler.mock.calls[0][0].text).toBe('hello');
-      expect(handler.mock.calls[0][0].senderUsername).toBe('other');
+      expect(handler.mock.calls[0]![0].text).toBe('hello');
+      expect(handler.mock.calls[0]![0].senderUsername).toBe('other');
     });
 
     it('does not deliver own messages', async () => {
@@ -185,7 +185,7 @@ describe('MessageProcessor', () => {
         conversationType: 'dm',
         senderUserId: 'x',
         isOwnMessage: false,
-        relationship: 'other' as const,
+        relationship: 'stranger' as const,
         text: '',
         timestamp: new Date().toISOString(),
         status: 'new',

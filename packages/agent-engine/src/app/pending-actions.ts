@@ -8,8 +8,8 @@
  * Handles timeout: if no response arrives before the deadline, the promise
  * rejects with an ActionTimeoutError.
  */
-import type { ActionResponse } from '../core/types.js';
-import { getLogger } from '../core/logger.js';
+import type { ActionResponse } from '@newio/agent-sdk';
+import { getLogger } from '@newio/agent-sdk';
 
 const log = getLogger('pending-actions');
 

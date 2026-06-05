@@ -3,7 +3,7 @@
  *
  * Extracted from NewioApp for testability. Pure logic — no I/O.
  */
-import type { Mentions } from '../core/types.js';
+import type { Mentions } from '@newio/agent-sdk';
 
 // Username grammar — must stay in sync with the canonical USERNAME_REGEX in
 // @conduit/shared and the desktop mention parser: starts with a letter, letters/

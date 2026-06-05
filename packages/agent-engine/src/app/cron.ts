@@ -4,8 +4,8 @@
  * Extracted from NewioApp for testability. Owns timer lifecycle,
  * expression parsing, and event emission.
  */
-import { NewioError } from '../core/errors.js';
-import { getLogger } from '../core/logger.js';
+import { NewioError } from '@newio/agent-sdk';
+import { getLogger } from '@newio/agent-sdk';
 import type { CronJobDef, CronTriggerEvent } from './types.js';
 
 const log = getLogger('cron');

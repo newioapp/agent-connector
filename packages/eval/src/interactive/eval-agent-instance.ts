@@ -13,7 +13,7 @@ import type {
   AgentInstanceListener,
 } from '@newio/agent-engine';
 import type { NewioAppForMcp, NewioMcpServerInterface } from '@newio/agent-engine';
-import type { IncomingMessage } from '@newio/agent-sdk';
+import type { IncomingMessage } from '@newio/agent-engine';
 import { MockNewioApp } from '../mock-newio-app.js';
 import { EvalPromptFormatter } from '../prompts/v1/prompt-formatter.js';
 import { NewioEvalMcpServer } from '../mcp/v1/server.js';

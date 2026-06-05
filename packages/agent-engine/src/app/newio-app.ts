@@ -9,11 +9,11 @@
  */
 import { homedir } from 'os';
 import { join } from 'path';
-import { AuthManager } from '../core/auth.js';
-import { NewioClient } from '../core/client.js';
-import { NewioWebSocket } from '../core/websocket.js';
-import { getLogger } from '../core/logger.js';
-import { ActivityThrottle } from '../core/activity-throttle.js';
+import { AuthManager } from '@newio/agent-sdk';
+import { NewioClient } from '@newio/agent-sdk';
+import { NewioWebSocket } from '@newio/agent-sdk';
+import { getLogger } from '@newio/agent-sdk';
+import { ActivityThrottle } from '@newio/agent-sdk';
 import { NewioAppStore } from './store.js';
 import { loadConversation, wireEvents } from './events.js';
 import { uploadFiles, downloadAttachment } from './media.js';
@@ -21,8 +21,8 @@ import { CronScheduler } from './cron.js';
 import { buildMentions } from './mentions.js';
 import { MessageProcessor } from './message-processor.js';
 import { PendingActions } from './pending-actions.js';
-import type { WebSocketFactory } from '../core/websocket.js';
-import type { ApprovalHandle } from '../core/auth.js';
+import type { WebSocketFactory } from '@newio/agent-sdk';
+import type { ApprovalHandle } from '@newio/agent-sdk';
 import type { StorePersistence } from './store.js';
 import type {
   ActivityStatus,
@@ -42,7 +42,7 @@ import type {
   ReportAgentInfoRequest,
   SearchUsersResponse,
   SessionType,
-} from '../core/types.js';
+} from '@newio/agent-sdk';
 import type {
   IncomingMessage,
   OwnerInfo,

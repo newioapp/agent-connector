@@ -10,7 +10,8 @@
  * Each session processes its own event queue concurrently.
  * Subclasses implement session creation and greeting logic.
  */
-import { ApprovalTimeoutError, ConnectionRejectedError, NewioApp, NotFoundApiError } from '@newio/agent-sdk';
+import { ApprovalTimeoutError, ConnectionRejectedError, NotFoundApiError } from '@newio/agent-sdk';
+import { NewioApp } from './app/index.js';
 import type { ActionOption, ActionRequest } from '@newio/agent-sdk';
 import { NewioMcpServer, startUdsServer } from './mcp/index.js';
 import type { Server } from 'net';

@@ -1,9 +1,10 @@
-import { ActivityStatus, ContactEvent, CronTriggerEvent, getLogger, IncomingMessage } from '@newio/agent-sdk';
+import { ActivityStatus, getLogger } from '@newio/agent-sdk';
+import { ContactEvent, CronTriggerEvent, IncomingMessage } from './app/index.js';
 import { AgentSession } from './agent-session';
 import { AgentEvent, OwnerOpCallback } from './event-queue';
 import { PromptManager } from './prompt-manager';
 import { collectAgentMessage } from './utils';
-import type { ConversationControls } from '@newio/agent-sdk';
+import type { ConversationControls } from './app/index.js';
 import { AgentIdentity, SessionType, SessionEventProcessor } from './types';
 
 export interface NewioAppForSessionEventProcessor {

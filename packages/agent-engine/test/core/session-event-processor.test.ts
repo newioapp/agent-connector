@@ -3,7 +3,7 @@ import { SessionEventProcessorImpl } from '../../src/session-event-processor-imp
 import type { NewioAppForSessionEventProcessor } from '../../src/session-event-processor-impl';
 import type { AgentSession } from '../../src/agent-session';
 import type { PromptManager } from '../../src/prompt-manager';
-import type { IncomingMessage } from '@newio/agent-sdk';
+import type { IncomingMessage } from '../../src/app/index.js';
 
 // ---------------------------------------------------------------------------
 // Helpers

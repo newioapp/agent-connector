@@ -1,8 +1,8 @@
 /**
  * Media helpers — file upload and download for NewioApp.
  */
-import type { NewioClient } from '../core/client.js';
-import type { Attachment, AttachmentType, ImageMetadata } from '../core/types.js';
+import type { NewioClient } from '@newio/agent-sdk';
+import type { Attachment, AttachmentType, ImageMetadata } from '@newio/agent-sdk';
 
 /** Cached lazy import for sharp (optional peer dependency). */
 let sharpLoaded = false;

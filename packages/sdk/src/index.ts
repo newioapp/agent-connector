@@ -28,6 +28,9 @@ export type { TokenStore, ApprovalHandle, WaitForApprovalOptions, AuthManagerOpt
 // HTTP
 export type { TokenProvider } from './core/http.js';
 
+// Activity
+export { ActivityThrottle } from './core/activity-throttle.js';
+
 // Errors
 export type { ErrorCode } from './core/errors.js';
 export {
@@ -219,7 +222,7 @@ export type {
 export type { ReportAgentHostInfo, ReportAgentInfoRequest, ReportAgentInfoResponse } from './core/types.js';
 
 // Types — Sessions
-export type { SessionRecord, SessionConfigUpdate, UpdateAgentMemberConfigRequest } from './core/types.js';
+export type { SessionType, SessionRecord, SessionConfigUpdate, UpdateAgentMemberConfigRequest } from './core/types.js';
 
 // Types — Memory
 export type {
@@ -292,47 +295,3 @@ export type {
   NewioEvent,
   EventMap,
 } from './core/events.js';
-
-// NewioApp — high-level agent client
-export { NewioApp, NEWIO_API_BASE_URL, NEWIO_WS_URL, getClientConfig } from './app/index.js';
-export type { NewioClientConfig } from './app/index.js';
-export { NewioAppStore } from './app/index.js';
-export { ActionTimeoutError, ActionAbortedError } from './app/index.js';
-export type { StorePersistence } from './app/index.js';
-export type {
-  IncomingMessage,
-  SenderRelationship,
-  OwnerInfo,
-  MessageHandler,
-  AppEventHandlers,
-  ContactEventInfo,
-  ContactEvent,
-  ContactEventType,
-  CronJobDef,
-  CronTriggerEvent,
-  ContactSummary,
-  ConversationSummary,
-  FriendRequestSummary,
-  MemberSummary,
-  NewioIdentity,
-  NewioTokens,
-} from './app/index.js';
-export type { NewioAppCreateOptions } from './app/index.js';
-export type {
-  LiveSessionInfoHandler,
-  CancelSessionHandler,
-  CompactSessionHandler,
-  StartSessionHandler,
-  UpdateMemoryHandler,
-  RotateSessionHandler,
-  MessageNewHandler,
-  MessageUpdatedHandler,
-  MessageDeletedHandler,
-  ContactEventHandler,
-  CronTriggeredHandler,
-  CronScheduledHandler,
-  CronCancelledHandler,
-  ConversationMemberUpdatedHandler,
-  SessionUpdatedHandler,
-  ConversationControls,
-} from './app/index.js';

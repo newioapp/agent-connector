@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { PromptFormatter } from '../../src/prompt-formatter';
 import { PromptManager, UnsupportedPromptFormatterVersion } from '../../src/prompt-manager';
-import type { IncomingMessage, ContactEvent, CronTriggerEvent } from '@newio/agent-sdk';
+import type { IncomingMessage, ContactEvent, CronTriggerEvent } from '../../src/app/index.js';
 
 function makeMsg(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
   return {

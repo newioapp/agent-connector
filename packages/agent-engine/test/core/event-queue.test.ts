@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { EventQueue } from '../../src/event-queue';
 import type { AgentEvent } from '../../src/event-queue';
-import type { IncomingMessage, ContactEvent, CronTriggerEvent } from '@newio/agent-sdk';
+import type { IncomingMessage, ContactEvent, CronTriggerEvent } from '../../src/app/index.js';
 
 function createQueue(): EventQueue {
   return new EventQueue('conversation', 'conv-test');

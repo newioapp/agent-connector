@@ -2,15 +2,8 @@
  * Eval scenario types — defines the shape of evaluation scenarios,
  * scripted events, and expectations.
  */
-import type {
-  AccountType,
-  ConversationType,
-  IncomingMessage,
-  ContactEvent,
-  CronTriggerEvent,
-  LoadSessionMemoryResponse,
-} from '@newio/agent-sdk';
-import type { AgentType, SessionMode } from '@newio/agent-engine';
+import type { AccountType, ConversationType, LoadSessionMemoryResponse } from '@newio/agent-sdk';
+import type { AgentType, SessionMode, IncomingMessage, ContactEvent, CronTriggerEvent } from '@newio/agent-engine';
 
 // ---------------------------------------------------------------------------
 // Evaluation areas

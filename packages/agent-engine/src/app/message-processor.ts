@@ -8,10 +8,10 @@
  * - Notify level filtering
  * - Message insertion into the store
  */
-import { getLogger } from '../core/logger.js';
-import type { NewioClient } from '../core/client.js';
-import type { ConversationType, MessageContent, MessageRecord } from '../core/types.js';
-import type { MessageEventPayload } from '../core/events.js';
+import { getLogger } from '@newio/agent-sdk';
+import type { NewioClient } from '@newio/agent-sdk';
+import type { ConversationType, MessageContent, MessageRecord } from '@newio/agent-sdk';
+import type { MessageEventPayload } from '@newio/agent-sdk';
 import type { NewioAppStore } from './store.js';
 import type { MessageDeletedHandler, MessageNewHandler, MessageUpdatedHandler, NewioIdentity } from './types.js';
 import type { PendingActions } from './pending-actions.js';

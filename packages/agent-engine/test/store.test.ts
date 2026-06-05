@@ -1,14 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NewioAppStore } from '../src/app/store.js';
-import type { ContactRecord, MemberRecord, MessageRecord } from '../src/core/types.js';
-import type { ConversationMetadata, NewioIdentity } from '../src/app/types.js';
+import type { ContactRecord, MemberRecord, MessageRecord } from '@newio/agent-sdk';
+import type { ConversationMetadata, NewioIdentity, IncomingMessage } from '../src/app/types.js';
 
 const makeContact = (overrides: Partial<ContactRecord> = {}): ContactRecord => ({
+  userId: 'me',
   contactId: 'user-1',
+  requesterId: 'me',
   friendDisplayName: 'Alice',
   friendAccountType: 'human',
   status: 'accepted',
   createdAt: '2026-01-01T00:00:00Z',
+  updatedAt: '2026-01-01T00:00:00Z',
   ...overrides,
 });
 
@@ -204,7 +207,7 @@ describe('NewioAppStore', () => {
   // -------------------------------------------------------------------------
 
   describe('messages', () => {
-    const msg = (id: string, ts?: string) => ({
+    const msg = (id: string, ts?: string): IncomingMessage => ({
       messageId: id,
       conversationId: 'c1',
       conversationType: 'dm',
@@ -292,6 +295,7 @@ describe('NewioAppStore', () => {
 
   describe('toIncomingMessage', () => {
     const rawMsg: MessageRecord = {
+      conversationId: 'c1',
       messageId: 'msg-1',
       senderId: 'user-1',
       content: { text: 'hello' },
