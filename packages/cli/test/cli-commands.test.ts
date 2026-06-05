@@ -6,31 +6,8 @@ import { DaemonServer } from '../src/daemon/server';
 import { DaemonHandler } from '../src/daemon/handler';
 import { DaemonClient } from '../src/client';
 import { DaemonConnector } from '../src/connector';
-import { extractOption, extractFlag, extractStage } from '../src/cli/args';
 import { parseEnvPairs, resolveAgentId } from '../src/cli/agent-commands';
 import type { AgentConfig, AgentConfigManager, AgentRuntimeManager } from '@newio/agent-engine';
-
-// ---------------------------------------------------------------------------
-// Pure arg helpers
-// ---------------------------------------------------------------------------
-
-describe('args', () => {
-  it('extractOption pulls a --name value out of the args', () => {
-    expect(extractOption(['--type', 'codex', 'x'], ['--type'])).toEqual({ value: 'codex', rest: ['x'] });
-    expect(extractOption(['x'], ['--type'])).toEqual({ value: undefined, rest: ['x'] });
-  });
-
-  it('extractFlag detects and removes a boolean flag', () => {
-    expect(extractFlag(['-f', 'x'], ['-f', '--follow'])).toEqual({ present: true, rest: ['x'] });
-    expect(extractFlag(['x'], ['-f'])).toEqual({ present: false, rest: ['x'] });
-  });
-
-  it('extractStage validates and defaults to prod', () => {
-    expect(extractStage(['--stage', 'dev', 'x'])).toEqual({ stage: 'dev', rest: ['x'] });
-    expect(extractStage(['x']).stage).toBe('prod');
-    expect(extractStage(['--stage', 'bogus']).stage).toBe('prod');
-  });
-});
 
 describe('parseEnvPairs', () => {
   it('parses KEY=VALUE pairs (values may contain =)', () => {

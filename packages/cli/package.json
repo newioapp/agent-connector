@@ -28,7 +28,8 @@
   },
   "dependencies": {
     "@newio/agent-engine": "workspace:*",
-    "@newio/agent-sdk": "workspace:*"
+    "@newio/agent-sdk": "workspace:*",
+    "commander": "^13.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.19.15",

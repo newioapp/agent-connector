@@ -1,5 +1,5 @@
 /**
- * `newio agent …` and `newio agent env …` commands.
+ * `newio agent …` / `newio agent env …` / `newio status` handlers.
  *
  * Thin wrappers over DaemonConnector RPC. Agent ids may be given as a full id,
  * a unique id prefix, or an exact display name.
@@ -7,13 +7,16 @@
 import type { DaemonConnector } from '../connector.js';
 import type { AddAgentInput, AgentStatusInfo, AgentType, SessionMode, UpdateAgentInput } from '@newio/agent-engine';
 import { withDaemon, openConnection } from '../client/connect.js';
-import { extractOption, extractStage } from './args.js';
+import type { Stage } from '../paths.js';
 
 const AGENT_TYPES: readonly AgentType[] = ['claude-code', 'kiro-cli', 'codex', 'cursor', 'gemini', 'custom'];
 const SESSION_MODES: readonly SessionMode[] = ['isolated', 'shared'];
 
 /** Runtime statuses at which `agent start` is done waiting. */
 const TERMINAL_STATUSES = new Set(['running', 'error', 'stopped']);
+
+export const AGENT_TYPE_CHOICES: readonly string[] = AGENT_TYPES;
+export const SESSION_MODE_CHOICES: readonly string[] = SESSION_MODES;
 
 function asAgentType(value: string): AgentType {
   const match = AGENT_TYPES.find((t) => t === value);
@@ -89,56 +92,8 @@ function printAgentTable(agents: readonly AgentStatusInfo[]): void {
   }
 }
 
-function buildAgentInput(args: string[]): { input: AddAgentInput; rest: string[] } {
-  let rest = args;
-  const name = extractOption(rest, ['--name']);
-  rest = name.rest;
-  const type = extractOption(rest, ['--type']);
-  rest = type.rest;
-  const cwd = extractOption(rest, ['--cwd']);
-  rest = cwd.rest;
-  const username = extractOption(rest, ['--username']);
-  rest = username.rest;
-  const sessionMode = extractOption(rest, ['--session-mode']);
-  rest = sessionMode.rest;
-
-  if (type.value === undefined) {
-    throw new Error('--type is required (one of: ' + AGENT_TYPES.join(', ') + ').');
-  }
-  if (name.value === undefined) {
-    throw new Error('--name is required.');
-  }
-  const input: AddAgentInput = {
-    displayName: name.value,
-    type: asAgentType(type.value),
-    acp: { cwd: cwd.value ?? process.cwd() },
-    ...(username.value ? { newioUsername: username.value } : {}),
-    ...(sessionMode.value ? { sessionMode: asSessionMode(sessionMode.value) } : {}),
-  };
-  return { input, rest };
-}
-
-function buildAgentUpdate(args: string[]): UpdateAgentInput {
-  let rest = args;
-  const name = extractOption(rest, ['--name']);
-  rest = name.rest;
-  const cwd = extractOption(rest, ['--cwd']);
-  rest = cwd.rest;
-  const username = extractOption(rest, ['--username']);
-  rest = username.rest;
-  const sessionMode = extractOption(rest, ['--session-mode']);
-  rest = sessionMode.rest;
-
-  return {
-    ...(name.value !== undefined ? { displayName: name.value } : {}),
-    ...(username.value !== undefined ? { newioUsername: username.value } : {}),
-    ...(sessionMode.value !== undefined ? { sessionMode: asSessionMode(sessionMode.value) } : {}),
-    ...(cwd.value !== undefined ? { acp: { cwd: cwd.value } } : {}),
-  };
-}
-
 /** Start an agent and stream status until it reaches a terminal state. */
-async function startAndStream(stage: Parameters<typeof openConnection>[0], query: string): Promise<void> {
+async function startAndStream(stage: Stage, query: string): Promise<void> {
   let resolveDone: () => void = () => {};
   const done = new Promise<void>((resolve) => {
     resolveDone = resolve;
@@ -176,163 +131,155 @@ async function startAndStream(stage: Parameters<typeof openConnection>[0], query
   }
 }
 
-async function runEnvSubcommand(
-  stage: Parameters<typeof withDaemon>[0],
-  sub: string | undefined,
-  args: string[],
-): Promise<void> {
-  const [query, ...rest] = args;
-  if (query === undefined && sub !== undefined) {
-    throw new Error(`Usage: newio agent env ${sub} <agent>`);
-  }
+// ---------------------------------------------------------------------------
+// agent commands
+// ---------------------------------------------------------------------------
 
-  await withDaemon(stage, async (connector) => {
-    const agentId = await resolveAgentId(connector, query ?? '');
-    const agents = await connector.listAgents();
-    const current = agents.find((a) => a.id === agentId)?.config.envVars ?? {};
+export interface AddOptions {
+  readonly type: string;
+  readonly name: string;
+  readonly cwd?: string;
+  readonly username?: string;
+  readonly sessionMode?: string;
+}
 
-    switch (sub) {
-      case 'list': {
-        const keys = Object.keys(current).sort();
-        if (keys.length === 0) {
-          console.log('No environment variables set.');
-        }
-        for (const key of keys) {
-          console.log(`${key}=${current[key]}`);
-        }
-        return;
-      }
-      case 'set': {
-        const next: Record<string, string> = { ...current, ...parseEnvPairs(rest) };
-        await connector.updateAgentEnvVars(agentId, next);
-        console.log(`Updated ${rest.length} variable(s).`);
-        return;
-      }
-      case 'unset': {
-        const remove = new Set(rest);
-        const next: Record<string, string> = {};
-        for (const [key, val] of Object.entries(current)) {
-          if (!remove.has(key)) {
-            next[key] = val;
-          }
-        }
-        await connector.updateAgentEnvVars(agentId, next);
-        console.log(`Removed ${rest.length} variable(s).`);
-        return;
-      }
-      case 'sync': {
-        const { value: shellArg } = extractOption(rest, ['--shell']);
-        const shells = await connector.listShells();
-        const shell = shellArg ?? shells[0];
-        if (!shell) {
-          throw new Error('No login shell available to sync from.');
-        }
-        const shellEnv = await connector.getShellEnv(shell);
-        // Overlay shell-derived vars on existing ones (preserves custom keys).
-        await connector.updateAgentEnvVars(agentId, { ...current, ...shellEnv }, shell);
-        console.log(`Synced ${Object.keys(shellEnv).length} variable(s) from ${shell}.`);
-        return;
-      }
-      default:
-        throw new Error(`Unknown env command: ${sub ?? '(none)'}`);
+export interface UpdateOptions {
+  readonly name?: string;
+  readonly cwd?: string;
+  readonly username?: string;
+  readonly sessionMode?: string;
+}
+
+export async function agentList(stage: Stage): Promise<void> {
+  await withDaemon(stage, async (c) => printAgentTable(await c.listAgents()));
+}
+
+export async function agentAdd(stage: Stage, opts: AddOptions): Promise<void> {
+  const input: AddAgentInput = {
+    displayName: opts.name,
+    type: asAgentType(opts.type),
+    acp: { cwd: opts.cwd ?? process.cwd() },
+    ...(opts.username ? { newioUsername: opts.username } : {}),
+    ...(opts.sessionMode ? { sessionMode: asSessionMode(opts.sessionMode) } : {}),
+  };
+  const config = await withDaemon(stage, (c) => c.addAgent(input));
+  console.log(`Added agent ${config.id} (${config.newio?.displayName ?? opts.name}).`);
+  console.log(`Start it with: newio agent start ${config.id.slice(0, 8)}`);
+}
+
+export async function agentRemove(stage: Stage, query: string): Promise<void> {
+  await withDaemon(stage, async (c) => c.removeAgent(await resolveAgentId(c, query)));
+  console.log('Removed.');
+}
+
+export async function agentStart(stage: Stage, query: string): Promise<void> {
+  await startAndStream(stage, query);
+}
+
+export async function agentStop(stage: Stage, query: string): Promise<void> {
+  await withDaemon(stage, async (c) => c.stopAgent(await resolveAgentId(c, query)));
+  console.log('Stopped.');
+}
+
+export async function agentRestart(stage: Stage, query: string): Promise<void> {
+  await withDaemon(stage, async (c) => c.stopAgent(await resolveAgentId(c, query)));
+  await startAndStream(stage, query);
+}
+
+export async function agentInfo(stage: Stage, query: string): Promise<void> {
+  const info = await withDaemon(stage, async (c) => c.getAgentInfo(await resolveAgentId(c, query)));
+  console.log(info ? JSON.stringify(info, null, 2) : 'No runtime info (agent not running).');
+}
+
+export async function agentUpdate(stage: Stage, query: string, opts: UpdateOptions): Promise<void> {
+  const updates: UpdateAgentInput = {
+    ...(opts.name !== undefined ? { displayName: opts.name } : {}),
+    ...(opts.username !== undefined ? { newioUsername: opts.username } : {}),
+    ...(opts.sessionMode !== undefined ? { sessionMode: asSessionMode(opts.sessionMode) } : {}),
+    ...(opts.cwd !== undefined ? { acp: { cwd: opts.cwd } } : {}),
+  };
+  await withDaemon(stage, async (c) => c.updateAgent(await resolveAgentId(c, query), updates));
+  console.log('Updated.');
+}
+
+// ---------------------------------------------------------------------------
+// env commands
+// ---------------------------------------------------------------------------
+
+async function currentEnv(c: DaemonConnector, agentId: string): Promise<Record<string, string>> {
+  const agents = await c.listAgents();
+  return { ...(agents.find((a) => a.id === agentId)?.config.envVars ?? {}) };
+}
+
+export async function envList(stage: Stage, query: string): Promise<void> {
+  await withDaemon(stage, async (c) => {
+    const env = await currentEnv(c, await resolveAgentId(c, query));
+    const keys = Object.keys(env).sort();
+    if (keys.length === 0) {
+      console.log('No environment variables set.');
+    }
+    for (const key of keys) {
+      console.log(`${key}=${env[key]}`);
     }
   });
 }
 
-/** `newio env shells` — list login shells available for env sync. */
-export async function runEnvShells(rawArgs: string[]): Promise<void> {
-  const { stage } = extractStage(rawArgs);
+export async function envSet(stage: Stage, query: string, pairs: string[]): Promise<void> {
+  await withDaemon(stage, async (c) => {
+    const agentId = await resolveAgentId(c, query);
+    const next = { ...(await currentEnv(c, agentId)), ...parseEnvPairs(pairs) };
+    await c.updateAgentEnvVars(agentId, next);
+  });
+  console.log(`Updated ${pairs.length} variable(s).`);
+}
+
+export async function envUnset(stage: Stage, query: string, keys: string[]): Promise<void> {
+  await withDaemon(stage, async (c) => {
+    const agentId = await resolveAgentId(c, query);
+    const current = await currentEnv(c, agentId);
+    const remove = new Set(keys);
+    const next: Record<string, string> = {};
+    for (const [key, val] of Object.entries(current)) {
+      if (!remove.has(key)) {
+        next[key] = val;
+      }
+    }
+    await c.updateAgentEnvVars(agentId, next);
+  });
+  console.log(`Removed ${keys.length} variable(s).`);
+}
+
+export async function envSync(stage: Stage, query: string, shellArg?: string): Promise<void> {
+  await withDaemon(stage, async (c) => {
+    const agentId = await resolveAgentId(c, query);
+    const shells = await c.listShells();
+    const shell = shellArg ?? shells[0];
+    if (!shell) {
+      throw new Error('No login shell available to sync from.');
+    }
+    const shellEnv = await c.getShellEnv(shell);
+    // Overlay shell-derived vars on existing ones (preserves custom keys).
+    const next = { ...(await currentEnv(c, agentId)), ...shellEnv };
+    await c.updateAgentEnvVars(agentId, next, shell);
+    console.log(`Synced ${Object.keys(shellEnv).length} variable(s) from ${shell}.`);
+  });
+}
+
+export async function envShells(stage: Stage): Promise<void> {
   const shells = await withDaemon(stage, (c) => c.listShells());
   for (const shell of shells) {
     console.log(shell);
   }
 }
 
-/** `newio status` — daemon health + agent overview. */
-export async function runStatus(rawArgs: string[]): Promise<void> {
-  const { stage } = extractStage(rawArgs);
+// ---------------------------------------------------------------------------
+// status
+// ---------------------------------------------------------------------------
+
+export async function status(stage: Stage): Promise<void> {
   await withDaemon(stage, async (c) => {
     const version = await c.version();
     console.log(`newio daemon (${stage}): online, version ${version}\n`);
     printAgentTable(await c.listAgents());
   });
-}
-
-export async function runAgentCommand(sub: string | undefined, rawArgs: string[]): Promise<void> {
-  const { stage, rest: args } = extractStage(rawArgs);
-
-  switch (sub) {
-    case undefined:
-    case 'list':
-      await withDaemon(stage, async (c) => printAgentTable(await c.listAgents()));
-      return;
-    case 'add': {
-      const { input } = buildAgentInput(args);
-      const config = await withDaemon(stage, (c) => c.addAgent(input));
-      console.log(`Added agent ${config.id} (${config.newio?.displayName ?? input.displayName}).`);
-      console.log(`Start it with: newio agent start ${config.id.slice(0, 8)}`);
-      return;
-    }
-    case 'remove': {
-      const [query] = args;
-      if (!query) {
-        throw new Error('Usage: newio agent remove <agent>');
-      }
-      await withDaemon(stage, async (c) => c.removeAgent(await resolveAgentId(c, query)));
-      console.log('Removed.');
-      return;
-    }
-    case 'start': {
-      const [query] = args;
-      if (!query) {
-        throw new Error('Usage: newio agent start <agent>');
-      }
-      await startAndStream(stage, query);
-      return;
-    }
-    case 'stop': {
-      const [query] = args;
-      if (!query) {
-        throw new Error('Usage: newio agent stop <agent>');
-      }
-      await withDaemon(stage, async (c) => c.stopAgent(await resolveAgentId(c, query)));
-      console.log('Stopped.');
-      return;
-    }
-    case 'restart': {
-      const [query] = args;
-      if (!query) {
-        throw new Error('Usage: newio agent restart <agent>');
-      }
-      await withDaemon(stage, async (c) => c.stopAgent(await resolveAgentId(c, query)));
-      await startAndStream(stage, query);
-      return;
-    }
-    case 'info': {
-      const [query] = args;
-      if (!query) {
-        throw new Error('Usage: newio agent info <agent>');
-      }
-      const info = await withDaemon(stage, async (c) => c.getAgentInfo(await resolveAgentId(c, query)));
-      console.log(info ? JSON.stringify(info, null, 2) : 'No runtime info (agent not running).');
-      return;
-    }
-    case 'update': {
-      const [query, ...updateArgs] = args;
-      if (!query) {
-        throw new Error('Usage: newio agent update <agent> [--name ...] [--cwd ...] [--session-mode ...]');
-      }
-      const updates = buildAgentUpdate(updateArgs);
-      await withDaemon(stage, async (c) => c.updateAgent(await resolveAgentId(c, query), updates));
-      console.log('Updated.');
-      return;
-    }
-    case 'env': {
-      const [envSub, ...envArgs] = args;
-      await runEnvSubcommand(stage, envSub, envArgs);
-      return;
-    }
-    default:
-      throw new Error(`Unknown agent command: ${sub}`);
-  }
 }
