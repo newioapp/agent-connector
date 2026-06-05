@@ -7,6 +7,36 @@
 import { createConnection, type Socket } from 'net';
 import type { AgentConfig, AgentRuntimeStatus, AgentInfo } from '@newio/agent-engine';
 
+const AGENT_RUNTIME_STATUSES: readonly AgentRuntimeStatus[] = [
+  'stopped',
+  'stopping',
+  'starting',
+  'awaiting_approval',
+  'initializing',
+  'greeting',
+  'running',
+  'error',
+];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isAgentRuntimeStatus(value: unknown): value is AgentRuntimeStatus {
+  return typeof value === 'string' && AGENT_RUNTIME_STATUSES.some((s) => s === value);
+}
+
+// The daemon is trusted (same protocol version, verified at connect), so these
+// payload guards are lightweight shape checks — enough to drop a malformed frame
+// rather than deliver a mistyped object to handlers.
+function isAgentConfig(value: unknown): value is AgentConfig {
+  return isRecord(value) && typeof value.id === 'string' && typeof value.type === 'string';
+}
+
+function isAgentInfo(value: unknown): value is AgentInfo {
+  return isRecord(value) && value.protocol === 'acp';
+}
+
 export interface DaemonNotificationHandlers {
   onStatusChanged?(agentId: string, status: AgentRuntimeStatus, error?: string): void;
   onApprovalUrl?(agentId: string, approvalUrl: string): void;
@@ -73,56 +103,83 @@ export class DaemonClient {
   }
 
   private handleMessage(raw: string): void {
-    let msg: Record<string, unknown>;
+    let parsed: unknown;
     try {
-      msg = JSON.parse(raw) as Record<string, unknown>;
+      parsed = JSON.parse(raw);
     } catch {
       return;
     }
+    if (!isRecord(parsed)) {
+      return;
+    }
+    const msg = parsed;
 
-    // Notification (no id)
+    // Notification (no id).
     if (!('id' in msg)) {
-      this.handleNotification(msg.method as string, msg.params);
+      const method = msg.method;
+      if (typeof method === 'string') {
+        this.handleNotification(method, msg.params);
+      }
       return;
     }
 
-    // Response
-    const pending = this.pending.get(msg.id as number);
-    if (!pending) return;
-    this.pending.delete(msg.id as number);
+    // Response — correlate by id.
+    const id = msg.id;
+    if (typeof id !== 'number') {
+      return;
+    }
+    const pending = this.pending.get(id);
+    if (!pending) {
+      return;
+    }
+    this.pending.delete(id);
 
     if ('error' in msg) {
-      const err = msg.error as { message: string };
-      pending.reject(new Error(err.message));
+      const message = isRecord(msg.error) && typeof msg.error.message === 'string' ? msg.error.message : 'RPC error';
+      pending.reject(new Error(message));
     } else {
       pending.resolve(msg.result);
     }
   }
 
   private handleNotification(method: string, params: unknown): void {
-    const p = params as Record<string, unknown>;
+    if (!isRecord(params)) {
+      return;
+    }
+    const agentId = params.agentId;
+    if (typeof agentId !== 'string') {
+      // Every notification below is agent-scoped; drop malformed frames.
+      if (method === 'daemon.reloaded') {
+        this.handlers.onReloaded?.();
+      }
+      return;
+    }
+
     switch (method) {
-      case 'agent.statusChanged':
-        this.handlers.onStatusChanged?.(
-          p.agentId as string,
-          p.status as AgentRuntimeStatus,
-          p.error as string | undefined,
-        );
+      case 'agent.statusChanged': {
+        if (isAgentRuntimeStatus(params.status)) {
+          const error = typeof params.error === 'string' ? params.error : undefined;
+          this.handlers.onStatusChanged?.(agentId, params.status, error);
+        }
         break;
+      }
       case 'agent.approvalUrl':
-        this.handlers.onApprovalUrl?.(p.agentId as string, p.approvalUrl as string);
+        if (typeof params.approvalUrl === 'string') {
+          this.handlers.onApprovalUrl?.(agentId, params.approvalUrl);
+        }
         break;
       case 'agent.pollAttempt':
-        this.handlers.onPollAttempt?.(p.agentId as string);
+        this.handlers.onPollAttempt?.(agentId);
         break;
       case 'agent.configUpdated':
-        this.handlers.onConfigUpdated?.(p.agentId as string, p.config as AgentConfig);
+        if (isAgentConfig(params.config)) {
+          this.handlers.onConfigUpdated?.(agentId, params.config);
+        }
         break;
       case 'agent.acpInfo':
-        this.handlers.onAgentInfo?.(p.agentId as string, p.info as AgentInfo);
-        break;
-      case 'daemon.reloaded':
-        this.handlers.onReloaded?.();
+        if (isAgentInfo(params.info)) {
+          this.handlers.onAgentInfo?.(agentId, params.info);
+        }
         break;
     }
   }
