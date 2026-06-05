@@ -2,10 +2,14 @@
  * DaemonHandler — application-level JSON-RPC dispatch.
  *
  * Implements RequestHandler; called by DaemonServer for each incoming request.
+ * Every method decodes its params through the typed Params/decoder helpers
+ * rather than `as`-casting untyped wire data.
  */
 import type { AgentConfigManager, AgentRuntimeManager } from '@newio/agent-engine';
 import type { RequestHandler } from './server.js';
 import { listAvailableShells, getShellEnv } from './shell-env.js';
+import { Params, RpcError, RPC_PROTOCOL_VERSION } from './rpc.js';
+import { decodeAddAgentInput, decodeUpdateAgentInput } from './decode-agent.js';
 
 export interface DaemonHandlerDeps {
   readonly agentConfigManager: AgentConfigManager;
@@ -22,8 +26,9 @@ export class DaemonHandler implements RequestHandler {
     this.deps = deps;
   }
 
-  async handle(method: string, params: unknown[]): Promise<unknown> {
+  async handle(method: string, rawParams: unknown[]): Promise<unknown> {
     const { agentConfigManager: cfg, agentRuntimeManager: rt } = this.deps;
+    const params = new Params(rawParams);
 
     switch (method) {
       case 'agent.list': {
@@ -33,46 +38,47 @@ export class DaemonHandler implements RequestHandler {
         });
       }
       case 'agent.add': {
-        const [input] = params as [Parameters<AgentConfigManager['add']>[0]];
+        const input = decodeAddAgentInput(params.object(0, 'input'));
         const shells = listAvailableShells();
         const selectedShell = shells[0];
         const envVars = selectedShell ? await getShellEnv(selectedShell) : undefined;
         return cfg.add({ ...input, ...(envVars ? { envVars, envVarsShell: selectedShell } : {}) });
       }
       case 'agent.update': {
-        const [agentId, updates] = params as [string, Parameters<AgentConfigManager['update']>[1]];
+        const agentId = params.string(0, 'agentId');
+        const updates = decodeUpdateAgentInput(params.object(1, 'updates'));
         return cfg.update(agentId, updates);
       }
       case 'agent.remove': {
-        const [agentId] = params as [string];
+        const agentId = params.string(0, 'agentId');
         await rt.stop(agentId);
         cfg.remove(agentId);
         return null;
       }
       case 'agent.start': {
-        const [agentId] = params as [string];
-        rt.start(agentId);
+        rt.start(params.string(0, 'agentId'));
         return null;
       }
       case 'agent.stop': {
-        const [agentId] = params as [string];
-        await rt.stop(agentId);
+        await rt.stop(params.string(0, 'agentId'));
         return null;
       }
       case 'agent.getInfo': {
-        const [agentId] = params as [string];
-        return rt.getAgentInfo(agentId) ?? null;
+        return rt.getAgentInfo(params.string(0, 'agentId')) ?? null;
       }
       case 'agent.updateEnvVars': {
-        const [agentId, envVars, shell] = params as [string, Record<string, string>, string?];
+        const agentId = params.string(0, 'agentId');
+        const envVars = params.stringRecord(1, 'envVars');
+        const shell = params.optionalString(2, 'shell');
         return cfg.update(agentId, { envVars, ...(shell ? { envVarsShell: shell } : {}) });
       }
       case 'env.listShells':
         return listAvailableShells();
       case 'env.getShellEnv': {
-        const [shell] = params as [string];
-        return getShellEnv(shell);
+        return getShellEnv(params.string(0, 'shell'));
       }
+      case 'daemon.handshake':
+        return { protocolVersion: RPC_PROTOCOL_VERSION, version: this.deps.version };
       case 'daemon.version':
         return this.deps.version;
       case 'daemon.ping':
@@ -84,7 +90,7 @@ export class DaemonHandler implements RequestHandler {
         setImmediate(() => void this.deps.onStop());
         return null;
       default:
-        throw Object.assign(new Error(`Method not found: ${method}`), { code: -32601 });
+        throw RpcError.methodNotFound(method);
     }
   }
 }

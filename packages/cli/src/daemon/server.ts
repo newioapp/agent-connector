@@ -6,6 +6,7 @@
  */
 import { createServer, type Server, type Socket } from 'net';
 import { getLogger } from '@newio/agent-sdk';
+import { RpcError, JsonRpcErrorCode } from './rpc.js';
 
 const log = getLogger('daemon-server');
 
@@ -119,7 +120,11 @@ export class DaemonServer {
       req = JSON.parse(raw);
       assertJsonRpcRequest(req);
     } catch {
-      this.send(socket, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } });
+      this.send(socket, {
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: JsonRpcErrorCode.ParseError, message: 'Parse error' },
+      });
       return;
     }
 
@@ -127,8 +132,10 @@ export class DaemonServer {
       const result = await this.handler.handle(req.method, req.params);
       this.send(socket, { jsonrpc: '2.0', id: req.id, result });
     } catch (err) {
+      // Preserve a typed RpcError's code; default unexpected errors to AppError.
+      const code = err instanceof RpcError ? err.code : JsonRpcErrorCode.AppError;
       const message = err instanceof Error ? err.message : String(err);
-      this.send(socket, { jsonrpc: '2.0', id: req.id, error: { code: -32000, message } });
+      this.send(socket, { jsonrpc: '2.0', id: req.id, error: { code, message } });
     }
   }
 

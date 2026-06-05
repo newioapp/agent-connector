@@ -108,6 +108,11 @@ describe('DaemonServer / DaemonConnector', () => {
       expect(await ctx.connector.ping()).toBe('pong');
     });
 
+    it('daemon.handshake returns protocol + version', async () => {
+      const hs = await ctx.connector.handshake();
+      expect(hs).toEqual({ protocolVersion: 1, version: '1.2.3' });
+    });
+
     it('daemon.reload calls onReload', async () => {
       await ctx.connector.reload();
       expect(ctx.onReload).toHaveBeenCalledOnce();

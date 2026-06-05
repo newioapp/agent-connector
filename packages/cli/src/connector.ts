@@ -6,6 +6,12 @@
 import type { AgentConfig, AddAgentInput, UpdateAgentInput, AgentStatusInfo, AgentInfo } from '@newio/agent-engine';
 import { DaemonClient, type DaemonNotificationHandlers } from './client.js';
 
+/** Result of `daemon.handshake` — protocol version plus the daemon's own version. */
+export interface DaemonHandshake {
+  readonly protocolVersion: number;
+  readonly version: string;
+}
+
 export class DaemonConnector {
   readonly client: DaemonClient;
 
@@ -56,6 +62,10 @@ export class DaemonConnector {
   }
 
   // Daemon methods
+  /** Negotiate protocol version + daemon version. Use to detect client/daemon skew. */
+  handshake(): Promise<DaemonHandshake> {
+    return this.client.call('daemon.handshake');
+  }
   version(): Promise<string> {
     return this.client.call('daemon.version');
   }

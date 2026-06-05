@@ -9,12 +9,13 @@ import { DaemonClient } from '../client.js';
 import { DaemonConnector } from '../connector.js';
 import type { DaemonNotificationHandlers } from '../client.js';
 import { getDaemonPaths, type Stage } from '../paths.js';
+import { RPC_PROTOCOL_VERSION } from '../daemon/rpc.js';
 
 function startHint(stage: Stage): string {
   return `newio daemon start${stage === 'prod' ? '' : ` --stage ${stage}`}`;
 }
 
-/** Connect to the daemon, or throw a friendly "is it running?" error. */
+/** Connect to the daemon, verify protocol compatibility, or throw a friendly error. */
 export async function openConnection(
   stage: Stage,
   handlers: DaemonNotificationHandlers = {},
@@ -28,6 +29,16 @@ export async function openConnection(
       `Cannot reach the newio daemon (stage ${stage}). Is it running?\n  Start it with: ${startHint(stage)}`,
     );
   }
+
+  const handshake = await connector.handshake();
+  if (handshake.protocolVersion !== RPC_PROTOCOL_VERSION) {
+    connector.disconnect();
+    throw new Error(
+      `Daemon protocol mismatch (daemon v${handshake.protocolVersion}, CLI v${RPC_PROTOCOL_VERSION}). ` +
+        `Restart the daemon after updating: newio daemon restart${stage === 'prod' ? '' : ` --stage ${stage}`}`,
+    );
+  }
+
   return connector;
 }
 
