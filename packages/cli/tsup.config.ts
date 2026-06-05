@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig([
-  // Library export (DaemonClient for Electron app)
+  // Library export (DaemonConnector for the Electron app)
   {
     entry: { index: 'src/index.ts' },
     format: ['esm', 'cjs'],
@@ -9,16 +9,12 @@ export default defineConfig([
     clean: true,
     sourcemap: true,
   },
-  // Daemon binary
-  {
-    entry: { daemon: 'src/daemon/index.ts' },
-    format: ['esm'],
-    sourcemap: true,
-  },
-  // CLI binary
+  // Single `newio` binary. The daemon is reached via `newio daemon run` and is
+  // code-split out of the client path via a dynamic import in cli/index.ts.
   {
     entry: { cli: 'src/cli/index.ts' },
     format: ['esm'],
     sourcemap: true,
+    splitting: true,
   },
 ]);

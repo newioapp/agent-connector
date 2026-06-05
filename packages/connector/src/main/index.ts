@@ -8,8 +8,8 @@ import { createStore } from './store';
 import { MainWindowManager } from './main-window';
 import { FileAgentConfigManager } from '@newio/agent-engine';
 import { AgentRuntimeManager } from '@newio/agent-engine';
+import { JsonCronStore } from '@newio/agent-engine';
 import type { EngineConfig } from '@newio/agent-engine';
-import { SqliteCronStore } from './sqlite-cron-store';
 import { IpcHandler } from './ipc-handler';
 import { registerIpcHandlers } from './ipc-registry';
 import { EVENT_CHANNELS } from '../shared/ipc-events';
@@ -83,7 +83,7 @@ void app.whenReady().then(async () => {
   };
 
   const agentConfigManager = new FileAgentConfigManager(dataDir);
-  const cronStore = new SqliteCronStore(join(dataDir, 'cron.db'));
+  const cronStore = new JsonCronStore(join(dataDir, 'cron.json'));
 
   const agentRuntimeManager = new AgentRuntimeManager(
     agentConfigManager,

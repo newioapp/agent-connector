@@ -1,58 +1,68 @@
-#!/usr/bin/env node
 /**
- * newio-connectord — Newio Agent Connector daemon.
+ * Newio Agent Connector daemon.
  *
- * Starts the agent engine and exposes a JSON-RPC 2.0 API over a Unix domain socket.
- * Managed by the OS service manager (systemctl/launchctl) or spawned directly.
+ * Starts the agent engine and exposes a JSON-RPC 2.0 API over a Unix domain
+ * socket. Invoked via `newio daemon run` (the foreground process that the OS
+ * service manager — launchd/systemd — executes).
  */
 import { join } from 'path';
 import { mkdirSync, existsSync, writeFileSync, unlinkSync } from 'fs';
-import { homedir } from 'os';
 import { createRequire } from 'module';
 import { setLogHandler, getLogger } from '@newio/agent-sdk';
 import {
   FileAgentConfigManager,
   AgentRuntimeManager,
+  JsonCronStore,
   type EngineConfig,
   type StatusListener,
 } from '@newio/agent-engine';
 import { DaemonServer } from './server.js';
 import { DaemonHandler } from './handler.js';
-import { SqliteCronStore } from './sqlite-cron-store.js';
+import { resolveStage, getDaemonPaths, getDefaultUrls } from '../paths.js';
 import { version } from '../../package.json';
 
 const log = getLogger('daemon');
 
-// ---------------------------------------------------------------------------
-// Config from environment
-// ---------------------------------------------------------------------------
+/**
+ * Boot the daemon. Resolves config from the environment, sets up the agent
+ * runtime, and serves JSON-RPC over the stage's Unix socket until SIGINT/SIGTERM.
+ */
+export async function runDaemon(): Promise<void> {
+  setLogHandler((level, name, message, args) => {
+    const prefix = `[${name}]`;
+    if (level === 'error') {
+      console.error(prefix, message, ...args);
+    } else if (level === 'warn') {
+      console.warn(prefix, message, ...args);
+    } else {
+      console.log(prefix, message, ...args);
+    }
+  });
 
-const stage = (process.env['NEWIO_STAGE'] ?? 'prod') as EngineConfig['stage'];
-const apiBaseUrl = process.env['NEWIO_API_URL'] ?? 'https://api.newio.app';
-const wsUrl = process.env['NEWIO_WS_URL'] ?? 'wss://ws.newio.app';
+  // Login-shell env resolution depends on $HOME; fail loudly if a service unit
+  // launched us without it rather than silently producing empty agent envs.
+  if (typeof process.env['HOME'] !== 'string' || process.env['HOME'].length === 0) {
+    throw new Error('HOME is not set — the daemon cannot resolve agent shell environments.');
+  }
 
-const homeDir = stage === 'prod' ? '.newio' : `.newio-${stage}`;
-const dataDir = join(homedir(), homeDir, 'connector');
-if (!existsSync(dataDir)) {
-  mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-}
+  const stage = resolveStage(process.env['NEWIO_STAGE']);
+  const defaults = getDefaultUrls(stage);
+  const apiBaseUrl = process.env['NEWIO_API_URL'] ?? defaults.apiBaseUrl;
+  const wsUrl = process.env['NEWIO_WS_URL'] ?? defaults.wsUrl;
 
-const socketPath = join(dataDir, 'daemon.sock');
-const pidPath = join(dataDir, 'daemon.pid');
+  const { dataDir, socketPath, pidPath } = getDaemonPaths(stage);
+  if (!existsSync(dataDir)) {
+    mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  }
 
-const require = createRequire(import.meta.url);
-const mcpBridgePath = require.resolve('@newio/agent-engine/mcp-bridge');
+  const require = createRequire(import.meta.url);
+  const mcpBridgePath = require.resolve('@newio/agent-engine/mcp-bridge');
 
-// ---------------------------------------------------------------------------
-// Boot
-// ---------------------------------------------------------------------------
-
-async function main(): Promise<void> {
   if (existsSync(socketPath)) {
     try {
       unlinkSync(socketPath);
     } catch {
-      /* ignore */
+      /* ignore stale socket */
     }
   }
   writeFileSync(pidPath, String(process.pid), 'utf8');
@@ -68,10 +78,10 @@ async function main(): Promise<void> {
   };
 
   const agentConfigManager = new FileAgentConfigManager(dataDir);
-  const cronStore = new SqliteCronStore(join(dataDir, 'cron.db'));
+  const cronStore = new JsonCronStore(join(dataDir, 'cron.json'));
 
   // Runtime manager is recreated on reload; handler holds a mutable reference.
-  const makeListener = (_handler: DaemonHandler): StatusListener => ({
+  const makeListener = (): StatusListener => ({
     onStatusChanged(agentId, status, error) {
       server.notify('agent.statusChanged', { agentId, status, error });
     },
@@ -83,7 +93,9 @@ async function main(): Promise<void> {
     },
     onConfigUpdated(agentId) {
       const config = agentConfigManager.get(agentId);
-      if (config) server.notify('agent.configUpdated', { agentId, config });
+      if (config) {
+        server.notify('agent.configUpdated', { agentId, config });
+      }
     },
     onAgentInfo(agentId, info) {
       server.notify('agent.acpInfo', { agentId, info });
@@ -92,11 +104,11 @@ async function main(): Promise<void> {
 
   const handler = new DaemonHandler({
     agentConfigManager,
-    agentRuntimeManager: new AgentRuntimeManager(agentConfigManager, cronStore, {} as StatusListener, engineConfig),
+    agentRuntimeManager: new AgentRuntimeManager(agentConfigManager, cronStore, makeListener(), engineConfig),
     version,
     onReload: async () => {
       log.info('Reloading...');
-      // Capture which agents were running
+      // Capture which agents were running so we can restart them.
       const running = agentConfigManager
         .list()
         .filter((c) => {
@@ -110,7 +122,7 @@ async function main(): Promise<void> {
       handler.deps.agentRuntimeManager = new AgentRuntimeManager(
         agentConfigManager,
         cronStore,
-        makeListener(handler),
+        makeListener(),
         engineConfig,
       );
 
@@ -129,35 +141,26 @@ async function main(): Promise<void> {
     },
   });
 
-  // Wire the real listener now that handler exists
-  handler.deps.agentRuntimeManager = new AgentRuntimeManager(
-    agentConfigManager,
-    cronStore,
-    makeListener(handler),
-    engineConfig,
-  );
-
   const server = new DaemonServer(handler);
   await server.listen(socketPath);
-  log.info(`newio-connectord ${version} started (pid ${process.pid})`);
+  log.info(`newio daemon ${version} started (pid ${process.pid}, stage ${stage})`);
 
   let shuttingDown = false;
   async function shutdown(): Promise<void> {
-    if (shuttingDown) return;
+    if (shuttingDown) {
+      return;
+    }
     shuttingDown = true;
     log.info('Shutting down...');
     await handler.deps.agentRuntimeManager.stopAll();
     cronStore.close();
     await server.close();
-    try {
-      unlinkSync(socketPath);
-    } catch {
-      /* ignore */
-    }
-    try {
-      unlinkSync(pidPath);
-    } catch {
-      /* ignore */
+    for (const path of [socketPath, pidPath]) {
+      try {
+        unlinkSync(path);
+      } catch {
+        /* ignore */
+      }
     }
     log.info('Shutdown complete');
     process.exit(0);
@@ -166,15 +169,3 @@ async function main(): Promise<void> {
   process.on('SIGINT', () => void shutdown());
   process.on('SIGTERM', () => void shutdown());
 }
-
-setLogHandler((level, name, message, args) => {
-  const prefix = `[${name}]`;
-  if (level === 'error') console.error(prefix, message, ...args);
-  else if (level === 'warn') console.warn(prefix, message, ...args);
-  else console.log(prefix, message, ...args);
-});
-
-main().catch((err: unknown) => {
-  console.error('Fatal error:', err);
-  process.exit(1);
-});
