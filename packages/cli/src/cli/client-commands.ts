@@ -58,12 +58,31 @@ export async function runClientCommand(command: string | undefined, args: string
 
   if (command === 'daemon') {
     const { runDaemonCommand } = await import('./daemon-commands.js');
-    runDaemonCommand(args[0], args.slice(1));
+    await runDaemonCommand(args[0], args.slice(1));
     return;
   }
 
-  // TODO(cli): implement agent/env command bodies (auto-spawn, DaemonConnector
-  // calls, notification streaming).
+  if (command === 'agent') {
+    const { runAgentCommand } = await import('./agent-commands.js');
+    await runAgentCommand(args[0], args.slice(1));
+    return;
+  }
+
+  if (command === 'env') {
+    if (args[0] !== 'shells') {
+      throw new Error('Usage: newio env shells');
+    }
+    const { runEnvShells } = await import('./agent-commands.js');
+    await runEnvShells(args.slice(1));
+    return;
+  }
+
+  if (command === 'status') {
+    const { runStatus } = await import('./agent-commands.js');
+    await runStatus(args);
+    return;
+  }
+
   console.error(`'${command}' is not implemented yet.`);
   process.exitCode = 1;
 }

@@ -9,6 +9,7 @@
 import { realpathSync } from 'fs';
 import { resolveStage, getDaemonPaths, getDefaultUrls, type Stage } from '../paths.js';
 import { createServiceManager, type InstallOptions, type ServiceStatus } from '../service/index.js';
+import { withDaemon } from '../client/connect.js';
 
 interface DaemonFlags {
   readonly stage: Stage;
@@ -101,8 +102,16 @@ function describeStatus(stage: Stage, status: ServiceStatus): string {
   }
 }
 
-export function runDaemonCommand(sub: string | undefined, args: string[]): void {
+export async function runDaemonCommand(sub: string | undefined, args: string[]): Promise<void> {
   const flags = parseDaemonFlags(args);
+
+  // reload talks to the running daemon over RPC rather than the service manager.
+  if (sub === 'reload') {
+    await withDaemon(flags.stage, (c) => c.reload());
+    console.log(`Reloaded newio daemon (${flags.stage}).`);
+    return;
+  }
+
   const service = createServiceManager(flags.stage);
 
   switch (sub) {
