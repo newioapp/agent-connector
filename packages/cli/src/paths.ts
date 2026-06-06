@@ -39,22 +39,11 @@ export function getDaemonPaths(stage: Stage): DaemonPaths {
   };
 }
 
-export interface NewioUrls {
-  readonly apiBaseUrl: string;
-  readonly wsUrl: string;
-}
-
-/** Default Newio API/WS URLs for a stage (overridable via env at the call site). */
-export function getDefaultUrls(stage: Stage): NewioUrls {
-  switch (stage) {
-    case 'dev':
-      return { apiBaseUrl: 'https://api.nan-dev.newio.app', wsUrl: 'wss://ws.nan-dev.newio.app' };
-    case 'integ':
-      return { apiBaseUrl: 'https://api.pipeline-integ.newio.app', wsUrl: 'wss://ws.pipeline-integ.newio.app' };
-    case 'prod':
-      return { apiBaseUrl: 'https://api.newio.app', wsUrl: 'wss://ws.newio.app' };
-  }
-}
+// Production endpoints — the only URLs hardcoded in this (private) repo. Non-prod
+// stage URLs are never checked in; internal testers supply them via the
+// NEWIO_API_URL / NEWIO_WS_URL env vars.
+const PROD_API_URL = 'https://api.newio.app';
+const PROD_WS_URL = 'wss://ws.newio.app';
 
 export interface ResolvedConfig {
   readonly stage: Stage;
@@ -66,16 +55,15 @@ export interface ResolvedConfig {
  * The single source of truth for stage + URL resolution from the environment.
  *
  * Stage and URLs are intentionally NOT exposed as CLI flags — they're internal
- * testing knobs. End users with no env set always resolve to `prod`. Internal
- * testers set `NEWIO_STAGE` (and optionally `NEWIO_API_URL`/`NEWIO_WS_URL` to
- * override the stage's default endpoints).
+ * testing knobs. End users with no env set resolve to `prod` with the production
+ * endpoints. Internal testers set `NEWIO_STAGE` (for data-dir/socket isolation)
+ * and `NEWIO_API_URL` / `NEWIO_WS_URL` to point at a non-prod backend. If the
+ * stage is set without matching URLs, requests simply fall back to prod.
  */
 export function resolveConfig(): ResolvedConfig {
-  const stage = resolveStage(process.env['NEWIO_STAGE']);
-  const defaults = getDefaultUrls(stage);
   return {
-    stage,
-    apiBaseUrl: process.env['NEWIO_API_URL'] ?? defaults.apiBaseUrl,
-    wsUrl: process.env['NEWIO_WS_URL'] ?? defaults.wsUrl,
+    stage: resolveStage(process.env['NEWIO_STAGE']),
+    apiBaseUrl: process.env['NEWIO_API_URL'] ?? PROD_API_URL,
+    wsUrl: process.env['NEWIO_WS_URL'] ?? PROD_WS_URL,
   };
 }

@@ -6,7 +6,7 @@ import type { InstallOptions } from '../src/service/types';
 const baseOpts: InstallOptions = {
   nodePath: '/usr/local/bin/node',
   cliEntryPath: '/usr/local/lib/node_modules/@newio/cli/dist/cli.js',
-  env: { NEWIO_STAGE: 'dev', NEWIO_API_URL: 'https://api.nan-dev.newio.app', HOME: '/Users/nan' },
+  env: { NEWIO_STAGE: 'dev', NEWIO_API_URL: 'https://api.example.test', HOME: '/Users/nan' },
   logPath: '/Users/nan/.newio-dev/connector/daemon.log',
   enable: true,
 };
