@@ -1,4 +1,4 @@
-appId: dev.newio.connector
+appId: app.newio.connector
 productName: Agent Connector
 directories:
   buildResources: build
@@ -39,6 +39,21 @@ dmg:
 # --- Linux ---
 linux:
   category: Network;Development
+  # Clean executable + .desktop/icon basename. Without this, electron-builder
+  # derives it from the package name "@newio/connector" → "@newioconnector",
+  # whose leading "@" breaks freedesktop icon-theme lookup (no launcher icon).
+  executableName: agent-connector
+  # Directory of standard-size PNGs (16–512). A single 1024x1024 icon lands in
+  # a non-standard hicolor size dir that GNOME's launcher ignores.
+  icon: build/icons
+  # Short one-line summary (Debian control "Description" synopsis line).
+  synopsis: Connect AI agents to the Newio messaging platform
+  # Long description. Folded (>-) to a single line: it also becomes the .desktop
+  # "Comment", which must not span multiple lines.
+  description: >-
+    Agent Connector links AI coding agents (such as Claude Code, Codex, and
+    Gemini, via the Agent Client Protocol) to the Newio messaging platform,
+    letting them participate in conversations as first-class members.
   artifactName: agent-connector-${version}-linux-${arch}.${ext}
   target:
     - AppImage

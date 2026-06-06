@@ -11,4 +11,5 @@ temp.md
 .playwright-cli/
 .env
 .env.*
+!.env.example
 newio-downloads/
