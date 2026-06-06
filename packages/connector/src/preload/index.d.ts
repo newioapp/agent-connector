@@ -5,6 +5,9 @@ import type { IpcApi } from '../shared/ipc-api';
 import type { MainToRendererEvents } from '../shared/ipc-events';
 
 export interface ConnectorAPI extends IpcApi {
+  /** The host OS platform (NodeJS.Platform, e.g. 'darwin' | 'win32' | 'linux'). Static; no IPC. */
+  readonly platform: NodeJS.Platform;
+
   onAgentStatusChanged(callback: (data: MainToRendererEvents['agent-status-changed']) => void): () => void;
   onAgentApprovalUrl(callback: (data: MainToRendererEvents['agent-approval-url']) => void): () => void;
   onAgentPollAttempt(callback: (data: MainToRendererEvents['agent-poll-attempt']) => void): () => void;
