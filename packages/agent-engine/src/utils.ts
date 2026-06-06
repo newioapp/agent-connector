@@ -1,4 +1,6 @@
 import type { AcpConfig, AgentType, SessionStreamSegment } from './types';
+import { buildClaudeRunCommand } from './claude-acp';
+import type { ResolvedAgentCommand } from './claude-acp';
 
 export async function collectAgentMessage(gen: AsyncGenerator<SessionStreamSegment>): Promise<string | undefined> {
   const parts: string[] = [];
@@ -11,10 +13,7 @@ export async function collectAgentMessage(gen: AsyncGenerator<SessionStreamSegme
 }
 
 /** Resolve the command and arguments to spawn an ACP agent process. */
-export function resolveCommand(
-  type: AgentType,
-  config: AcpConfig,
-): { readonly command: string; readonly args: readonly string[] } {
+export function resolveCommand(type: AgentType, config: AcpConfig): ResolvedAgentCommand {
   if (type === 'kiro-cli') {
     const command = config.executablePath ?? 'kiro-cli';
     const args = config.kiroCliTrustAllTools !== false ? ['acp', '--trust-all-tools'] : ['acp'];
@@ -22,7 +21,12 @@ export function resolveCommand(
   }
 
   if (type === 'claude-code') {
-    return { command: config.executablePath ?? 'claude-agent-acp', args: [] };
+    // Default: run the claude-agent-acp bundled as a dependency of this package.
+    // An explicit executablePath override still takes precedence (power users).
+    if (config.executablePath) {
+      return { command: config.executablePath, args: [] };
+    }
+    return buildClaudeRunCommand();
   }
 
   if (type === 'codex') {

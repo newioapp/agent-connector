@@ -17,28 +17,36 @@ import type {
   AgentInfo,
   UpdateMode,
   UpdateChannel,
+  ClaudeAuthMethod,
+  ClaudeAuthResult,
 } from '../shared/types';
 import type { StoreSchema } from './store';
 import type { AgentConfigManager } from '@newio/agent-engine';
 import type { AgentRuntimeManager } from '@newio/agent-engine';
+import type { MainWindowManager } from './main-window';
+import { EVENT_CHANNELS } from '../shared/ipc-events';
 import { getShellEnv, listAvailableShells } from './shell-env';
 import { applyUpdateMode, applyUpdateChannel, manualCheckForUpdates } from './auto-updater';
+import { runClaudeAuth } from './claude-auth';
 
 interface IpcHandlerDeps {
   readonly store: Store<StoreSchema>;
   readonly agentConfigManager: AgentConfigManager;
   readonly agentRuntimeManager: AgentRuntimeManager;
+  readonly mainWindow: MainWindowManager;
 }
 
 export class IpcHandler implements IpcApi {
   private readonly store: Store<StoreSchema>;
   private readonly agentConfigManager: AgentConfigManager;
   private readonly agentRuntimeManager: AgentRuntimeManager;
+  private readonly mainWindow: MainWindowManager;
 
   constructor(deps: IpcHandlerDeps) {
     this.store = deps.store;
     this.agentConfigManager = deps.agentConfigManager;
     this.agentRuntimeManager = deps.agentRuntimeManager;
+    this.mainWindow = deps.mainWindow;
   }
 
   async getVersion(): Promise<string> {
@@ -138,5 +146,11 @@ export class IpcHandler implements IpcApi {
 
   async getAgentInfo(agentId: string): Promise<AgentInfo | undefined> {
     return this.agentRuntimeManager.getAgentInfo(agentId);
+  }
+
+  async authenticateClaude(method: ClaudeAuthMethod): Promise<ClaudeAuthResult> {
+    return runClaudeAuth(method, (line) => {
+      this.mainWindow.send(EVENT_CHANNELS['claude-auth-output'], { line });
+    });
   }
 }

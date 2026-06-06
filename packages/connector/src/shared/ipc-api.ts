@@ -14,6 +14,8 @@ import type {
   AgentInfo,
   UpdateMode,
   UpdateChannel,
+  ClaudeAuthMethod,
+  ClaudeAuthResult,
 } from './types';
 
 export interface IpcApi {
@@ -63,6 +65,13 @@ export interface IpcApi {
 
   /** Get runtime agent info (capabilities, auth methods) for a running agent. */
   getAgentInfo(agentId: string): Promise<AgentInfo | undefined>;
+
+  /**
+   * Run the bundled Claude interactive login (subscription or console). Streams
+   * progress via the `claude-auth-output` event and resolves when it exits.
+   * Credentials are machine-wide and shared by all claude-code agents.
+   */
+  authenticateClaude(method: ClaudeAuthMethod): Promise<ClaudeAuthResult>;
 }
 
 /** Channel name for each IpcApi method. */
@@ -88,4 +97,5 @@ export const IPC_CHANNELS: { readonly [K in keyof IpcApi]: string } = {
   getShellEnv: 'get-shell-env',
   updateAgentEnvVars: 'update-agent-env-vars',
   getAgentInfo: 'get-agent-info',
+  authenticateClaude: 'authenticate-claude',
 };

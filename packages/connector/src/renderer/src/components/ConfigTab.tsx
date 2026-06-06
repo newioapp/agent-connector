@@ -2,8 +2,8 @@
  * Configuration tab — displays agent config fields, approval banner, and edit/delete actions.
  */
 import { useEffect, useRef, useState } from 'react';
-import { Trash2, ExternalLink, RefreshCw, Pencil, Info, X, Check, Minus } from 'lucide-react';
-import type { AgentStatusInfo, AgentInfo } from '../../../shared/types';
+import { Trash2, ExternalLink, RefreshCw, Pencil, Info, X, Check, Minus, KeyRound } from 'lucide-react';
+import type { AgentStatusInfo, AgentInfo, ClaudeAuthMethod } from '../../../shared/types';
 import { useAgentStore } from '../stores/agent-store';
 import { agentTypeLabel } from '../lib/agent-type-label';
 import { Button } from './ui';
@@ -143,6 +143,72 @@ function AgentInfoModal({
   );
 }
 
+function ClaudeAuthModal({
+  method,
+  onClose,
+}: {
+  readonly method: ClaudeAuthMethod;
+  readonly onClose: () => void;
+}): React.JSX.Element {
+  const [lines, setLines] = useState<string[]>([]);
+  const [status, setStatus] = useState<'running' | 'success' | 'failed'>('running');
+  const logRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const unsubscribe = window.api.onClaudeAuthOutput(({ line }) => {
+      setLines((prev) => [...prev, line]);
+    });
+    let cancelled = false;
+    void window.api.authenticateClaude(method).then((result) => {
+      if (!cancelled) {
+        setStatus(result.ok ? 'success' : 'failed');
+      }
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [method]);
+
+  useEffect(() => {
+    logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
+  }, [lines]);
+
+  const title = method === 'subscription' ? 'Authenticate with Claude Subscription' : 'Authenticate with Anthropic API';
+  const statusLabel = status === 'running' ? 'Authenticating…' : status === 'success' ? 'Signed in' : 'Failed';
+  const statusClass =
+    status === 'success' ? 'text-success' : status === 'failed' ? 'text-destructive' : 'text-muted-foreground';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="flex max-h-[80vh] w-[480px] flex-col rounded-lg border border-border bg-background p-5 shadow-lg">
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+          <button className="text-muted-foreground hover:text-foreground" onClick={onClose}>
+            <X size={14} />
+          </button>
+        </div>
+        <p className="mb-3 text-xs text-muted-foreground">
+          A browser window will open to complete sign-in. Credentials are shared by all Claude Code agents on this
+          machine.
+        </p>
+        <div
+          ref={logRef}
+          className="mb-3 max-h-64 min-h-24 flex-1 overflow-y-auto rounded-md bg-muted p-3 font-mono text-[11px] leading-relaxed text-foreground whitespace-pre-wrap break-all"
+        >
+          {lines.length === 0 ? <span className="text-muted-foreground">Starting…</span> : lines.join('\n')}
+        </div>
+        <div className="flex items-center justify-between">
+          <span className={`text-xs ${statusClass}`}>{statusLabel}</span>
+          <Button variant="outline" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ConfigTab({
   agent,
   onEdit,
@@ -157,6 +223,7 @@ export function ConfigTab({
   const [polling, setPolling] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
+  const [authMethod, setAuthMethod] = useState<ClaudeAuthMethod | null>(null);
 
   useEffect(() => {
     if (!pollTimestamp) {
@@ -234,6 +301,27 @@ export function ConfigTab({
         </div>
 
         {showInfo && agentInfo && <AgentInfoModal info={agentInfo} onClose={() => setShowInfo(false)} />}
+
+        {config.type === 'claude-code' && (
+          <div className="mb-3 rounded-md border border-border p-3">
+            <div className="mb-1 text-xs font-medium text-muted-foreground">Claude Authentication</div>
+            <p className="mb-2 text-xs text-muted-foreground">
+              Sign in once — all Claude Code agents on this machine share these credentials.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => setAuthMethod('subscription')}>
+                <KeyRound size={12} />
+                Claude Subscription
+              </Button>
+              <Button variant="outline" onClick={() => setAuthMethod('console')}>
+                <KeyRound size={12} />
+                Anthropic API
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {authMethod && <ClaudeAuthModal method={authMethod} onClose={() => setAuthMethod(null)} />}
 
         <Field label="Session Mode" value={config.sessionMode === 'shared' ? 'Shared' : 'Isolated'} />
         {config.acp?.cwd && <Field label="Working Directory" value={config.acp.cwd} />}

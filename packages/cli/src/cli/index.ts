@@ -11,6 +11,7 @@ import { resolveStage, type Stage } from '../paths.js';
 import { version } from '../../package.json';
 import * as daemon from './daemon-commands.js';
 import * as agent from './agent-commands.js';
+import * as auth from './auth-commands.js';
 import type { AddOptions, UpdateOptions } from './agent-commands.js';
 
 /** Resolve the target stage from the global --stage option (or NEWIO_STAGE). */
@@ -172,6 +173,22 @@ envCmd
   .action((query: string, _options: unknown, cmd: Command) =>
     agent.envSync(stageOf(cmd), query, cmd.opts<{ shell?: string }>().shell),
   );
+
+// ---------------------------------------------------------------------------
+// auth
+// ---------------------------------------------------------------------------
+
+const authCmd = program.command('auth').description('Authenticate Claude for claude-code agents');
+
+authCmd
+  .command('claude')
+  .description('Authenticate with Claude Subscription')
+  .action(() => auth.authClaude('subscription'));
+
+authCmd
+  .command('console')
+  .description('Authenticate with Anthropic API (Anthropic Console)')
+  .action(() => auth.authClaude('console'));
 
 // ---------------------------------------------------------------------------
 // top-level

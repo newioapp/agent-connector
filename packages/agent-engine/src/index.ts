@@ -46,6 +46,10 @@ export type { NewioAppForAgent, SessionManager, NewioAppForSession, InboundEvent
 // Config manager implementation
 export { FileAgentConfigManager } from './file-agent-config-manager.js';
 
+// Bundled Claude ACP agent — resolution + auth/runtime command builders
+export { resolveClaudeAcpEntry, buildClaudeRunCommand, buildClaudeAuthCommand } from './claude-acp.js';
+export type { ClaudeAuthMethod, ResolvedAgentCommand } from './claude-acp.js';
+
 // Event queue
 export { EventQueue } from './event-queue.js';
 export type { AgentEvent, OwnerOpType, OwnerOpResult } from './event-queue.js';

@@ -15,6 +15,15 @@ asarUnpack:
   # Files inside asar archives cannot be executed directly — unpack so
   # require.resolve() returns a real filesystem path that `node` can run.
   - 'node_modules/@newio/agent-engine/dist/mcp/bridge.js'
+  # The native `claude` binary spawned by the bundled claude-agent-acp. It must
+  # live on disk (not inside the asar): a file in an asar archive cannot be
+  # `exec`'d, and on macOS it must be code-signed in place so the Keychain ACL
+  # stays stable across `auth login` and runtime (the same signed binary writes
+  # and reads the credential). The claude-agent-acp JS itself stays packed —
+  # ELECTRON_RUN_AS_NODE keeps asar support, so its packed deps resolve fine.
+  # Globs cover both the flattened and pnpm (.pnpm store) layouts.
+  - 'node_modules/@anthropic-ai/claude-agent-sdk-*/**'
+  - 'node_modules/.pnpm/@anthropic-ai+claude-agent-sdk-*/**'
 
 # --- Auto-update via generic provider (S3 + CloudFront CDN) ---
 detectUpdateChannel: true

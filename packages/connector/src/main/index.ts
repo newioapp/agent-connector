@@ -138,7 +138,7 @@ void app.whenReady().then(async () => {
   nativeTheme.themeSource = store.get('themeSource');
 
   // Register IPC handlers
-  const ipcHandler = new IpcHandler({ store, agentConfigManager, agentRuntimeManager });
+  const ipcHandler = new IpcHandler({ store, agentConfigManager, agentRuntimeManager, mainWindow: mainWindowManager });
   registerIpcHandlers(ipcHandler);
 
   // Auto-update and force-update

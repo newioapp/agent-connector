@@ -42,6 +42,7 @@ const api: ConnectorAPI = {
   updateAgentEnvVars: (agentId, envVars, shell) =>
     ipcRenderer.invoke(IPC_CHANNELS.updateAgentEnvVars, agentId, envVars, shell),
   getAgentInfo: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.getAgentInfo, agentId),
+  authenticateClaude: (method) => ipcRenderer.invoke(IPC_CHANNELS.authenticateClaude, method),
 
   // Push events
   onAgentStatusChanged: (callback) => onEvent(EVENT_CHANNELS['agent-status-changed'], callback),
@@ -49,6 +50,7 @@ const api: ConnectorAPI = {
   onAgentPollAttempt: (callback) => onEvent(EVENT_CHANNELS['agent-poll-attempt'], callback),
   onAgentConfigUpdated: (callback) => onEvent(EVENT_CHANNELS['agent-config-updated'], callback),
   onAgentAcpInfo: (callback) => onEvent(EVENT_CHANNELS['agent-acp-info'], callback),
+  onClaudeAuthOutput: (callback) => onEvent(EVENT_CHANNELS['claude-auth-output'], callback),
 };
 
 contextBridge.exposeInMainWorld('api', api);

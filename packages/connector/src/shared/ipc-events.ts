@@ -27,6 +27,10 @@ export interface MainToRendererEvents {
     readonly agentId: string;
     readonly info: AgentInfo;
   };
+  /** A line of output from an in-progress Claude authentication run. */
+  readonly 'claude-auth-output': {
+    readonly line: string;
+  };
 }
 
 /** All push event channel names. */
@@ -36,4 +40,5 @@ export const EVENT_CHANNELS: { readonly [K in keyof MainToRendererEvents]: K } =
   'agent-poll-attempt': 'agent-poll-attempt',
   'agent-config-updated': 'agent-config-updated',
   'agent-acp-info': 'agent-acp-info',
+  'claude-auth-output': 'claude-auth-output',
 };

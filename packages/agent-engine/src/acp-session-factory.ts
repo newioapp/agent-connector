@@ -113,13 +113,13 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
     this.stopping = false;
 
     const { cwd } = config;
-    const { command, args } = resolveCommand(this.config.type, config);
+    const { command, args, env: commandEnv } = resolveCommand(this.config.type, config);
 
     log.info(`${this.logTag} Spawning: ${command} ${args.join(' ')}`);
 
     const child = await spawnAsync(command, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...this.config.envVars, TERM: 'dumb' },
+      env: { ...this.config.envVars, ...commandEnv, TERM: 'dumb' },
       ...(cwd ? { cwd } : {}),
     });
 
