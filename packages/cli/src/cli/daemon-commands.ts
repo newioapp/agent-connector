@@ -5,26 +5,26 @@
  * daemon RPC socket — except `reload`, which sends an RPC to the running daemon.
  */
 import { realpathSync } from 'fs';
-import { getDaemonPaths, getDefaultUrls, type Stage } from '../paths.js';
+import { getDaemonPaths, resolveConfig, type Stage } from '../paths.js';
 import { createServiceManager, type InstallOptions, type ServiceStatus } from '../service/index.js';
 import { withDaemon } from '../client/connect.js';
 
 export interface DaemonStartOptions {
   readonly stage: Stage;
   readonly enable: boolean;
-  readonly apiUrl?: string;
-  readonly wsUrl?: string;
 }
 
 /** Build the install options (node/cli paths + baked environment) for a stage. */
 function resolveInstallOptions(opts: DaemonStartOptions): InstallOptions {
-  const defaults = getDefaultUrls(opts.stage);
+  // Resolve the fully-formed URLs (from env, or stage defaults) and bake them
+  // into the unit so the service is self-contained even if defaults change.
+  const { apiBaseUrl, wsUrl } = resolveConfig();
   const { logPath } = getDaemonPaths(opts.stage);
 
   const env: Record<string, string> = {
     NEWIO_STAGE: opts.stage,
-    NEWIO_API_URL: opts.apiUrl ?? defaults.apiBaseUrl,
-    NEWIO_WS_URL: opts.wsUrl ?? defaults.wsUrl,
+    NEWIO_API_URL: apiBaseUrl,
+    NEWIO_WS_URL: wsUrl,
   };
   // The daemon resolves agent shell environments from $HOME and needs a PATH;
   // bake the current values so the service environment matches the user's.
@@ -65,7 +65,8 @@ export function daemonStart(opts: DaemonStartOptions): void {
   const service = createServiceManager(opts.stage);
   service.install(resolveInstallOptions(opts));
   console.log(describeStatus(opts.stage, service.status()));
-  console.log(`Logs: newio daemon logs${opts.stage === 'prod' ? '' : ` --stage ${opts.stage}`} -f`);
+  const envPrefix = opts.stage === 'prod' ? '' : `NEWIO_STAGE=${opts.stage} `;
+  console.log(`Logs: ${envPrefix}newio daemon logs -f`);
 }
 
 export function daemonStop(stage: Stage): void {

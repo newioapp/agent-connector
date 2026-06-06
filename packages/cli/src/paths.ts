@@ -55,3 +55,27 @@ export function getDefaultUrls(stage: Stage): NewioUrls {
       return { apiBaseUrl: 'https://api.newio.app', wsUrl: 'wss://ws.newio.app' };
   }
 }
+
+export interface ResolvedConfig {
+  readonly stage: Stage;
+  readonly apiBaseUrl: string;
+  readonly wsUrl: string;
+}
+
+/**
+ * The single source of truth for stage + URL resolution from the environment.
+ *
+ * Stage and URLs are intentionally NOT exposed as CLI flags — they're internal
+ * testing knobs. End users with no env set always resolve to `prod`. Internal
+ * testers set `NEWIO_STAGE` (and optionally `NEWIO_API_URL`/`NEWIO_WS_URL` to
+ * override the stage's default endpoints).
+ */
+export function resolveConfig(): ResolvedConfig {
+  const stage = resolveStage(process.env['NEWIO_STAGE']);
+  const defaults = getDefaultUrls(stage);
+  return {
+    stage,
+    apiBaseUrl: process.env['NEWIO_API_URL'] ?? defaults.apiBaseUrl,
+    wsUrl: process.env['NEWIO_WS_URL'] ?? defaults.wsUrl,
+  };
+}
