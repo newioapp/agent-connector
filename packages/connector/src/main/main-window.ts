@@ -4,6 +4,7 @@
  * Handles creation, bounds persistence, and focus/restore operations.
  */
 import { BrowserWindow, nativeTheme, shell } from 'electron';
+import type { BrowserWindowConstructorOptions } from 'electron';
 import { join } from 'path';
 import { is } from '@electron-toolkit/utils';
 import type Store from 'electron-store';
@@ -42,6 +43,13 @@ export class MainWindowManager {
   async create(): Promise<BrowserWindow> {
     const bounds = this.store.get('windowBounds');
 
+    // macOS only: hide the title bar but keep the inset traffic-light buttons,
+    // letting the renderer draw its own drag strip flush to the top. On
+    // Linux/Windows this option has no effect, so we keep the native title bar
+    // there (and the renderer omits the macOS drag strip — see App.tsx).
+    const macTitleBar: Pick<BrowserWindowConstructorOptions, 'titleBarStyle'> =
+      process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset' } : {};
+
     this.window = new BrowserWindow({
       width: bounds.width,
       height: bounds.height,
@@ -50,7 +58,7 @@ export class MainWindowManager {
       minHeight: 480,
       show: false,
       backgroundColor: nativeTheme.shouldUseDarkColors ? '#0A1E3D' : '#05a5c8',
-      titleBarStyle: 'hiddenInset',
+      ...macTitleBar,
       // Hide the default Chromium menu bar on Linux/Windows (toggle with Alt).
       // No effect on macOS, where the menu lives in the system menu bar.
       autoHideMenuBar: true,

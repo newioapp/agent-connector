@@ -19,6 +19,9 @@ function onEvent<K extends keyof MainToRendererEvents>(
 }
 
 const api: ConnectorAPI = {
+  // Static host info (no IPC round-trip).
+  platform: process.platform,
+
   // IpcApi
   getVersion: () => ipcRenderer.invoke(IPC_CHANNELS.getVersion),
   getTheme: () => ipcRenderer.invoke(IPC_CHANNELS.getTheme),

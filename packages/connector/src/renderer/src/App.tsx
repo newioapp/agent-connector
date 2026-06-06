@@ -11,6 +11,24 @@ import { SettingsPanel } from './components/SettingsPanel';
 
 type PanelMode = { kind: 'view' } | { kind: 'add' } | { kind: 'edit'; agentId: string } | { kind: 'settings' };
 
+const isMac = window.api.platform === 'darwin';
+
+/**
+ * Top window-chrome spacer.
+ *
+ * On macOS the title bar is hidden (titleBarStyle: 'hiddenInset'), so this 40px
+ * strip stands in for it: it hosts the inset traffic-light buttons and acts as
+ * the drag handle. On Linux/Windows the native title bar already provides both,
+ * so we render only a small breathing-room spacer to avoid stacking a second
+ * bar's worth of padding on top of the OS title bar.
+ */
+function TitleBarSpacer(): React.JSX.Element {
+  if (isMac) {
+    return <div className="h-10 shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />;
+  }
+  return <div className="h-3 shrink-0" />;
+}
+
 export function App(): React.JSX.Element {
   const agents = useAgentStore((s) => s.agents);
   const selectedAgentId = useAgentStore((s) => s.selectedAgentId);
@@ -119,8 +137,7 @@ export function App(): React.JSX.Element {
     <div className="flex h-screen w-screen bg-background text-foreground">
       {/* Sidebar */}
       <div className="flex w-60 flex-col border-r border-border bg-sidebar text-sidebar-foreground">
-        {/* Drag region */}
-        <div className="h-10 shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
+        <TitleBarSpacer />
 
         {/* Header */}
         <div className="flex items-center justify-between px-4 pb-3">
@@ -167,8 +184,7 @@ export function App(): React.JSX.Element {
 
       {/* Main content */}
       <div className="flex flex-1 flex-col bg-background">
-        {/* Drag region */}
-        <div className="h-10 shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
+        <TitleBarSpacer />
         {renderDetailPanel()}
       </div>
     </div>
