@@ -58,7 +58,9 @@ void app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) {
     return;
   }
-  electronApp.setAppUserModelId('dev.newio.connector');
+  // Windows AppUserModelID — controls taskbar grouping and toast-notification
+  // attribution. Must match `appId` in electron-builder.yml. No-op on macOS/Linux.
+  electronApp.setAppUserModelId('app.newio.connector');
 
   // Hide "Toggle Developer Tools" from the View menu in production builds
   if (!__ENABLE_DEV_TOOLS__) {

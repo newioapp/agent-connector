@@ -1,4 +1,4 @@
-appId: dev.newio.connector
+appId: app.newio.connector
 productName: Agent Connector
 directories:
   buildResources: build
