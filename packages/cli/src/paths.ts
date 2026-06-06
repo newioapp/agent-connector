@@ -11,9 +11,22 @@ export type Stage = 'dev' | 'integ' | 'prod';
 
 const STAGES: readonly Stage[] = ['dev', 'integ', 'prod'];
 
-/** Validate an arbitrary string into a Stage, defaulting to 'prod'. */
+/**
+ * Validate a stage value from the environment.
+ *
+ * Unset (or empty) defaults to 'prod'. A non-empty value that isn't a known
+ * stage is rejected loudly so typos like `NEWIO_STAGE=devv` fail fast instead
+ * of silently falling back to prod.
+ */
 export function resolveStage(value: string | undefined): Stage {
-  return STAGES.find((s) => s === value) ?? 'prod';
+  if (value === undefined || value === '') {
+    return 'prod';
+  }
+  const stage = STAGES.find((s) => s === value);
+  if (stage === undefined) {
+    throw new Error(`Invalid NEWIO_STAGE "${value}". Expected one of: ${STAGES.join(', ')}.`);
+  }
+  return stage;
 }
 
 export interface DaemonPaths {
