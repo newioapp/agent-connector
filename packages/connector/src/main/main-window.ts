@@ -51,6 +51,9 @@ export class MainWindowManager {
       show: false,
       backgroundColor: nativeTheme.shouldUseDarkColors ? '#0A1E3D' : '#05a5c8',
       titleBarStyle: 'hiddenInset',
+      // Hide the default Chromium menu bar on Linux/Windows (toggle with Alt).
+      // No effect on macOS, where the menu lives in the system menu bar.
+      autoHideMenuBar: true,
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),
         sandbox: false,
