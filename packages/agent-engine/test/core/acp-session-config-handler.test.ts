@@ -221,6 +221,70 @@ describe('AcpSessionConfigHandler', () => {
       await expect((handler as unknown as TestableConfigHandler).setModel('bad')).rejects.toThrow('Model not found');
     });
 
+    it('falls back to setSessionConfigOption when unstable_setSessionModel is not implemented', async () => {
+      const setSessionConfigOption = vi.fn().mockResolvedValue(undefined);
+      const conn = mockConnection({
+        // -32601 = JSON-RPC "method not found": agent doesn't implement the unstable API.
+        unstable_setSessionModel: vi.fn().mockRejectedValue({ code: -32601, message: 'Method not found' }),
+        setSessionConfigOption,
+      } as never);
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        conn,
+        mockUpdateConfig(),
+        makeSessionResponse({
+          models: { availableModels: [{ modelId: 'a', name: 'A' }], currentModelId: 'a' },
+        }),
+      );
+
+      await (handler as unknown as TestableConfigHandler).setModel('b');
+
+      expect(setSessionConfigOption).toHaveBeenCalledWith({ sessionId: 'sess-1', configId: 'model', value: 'b' });
+      expect(handler.listModels()?.selectedId).toBe('b');
+    });
+
+    it('does not fall back for non method-not-found errors', async () => {
+      const setSessionConfigOption = vi.fn().mockResolvedValue(undefined);
+      const conn = mockConnection({
+        unstable_setSessionModel: vi.fn().mockRejectedValue({ data: { details: 'Model not found' } }),
+        setSessionConfigOption,
+      } as never);
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        conn,
+        mockUpdateConfig(),
+        makeSessionResponse({
+          models: { availableModels: [{ modelId: 'a', name: 'A' }], currentModelId: 'a' },
+        }),
+      );
+
+      await expect((handler as unknown as TestableConfigHandler).setModel('bad')).rejects.toThrow('Model not found');
+      expect(setSessionConfigOption).not.toHaveBeenCalled();
+    });
+
+    it('throws fallback error when setSessionConfigOption also fails', async () => {
+      const conn = mockConnection({
+        unstable_setSessionModel: vi.fn().mockRejectedValue({ code: -32601, message: 'Method not found' }),
+        setSessionConfigOption: vi.fn().mockRejectedValue({ data: { details: 'Unknown model' } }),
+      } as never);
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        conn,
+        mockUpdateConfig(),
+        makeSessionResponse({
+          models: { availableModels: [{ modelId: 'a', name: 'A' }], currentModelId: 'a' },
+        }),
+      );
+
+      await expect((handler as unknown as TestableConfigHandler).setModel('bad')).rejects.toThrow('Unknown model');
+    });
+
     it('throws with error.message when no data.details', async () => {
       const conn = mockConnection({
         unstable_setSessionModel: vi.fn().mockRejectedValue(new Error('connection lost')),
