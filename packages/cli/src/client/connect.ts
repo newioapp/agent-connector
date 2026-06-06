@@ -11,8 +11,13 @@ import type { DaemonNotificationHandlers } from '../client.js';
 import { getDaemonPaths, type Stage } from '../paths.js';
 import { RPC_PROTOCOL_VERSION } from '../daemon/rpc.js';
 
+/** Env prefix shown in hints so non-prod testers reproduce the right stage. */
+function envPrefix(stage: Stage): string {
+  return stage === 'prod' ? '' : `NEWIO_STAGE=${stage} `;
+}
+
 function startHint(stage: Stage): string {
-  return `newio daemon start${stage === 'prod' ? '' : ` --stage ${stage}`}`;
+  return `${envPrefix(stage)}newio daemon start`;
 }
 
 /** Connect to the daemon, verify protocol compatibility, or throw a friendly error. */
@@ -35,7 +40,7 @@ export async function openConnection(
     connector.disconnect();
     throw new Error(
       `Daemon protocol mismatch (daemon v${handshake.protocolVersion}, CLI v${RPC_PROTOCOL_VERSION}). ` +
-        `Restart the daemon after updating: newio daemon restart${stage === 'prod' ? '' : ` --stage ${stage}`}`,
+        `Restart the daemon after updating: ${envPrefix(stage)}newio daemon restart`,
     );
   }
 

@@ -11,9 +11,22 @@ export type Stage = 'dev' | 'integ' | 'prod';
 
 const STAGES: readonly Stage[] = ['dev', 'integ', 'prod'];
 
-/** Validate an arbitrary string into a Stage, defaulting to 'prod'. */
+/**
+ * Validate a stage value from the environment.
+ *
+ * Unset (or empty) defaults to 'prod'. A non-empty value that isn't a known
+ * stage is rejected loudly so typos like `NEWIO_STAGE=devv` fail fast instead
+ * of silently falling back to prod.
+ */
 export function resolveStage(value: string | undefined): Stage {
-  return STAGES.find((s) => s === value) ?? 'prod';
+  if (value === undefined || value === '') {
+    return 'prod';
+  }
+  const stage = STAGES.find((s) => s === value);
+  if (stage === undefined) {
+    throw new Error(`Invalid NEWIO_STAGE "${value}". Expected one of: ${STAGES.join(', ')}.`);
+  }
+  return stage;
 }
 
 export interface DaemonPaths {
@@ -39,19 +52,31 @@ export function getDaemonPaths(stage: Stage): DaemonPaths {
   };
 }
 
-export interface NewioUrls {
+// Production endpoints — the only URLs hardcoded in this (private) repo. Non-prod
+// stage URLs are never checked in; internal testers supply them via the
+// NEWIO_API_URL / NEWIO_WS_URL env vars.
+const PROD_API_URL = 'https://api.newio.app';
+const PROD_WS_URL = 'wss://ws.newio.app';
+
+export interface ResolvedConfig {
+  readonly stage: Stage;
   readonly apiBaseUrl: string;
   readonly wsUrl: string;
 }
 
-/** Default Newio API/WS URLs for a stage (overridable via env at the call site). */
-export function getDefaultUrls(stage: Stage): NewioUrls {
-  switch (stage) {
-    case 'dev':
-      return { apiBaseUrl: 'https://api.nan-dev.newio.app', wsUrl: 'wss://ws.nan-dev.newio.app' };
-    case 'integ':
-      return { apiBaseUrl: 'https://api.pipeline-integ.newio.app', wsUrl: 'wss://ws.pipeline-integ.newio.app' };
-    case 'prod':
-      return { apiBaseUrl: 'https://api.newio.app', wsUrl: 'wss://ws.newio.app' };
-  }
+/**
+ * The single source of truth for stage + URL resolution from the environment.
+ *
+ * Stage and URLs are intentionally NOT exposed as CLI flags — they're internal
+ * testing knobs. End users with no env set resolve to `prod` with the production
+ * endpoints. Internal testers set `NEWIO_STAGE` (for data-dir/socket isolation)
+ * and `NEWIO_API_URL` / `NEWIO_WS_URL` to point at a non-prod backend. If the
+ * stage is set without matching URLs, requests simply fall back to prod.
+ */
+export function resolveConfig(): ResolvedConfig {
+  return {
+    stage: resolveStage(process.env['NEWIO_STAGE']),
+    apiBaseUrl: process.env['NEWIO_API_URL'] ?? PROD_API_URL,
+    wsUrl: process.env['NEWIO_WS_URL'] ?? PROD_WS_URL,
+  };
 }

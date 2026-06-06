@@ -19,7 +19,7 @@ import {
 } from '@newio/agent-engine';
 import { DaemonServer } from './server.js';
 import { DaemonHandler } from './handler.js';
-import { resolveStage, getDaemonPaths, getDefaultUrls } from '../paths.js';
+import { resolveConfig, getDaemonPaths } from '../paths.js';
 import { version } from '../../package.json';
 
 const log = getLogger('daemon');
@@ -67,10 +67,7 @@ export async function runDaemon(): Promise<void> {
     throw new Error('HOME is not set — the daemon cannot resolve agent shell environments.');
   }
 
-  const stage = resolveStage(process.env['NEWIO_STAGE']);
-  const defaults = getDefaultUrls(stage);
-  const apiBaseUrl = process.env['NEWIO_API_URL'] ?? defaults.apiBaseUrl;
-  const wsUrl = process.env['NEWIO_WS_URL'] ?? defaults.wsUrl;
+  const { stage, apiBaseUrl, wsUrl } = resolveConfig();
 
   const { dataDir, socketPath, pidPath } = getDaemonPaths(stage);
   if (!existsSync(dataDir)) {

@@ -7,7 +7,7 @@
 import type { DaemonConnector } from '../connector.js';
 import type { AddAgentInput, AgentStatusInfo, AgentType, SessionMode, UpdateAgentInput } from '@newio/agent-engine';
 import { withDaemon, openConnection } from '../client/connect.js';
-import type { Stage } from '../paths.js';
+import { resolveConfig, type Stage } from '../paths.js';
 
 const AGENT_TYPES: readonly AgentType[] = ['claude-code', 'kiro-cli', 'codex', 'cursor', 'gemini', 'custom'];
 const SESSION_MODES: readonly SessionMode[] = ['isolated', 'shared'];
@@ -279,7 +279,13 @@ export async function envShells(stage: Stage): Promise<void> {
 export async function status(stage: Stage): Promise<void> {
   await withDaemon(stage, async (c) => {
     const version = await c.version();
-    console.log(`newio daemon (${stage}): online, version ${version}\n`);
+    console.log(`newio daemon (${stage}): online, version ${version}`);
+    // Make the active backend obvious whenever it isn't the default (prod).
+    if (stage !== 'prod') {
+      const { apiBaseUrl } = resolveConfig();
+      console.log(`  stage: ${stage} → ${apiBaseUrl}`);
+    }
+    console.log('');
     printAgentTable(await c.listAgents());
   });
 }
