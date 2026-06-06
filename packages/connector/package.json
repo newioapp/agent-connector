@@ -2,7 +2,8 @@
   "name": "@newio/connector",
   "version": "1.0.0",
   "private": true,
-  "description": "Agent Connector — connect AI agents to the Newio messaging platform",
+  "description": "Agent Connector - connect AI agents to the Newio messaging platform",
+  "license": "MIT",
   "author": {
     "name": "Nan Qin",
     "email": "qinnan0416@gmail.com",
@@ -11,11 +12,11 @@
   "homepage": "https://newio.app",
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "NEWIO_STAGE=dev API_BASE_URL=https://api.nan-dev.newio.app WS_BASE_URL=wss://ws.nan-dev.newio.app APP_DISPLAY_NAME='Agent Connector (Dev)' ENABLE_DEV_TOOLS=true LOG_LEVEL=debug WS_PROACTIVE_RECONNECT_MS=300000 electron-vite dev",
+    "dev": "set -a; [ -f .env ] && . ./.env; set +a; electron-vite dev",
     "build": "electron-vite build",
     "build:mac": "bash scripts/build-signed.sh",
     "build:mac:unsigned": "bash scripts/build-unsigned.sh",
-    "build:linux": "electron-vite build && electron-builder --linux",
+    "build:linux": "bash scripts/build-linux.sh",
     "start": "electron-vite preview",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",

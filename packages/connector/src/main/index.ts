@@ -35,10 +35,29 @@ setLogHandler((level, name, message, args) => {
   logger[level](message, ...args);
 });
 
-// Set app name before app.whenReady() so macOS menu bar shows the correct name
+// Set app name before app.whenReady() so macOS menu bar shows the correct name.
+// On X11 this also becomes the window's WM_CLASS, which the desktop environment
+// matches against the .desktop file's StartupWMClass to pick the dock icon — the
+// Linux build sets StartupWMClass to this same value (see scripts/build-linux.sh).
 app.name = __APP_DISPLAY_NAME__;
 
+// Enforce a single running instance: a second launch focuses the existing window
+// instead of spawning another process. Set once the window manager exists.
+let activeWindowManager: MainWindowManager | undefined;
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    activeWindowManager?.focus();
+  });
+}
+
 void app.whenReady().then(async () => {
+  // A primary instance already owns the lock; this duplicate is quitting.
+  if (!hasSingleInstanceLock) {
+    return;
+  }
   electronApp.setAppUserModelId('dev.newio.connector');
 
   // Hide "Toggle Developer Tools" from the View menu in production builds
@@ -60,6 +79,7 @@ void app.whenReady().then(async () => {
 
   const store = createStore();
   const mainWindowManager = new MainWindowManager(store);
+  activeWindowManager = mainWindowManager;
 
   const dataDir = (() => {
     const stage = __NEWIO_STAGE__;
