@@ -59,7 +59,26 @@ export class AcpSessionConfigHandler {
     try {
       await this.connection.unstable_setSessionModel({ sessionId: this.correlationId, modelId });
     } catch (err: unknown) {
-      throw new Error(extractAcpErrorMessage(err, `Failed to set model to "${modelId}"`));
+      // `unstable_setSessionModel` is the experimental model API: older agents
+      // implement it, newer agents drop it in favour of the stable
+      // `setSessionConfigOption` and reply "method not found" (-32601). Only
+      // fall back in that case — a genuine failure (e.g. an invalid model)
+      // should surface its own error rather than be masked by a second attempt.
+      if (!isMethodNotFound(err)) {
+        throw new Error(extractAcpErrorMessage(err, `Failed to set model to "${modelId}"`));
+      }
+      log.info(
+        `[${this.sessionType}/${this.externalReferenceId}] unstable_setSessionModel unavailable, falling back to setSessionConfigOption`,
+      );
+      try {
+        await this.connection.setSessionConfigOption({
+          sessionId: this.correlationId,
+          configId: 'model',
+          value: modelId,
+        });
+      } catch (fallbackErr: unknown) {
+        throw new Error(extractAcpErrorMessage(fallbackErr, `Failed to set model to "${modelId}"`));
+      }
     }
     if (this.modelConfig) {
       this.modelConfig = { ...this.modelConfig, selectedId: modelId };
@@ -203,6 +222,18 @@ function flattenSelectOptions(
     }
   }
   return result;
+}
+
+/** JSON-RPC "method not found" — the agent does not implement the requested method. */
+const JSON_RPC_METHOD_NOT_FOUND = -32601;
+
+/** True when an ACP rejection indicates the method isn't implemented by the agent. */
+function isMethodNotFound(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) {
+    return false;
+  }
+  const obj = err as Record<string, unknown>;
+  return obj.code === JSON_RPC_METHOD_NOT_FOUND;
 }
 
 /** Extract a human-readable message from an ACP JSON-RPC error. */
