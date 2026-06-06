@@ -24,7 +24,8 @@
     "build": "tsup",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "dev": "set -a && . ./.env && set +a && node dist/cli.js"
   },
   "dependencies": {
     "@newio/agent-engine": "workspace:*",
