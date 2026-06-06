@@ -15,7 +15,13 @@ const log = new Logger('auto-updater');
 
 // Disable auto-download — we download in background after checking
 autoUpdater.autoDownload = false;
-autoUpdater.autoInstallOnAppQuit = true;
+// Install a downloaded update on app quit everywhere EXCEPT Linux. On Linux the
+// app is installed from a .deb (root-owned /opt), so installing on quit re-runs
+// the package manager via sudo/pkexec — meaning that after the user picks "Later",
+// simply closing the app would pop a password prompt before it can exit. Disabling
+// it on Linux means an update is applied only when the user explicitly chooses
+// "Restart Now" (quitAndInstall). macOS/Windows keep the seamless on-quit install.
+autoUpdater.autoInstallOnAppQuit = process.platform !== 'linux';
 
 const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const FORCE_UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
@@ -27,7 +33,22 @@ let periodicTimer: ReturnType<typeof setInterval> | null = null;
 let downloadedVersion: string | null = null;
 
 function getWindow(): BrowserWindow | undefined {
-  return BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+  // getAllWindows() can be empty (all windows closed), so resolve to undefined in
+  // that case rather than relying on the (non-undefined) indexed-access type.
+  const windows = BrowserWindow.getAllWindows();
+  const win = BrowserWindow.getFocusedWindow() ?? (windows.length > 0 ? windows[0] : undefined);
+  if (!win) {
+    return undefined;
+  }
+  // Raise the window so a modal dialog parented to it appears in front of the UI
+  // rather than behind it. The update flow can fire while the app is in the
+  // background (a download finishing, the periodic force-update check).
+  if (win.isMinimized()) {
+    win.restore();
+  }
+  win.show();
+  win.focus();
+  return win;
 }
 
 function getPlatform(): string {
