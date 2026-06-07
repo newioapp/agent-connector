@@ -2,20 +2,27 @@
  * File-based agent config manager — persists agent configs and tokens to a data directory.
  *
  * Platform-agnostic (pure node:fs + node:os). Used by both the Electron desktop app
- * and a future CLI.
+ * and the CLI daemon.
  *
- * Files (both 0o600 — config.json carries per-agent envVars, which may hold secrets):
- *   config.json  — AgentConfig[]
- *   tokens.json  — Record<string, AgentTokens>
+ * Files:
+ *   config.json        — AgentConfig[] without envVars (0o600)
+ *   tokens.json        — Record<string, AgentTokens> (0o600)
+ *   envs/<agentId>.env — per-agent environment variables in dotenv format (0o600).
+ *                        Kept separate from config.json so secrets live in a
+ *                        single, hand-editable file (see `newio agent env edit`).
  */
-import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync, unlinkSync } from 'fs';
+import { join, dirname } from 'path';
 import { randomUUID } from 'crypto';
 import type { AgentConfig, AddAgentInput, UpdateAgentInput, NewioIdentity } from './types';
 import type { AgentConfigManager, AgentTokens } from './agent-config-manager';
+import { serializeEnvVars, parseEnvVars, agentEnvFilePath } from './env-file';
 import { getLogger } from '@newio/agent-sdk';
 
 const log = getLogger('file-agent-config-manager');
+
+/** Shape stored in config.json: an AgentConfig minus its envVars, which live in a separate .env file. */
+type StoredAgentConfig = Omit<AgentConfig, 'envVars'>;
 
 export class FileAgentConfigManager implements AgentConfigManager {
   private readonly configPath: string;
@@ -37,7 +44,7 @@ export class FileAgentConfigManager implements AgentConfigManager {
   }
 
   list(): AgentConfig[] {
-    return this.readJson<AgentConfig[]>(this.configPath, []);
+    return this.readStored().map((stored) => this.hydrate(stored));
   }
 
   get(agentId: string): AgentConfig | undefined {
@@ -45,25 +52,26 @@ export class FileAgentConfigManager implements AgentConfigManager {
   }
 
   add(input: AddAgentInput): AgentConfig {
-    const config: AgentConfig = {
-      id: randomUUID(),
+    const id = randomUUID();
+    const envVars = input.envVars ?? {};
+    const stored: StoredAgentConfig = {
+      id,
       type: input.type,
       // Display name is left unset here; it's synced from the account on first login.
       newio: { username: input.newioUsername },
-      envVars: input.envVars ?? {},
       ...(input.sessionMode !== undefined ? { sessionMode: input.sessionMode } : {}),
       ...(input.envVarsShell ? { envVarsShell: input.envVarsShell } : {}),
       ...(input.acp ? { acp: input.acp } : {}),
     };
-    const agents = this.list();
-    this.writeJson(this.configPath, [...agents, config]);
-    return config;
+    this.writeStored([...this.readStored(), stored]);
+    this.writeEnvVars(id, envVars);
+    return { ...stored, envVars };
   }
 
   update(agentId: string, updates: UpdateAgentInput): AgentConfig {
-    const agents = this.list();
-    const index = agents.findIndex((a) => a.id === agentId);
-    const existing = agents[index];
+    const stored = this.readStored();
+    const index = stored.findIndex((a) => a.id === agentId);
+    const existing = stored[index];
     if (!existing) {
       throw new Error(`Agent ${agentId} not found.`);
     }
@@ -75,47 +83,50 @@ export class FileAgentConfigManager implements AgentConfigManager {
     } else if (updates.displayName !== undefined) {
       newio = { ...existing.newio, displayName: updates.displayName };
     }
-    const updated: AgentConfig = {
+    const updated: StoredAgentConfig = {
       ...existing,
       newio,
       ...(updates.sessionMode !== undefined ? { sessionMode: updates.sessionMode } : {}),
-      ...(updates.envVars !== undefined ? { envVars: updates.envVars } : {}),
       ...(updates.envVarsShell !== undefined ? { envVarsShell: updates.envVarsShell } : {}),
       ...(updates.acp !== undefined ? { acp: updates.acp } : {}),
     };
-    const copy = [...agents];
+    const copy = [...stored];
     copy[index] = updated;
-    this.writeJson(this.configPath, copy);
+    this.writeStored(copy);
 
+    if (updates.envVars !== undefined) {
+      this.writeEnvVars(agentId, updates.envVars);
+    }
     if (usernameChanged) {
       this.clearTokens(agentId);
     }
 
-    return updated;
+    return this.hydrate(updated);
   }
 
   remove(agentId: string): void {
-    const agents = this.list();
-    const filtered = agents.filter((a) => a.id !== agentId);
-    if (filtered.length === agents.length) {
+    const stored = this.readStored();
+    const filtered = stored.filter((a) => a.id !== agentId);
+    if (filtered.length === stored.length) {
       throw new Error(`Agent ${agentId} not found.`);
     }
-    this.writeJson(this.configPath, filtered);
+    this.writeStored(filtered);
+    this.deleteEnvVars(agentId);
     this.clearTokens(agentId);
   }
 
   setNewioIdentity(agentId: string, identity: NewioIdentity): AgentConfig {
-    const agents = this.list();
-    const index = agents.findIndex((a) => a.id === agentId);
-    const existing = agents[index];
+    const stored = this.readStored();
+    const index = stored.findIndex((a) => a.id === agentId);
+    const existing = stored[index];
     if (!existing) {
       throw new Error(`Agent ${agentId} not found.`);
     }
-    const updated: AgentConfig = { ...existing, newio: identity };
-    const copy = [...agents];
+    const updated: StoredAgentConfig = { ...existing, newio: identity };
+    const copy = [...stored];
     copy[index] = updated;
-    this.writeJson(this.configPath, copy);
-    return updated;
+    this.writeStored(copy);
+    return this.hydrate(updated);
   }
 
   getTokens(agentId: string): AgentTokens | undefined {
@@ -135,6 +146,60 @@ export class FileAgentConfigManager implements AgentConfigManager {
       const { [agentId]: _removed, ...rest } = all;
       this.writeJson(this.tokensPath, rest, 0o600);
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // env files
+  // ---------------------------------------------------------------------------
+
+  /** Absolute path of an agent's `.env` file. Public so callers (CLI edit) can locate it. */
+  envFilePath(agentId: string): string {
+    return agentEnvFilePath(this.dataDir, agentId);
+  }
+
+  private readEnvVars(agentId: string): Record<string, string> {
+    const path = this.envFilePath(agentId);
+    try {
+      return parseEnvVars(readFileSync(path, 'utf8'));
+    } catch (err) {
+      if (existsSync(path)) {
+        log.warn(`Failed to parse ${path}, treating env as empty`, err);
+      }
+      return {};
+    }
+  }
+
+  private writeEnvVars(agentId: string, env: Readonly<Record<string, string>>): void {
+    const path = this.envFilePath(agentId);
+    const dir = dirname(path);
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+    }
+    writeFileSync(path, serializeEnvVars(env), { encoding: 'utf8', mode: 0o600 });
+    chmodSync(path, 0o600);
+  }
+
+  private deleteEnvVars(agentId: string): void {
+    const path = this.envFilePath(agentId);
+    if (existsSync(path)) {
+      unlinkSync(path);
+    }
+  }
+
+  private hydrate(stored: StoredAgentConfig): AgentConfig {
+    return { ...stored, envVars: this.readEnvVars(stored.id) };
+  }
+
+  // ---------------------------------------------------------------------------
+  // json io
+  // ---------------------------------------------------------------------------
+
+  private readStored(): StoredAgentConfig[] {
+    return this.readJson<StoredAgentConfig[]>(this.configPath, []);
+  }
+
+  private writeStored(configs: readonly StoredAgentConfig[]): void {
+    this.writeJson(this.configPath, configs);
   }
 
   private readJson<T>(path: string, fallback: T): T {

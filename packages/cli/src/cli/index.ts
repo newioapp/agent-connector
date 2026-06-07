@@ -172,6 +172,11 @@ envCmd
     agent.envSync(stage, query, cmd.opts<{ shell?: string }>().shell),
   );
 
+envCmd
+  .command('edit <agent>')
+  .description('Open the agent env file in $VISUAL/$EDITOR')
+  .action((query: string) => agent.envEdit(stage, query));
+
 // ---------------------------------------------------------------------------
 // top-level
 // ---------------------------------------------------------------------------
