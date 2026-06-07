@@ -49,6 +49,7 @@
     "@agentclientprotocol/sdk": "^0.17.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@newio/agent-sdk": "workspace:*",
+    "dotenv": "^17.4.2",
     "ws": "^8.20.0",
     "yaml": "^2.8.4",
     "zod": "^4.3.6"

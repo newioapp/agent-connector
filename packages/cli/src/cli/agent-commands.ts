@@ -4,11 +4,15 @@
  * Thin wrappers over DaemonConnector RPC. Agent ids may be given as a full id,
  * a unique id prefix, or an exact display name.
  */
+import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { dirname } from 'path';
+import { spawn } from 'child_process';
 import type { DaemonConnector } from '../connector.js';
 import type { AddAgentInput, AgentStatusInfo, AgentType, SessionMode, UpdateAgentInput } from '@newio/agent-engine';
+import { agentEnvFilePath } from '@newio/agent-engine';
 import { AuthManager, NewioClient } from '@newio/agent-sdk';
 import { withDaemon, openConnection } from '../client/connect.js';
-import { resolveConfig, type Stage } from '../paths.js';
+import { resolveConfig, getDaemonPaths, type Stage } from '../paths.js';
 
 const AGENT_TYPES: readonly AgentType[] = ['claude-code', 'kiro-cli', 'codex', 'cursor', 'gemini', 'custom'];
 const SESSION_MODES: readonly SessionMode[] = ['isolated', 'shared'];
@@ -297,6 +301,47 @@ export async function envSync(stage: Stage, query: string, shellArg?: string): P
     const next = { ...(await currentEnv(c, agentId)), ...shellEnv };
     await c.updateAgentEnvVars(agentId, next, shell);
     console.log(`Synced ${Object.keys(shellEnv).length} variable(s) from ${shell}.`);
+  });
+}
+
+/** Open the agent's `.env` file in `$VISUAL`/`$EDITOR`. Changes apply on the agent's next start. */
+export async function envEdit(stage: Stage, query: string): Promise<void> {
+  const { agentId, running } = await withDaemon(stage, async (c) => {
+    const id = await resolveAgentId(c, query);
+    const info = (await c.listAgents()).find((a) => a.id === id);
+    const isRunning = info !== undefined && info.runtimeStatus !== 'stopped' && info.runtimeStatus !== 'error';
+    return { agentId: id, running: isRunning };
+  });
+
+  const filePath = agentEnvFilePath(getDaemonPaths(stage).dataDir, agentId);
+  if (!existsSync(filePath)) {
+    mkdirSync(dirname(filePath), { recursive: true, mode: 0o700 });
+    writeFileSync(filePath, '# Environment variables for this agent (KEY=VALUE per line).\n', { mode: 0o600 });
+  }
+
+  await openInEditor(filePath);
+  console.log(`Saved ${filePath}.`);
+  if (running) {
+    console.log(`Restart the agent to apply changes: newio agent restart ${agentId.slice(0, 8)}`);
+  }
+}
+
+/** Spawn the user's editor on a file, inheriting stdio, and resolve when it exits. */
+function openInEditor(filePath: string): Promise<void> {
+  const editor = process.env['VISUAL'] || process.env['EDITOR'] || 'vi';
+  const parts = editor.split(/\s+/).filter((p) => p.length > 0);
+  const command = parts[0] ?? 'vi';
+  const args = [...parts.slice(1), filePath];
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: 'inherit' });
+    child.on('error', reject);
+    child.on('exit', (code) => {
+      if (code === 0 || code === null) {
+        resolve();
+      } else {
+        reject(new Error(`Editor "${editor}" exited with code ${code}.`));
+      }
+    });
   });
 }
 

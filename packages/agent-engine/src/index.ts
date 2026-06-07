@@ -45,6 +45,7 @@ export type { NewioAppForAgent, SessionManager, NewioAppForSession, InboundEvent
 
 // Config manager implementation
 export { FileAgentConfigManager } from './file-agent-config-manager.js';
+export { serializeEnvVars, parseEnvVars, agentEnvFilePath } from './env-file.js';
 
 // Event queue
 export { EventQueue } from './event-queue.js';
