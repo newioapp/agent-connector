@@ -21,12 +21,8 @@ import { getLogger } from '@newio/agent-sdk';
 
 const log = getLogger('file-agent-config-manager');
 
-/**
- * Shape stored in config.json: an AgentConfig minus its envVars (which live in a
- * separate .env file). `envVars` is optional here only to tolerate legacy files
- * written before the split — those are migrated on construction.
- */
-type StoredAgentConfig = Omit<AgentConfig, 'envVars'> & { envVars?: Readonly<Record<string, string>> };
+/** Shape stored in config.json: an AgentConfig minus its envVars, which live in a separate .env file. */
+type StoredAgentConfig = Omit<AgentConfig, 'envVars'>;
 
 export class FileAgentConfigManager implements AgentConfigManager {
   private readonly configPath: string;
@@ -38,7 +34,6 @@ export class FileAgentConfigManager implements AgentConfigManager {
     this.configPath = join(dataDir, 'config.json');
     this.tokensPath = join(dataDir, 'tokens.json');
     this.ensureDir();
-    this.migrateInlineEnvVars();
   }
 
   private ensureDir(): void {
@@ -192,29 +187,7 @@ export class FileAgentConfigManager implements AgentConfigManager {
   }
 
   private hydrate(stored: StoredAgentConfig): AgentConfig {
-    // The .env file is the source of truth; the explicit envVars overrides any
-    // stray inline value carried on `stored`.
     return { ...stored, envVars: this.readEnvVars(stored.id) };
-  }
-
-  /**
-   * One-time migration: move any inline `envVars` left in config.json into the
-   * per-agent .env file and strip them from config.json. Idempotent.
-   */
-  private migrateInlineEnvVars(): void {
-    const raw = this.readStored();
-    if (!raw.some((stored) => stored.envVars !== undefined)) {
-      return;
-    }
-    for (const stored of raw) {
-      const inline = stored.envVars;
-      if (inline !== undefined && Object.keys(inline).length > 0 && !existsSync(this.envFilePath(stored.id))) {
-        this.writeEnvVars(stored.id, inline);
-        log.info(`Migrated inline env vars for agent ${stored.id} to ${this.envFilePath(stored.id)}`);
-      }
-    }
-    // writeStored strips envVars, so persisting `raw` cleans config.json.
-    this.writeStored(raw);
   }
 
   // ---------------------------------------------------------------------------
@@ -225,17 +198,8 @@ export class FileAgentConfigManager implements AgentConfigManager {
     return this.readJson<StoredAgentConfig[]>(this.configPath, []);
   }
 
-  /** Persist config.json, always stripping envVars so secrets stay in the .env files. */
   private writeStored(configs: readonly StoredAgentConfig[]): void {
-    const stripped = configs.map((config) => {
-      if (!('envVars' in config)) {
-        return config;
-      }
-      const copy: StoredAgentConfig = { ...config };
-      delete copy.envVars;
-      return copy;
-    });
-    this.writeJson(this.configPath, stripped);
+    this.writeJson(this.configPath, configs);
   }
 
   private readJson<T>(path: string, fallback: T): T {

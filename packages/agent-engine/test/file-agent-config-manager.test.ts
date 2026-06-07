@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { existsSync, readFileSync, mkdirSync } from 'fs';
 import { FileAgentConfigManager } from '../src/file-agent-config-manager';
 
 function freshDir(): string {
@@ -61,24 +61,6 @@ describe('FileAgentConfigManager env files', () => {
     expect(existsSync(envPath)).toBe(true);
     mgr.remove(cfg.id);
     expect(existsSync(envPath)).toBe(false);
-  });
-
-  it('migrates legacy inline envVars from config.json into a .env file', () => {
-    const id = randomUUID();
-    // Write a legacy config.json with inline envVars (pre-split format).
-    writeFileSync(
-      join(dataDir, 'config.json'),
-      JSON.stringify([{ id, type: 'codex', newio: { username: 'bot' }, envVars: { LEGACY: 'yes' } }]),
-      'utf8',
-    );
-
-    // Constructing the manager migrates it.
-    const migrated = new FileAgentConfigManager(dataDir);
-    expect(migrated.get(id)?.envVars).toEqual({ LEGACY: 'yes' });
-
-    // config.json no longer carries envVars; the .env file does.
-    expect(readFileSync(join(dataDir, 'config.json'), 'utf8')).not.toContain('envVars');
-    expect(readFileSync(migrated.envFilePath(id), 'utf8')).toContain('LEGACY=yes');
   });
 
   it('treats an agent with no .env file as having empty envVars', () => {
