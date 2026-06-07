@@ -104,4 +104,20 @@ describe('DaemonConnection', () => {
     mocks.handlers.current!.onDisconnect?.();
     expect(conn.getStatus()).toEqual({ kind: 'unreachable' });
   });
+
+  it('ignores an overlapping connect() while one is in flight', async () => {
+    let resolveConnect: () => void = () => {};
+    mocks.connect.mockReturnValue(new Promise<void>((r) => (resolveConnect = r)));
+    mocks.handshake.mockResolvedValue(HANDSHAKE_OK);
+    const conn = new DaemonConnection('dev', makeWindows());
+
+    const first = conn.connect(); // starts; blocks on the pending connect
+    await conn.connect(); // overlapping — must return immediately without a second attempt
+    expect(mocks.connect).toHaveBeenCalledTimes(1);
+
+    resolveConnect();
+    await first;
+    expect(mocks.connect).toHaveBeenCalledTimes(1);
+    expect(conn.getStatus().kind).toBe('connected');
+  });
 });

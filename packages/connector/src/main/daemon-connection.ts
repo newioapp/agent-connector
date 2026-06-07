@@ -18,6 +18,8 @@ export class DaemonConnection {
   private readonly client = new DaemonClient();
   readonly connector = new DaemonConnector(this.client);
   private status: DaemonConnectionStatus = { kind: 'connecting' };
+  /** Guards against overlapping connect() attempts (e.g. a double-clicked Retry). */
+  private connecting = false;
 
   constructor(
     private readonly stage: Stage,
@@ -30,6 +32,20 @@ export class DaemonConnection {
 
   /** Connect (or reconnect) and run the protocol handshake. Never throws — failures become status. */
   async connect(): Promise<void> {
+    // A connect is already settling; ignore the overlapping call so its late
+    // result can't clobber a newer attempt's status.
+    if (this.connecting) {
+      return;
+    }
+    this.connecting = true;
+    try {
+      await this.attemptConnect();
+    } finally {
+      this.connecting = false;
+    }
+  }
+
+  private async attemptConnect(): Promise<void> {
     // Drop any previous socket before reconnecting.
     this.connector.disconnect();
     this.setStatus({ kind: 'connecting' });

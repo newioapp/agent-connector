@@ -59,12 +59,13 @@ export class DaemonClient {
   private readonly pending = new Map<number, PendingRequest>();
   private buf = '';
   private handlers: DaemonNotificationHandlers = {};
-  /** Set during an explicit disconnect() so the close handler doesn't report it as unexpected. */
-  private intentionalClose = false;
 
   connect(socketPath: string, handlers: DaemonNotificationHandlers = {}): Promise<void> {
+    // Tear down any prior socket first, so its late data/close/error events can't
+    // disturb the new connection (supports reconnecting clients like the desktop).
+    this.disconnect();
     this.handlers = handlers;
-    this.intentionalClose = false;
+    this.buf = '';
     return new Promise((resolve, reject) => {
       const socket = createConnection(socketPath);
       socket.setEncoding('utf8');
@@ -75,7 +76,13 @@ export class DaemonClient {
       });
       socket.once('error', reject);
 
+      // Every handler below guards on `socket === this.socket`: once a socket has
+      // been superseded (by disconnect() or a newer connect()) its events are
+      // inert and must not touch shared state or fire onDisconnect.
       socket.on('data', (chunk: string) => {
+        if (socket !== this.socket) {
+          return;
+        }
         this.buf += chunk;
         const lines = this.buf.split('\n');
         this.buf = lines.pop() ?? '';
@@ -85,20 +92,23 @@ export class DaemonClient {
       });
 
       socket.on('close', () => {
-        const wasConnected = this.socket !== null;
+        if (socket !== this.socket) {
+          return;
+        }
         this.socket = null;
-        // Reject all pending requests
         for (const [, pending] of this.pending) {
           pending.reject(new Error('Daemon connection closed'));
         }
         this.pending.clear();
-        // Notify consumers of an unexpected drop (daemon stopped/restarted).
-        if (wasConnected && !this.intentionalClose) {
-          this.handlers.onDisconnect?.();
-        }
+        // The current socket dropping is a genuine, unexpected disconnect — an
+        // explicit disconnect() nulls this.socket first, so we never reach here.
+        this.handlers.onDisconnect?.();
       });
 
       socket.on('error', (err) => {
+        if (socket !== this.socket) {
+          return;
+        }
         for (const [, pending] of this.pending) {
           pending.reject(err);
         }
@@ -108,9 +118,11 @@ export class DaemonClient {
   }
 
   disconnect(): void {
-    this.intentionalClose = true;
-    this.socket?.destroy();
+    // Null the field before destroying so the (async) close handler sees this
+    // socket as superseded and stays silent — an explicit disconnect isn't a drop.
+    const socket = this.socket;
     this.socket = null;
+    socket?.destroy();
   }
 
   private handleMessage(raw: string): void {
