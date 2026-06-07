@@ -7,7 +7,7 @@
 import type { AgentConfigManager } from './agent-config-manager';
 import type { CronStore } from './cron-store';
 import type { EngineConfig } from './engine-config';
-import type { AgentRuntimeStatus, AgentInfo } from './types';
+import type { AgentRuntimeStatus, AgentErrorCode, AgentInfo } from './types';
 import type { AgentInstance } from './agent-instance';
 import { getLogger } from '@newio/agent-sdk';
 import { AgentInstanceImpl } from './agent-instance-impl';
@@ -15,7 +15,7 @@ import { AgentInstanceImpl } from './agent-instance-impl';
 const log = getLogger('agent-runtime-manager');
 
 export interface StatusListener {
-  onStatusChanged(agentId: string, status: AgentRuntimeStatus, error?: string): void;
+  onStatusChanged(agentId: string, status: AgentRuntimeStatus, error?: string, errorCode?: AgentErrorCode): void;
   onApprovalUrl(agentId: string, approvalUrl: string): void;
   onPollAttempt(agentId: string): void;
   onConfigUpdated(agentId: string): void;
@@ -43,9 +43,11 @@ export class AgentRuntimeManager {
     this.engineConfig = engineConfig;
   }
 
-  getStatus(agentId: string): { status: AgentRuntimeStatus; error?: string } {
+  getStatus(agentId: string): { status: AgentRuntimeStatus; error?: string; errorCode?: AgentErrorCode } {
     const instance = this.instances.get(agentId);
-    return instance ? { status: instance.status, error: instance.error } : { status: 'stopped' };
+    return instance
+      ? { status: instance.status, error: instance.error, errorCode: instance.errorCode }
+      : { status: 'stopped' };
   }
 
   /** The pending browser-approval URL for an agent, if it is currently awaiting approval. */
@@ -81,12 +83,12 @@ export class AgentRuntimeManager {
     }
 
     const instanceListener = {
-      onStatusChanged: (status: AgentRuntimeStatus, error?: string) => {
+      onStatusChanged: (status: AgentRuntimeStatus, error?: string, errorCode?: AgentErrorCode) => {
         // The approval URL is only valid while awaiting approval; drop it once we move on.
         if (status !== 'awaiting_approval') {
           this.approvalUrls.delete(agentId);
         }
-        this.listener.onStatusChanged(agentId, status, error);
+        this.listener.onStatusChanged(agentId, status, error, errorCode);
       },
       onApprovalUrl: (approvalUrl: string) => {
         this.approvalUrls.set(agentId, approvalUrl);

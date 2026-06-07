@@ -187,6 +187,9 @@ export function ConfigTab({
         {agent.error && (
           <div className="mb-4 select-text rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive cursor-text whitespace-pre-wrap break-all max-h-48 overflow-y-auto font-mono">
             {agent.error}
+            {agent.errorCode === 'invalid_environment' && (
+              <div className="mt-2 not-italic">Check the Environment Variables tab.</div>
+            )}
           </div>
         )}
 

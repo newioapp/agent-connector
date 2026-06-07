@@ -58,8 +58,8 @@ export class DaemonConnection {
     const { socketPath } = getDaemonPaths(this.stage);
     try {
       await this.connector.connect(socketPath, {
-        onStatusChanged: (agentId, status, error) =>
-          this.windows.send(EVENT_CHANNELS['agent-status-changed'], { agentId, status, error }),
+        onStatusChanged: (agentId, status, error, errorCode) =>
+          this.windows.send(EVENT_CHANNELS['agent-status-changed'], { agentId, status, error, errorCode }),
         onApprovalUrl: (agentId, approvalUrl) => {
           this.windows.send(EVENT_CHANNELS['agent-approval-url'], { agentId, approvalUrl });
           // The daemon can't open a browser; the desktop does it on the daemon's behalf.

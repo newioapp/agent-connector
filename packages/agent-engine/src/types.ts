@@ -180,11 +180,20 @@ export interface UpdateAgentInput {
   readonly acp?: AcpConfig;
 }
 
+/**
+ * Machine-readable error categories. Frontends map these to remediation hints
+ * (the engine stays UI-neutral). Present only when `runtimeStatus === 'error'`
+ * and the failure has a known, actionable category.
+ */
+export type AgentErrorCode = 'invalid_environment';
+
 export interface AgentStatusInfo {
   readonly id: string;
   readonly config: AgentConfig;
   readonly runtimeStatus: AgentRuntimeStatus;
   readonly error?: string;
+  /** Actionable category for an `error` status, when known (e.g. bad PATH/env). */
+  readonly errorCode?: AgentErrorCode;
   /** Pending browser-approval URL while `runtimeStatus === 'awaiting_approval'`, for late-attaching clients. */
   readonly approvalUrl?: string;
 }

@@ -176,7 +176,7 @@ describe('AgentRuntimeManager', () => {
       const instanceListener = MockAgentInstanceImpl.mock.calls[0]![3];
 
       instanceListener.onStatusChanged('running');
-      expect(listener.onStatusChanged).toHaveBeenCalledWith('agent-1', 'running', undefined);
+      expect(listener.onStatusChanged).toHaveBeenCalledWith('agent-1', 'running', undefined, undefined);
 
       instanceListener.onApprovalUrl('https://example.com/approve');
       expect(listener.onApprovalUrl).toHaveBeenCalledWith('agent-1', 'https://example.com/approve');

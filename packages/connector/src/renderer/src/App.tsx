@@ -72,8 +72,8 @@ export function App(): React.JSX.Element {
   }, [connection.kind, load]);
 
   useEffect(() => {
-    const unsub1 = window.api.onAgentStatusChanged(({ agentId, status, error }) => {
-      setAgentStatus(agentId, status, error);
+    const unsub1 = window.api.onAgentStatusChanged(({ agentId, status, error, errorCode }) => {
+      setAgentStatus(agentId, status, error, errorCode);
     });
     const unsub2 = window.api.onAgentApprovalUrl(({ agentId, approvalUrl }) => {
       setApprovalUrl(agentId, approvalUrl);

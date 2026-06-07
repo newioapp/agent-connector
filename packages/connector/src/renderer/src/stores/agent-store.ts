@@ -8,6 +8,7 @@ import type {
   AddAgentInput,
   UpdateAgentInput,
   AgentRuntimeStatus,
+  AgentErrorCode,
   AgentInfo,
 } from '../../../shared/types';
 
@@ -28,7 +29,7 @@ interface AgentActions {
   startAgent(agentId: string): Promise<void>;
   stopAgent(agentId: string): Promise<void>;
   selectAgent(agentId: string | null): void;
-  setAgentStatus(agentId: string, status: AgentRuntimeStatus, error?: string): void;
+  setAgentStatus(agentId: string, status: AgentRuntimeStatus, error?: string, errorCode?: AgentErrorCode): void;
   setApprovalUrl(agentId: string, url: string): void;
   setPollTimestamp(agentId: string): void;
   updateConfig(agentId: string, config: AgentConfig): void;
@@ -101,13 +102,13 @@ export const useAgentStore = create<AgentStore>((set) => ({
     set({ selectedAgentId: agentId });
   },
 
-  setAgentStatus(agentId: string, status: AgentRuntimeStatus, error?: string): void {
+  setAgentStatus(agentId: string, status: AgentRuntimeStatus, error?: string, errorCode?: AgentErrorCode): void {
     set((state: AgentState) => {
       const isStopped = status === 'stopped' || status === 'error';
       // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure to omit key
       const { [agentId]: _removedInfo, ...restInfos } = state.agentInfos;
       return {
-        agents: state.agents.map((a) => (a.id === agentId ? { ...a, runtimeStatus: status, error } : a)),
+        agents: state.agents.map((a) => (a.id === agentId ? { ...a, runtimeStatus: status, error, errorCode } : a)),
         approvalUrls:
           status !== 'awaiting_approval'
             ? Object.fromEntries(Object.entries(state.approvalUrls).filter(([k]) => k !== agentId))

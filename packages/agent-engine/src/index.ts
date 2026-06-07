@@ -22,9 +22,11 @@ export type {
   PermissionHandler,
   PermissionRequestOption,
   AgentStatusInfo,
+  AgentErrorCode,
   SessionMode,
 } from './types.js';
 export { DEFAULT_SESSION_IDLE_TIMEOUT_MS } from './types.js';
+export { InvalidEnvironmentError } from './errors.js';
 export type {
   AgentInstance,
   AgentInstanceListener,

@@ -4,7 +4,7 @@
  * These are one-way events sent via webContents.send / ipcRenderer.on.
  * Separate from the request/response IPC API in ipc-api.ts.
  */
-import type { AgentRuntimeStatus, AgentConfig, AgentInfo } from './types';
+import type { AgentRuntimeStatus, AgentErrorCode, AgentConfig, AgentInfo } from './types';
 
 /**
  * State of the connection to the daemon (the runtime the desktop is a thin client
@@ -23,6 +23,7 @@ export interface MainToRendererEvents {
     readonly agentId: string;
     readonly status: AgentRuntimeStatus;
     readonly error?: string;
+    readonly errorCode?: AgentErrorCode;
   };
   readonly 'agent-approval-url': {
     readonly agentId: string;

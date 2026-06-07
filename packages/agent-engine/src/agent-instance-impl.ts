@@ -28,7 +28,8 @@ import type {
   NewioAppForSession,
   SessionType,
 } from './types';
-import type { AgentInfo, PermissionRequestOption } from './types';
+import type { AgentInfo, AgentErrorCode, PermissionRequestOption } from './types';
+import { InvalidEnvironmentError } from './errors.js';
 import type { AgentInstance, AgentInstanceListener } from './agent-instance';
 import type { CronStore } from './cron-store';
 import type { EngineConfig } from './engine-config';
@@ -53,6 +54,7 @@ function isErrnoException(err: unknown): err is NodeJS.ErrnoException {
 export abstract class BaseAgentInstance implements AgentInstance {
   status: AgentRuntimeStatus = 'stopped';
   error?: string;
+  errorCode?: AgentErrorCode;
 
   /** Log prefix including the agent's username when available. */
   protected get logTag(): string {
@@ -254,12 +256,16 @@ export abstract class BaseAgentInstance implements AgentInstance {
       } else if (err instanceof ConnectionRejectedError) {
         log.warn(`${this.logTag} WebSocket connection rejected — likely a duplicate session`);
         this.setStatus('error', 'Connection rejected. This agent may already be running in another instance.');
+      } else if (err instanceof InvalidEnvironmentError) {
+        log.warn(`${this.logTag} Invalid environment`, err.message);
+        this.setStatus('error', err.message, err.errorCode);
       } else if (isErrnoException(err) && err.code === 'ENOENT') {
         const executable = this.config.acp ? resolveCommand(this.config.type, this.config.acp).command : 'unknown';
         log.warn(`${this.logTag} Executable not found: ${executable}`);
         this.setStatus(
           'error',
-          `"${executable}" not found. Make sure it is installed and available on your system PATH, or set the executable path in the agent config.\n\n${err.stack ?? err.message}`,
+          `"${executable}" not found. Make sure it is installed and available on the agent's PATH, or set the executable path in the agent config.\n\n${err.stack ?? err.message}`,
+          'invalid_environment',
         );
       } else {
         const message = extractErrorMessage(err);
@@ -653,10 +659,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
   // Internal
   // ---------------------------------------------------------------------------
 
-  protected setStatus(status: AgentRuntimeStatus, error?: string): void {
+  protected setStatus(status: AgentRuntimeStatus, error?: string, errorCode?: AgentErrorCode): void {
     this.status = status;
     this.error = error;
-    this.listener.onStatusChanged(status, error);
+    this.errorCode = errorCode;
+    this.listener.onStatusChanged(status, error, errorCode);
   }
 }
 

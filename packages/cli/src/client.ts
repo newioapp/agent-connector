@@ -5,7 +5,7 @@
  * Application-level API lives in DaemonConnector.
  */
 import { createConnection, type Socket } from 'net';
-import type { AgentConfig, AgentRuntimeStatus, AgentInfo } from '@newio/agent-engine';
+import type { AgentConfig, AgentRuntimeStatus, AgentErrorCode, AgentInfo } from '@newio/agent-engine';
 
 const AGENT_RUNTIME_STATUSES: readonly AgentRuntimeStatus[] = [
   'stopped',
@@ -38,7 +38,7 @@ function isAgentInfo(value: unknown): value is AgentInfo {
 }
 
 export interface DaemonNotificationHandlers {
-  onStatusChanged?(agentId: string, status: AgentRuntimeStatus, error?: string): void;
+  onStatusChanged?(agentId: string, status: AgentRuntimeStatus, error?: string, errorCode?: AgentErrorCode): void;
   onApprovalUrl?(agentId: string, approvalUrl: string): void;
   onPollAttempt?(agentId: string): void;
   onConfigUpdated?(agentId: string, config: AgentConfig): void;
@@ -187,7 +187,8 @@ export class DaemonClient {
       case 'agent.statusChanged': {
         if (isAgentRuntimeStatus(params.status)) {
           const error = typeof params.error === 'string' ? params.error : undefined;
-          this.handlers.onStatusChanged?.(agentId, params.status, error);
+          const errorCode = params.errorCode === 'invalid_environment' ? params.errorCode : undefined;
+          this.handlers.onStatusChanged?.(agentId, params.status, error, errorCode);
         }
         break;
       }

@@ -8,7 +8,14 @@ import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { dirname } from 'path';
 import { spawn } from 'child_process';
 import type { DaemonConnector } from '../connector.js';
-import type { AddAgentInput, AgentStatusInfo, AgentType, SessionMode, UpdateAgentInput } from '@newio/agent-engine';
+import type {
+  AddAgentInput,
+  AgentErrorCode,
+  AgentStatusInfo,
+  AgentType,
+  SessionMode,
+  UpdateAgentInput,
+} from '@newio/agent-engine';
 import { agentEnvFilePath } from '@newio/agent-engine';
 import { AuthManager, NewioClient } from '@newio/agent-sdk';
 import { withDaemon, openConnection } from '../client/connect.js';
@@ -52,6 +59,58 @@ export function parseEnvPairs(pairs: readonly string[]): Record<string, string> 
   return result;
 }
 
+/** Sentinel `--env-sync` sources (anything else is treated as a login shell path). */
+const ENV_SYNC_NONE = 'none';
+const ENV_SYNC_CURRENT = 'current';
+
+/** The CLI's own environment — i.e. the interactive shell that invoked `newio`. */
+function currentProcessEnv(): Record<string, string> {
+  return Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined));
+}
+
+interface ResolvedEnv {
+  readonly envVars: Record<string, string>;
+  /** Label to record as `envVarsShell` (omitted for `none`). */
+  readonly shell?: string;
+}
+
+/**
+ * Resolve an `--env-sync` source to a concrete environment map.
+ *
+ * - `current` — capture the CLI's own env (the shell that ran `newio`). Resolved
+ *   client-side, since the daemon runs as a service with a different environment.
+ * - `none` — an empty map (no variables).
+ * - anything else — treated as a login shell path and sourced via the daemon.
+ */
+export async function resolveEnvSync(c: DaemonConnector, source: string): Promise<ResolvedEnv> {
+  if (source === ENV_SYNC_NONE) {
+    return { envVars: {} };
+  }
+  if (source === ENV_SYNC_CURRENT) {
+    return { envVars: currentProcessEnv(), shell: ENV_SYNC_CURRENT };
+  }
+  const shells = await c.listShells();
+  if (!shells.includes(source)) {
+    const choices = [ENV_SYNC_CURRENT, ENV_SYNC_NONE, ...shells].join(', ');
+    throw new Error(`Unknown env-sync source "${source}". Expected one of: ${choices}.`);
+  }
+  return { envVars: await c.getShellEnv(source), shell: source };
+}
+
+/** First line of a (possibly multi-line) error message — for tight table cells. */
+export function firstLine(message: string): string {
+  const idx = message.indexOf('\n');
+  return idx === -1 ? message : message.slice(0, idx);
+}
+
+/** CLI-side remediation hint for a known error category (engine stays UI-neutral). */
+export function remediationHint(errorCode: AgentErrorCode | undefined, agentId: string): string | undefined {
+  if (errorCode === 'invalid_environment') {
+    return `Fix this agent's environment, then restart: newio agent env edit ${agentId.slice(0, 8)}`;
+  }
+  return undefined;
+}
+
 /**
  * Resolve a user-supplied query to a single agent id.
  *
@@ -88,25 +147,44 @@ export async function resolveAgentId(connector: DaemonConnector, query: string):
 
 function printAgentTable(agents: readonly AgentStatusInfo[]): void {
   if (agents.length === 0) {
-    console.log('No agents configured. Create one with: newio agent create-account --type <type> --name <name>');
+    console.log('No agents configured. Add one with: newio agent add --type <type> --username <username>');
     return;
   }
   const rows = agents.map((a) => ({
     id: a.id.slice(0, 8),
+    name: a.config.newio?.displayName ?? '—',
     type: a.config.type,
-    // Username fills in after first login; until then show the display name (register path) or a dash.
-    username: a.config.newio?.username ?? (a.config.newio?.displayName ? `(${a.config.newio.displayName})` : '—'),
-    status: a.error ? `${a.runtimeStatus} (${a.error})` : a.runtimeStatus,
+    username: a.config.newio?.username ?? '—',
+    status: a.runtimeStatus,
+    // STATUS stays a single word; the full (possibly multi-line) error goes in
+    // DESCRIPTION, trimmed to its first line so the table stays aligned.
+    description: a.error ? firstLine(a.error) : '',
   }));
   const w = {
     id: Math.max(2, ...rows.map((r) => r.id.length)),
+    name: Math.max(4, ...rows.map((r) => r.name.length)),
     type: Math.max(4, ...rows.map((r) => r.type.length)),
     username: Math.max(8, ...rows.map((r) => r.username.length)),
+    status: Math.max(6, ...rows.map((r) => r.status.length)),
   };
   const pad = (s: string, n: number): string => s.padEnd(n);
-  console.log(`${pad('ID', w.id)}  ${pad('TYPE', w.type)}  ${pad('USERNAME', w.username)}  STATUS`);
+  console.log(
+    `${pad('ID', w.id)}  ${pad('NAME', w.name)}  ${pad('TYPE', w.type)}  ${pad('USERNAME', w.username)}  ${pad('STATUS', w.status)}  DESCRIPTION`,
+  );
   for (const r of rows) {
-    console.log(`${pad(r.id, w.id)}  ${pad(r.type, w.type)}  ${pad(r.username, w.username)}  ${r.status}`);
+    console.log(
+      `${pad(r.id, w.id)}  ${pad(r.name, w.name)}  ${pad(r.type, w.type)}  ${pad(r.username, w.username)}  ${pad(r.status, w.status)}  ${r.description}`.trimEnd(),
+    );
+  }
+  // Actionable hints for agents stuck in a known error state.
+  const hints = new Set(
+    agents.map((a) => remediationHint(a.errorCode, a.id)).filter((h): h is string => h !== undefined),
+  );
+  if (hints.size > 0) {
+    console.log('');
+    for (const hint of hints) {
+      console.log(`  → ${hint}`);
+    }
   }
 }
 
@@ -129,11 +207,15 @@ async function startAndStream(stage: Stage, query: string): Promise<void> {
         process.stdout.write('.');
       }
     },
-    onStatusChanged(id, status, error) {
+    onStatusChanged(id, status, error, errorCode) {
       if (id !== agentId) {
         return;
       }
       console.log(`\n${status}${error ? `: ${error}` : ''}`);
+      const hint = remediationHint(errorCode, agentId);
+      if (hint) {
+        console.log(`  → ${hint}`);
+      }
       if (TERMINAL_STATUSES.has(status)) {
         resolveDone();
       }
@@ -158,6 +240,7 @@ export interface AddOptions {
   readonly username: string;
   readonly cwd?: string;
   readonly sessionMode?: string;
+  readonly envSync?: string;
 }
 
 export interface CreateAccountOptions {
@@ -177,14 +260,30 @@ export async function agentList(stage: Stage): Promise<void> {
 
 /** `agent add` — attach a runner config to an existing account, identified by username. */
 export async function agentAdd(stage: Stage, opts: AddOptions): Promise<void> {
-  const input: AddAgentInput = {
-    type: asAgentType(opts.type),
-    newioUsername: opts.username,
-    acp: { cwd: opts.cwd ?? process.cwd() },
-    ...(opts.sessionMode ? { sessionMode: asSessionMode(opts.sessionMode) } : {}),
-  };
-  const config = await withDaemon(stage, (c) => c.addAgent(input));
+  const config = await withDaemon(stage, async (c) => {
+    // Opt-in env syncing: with no --env-sync we send an explicit empty map, which
+    // both leaves the agent with no environment and tells the daemon not to
+    // auto-source a login shell.
+    const { envVars, shell } = await resolveEnvSync(c, opts.envSync ?? ENV_SYNC_NONE);
+    const input: AddAgentInput = {
+      type: asAgentType(opts.type),
+      newioUsername: opts.username,
+      acp: { cwd: opts.cwd ?? process.cwd() },
+      envVars,
+      ...(shell ? { envVarsShell: shell } : {}),
+      ...(opts.sessionMode ? { sessionMode: asSessionMode(opts.sessionMode) } : {}),
+    };
+    return c.addAgent(input);
+  });
   console.log(`Added agent ${config.id} for @${opts.username}.`);
+  const synced = Object.keys(config.envVars).length;
+  if (synced > 0) {
+    console.log(
+      `Synced ${synced} environment variable(s)${config.envVarsShell ? ` from ${config.envVarsShell}` : ''}.`,
+    );
+  } else {
+    console.log(`No environment variables synced. Add them with: newio agent env sync ${config.id.slice(0, 8)}`);
+  }
   console.log(`Start it with: newio agent start ${config.id.slice(0, 8)}`);
 }
 
@@ -288,19 +387,39 @@ export async function envUnset(stage: Stage, query: string, keys: string[]): Pro
   console.log(`Removed ${keys.length} variable(s).`);
 }
 
-export async function envSync(stage: Stage, query: string, shellArg?: string): Promise<void> {
+export async function envSync(stage: Stage, query: string, sourceArg?: string): Promise<void> {
   await withDaemon(stage, async (c) => {
     const agentId = await resolveAgentId(c, query);
-    const shells = await c.listShells();
-    const shell = shellArg ?? shells[0];
-    if (!shell) {
+    // Default to the first available login shell; `current`/`none`/a shell path
+    // are also accepted (see resolveEnvSync).
+    const source = sourceArg ?? (await c.listShells())[0];
+    if (!source) {
       throw new Error('No login shell available to sync from.');
     }
-    const shellEnv = await c.getShellEnv(shell);
+    const { envVars: shellEnv, shell } = await resolveEnvSync(c, source);
     // Overlay shell-derived vars on existing ones (preserves custom keys).
     const next = { ...(await currentEnv(c, agentId)), ...shellEnv };
     await c.updateAgentEnvVars(agentId, next, shell);
-    console.log(`Synced ${Object.keys(shellEnv).length} variable(s) from ${shell}.`);
+    console.log(`Synced ${Object.keys(shellEnv).length} variable(s) from ${shell ?? source}.`);
+  });
+}
+
+/** `env print` — dump the environment a given shell would contribute, without touching any agent. */
+export async function envPrint(stage: Stage, sourceArg?: string): Promise<void> {
+  await withDaemon(stage, async (c) => {
+    const source = sourceArg ?? (await c.listShells())[0];
+    if (!source) {
+      throw new Error('No login shell available to read from.');
+    }
+    const { envVars, shell } = await resolveEnvSync(c, source);
+    const keys = Object.keys(envVars).sort();
+    if (keys.length === 0) {
+      console.log(`No environment variables resolved from ${shell ?? source}.`);
+      return;
+    }
+    for (const key of keys) {
+      console.log(`${key}=${envVars[key]}`);
+    }
   });
 }
 
