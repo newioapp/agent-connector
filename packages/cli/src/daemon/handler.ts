@@ -7,6 +7,7 @@
  */
 import type { AgentConfigManager, AgentRuntimeManager } from '@newio/agent-engine';
 import type { RequestHandler } from './server.js';
+import type { Stage } from '../paths.js';
 import { listAvailableShells, getShellEnv } from './shell-env.js';
 import { Params, RpcError, RPC_PROTOCOL_VERSION } from './rpc.js';
 import { decodeAddAgentInput, decodeUpdateAgentInput } from './decode-agent.js';
@@ -15,6 +16,10 @@ export interface DaemonHandlerDeps {
   readonly agentConfigManager: AgentConfigManager;
   agentRuntimeManager: AgentRuntimeManager;
   readonly version: string;
+  /** Stage the daemon was installed for — surfaced in the handshake. */
+  readonly stage: Stage;
+  /** Backend API base URL the daemon resolved — surfaced in the handshake. */
+  readonly apiBaseUrl: string;
   readonly onReload: () => Promise<void>;
   readonly onStop: () => Promise<void>;
 }
@@ -34,7 +39,8 @@ export class DaemonHandler implements RequestHandler {
       case 'agent.list': {
         return cfg.list().map((config) => {
           const { status, error } = rt.getStatus(config.id);
-          return { id: config.id, config, runtimeStatus: status, error };
+          const approvalUrl = rt.getApprovalUrl(config.id);
+          return { id: config.id, config, runtimeStatus: status, error, ...(approvalUrl ? { approvalUrl } : {}) };
         });
       }
       case 'agent.add': {
@@ -78,7 +84,12 @@ export class DaemonHandler implements RequestHandler {
         return getShellEnv(params.string(0, 'shell'));
       }
       case 'daemon.handshake':
-        return { protocolVersion: RPC_PROTOCOL_VERSION, version: this.deps.version };
+        return {
+          protocolVersion: RPC_PROTOCOL_VERSION,
+          version: this.deps.version,
+          stage: this.deps.stage,
+          apiBaseUrl: this.deps.apiBaseUrl,
+        };
       case 'daemon.version':
         return this.deps.version;
       case 'daemon.ping':

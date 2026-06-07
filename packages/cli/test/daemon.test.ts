@@ -49,6 +49,7 @@ function mockConfigManager(configs: AgentConfig[] = []): AgentConfigManager {
 function mockRuntimeManager(): AgentRuntimeManager {
   return {
     getStatus: vi.fn().mockReturnValue({ status: 'stopped' }),
+    getApprovalUrl: vi.fn().mockReturnValue(undefined),
     start: vi.fn(),
     stop: vi.fn().mockResolvedValue(undefined),
     stopAll: vi.fn().mockResolvedValue(undefined),
@@ -71,6 +72,8 @@ async function setup() {
     agentConfigManager: configManager,
     agentRuntimeManager: runtimeManager,
     version: '1.2.3',
+    stage: 'prod',
+    apiBaseUrl: 'https://api.newio.app',
     onReload,
     onStop,
   });
@@ -108,9 +111,14 @@ describe('DaemonServer / DaemonConnector', () => {
       expect(await ctx.connector.ping()).toBe('pong');
     });
 
-    it('daemon.handshake returns protocol + version', async () => {
+    it('daemon.handshake returns protocol + version + stage + apiBaseUrl', async () => {
       const hs = await ctx.connector.handshake();
-      expect(hs).toEqual({ protocolVersion: 1, version: '1.2.3' });
+      expect(hs).toEqual({
+        protocolVersion: 1,
+        version: '1.2.3',
+        stage: 'prod',
+        apiBaseUrl: 'https://api.newio.app',
+      });
     });
 
     it('daemon.reload calls onReload', async () => {

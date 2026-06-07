@@ -5,11 +5,19 @@
  */
 import type { AgentConfig, AddAgentInput, UpdateAgentInput, AgentStatusInfo, AgentInfo } from '@newio/agent-engine';
 import { DaemonClient, type DaemonNotificationHandlers } from './client.js';
+import type { Stage } from './paths.js';
 
-/** Result of `daemon.handshake` — protocol version plus the daemon's own version. */
+/**
+ * Result of `daemon.handshake`: the protocol version and daemon version (for skew
+ * detection) plus the stage + API base URL the daemon resolved at install time —
+ * so a client can show the active backend and reuse the apiBaseUrl for its own
+ * direct API calls (e.g. the desktop's create-account register flow).
+ */
 export interface DaemonHandshake {
   readonly protocolVersion: number;
   readonly version: string;
+  readonly stage: Stage;
+  readonly apiBaseUrl: string;
 }
 
 export class DaemonConnector {

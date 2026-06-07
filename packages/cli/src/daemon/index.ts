@@ -130,6 +130,8 @@ export async function runDaemon(): Promise<void> {
     agentConfigManager,
     agentRuntimeManager: new AgentRuntimeManager(agentConfigManager, cronStore, makeListener(), engineConfig),
     version,
+    stage,
+    apiBaseUrl,
     onReload: async () => {
       log.info('Reloading...');
       // Capture which agents were running so we can restart them.

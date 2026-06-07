@@ -46,6 +46,7 @@ function mockConfigManager(configs: AgentConfig[]): AgentConfigManager {
 function mockRuntimeManager(): AgentRuntimeManager {
   return {
     getStatus: vi.fn().mockReturnValue({ status: 'stopped' }),
+    getApprovalUrl: vi.fn().mockReturnValue(undefined),
     start: vi.fn(),
     stop: vi.fn().mockResolvedValue(undefined),
     stopAll: vi.fn().mockResolvedValue(undefined),
@@ -70,6 +71,8 @@ describe('resolveAgentId', () => {
       ]),
       agentRuntimeManager: mockRuntimeManager(),
       version: '1.0.0',
+      stage: 'prod',
+      apiBaseUrl: 'https://api.newio.app',
       onReload: vi.fn().mockResolvedValue(undefined),
       onStop: vi.fn().mockResolvedValue(undefined),
     });

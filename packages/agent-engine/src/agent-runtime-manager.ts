@@ -24,6 +24,8 @@ export interface StatusListener {
 
 export class AgentRuntimeManager {
   private readonly instances = new Map<string, AgentInstance>();
+  /** Last browser-approval URL per agent while awaiting approval — for late-attaching clients. */
+  private readonly approvalUrls = new Map<string, string>();
   private readonly configManager: AgentConfigManager;
   private readonly cronStore: CronStore;
   private readonly listener: StatusListener;
@@ -44,6 +46,11 @@ export class AgentRuntimeManager {
   getStatus(agentId: string): { status: AgentRuntimeStatus; error?: string } {
     const instance = this.instances.get(agentId);
     return instance ? { status: instance.status, error: instance.error } : { status: 'stopped' };
+  }
+
+  /** The pending browser-approval URL for an agent, if it is currently awaiting approval. */
+  getApprovalUrl(agentId: string): string | undefined {
+    return this.approvalUrls.get(agentId);
   }
 
   start(agentId: string): void {
@@ -75,9 +82,14 @@ export class AgentRuntimeManager {
 
     const instanceListener = {
       onStatusChanged: (status: AgentRuntimeStatus, error?: string) => {
+        // The approval URL is only valid while awaiting approval; drop it once we move on.
+        if (status !== 'awaiting_approval') {
+          this.approvalUrls.delete(agentId);
+        }
         this.listener.onStatusChanged(agentId, status, error);
       },
       onApprovalUrl: (approvalUrl: string) => {
+        this.approvalUrls.set(agentId, approvalUrl);
         this.listener.onApprovalUrl(agentId, approvalUrl);
       },
       onPollAttempt: () => {
@@ -112,6 +124,7 @@ export class AgentRuntimeManager {
     log.info(`Stopping agent ${agentId}`);
     await instance.stop();
     this.instances.delete(agentId);
+    this.approvalUrls.delete(agentId);
     log.info(`Agent ${agentId} stopped and removed`);
   }
 

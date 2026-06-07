@@ -185,6 +185,8 @@ export interface AgentStatusInfo {
   readonly config: AgentConfig;
   readonly runtimeStatus: AgentRuntimeStatus;
   readonly error?: string;
+  /** Pending browser-approval URL while `runtimeStatus === 'awaiting_approval'`, for late-attaching clients. */
+  readonly approvalUrl?: string;
 }
 
 // ---------------------------------------------------------------------------

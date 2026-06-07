@@ -193,6 +193,36 @@ describe('AgentRuntimeManager', () => {
     });
   });
 
+  describe('getApprovalUrl', () => {
+    it('is undefined before any approval', () => {
+      manager.start('agent-1');
+      expect(manager.getApprovalUrl('agent-1')).toBeUndefined();
+    });
+
+    it('records the approval URL and clears it once status leaves awaiting_approval', () => {
+      manager.start('agent-1');
+      const instanceListener = MockAgentInstanceImpl.mock.calls[0]![3];
+
+      instanceListener.onApprovalUrl('https://example.com/approve');
+      expect(manager.getApprovalUrl('agent-1')).toBe('https://example.com/approve');
+
+      // Still pending while awaiting approval.
+      instanceListener.onStatusChanged('awaiting_approval');
+      expect(manager.getApprovalUrl('agent-1')).toBe('https://example.com/approve');
+
+      // Cleared once it moves on.
+      instanceListener.onStatusChanged('running');
+      expect(manager.getApprovalUrl('agent-1')).toBeUndefined();
+    });
+
+    it('clears the approval URL on stop', async () => {
+      manager.start('agent-1');
+      MockAgentInstanceImpl.mock.calls[0]![3].onApprovalUrl('https://example.com/approve');
+      await manager.stop('agent-1');
+      expect(manager.getApprovalUrl('agent-1')).toBeUndefined();
+    });
+  });
+
   describe('stop', () => {
     it('calls instance.stop and removes from map', async () => {
       manager.start('agent-1');
