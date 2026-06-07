@@ -388,10 +388,20 @@ export async function envUnset(stage: Stage, query: string, keys: string[]): Pro
 }
 
 export async function envSync(stage: Stage, query: string, sourceArg?: string): Promise<void> {
+  // `none` is an add-time concept ("create with an empty environment") — it isn't
+  // a sync source. Allowing it here would also leave a stale `envVarsShell` label
+  // (the resolved shell is undefined, which the daemon/config manager treat as
+  // "leave unchanged"), so the command would report syncing from "none" while the
+  // old source persists. Reject it and point at the right tool for clearing vars.
+  if (sourceArg === ENV_SYNC_NONE) {
+    throw new Error(
+      '"none" is not a sync source. Sync from a login shell or "current"; to remove variables use: newio agent env unset <agent> <keys...>',
+    );
+  }
   await withDaemon(stage, async (c) => {
     const agentId = await resolveAgentId(c, query);
-    // Default to the first available login shell; `current`/`none`/a shell path
-    // are also accepted (see resolveEnvSync).
+    // Default to the first available login shell; `current` or a shell path are
+    // also accepted (see resolveEnvSync). Both always yield a defined shell label.
     const source = sourceArg ?? (await c.listShells())[0];
     if (!source) {
       throw new Error('No login shell available to sync from.');

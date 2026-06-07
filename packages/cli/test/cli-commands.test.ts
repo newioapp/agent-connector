@@ -6,7 +6,14 @@ import { DaemonServer } from '../src/daemon/server';
 import { DaemonHandler } from '../src/daemon/handler';
 import { DaemonClient } from '../src/client';
 import { DaemonConnector } from '../src/connector';
-import { parseEnvPairs, resolveAgentId, resolveEnvSync, firstLine, remediationHint } from '../src/cli/agent-commands';
+import {
+  parseEnvPairs,
+  resolveAgentId,
+  resolveEnvSync,
+  envSync,
+  firstLine,
+  remediationHint,
+} from '../src/cli/agent-commands';
 import type { DaemonConnector } from '../src/connector';
 import type { AgentConfig, AgentConfigManager, AgentRuntimeManager } from '@newio/agent-engine';
 
@@ -79,6 +86,13 @@ describe('resolveEnvSync', () => {
   it('rejects an unknown shell source with the available choices', async () => {
     const c = mockConnector(['/bin/zsh'], {});
     await expect(resolveEnvSync(c, '/bin/fish')).rejects.toThrow(/Unknown env-sync source.*current.*none.*\/bin\/zsh/s);
+  });
+});
+
+describe('envSync', () => {
+  it('rejects "none" (an add-time concept) before touching the daemon, pointing at env unset', async () => {
+    // The guard runs before any daemon connection, so no socket is needed.
+    await expect(envSync('prod', 'some-agent', 'none')).rejects.toThrow(/not a sync source.*env unset/s);
   });
 });
 
