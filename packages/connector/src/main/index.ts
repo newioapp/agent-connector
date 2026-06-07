@@ -1,18 +1,11 @@
-import { app, BrowserWindow, Menu, nativeTheme, shell } from 'electron';
-import { join } from 'path';
-import { mkdirSync, existsSync } from 'fs';
-import { homedir } from 'os';
+import { app, BrowserWindow, Menu, nativeTheme } from 'electron';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
 import { setLogHandler } from '@newio/agent-sdk';
 import { createStore } from './store';
 import { MainWindowManager } from './main-window';
-import { FileAgentConfigManager } from '@newio/agent-engine';
-import { AgentRuntimeManager } from '@newio/agent-engine';
-import { JsonCronStore } from '@newio/agent-engine';
-import type { EngineConfig } from '@newio/agent-engine';
+import { DaemonConnection } from './daemon-connection';
 import { IpcHandler } from './ipc-handler';
 import { registerIpcHandlers } from './ipc-registry';
-import { EVENT_CHANNELS } from '../shared/ipc-events';
 import { initAutoUpdater, initForceUpdateCheck } from './auto-updater';
 import { blockChromiumShortcuts } from './keyboard-shortcuts';
 import { setLogLevel, Logger, initElectronLog } from '../shared/logger';
@@ -83,62 +76,15 @@ void app.whenReady().then(async () => {
   const mainWindowManager = new MainWindowManager(store);
   activeWindowManager = mainWindowManager;
 
-  const dataDir = (() => {
-    const stage = __NEWIO_STAGE__;
-    const home = stage === 'prod' ? '.newio' : `.newio-${stage}`;
-    const dir = join(homedir(), home, 'connector');
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true, mode: 0o700 });
-    }
-    return dir;
-  })();
-
-  const engineConfig: EngineConfig = {
-    apiBaseUrl: __API_BASE_URL__,
-    wsUrl: __WS_BASE_URL__,
-    stage: __NEWIO_STAGE__,
-    appDisplayName: __APP_DISPLAY_NAME__,
-    appVersion: __APP_VERSION__,
-    dataDir,
-    mcpBridgePath: require.resolve('@newio/agent-engine/mcp-bridge').replace('app.asar', 'app.asar.unpacked'),
-    wsProactiveReconnectMs: __WS_PROACTIVE_RECONNECT_MS__ ? Number(__WS_PROACTIVE_RECONNECT_MS__) : undefined,
-  };
-
-  const agentConfigManager = new FileAgentConfigManager(dataDir);
-  const cronStore = new JsonCronStore(join(dataDir, 'cron.json'));
-
-  const agentRuntimeManager = new AgentRuntimeManager(
-    agentConfigManager,
-    cronStore,
-    {
-      onStatusChanged(agentId, status, error) {
-        mainWindowManager.send(EVENT_CHANNELS['agent-status-changed'], { agentId, status, error });
-      },
-      onApprovalUrl(agentId, approvalUrl) {
-        mainWindowManager.send(EVENT_CHANNELS['agent-approval-url'], { agentId, approvalUrl });
-        void shell.openExternal(approvalUrl);
-      },
-      onPollAttempt(agentId) {
-        mainWindowManager.send(EVENT_CHANNELS['agent-poll-attempt'], { agentId });
-      },
-      onConfigUpdated(agentId) {
-        const config = agentConfigManager.get(agentId);
-        if (config) {
-          mainWindowManager.send(EVENT_CHANNELS['agent-config-updated'], { agentId, config });
-        }
-      },
-      onAgentInfo(agentId, info) {
-        mainWindowManager.send(EVENT_CHANNELS['agent-acp-info'], { agentId, info });
-      },
-    },
-    engineConfig,
-  );
+  // The desktop is a thin client of the per-stage daemon — it owns no agent
+  // runtime or config of its own; everything goes over the socket.
+  const connection = new DaemonConnection(__NEWIO_STAGE__, mainWindowManager);
 
   // Apply persisted theme
   nativeTheme.themeSource = store.get('themeSource');
 
   // Register IPC handlers
-  const ipcHandler = new IpcHandler({ store, agentConfigManager, agentRuntimeManager });
+  const ipcHandler = new IpcHandler({ store, connection });
   registerIpcHandlers(ipcHandler);
 
   // Auto-update and force-update
@@ -147,48 +93,21 @@ void app.whenReady().then(async () => {
 
   await mainWindowManager.create();
 
+  // Attach to the daemon after the window exists so connection-state events land.
+  void connection.connect();
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       void mainWindowManager.create();
     }
   });
 
-  let cleanedUp = false;
-  const cleanup = (): Promise<void> =>
-    agentRuntimeManager
-      .stopAll()
-      .catch(() => {})
-      .then(() => cronStore.close());
-
-  app.on('before-quit', (event) => {
-    if (!cleanedUp) {
-      log.info('before-quit: starting cleanup');
-      event.preventDefault();
-      void cleanup().finally(() => {
-        log.info('before-quit: cleanup complete, quitting');
-        cleanedUp = true;
-        app.quit();
-      });
-    }
+  // The daemon owns the agent runtime and its lifecycle; the desktop just drops
+  // its socket on quit.
+  app.on('before-quit', () => {
+    log.info('before-quit: disconnecting from daemon');
+    connection.disconnect();
   });
-
-  // Handle SIGINT/SIGTERM (e.g. Ctrl+C in dev mode) — Electron doesn't exit on these by default,
-  // and child processes keep the event loop alive via stdio pipes.
-  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-    process.on(signal, () => {
-      log.info(`Received ${signal}`);
-      if (cleanedUp) {
-        log.info(`${signal}: already cleaned up, exiting`);
-        app.exit(0);
-        return;
-      }
-      cleanedUp = true;
-      void cleanup().finally(() => {
-        log.info(`${signal}: cleanup complete, exiting`);
-        app.exit(0);
-      });
-    });
-  }
 });
 
 app.on('window-all-closed', () => {

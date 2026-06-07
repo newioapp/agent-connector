@@ -13,6 +13,7 @@ export interface ConnectorAPI extends IpcApi {
   onAgentPollAttempt(callback: (data: MainToRendererEvents['agent-poll-attempt']) => void): () => void;
   onAgentConfigUpdated(callback: (data: MainToRendererEvents['agent-config-updated']) => void): () => void;
   onAgentAcpInfo(callback: (data: MainToRendererEvents['agent-acp-info']) => void): () => void;
+  onDaemonConnectionChanged(callback: (data: MainToRendererEvents['daemon-connection-changed']) => void): () => void;
 }
 
 declare global {

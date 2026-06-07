@@ -44,6 +44,8 @@ export interface DaemonNotificationHandlers {
   onConfigUpdated?(agentId: string, config: AgentConfig): void;
   onAgentInfo?(agentId: string, info: AgentInfo): void;
   onReloaded?(): void;
+  /** Fired when the socket closes unexpectedly (daemon stopped/restarted), not on an explicit disconnect(). */
+  onDisconnect?(): void;
 }
 
 interface PendingRequest {
@@ -57,9 +59,12 @@ export class DaemonClient {
   private readonly pending = new Map<number, PendingRequest>();
   private buf = '';
   private handlers: DaemonNotificationHandlers = {};
+  /** Set during an explicit disconnect() so the close handler doesn't report it as unexpected. */
+  private intentionalClose = false;
 
   connect(socketPath: string, handlers: DaemonNotificationHandlers = {}): Promise<void> {
     this.handlers = handlers;
+    this.intentionalClose = false;
     return new Promise((resolve, reject) => {
       const socket = createConnection(socketPath);
       socket.setEncoding('utf8');
@@ -80,12 +85,17 @@ export class DaemonClient {
       });
 
       socket.on('close', () => {
+        const wasConnected = this.socket !== null;
         this.socket = null;
         // Reject all pending requests
         for (const [, pending] of this.pending) {
           pending.reject(new Error('Daemon connection closed'));
         }
         this.pending.clear();
+        // Notify consumers of an unexpected drop (daemon stopped/restarted).
+        if (wasConnected && !this.intentionalClose) {
+          this.handlers.onDisconnect?.();
+        }
       });
 
       socket.on('error', (err) => {
@@ -98,6 +108,7 @@ export class DaemonClient {
   }
 
   disconnect(): void {
+    this.intentionalClose = true;
     this.socket?.destroy();
     this.socket = null;
   }

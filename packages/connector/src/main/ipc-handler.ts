@@ -3,6 +3,9 @@
  *
  * Each method corresponds to an IpcApi interface method.
  * Registered with ipcMain.handle via registerIpcHandlers().
+ *
+ * Agent/env methods delegate to the daemon over the socket (via DaemonConnection);
+ * theme/update/dialog methods are native and stay in the main process.
  */
 /* eslint-disable @typescript-eslint/require-await -- IpcApi interface requires Promise returns */
 import { app, dialog, shell, nativeTheme } from 'electron';
@@ -18,32 +21,45 @@ import type {
   UpdateMode,
   UpdateChannel,
 } from '../shared/types';
+import type { DaemonConnectionStatus } from '../shared/ipc-events';
 import type { StoreSchema } from './store';
-import type { AgentConfigManager } from '@newio/agent-engine';
-import type { AgentRuntimeManager } from '@newio/agent-engine';
-import { getShellEnv, listAvailableShells } from './shell-env';
+import type { DaemonConnection } from './daemon-connection';
 import { applyUpdateMode, applyUpdateChannel, manualCheckForUpdates } from './auto-updater';
 
 interface IpcHandlerDeps {
   readonly store: Store<StoreSchema>;
-  readonly agentConfigManager: AgentConfigManager;
-  readonly agentRuntimeManager: AgentRuntimeManager;
+  readonly connection: DaemonConnection;
 }
 
 export class IpcHandler implements IpcApi {
   private readonly store: Store<StoreSchema>;
-  private readonly agentConfigManager: AgentConfigManager;
-  private readonly agentRuntimeManager: AgentRuntimeManager;
+  private readonly connection: DaemonConnection;
 
   constructor(deps: IpcHandlerDeps) {
     this.store = deps.store;
-    this.agentConfigManager = deps.agentConfigManager;
-    this.agentRuntimeManager = deps.agentRuntimeManager;
+    this.connection = deps.connection;
+  }
+
+  /** Typed handle to the daemon RPC client. */
+  private get daemon() {
+    return this.connection.connector;
   }
 
   async getVersion(): Promise<string> {
     return app.getVersion();
   }
+
+  // Daemon connection -------------------------------------------------------
+
+  async getDaemonConnection(): Promise<DaemonConnectionStatus> {
+    return this.connection.getStatus();
+  }
+
+  async reconnectDaemon(): Promise<void> {
+    await this.connection.connect();
+  }
+
+  // Theme -------------------------------------------------------------------
 
   async getTheme(): Promise<ThemeSource> {
     return this.store.get('themeSource');
@@ -61,6 +77,8 @@ export class IpcHandler implements IpcApi {
   async openExternal(url: string): Promise<void> {
     await shell.openExternal(url);
   }
+
+  // Updates -----------------------------------------------------------------
 
   async getUpdateMode(): Promise<UpdateMode> {
     return this.store.get('updateMode');
@@ -89,54 +107,46 @@ export class IpcHandler implements IpcApi {
     return result.canceled ? undefined : result.filePaths[0];
   }
 
+  // Agents (delegated to the daemon) ----------------------------------------
+
   async listAgents(): Promise<AgentStatusInfo[]> {
-    return this.agentConfigManager.list().map((config) => {
-      const { status, error } = this.agentRuntimeManager.getStatus(config.id);
-      return { id: config.id, config, runtimeStatus: status, error };
-    });
+    return this.daemon.listAgents();
   }
 
   async addAgent(input: AddAgentInput): Promise<AgentConfig> {
-    // Auto-detect shell and populate env vars for the new agent
-    const shells = listAvailableShells();
-    const selectedShell = shells.length > 0 ? shells[0] : undefined;
-    const envVars = selectedShell ? await getShellEnv(selectedShell) : undefined;
-    return this.agentConfigManager.add({
-      ...input,
-      ...(envVars ? { envVars, envVarsShell: selectedShell } : {}),
-    });
+    // The daemon auto-syncs the login-shell env vars on add.
+    return this.daemon.addAgent(input);
   }
 
   async updateAgent(agentId: string, updates: UpdateAgentInput): Promise<AgentConfig> {
-    return this.agentConfigManager.update(agentId, updates);
+    return this.daemon.updateAgent(agentId, updates);
   }
 
   async removeAgent(agentId: string): Promise<void> {
-    await this.agentRuntimeManager.stop(agentId);
-    this.agentConfigManager.remove(agentId);
+    await this.daemon.removeAgent(agentId);
   }
 
   async startAgent(agentId: string): Promise<void> {
-    this.agentRuntimeManager.start(agentId);
+    await this.daemon.startAgent(agentId);
   }
 
   async stopAgent(agentId: string): Promise<void> {
-    await this.agentRuntimeManager.stop(agentId);
+    await this.daemon.stopAgent(agentId);
   }
 
   async listShells(): Promise<string[]> {
-    return listAvailableShells();
+    return this.daemon.listShells();
   }
 
   async getShellEnv(shell: string): Promise<Record<string, string>> {
-    return getShellEnv(shell);
+    return this.daemon.getShellEnv(shell);
   }
 
   async updateAgentEnvVars(agentId: string, envVars: Record<string, string>, shell?: string): Promise<AgentConfig> {
-    return this.agentConfigManager.update(agentId, { envVars, ...(shell ? { envVarsShell: shell } : {}) });
+    return this.daemon.updateAgentEnvVars(agentId, envVars, shell);
   }
 
   async getAgentInfo(agentId: string): Promise<AgentInfo | undefined> {
-    return this.agentRuntimeManager.getAgentInfo(agentId);
+    return (await this.daemon.getAgentInfo(agentId)) ?? undefined;
   }
 }

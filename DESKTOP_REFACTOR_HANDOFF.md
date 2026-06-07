@@ -1,7 +1,11 @@
 # Handoff: Refactor desktop to a daemon client (Task #7)
 
-**Status:** not started. Tasks #1–#6 are merged to `main` (PRs #183–#186). This is the
-final piece of the daemon/CLI refactor.
+**Status:** core thin-client refactor in progress.
+- ✅ Pre-work merged: handshake `stage`/`apiBaseUrl`, `getDaemonPaths`/`resolveStage` exports, late-attach approval snapshot (#197).
+- ✅ Core rewiring (this PR): `main/index.ts` + `ipc-handler.ts` now talk to the daemon via `DaemonConnection` (a `DaemonConnector` wrapper); embedded `AgentRuntimeManager`/`FileAgentConfigManager`/cron store removed; handshake protocol check; "daemon not running" / "protocol mismatch" gate in the renderer with retry. Single build-time stage for now.
+- ⏳ Remaining follow-ups: **(Q2)** the build-flag-gated dev/integ/prod env **selector** (stage → socket; relaunch on switch); **(Q1)** desktop-local **create-account** register flow in the main process.
+
+Tasks #1–#6 are merged to `main` (PRs #183–#186).
 
 ## Goal
 
