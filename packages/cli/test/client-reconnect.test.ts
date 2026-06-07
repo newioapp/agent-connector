@@ -8,20 +8,35 @@ import { DaemonClient } from '../src/client';
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 interface Harness {
-  server: Server;
   path: string;
   /** Most recent server-side connection, so a test can drop it. */
   lastSocket: () => Socket | undefined;
+  /** Destroy all server-side sockets and close the server (never hangs). */
+  close: () => Promise<void>;
 }
 
 function startServer(): Promise<Harness> {
   const path = join(tmpdir(), `newio-recon-${randomUUID()}.sock`);
-  const server = createServer();
-  let socket: Socket | undefined;
+  const server: Server = createServer();
+  const sockets: Socket[] = [];
+  let last: Socket | undefined;
   server.on('connection', (s) => {
-    socket = s;
+    last = s;
+    sockets.push(s);
   });
-  return new Promise((resolve) => server.listen(path, () => resolve({ server, path, lastSocket: () => socket })));
+  return new Promise((resolve) =>
+    server.listen(path, () =>
+      resolve({
+        path,
+        lastSocket: () => last,
+        close: () =>
+          new Promise<void>((r) => {
+            for (const s of sockets) s.destroy();
+            server.close(() => r());
+          }),
+      }),
+    ),
+  );
 }
 
 describe('DaemonClient reconnect / disconnect', () => {
@@ -38,7 +53,7 @@ describe('DaemonClient reconnect / disconnect', () => {
     const onDisconnect = vi.fn();
     cleanups.push(
       () => client.disconnect(),
-      () => new Promise<void>((r) => h.server.close(() => r())),
+      () => h.close(),
     );
 
     await client.connect(h.path, { onDisconnect });
@@ -54,7 +69,7 @@ describe('DaemonClient reconnect / disconnect', () => {
     const h = await startServer();
     const client = new DaemonClient();
     const onDisconnect = vi.fn();
-    cleanups.push(() => new Promise<void>((r) => h.server.close(() => r())));
+    cleanups.push(() => h.close());
 
     await client.connect(h.path, { onDisconnect });
     client.disconnect();
@@ -69,7 +84,7 @@ describe('DaemonClient reconnect / disconnect', () => {
     const onDisconnect = vi.fn();
     cleanups.push(
       () => client.disconnect(),
-      () => new Promise<void>((r) => h.server.close(() => r())),
+      () => h.close(),
     );
 
     await client.connect(h.path, { onDisconnect });
@@ -78,5 +93,38 @@ describe('DaemonClient reconnect / disconnect', () => {
     await delay(40);
 
     expect(onDisconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects in-flight requests on an explicit disconnect (no hang)', async () => {
+    const h = await startServer(); // accepts but never responds to RPC
+    const client = new DaemonClient();
+    cleanups.push(() => h.close());
+
+    await client.connect(h.path);
+    const inflight = client.call('daemon.ping');
+    // Attach the rejection handler before triggering it.
+    const assertion = expect(inflight).rejects.toThrow(/connection closed/i);
+    client.disconnect();
+    await assertion;
+  });
+
+  it('rejects in-flight requests when reconnecting (no hang)', async () => {
+    const h = await startServer();
+    const client = new DaemonClient();
+    cleanups.push(
+      () => client.disconnect(),
+      () => h.close(),
+    );
+
+    await client.connect(h.path);
+    const inflight = client.call('daemon.ping');
+    const assertion = expect(inflight).rejects.toThrow(/connection closed/i);
+    await client.connect(h.path); // reconnect tears down the old socket
+    await assertion;
+  });
+
+  it('rejects a call made while not connected', async () => {
+    const client = new DaemonClient();
+    await expect(client.call('daemon.ping')).rejects.toThrow(/not connected/i);
   });
 });

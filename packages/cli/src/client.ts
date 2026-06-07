@@ -96,10 +96,7 @@ export class DaemonClient {
           return;
         }
         this.socket = null;
-        for (const [, pending] of this.pending) {
-          pending.reject(new Error('Daemon connection closed'));
-        }
-        this.pending.clear();
+        this.rejectPending(new Error('Daemon connection closed'));
         // The current socket dropping is a genuine, unexpected disconnect — an
         // explicit disconnect() nulls this.socket first, so we never reach here.
         this.handlers.onDisconnect?.();
@@ -109,12 +106,17 @@ export class DaemonClient {
         if (socket !== this.socket) {
           return;
         }
-        for (const [, pending] of this.pending) {
-          pending.reject(err);
-        }
-        this.pending.clear();
+        this.rejectPending(err);
       });
     });
+  }
+
+  /** Reject and clear every in-flight request — on close, error, or explicit disconnect. */
+  private rejectPending(error: Error): void {
+    for (const [, pending] of this.pending) {
+      pending.reject(error);
+    }
+    this.pending.clear();
   }
 
   disconnect(): void {
@@ -123,6 +125,9 @@ export class DaemonClient {
     const socket = this.socket;
     this.socket = null;
     socket?.destroy();
+    // The close handler is now guarded out, so reject in-flight requests here
+    // rather than leaving them to hang across a disconnect/reconnect.
+    this.rejectPending(new Error('Daemon connection closed'));
   }
 
   private handleMessage(raw: string): void {
@@ -210,11 +215,16 @@ export class DaemonClient {
   call<T>(method: string, params: unknown[] = []): Promise<T> {
     const id = this.nextId++;
     return new Promise<T>((resolve, reject) => {
+      // Check connectivity before registering the request, so a not-connected
+      // call rejects cleanly instead of leaving a pending entry behind.
+      if (!this.socket) {
+        reject(new Error('Not connected to daemon'));
+        return;
+      }
       this.pending.set(id, {
         resolve: (v) => resolve(v as T),
         reject,
       });
-      if (!this.socket) throw new Error('Not connected to daemon');
       this.socket.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
     });
   }
