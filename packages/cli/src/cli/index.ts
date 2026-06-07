@@ -99,7 +99,7 @@ agentCmd
   .command('add')
   .description('Add a runner config for an existing Newio agent account')
   .addOption(new Option('--type <type>', 'agent type').choices([...agent.AGENT_TYPE_CHOICES]).makeOptionMandatory())
-  .requiredOption('--username <username>', 'existing Newio username to log in as')
+  .requiredOption('--username <username>', 'Newio agent username (run "newio agent create-account" to make one)')
   .option('--cwd <dir>', 'working directory for the agent process')
   .addOption(new Option('--session-mode <mode>', 'session mode').choices([...agent.SESSION_MODE_CHOICES]))
   .action((_options: unknown, cmd: Command) => agent.agentAdd(stage, cmd.opts<AddOptions>()));
@@ -107,11 +107,8 @@ agentCmd
 agentCmd
   .command('create-account')
   .description('Register a new Newio agent account (username chosen at approval)')
-  .addOption(new Option('--type <type>', 'agent type').choices([...agent.AGENT_TYPE_CHOICES]).makeOptionMandatory())
   .requiredOption('--name <name>', 'display name for the new account')
-  .option('--cwd <dir>', 'working directory for the agent process')
-  .addOption(new Option('--session-mode <mode>', 'session mode').choices([...agent.SESSION_MODE_CHOICES]))
-  .action((_options: unknown, cmd: Command) => agent.agentCreateAccount(stage, cmd.opts<CreateAccountOptions>()));
+  .action((_options: unknown, cmd: Command) => agent.agentCreateAccount(cmd.opts<CreateAccountOptions>()));
 
 agentCmd
   .command('remove <agent>')

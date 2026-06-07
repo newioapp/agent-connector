@@ -45,16 +45,11 @@ export class FileAgentConfigManager implements AgentConfigManager {
   }
 
   add(input: AddAgentInput): AgentConfig {
-    if (!input.newioUsername && !input.displayName) {
-      throw new Error('Agent config requires either a username (login) or a display name (register).');
-    }
     const config: AgentConfig = {
       id: randomUUID(),
       type: input.type,
-      newio: {
-        ...(input.newioUsername ? { username: input.newioUsername } : {}),
-        ...(input.displayName ? { displayName: input.displayName } : {}),
-      },
+      // Display name is left unset here; it's synced from the account on first login.
+      newio: { username: input.newioUsername },
       envVars: input.envVars ?? {},
       ...(input.sessionMode !== undefined ? { sessionMode: input.sessionMode } : {}),
       ...(input.envVarsShell ? { envVarsShell: input.envVarsShell } : {}),

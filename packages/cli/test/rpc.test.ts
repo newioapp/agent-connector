@@ -37,7 +37,7 @@ describe('RpcError', () => {
 });
 
 describe('decodeAddAgentInput', () => {
-  it('decodes a full login input', () => {
+  it('decodes a full input', () => {
     const input = decodeAddAgentInput({
       type: 'codex',
       newioUsername: 'bot',
@@ -54,12 +54,7 @@ describe('decodeAddAgentInput', () => {
     });
   });
 
-  it('decodes a register (create-account) input with displayName', () => {
-    const input = decodeAddAgentInput({ type: 'codex', displayName: 'Bot' });
-    expect(input).toEqual({ type: 'codex', displayName: 'Bot' });
-  });
-
-  it('requires type and one of username/displayName', () => {
+  it('requires type and newioUsername', () => {
     expect(() => decodeAddAgentInput({ newioUsername: 'bot' })).toThrow('type');
     expect(() => decodeAddAgentInput({ type: 'codex' })).toThrow('newioUsername');
   });

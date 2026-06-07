@@ -23,7 +23,7 @@ function mockConfigManager(configs: AgentConfig[] = []): AgentConfigManager {
       const config = {
         id: randomUUID(),
         type: input.type,
-        newio: { displayName: input.displayName },
+        newio: { username: input.newioUsername },
         envVars: {},
       } as AgentConfig;
       map.set(config.id, config);
@@ -134,8 +134,8 @@ describe('DaemonServer / DaemonConnector', () => {
     });
 
     it('agent.add creates an agent', async () => {
-      const config = await ctx.connector.addAgent({ type: 'claude-code', displayName: 'New Agent' });
-      expect(config.newio?.displayName).toBe('New Agent');
+      const config = await ctx.connector.addAgent({ type: 'claude-code', newioUsername: 'new_agent' });
+      expect(config.newio?.username).toBe('new_agent');
       expect(ctx.configManager.add).toHaveBeenCalledOnce();
     });
 

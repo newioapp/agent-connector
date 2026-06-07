@@ -6,6 +6,7 @@
  */
 import type { DaemonConnector } from '../connector.js';
 import type { AddAgentInput, AgentStatusInfo, AgentType, SessionMode, UpdateAgentInput } from '@newio/agent-engine';
+import { AuthManager, NewioClient } from '@newio/agent-sdk';
 import { withDaemon, openConnection } from '../client/connect.js';
 import { resolveConfig, type Stage } from '../paths.js';
 
@@ -156,10 +157,7 @@ export interface AddOptions {
 }
 
 export interface CreateAccountOptions {
-  readonly type: string;
   readonly name: string;
-  readonly cwd?: string;
-  readonly sessionMode?: string;
 }
 
 export interface UpdateOptions {
@@ -187,20 +185,21 @@ export async function agentAdd(stage: Stage, opts: AddOptions): Promise<void> {
 }
 
 /**
- * `agent create-account` — register a new Newio agent account. The config is
- * seeded with a display name; the username is chosen during browser approval on
- * the first `agent start`.
+ * `agent create-account` — register a brand-new Newio agent account. Runs the
+ * register + browser-approval flow standalone (no daemon, no runner config); the
+ * username is chosen by the owner during approval. Wire up a runner afterwards
+ * with `agent add --username <username>`.
  */
-export async function agentCreateAccount(stage: Stage, opts: CreateAccountOptions): Promise<void> {
-  const input: AddAgentInput = {
-    type: asAgentType(opts.type),
-    displayName: opts.name,
-    acp: { cwd: opts.cwd ?? process.cwd() },
-    ...(opts.sessionMode ? { sessionMode: asSessionMode(opts.sessionMode) } : {}),
-  };
-  const config = await withDaemon(stage, (c) => c.addAgent(input));
-  console.log(`Created agent account config ${config.id} (${opts.name}).`);
-  console.log(`Start it to register and pick a username: newio agent start ${config.id.slice(0, 8)}`);
+export async function agentCreateAccount(opts: CreateAccountOptions): Promise<void> {
+  const { apiBaseUrl } = resolveConfig();
+  const auth = new AuthManager(apiBaseUrl);
+  const handle = await auth.register({ name: opts.name });
+  console.log(`Approve this new account in your browser:\n  ${handle.approvalUrl}`);
+  await handle.waitForApproval({ onPollAttempt: () => process.stdout.write('.') });
+  const client = new NewioClient({ baseUrl: apiBaseUrl, tokenProvider: auth.tokenProvider });
+  const me = await client.getMe({});
+  console.log(`\nAccount created: @${me.username ?? '(username not set)'} (${me.userId}).`);
+  console.log(`Add a runner for it with: newio agent add --type <type> --username ${me.username ?? '<username>'}`);
 }
 
 export async function agentRemove(stage: Stage, query: string): Promise<void> {
