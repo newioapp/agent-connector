@@ -24,8 +24,8 @@ describe('parseEnvPairs', () => {
 // resolveAgentId against a real connector + mock daemon
 // ---------------------------------------------------------------------------
 
-function agent(id: string, displayName: string): AgentConfig {
-  return { id, type: 'claude-code', newio: { displayName }, envVars: {}, acp: { cwd: '/tmp' } };
+function agent(id: string, username: string): AgentConfig {
+  return { id, type: 'claude-code', newio: { username }, envVars: {}, acp: { cwd: '/tmp' } };
 }
 
 function mockConfigManager(configs: AgentConfig[]): AgentConfigManager {
@@ -61,9 +61,12 @@ describe('resolveAgentId', () => {
     const socketPath = join(tmpdir(), `newio-cli-${randomUUID()}.sock`);
     const handler = new DaemonHandler({
       agentConfigManager: mockConfigManager([
-        agent('aaaa1111-0000-0000-0000-000000000000', 'Alpha'),
-        agent('aaaa2222-0000-0000-0000-000000000000', 'Beta'),
-        agent('bbbb3333-0000-0000-0000-000000000000', 'Gamma'),
+        agent('aaaa1111-0000-0000-0000-000000000000', 'alpha'),
+        agent('aaaa2222-0000-0000-0000-000000000000', 'beta'),
+        agent('bbbb3333-0000-0000-0000-000000000000', 'gamma'),
+        // Two configs sharing a username — resolving by that username is ambiguous.
+        agent('cccc4444-0000-0000-0000-000000000000', 'dupe'),
+        agent('dddd5555-0000-0000-0000-000000000000', 'dupe'),
       ]),
       agentRuntimeManager: mockRuntimeManager(),
       version: '1.0.0',
@@ -95,8 +98,12 @@ describe('resolveAgentId', () => {
     await expect(resolveAgentId(connector, 'aaaa')).rejects.toThrow('Ambiguous');
   });
 
-  it('matches by exact display name', async () => {
+  it('matches by username, case-insensitively', async () => {
     expect(await resolveAgentId(connector, 'Gamma')).toBe('bbbb3333-0000-0000-0000-000000000000');
+  });
+
+  it('throws when a username is shared by multiple configs', async () => {
+    await expect(resolveAgentId(connector, 'dupe')).rejects.toThrow('used by 2 configs');
   });
 
   it('throws when nothing matches', async () => {

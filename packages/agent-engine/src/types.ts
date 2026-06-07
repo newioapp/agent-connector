@@ -153,11 +153,16 @@ export interface SessionConfig {
 /** Default session idle timeout: 1 hour. */
 export const DEFAULT_SESSION_IDLE_TIMEOUT_MS = 60 * 60 * 1000;
 
+/**
+ * Input for adding a runner config for an existing Newio agent account.
+ * `newioUsername` is mandatory — the config logs in as that account on start and
+ * the display name is synced from the account afterwards. New accounts are
+ * created out of band via the `agent create-account` command.
+ */
 export interface AddAgentInput {
-  readonly displayName: string;
   readonly type: AgentType;
-  /** Optional: existing Newio username to login with instead of registering a new agent. */
-  readonly newioUsername?: string;
+  /** Existing Newio username to log in as. Display name syncs from the account on start. */
+  readonly newioUsername: string;
   readonly sessionMode?: SessionMode;
   readonly acp?: AcpConfig;
   /** Optional: initial environment variables (e.g. synced from shell by the desktop app). */

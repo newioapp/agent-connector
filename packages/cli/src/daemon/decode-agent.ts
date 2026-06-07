@@ -93,14 +93,12 @@ function acpConfig(obj: Record<string, unknown>): AcpConfig | undefined {
 
 export function decodeAddAgentInput(obj: Record<string, unknown>): AddAgentInput {
   const acp = acpConfig(obj);
-  const username = str(obj, 'newioUsername');
   const mode = sessionMode(str(obj, 'sessionMode'));
   const envVars = stringRecord(obj, 'envVars');
   const envVarsShell = str(obj, 'envVarsShell');
   return {
-    displayName: requireStr(obj, 'displayName'),
     type: agentType(requireStr(obj, 'type')),
-    ...(username !== undefined ? { newioUsername: username } : {}),
+    newioUsername: requireStr(obj, 'newioUsername'),
     ...(mode !== undefined ? { sessionMode: mode } : {}),
     ...(acp !== undefined ? { acp } : {}),
     ...(envVars !== undefined ? { envVars } : {}),
