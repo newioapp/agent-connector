@@ -97,6 +97,61 @@ the desktop's notification handler (the daemon can't open a browser).
    Add main-process tests for the notification→event forwarding mapping. E2E is
    manual.
 
+## Decisions resolved (2026-06-07)
+
+Settled with the maintainer before implementation. These supersede the open
+questions in "Decisions to make before coding" below.
+
+- **Account creation — option (a), desktop-local register.** The desktop runs the
+  standalone register flow **in its own main process** (the same
+  `AuthManager`/`NewioClient` the CLI's `agent create-account` uses): open the
+  approval URL via `shell.openExternal`, poll, read the assigned username via
+  `getMe`. It writes **no local files** (no config/tokens), so the daemon stays
+  the single writer. The user then runs "Add agent" (by username), which goes
+  through the daemon (login path) and is where the runner config is actually
+  created. The `apiBaseUrl` for the register call comes from the handshake (below),
+  so accounts are created on the same backend the selected daemon uses.
+
+- **Stage selection / multi-env — Conduit-style selector, build-flag gated.** Add a
+  dev/integ/prod selector shown only in dev builds via an
+  `INCLUDE_ENVIRONMENT_SELECTOR`-style flag (model on Conduit's desktop:
+  `electron.vite.config.ts` flag → `define` global → splash `<select>`; persist in
+  electron-store; **relaunch on switch**; clear cached state). Connector-specific
+  twist: the selected stage maps to a **daemon socket** (`getDaemonPaths(stage)`)
+  and the desktop attaches to *that stage's daemon*. The **daemon owns the backend
+  URLs** (baked at its per-stage install from env). Do **NOT** add a hardcoded
+  dev/integ URL map — this repo intentionally keeps non-prod URLs out of source
+  (`paths.ts:55-57`). Instead the daemon's resolved `stage` + `apiBaseUrl` are
+  returned in the **handshake**, so the desktop can show the active backend and use
+  the apiBaseUrl for its create-account call. No daemon for the selected stage →
+  show "daemon not running" guidance (matches the CLI's `openConnection` copy).
+
+- **Protocol compatibility — dedicated `RPC_PROTOCOL_VERSION`, major-match at
+  launch.** Do NOT couple the two packages' npm majors (`@newio/connector` and
+  `@newio/cli` version independently; a UI-only bump must not force a daemon
+  update). Keep the integer `RPC_PROTOCOL_VERSION` as the contract and treat it as
+  the major: bump only on breaking RPC method/param changes. The connector verifies
+  it on connect via `handshake` — the same strict check the CLI already does in
+  `client/connect.ts` — and shows a clear "update the daemon / desktop" modal on
+  mismatch. Additive response fields (like the new handshake `stage`/`apiBaseUrl`)
+  are backward-compatible and do NOT bump it. A `major.minor` split (newer daemon
+  serving older client within a major) is a future refinement, deferred.
+
+### Pre-work landed before the connector refactor
+
+(PR: "daemon-client pre-work" — `@newio/cli` + `@newio/agent-engine` only, no
+connector changes, no behavior change to existing CLI flows.)
+
+1. Export `getDaemonPaths`, `resolveStage`, and the `Stage`/`DaemonPaths` types from
+   `@newio/cli` (`packages/cli/src/index.ts`) so the desktop can resolve the socket.
+2. Add `stage` + `apiBaseUrl` to the `daemon.handshake` payload (`DaemonHandshake`,
+   the `daemon.handshake` handler, `DaemonHandlerDeps`, and the `runDaemon` wiring).
+3. Late-attach snapshot: `AgentRuntimeManager` tracks the last `approvalUrl` per
+   agent and clears it once status leaves `awaiting_approval`; `agent.list` now
+   includes `approvalUrl?` on `AgentStatusInfo` so a freshly-attached desktop can
+   render a pending approval. (Chosen over a separate `agent.getRuntimeState` RPC —
+   enriching the list the connector already calls on attach is one round-trip.)
+
 ## Decisions to make before coding
 
 - **Daemon discovery/spawn.** We agreed the daemon ships as a **separate npm/global
@@ -114,18 +169,15 @@ the desktop's notification handler (the daemon can't open a browser).
   desktop and the daemon against the same stage's `dataDir` simultaneously — both
   would write `config.json`/`cron.json`. After this lands, only the daemon writes.
 
-## Deferred item to fold in here (from #186)
+## Deferred item to fold in here (from #186) — DONE in pre-work
 
 A **transient-state snapshot** for late-attaching clients. Notifications
 (`approvalUrl`, `pollAttempt`, `statusChanged`) are fire-and-forget broadcasts; a
-desktop that connects mid-auth misses them. `agent.list` already returns
-`runtimeStatus`+`error`, but NOT the last `approvalUrl`. To fully fix:
-- In `agent-engine` `AgentRuntimeManager`, track the last `approvalUrl` per agent
-  (alongside `getStatus`).
-- Add an RPC (e.g. `agent.getRuntimeState`) returning a full snapshot incl. any
-  pending approval URL, so a freshly-attached desktop can render correctly.
-This matters most for the desktop (the CLI streams within a single command), so
-it belongs in this task.
+desktop that connects mid-auth misses them. Landed in the pre-work PR:
+`AgentRuntimeManager` tracks the last `approvalUrl` per agent and clears it once
+status leaves `awaiting_approval`, and `agent.list` returns it as
+`AgentStatusInfo.approvalUrl`. The connector renders any pending approval from the
+`listAgents()` call it already makes on attach (no separate snapshot RPC needed).
 
 ## Key files
 
