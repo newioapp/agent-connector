@@ -40,6 +40,10 @@ export interface MainToRendererEvents {
     readonly info: AgentInfo;
   };
   readonly 'daemon-connection-changed': DaemonConnectionStatus;
+  /** Approval URL for an in-progress create-account flow, so the UI can show a link. */
+  readonly 'account-approval-url': {
+    readonly url: string;
+  };
 }
 
 /** All push event channel names. */
@@ -50,4 +54,5 @@ export const EVENT_CHANNELS: { readonly [K in keyof MainToRendererEvents]: K } =
   'agent-config-updated': 'agent-config-updated',
   'agent-acp-info': 'agent-acp-info',
   'daemon-connection-changed': 'daemon-connection-changed',
+  'account-approval-url': 'account-approval-url',
 };

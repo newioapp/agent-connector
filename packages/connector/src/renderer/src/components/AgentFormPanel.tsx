@@ -7,6 +7,7 @@ import type { AgentType, AgentConfig, SessionMode } from '../../../shared/types'
 import { useAgentStore } from '../stores/agent-store';
 import { Button, Input, Dropdown, Label } from './ui';
 import { AgentTypeHint } from './AgentTypeHint';
+import { CreateAccountSection } from './CreateAccountSection';
 import { FolderOpen } from 'lucide-react';
 
 function DirectoryPicker({
@@ -194,6 +195,9 @@ export function AgentFormPanel({
         <Label text="Working Directory" hint="Working directory for agent sessions.">
           <DirectoryPicker value={cwd} onChange={setCwd} />
         </Label>
+
+        {/* Create a new account (add mode only) */}
+        {!isEdit && <CreateAccountSection onCreated={setNewioUsername} />}
 
         {/* Newio username */}
         <Label

@@ -3,7 +3,13 @@
  */
 import { useEffect, useState } from 'react';
 import { Monitor, Sun, Moon } from 'lucide-react';
-import type { ThemeSource, UpdateMode, UpdateChannel } from '../../../shared/types';
+import type { ThemeSource, UpdateMode, UpdateChannel, Stage, StageConfig } from '../../../shared/types';
+import { STAGES } from '../../../shared/types';
+
+const STAGE_OPTIONS: readonly { readonly value: Stage; readonly label: string }[] = STAGES.map((s) => ({
+  value: s,
+  label: s,
+}));
 
 const THEMES: readonly { readonly value: ThemeSource; readonly label: string; readonly icon: typeof Monitor }[] = [
   { value: 'system', label: 'System', icon: Monitor },
@@ -65,11 +71,13 @@ export function SettingsPanel(): React.JSX.Element {
   const [theme, setTheme] = useState<ThemeSource>('system');
   const [updateMode, setUpdateMode] = useState<UpdateMode>('auto');
   const [updateChannel, setUpdateChannel] = useState<UpdateChannel>('latest');
+  const [stageConfig, setStageConfig] = useState<StageConfig | null>(null);
 
   useEffect(() => {
     void window.api.getTheme().then(setTheme);
     void window.api.getUpdateMode().then(setUpdateMode);
     void window.api.getUpdateChannel().then(setUpdateChannel);
+    void window.api.getStageConfig().then(setStageConfig);
   }, []);
 
   async function handleThemeChange(t: ThemeSource): Promise<void> {
@@ -102,6 +110,16 @@ export function SettingsPanel(): React.JSX.Element {
       <h2 className="text-lg font-semibold text-foreground">Settings</h2>
 
       <div className="mt-6 w-full max-w-sm divide-y divide-border">
+        {stageConfig?.selectorEnabled && (
+          <SettingRow label="Environment" description="Which daemon this app attaches to (restarts on change)">
+            <Dropdown
+              value={stageConfig.stage}
+              options={STAGE_OPTIONS}
+              onChange={(stage) => void window.api.setStage(stage)}
+            />
+          </SettingRow>
+        )}
+
         <SettingRow label="Theme" description="Choose your preferred appearance">
           <div className="flex gap-2">
             {THEMES.map((t) => {

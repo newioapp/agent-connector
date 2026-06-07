@@ -3,7 +3,10 @@
 **Status:** core thin-client refactor in progress.
 - ✅ Pre-work merged: handshake `stage`/`apiBaseUrl`, `getDaemonPaths`/`resolveStage` exports, late-attach approval snapshot (#197).
 - ✅ Core rewiring (this PR): `main/index.ts` + `ipc-handler.ts` now talk to the daemon via `DaemonConnection` (a `DaemonConnector` wrapper); embedded `AgentRuntimeManager`/`FileAgentConfigManager`/cron store removed; handshake protocol check; "daemon not running" / "protocol mismatch" gate in the renderer with retry. Single build-time stage for now.
-- ⏳ Remaining follow-ups: **(Q2)** the build-flag-gated dev/integ/prod env **selector** (stage → socket; relaunch on switch); **(Q1)** desktop-local **create-account** register flow in the main process.
+- ✅ **(Q2)** build-flag-gated dev/integ/prod env **selector** (Settings → stage persisted in electron-store → relaunch → attaches to that stage's daemon socket).
+- ✅ **(Q1)** desktop-local **create-account**: the Add Agent form can register a new account (standalone `AuthManager`/`NewioClient` in main, browser approval, no local writes), then prefills the username for the login step.
+
+The daemon-client refactor (Task #7) is now functionally complete.
 
 Tasks #1–#6 are merged to `main` (PRs #183–#186).
 

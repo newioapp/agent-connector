@@ -14,8 +14,16 @@ import type {
   AgentInfo,
   UpdateMode,
   UpdateChannel,
+  Stage,
+  StageConfig,
 } from './types';
 import type { DaemonConnectionStatus } from './ipc-events';
+
+/** Result of creating a new Newio agent account from the desktop. */
+export interface CreateAccountResult {
+  readonly username: string;
+  readonly agentId: string;
+}
 
 export interface IpcApi {
   /** Get the app version. */
@@ -26,6 +34,19 @@ export interface IpcApi {
   getDaemonConnection(): Promise<DaemonConnectionStatus>;
   /** Re-attempt connecting to the daemon (e.g. after the user starts it). */
   reconnectDaemon(): Promise<void>;
+
+  // Stage / environment
+  /** The stage the desktop attaches to, plus whether the user may switch it. */
+  getStageConfig(): Promise<StageConfig>;
+  /** Switch stages: persists the choice and relaunches the app. */
+  setStage(stage: Stage): Promise<void>;
+
+  // Account
+  /**
+   * Register a brand-new Newio agent account against the connected daemon's
+   * backend. Opens the approval URL in the browser and resolves once approved.
+   */
+  createAccount(name: string): Promise<CreateAccountResult>;
 
   // Theme
   getTheme(): Promise<ThemeSource>;
@@ -73,6 +94,9 @@ export const IPC_CHANNELS: { readonly [K in keyof IpcApi]: string } = {
   getVersion: 'get-version',
   getDaemonConnection: 'get-daemon-connection',
   reconnectDaemon: 'reconnect-daemon',
+  getStageConfig: 'get-stage-config',
+  setStage: 'set-stage',
+  createAccount: 'create-account',
   getTheme: 'get-theme',
   setTheme: 'set-theme',
   getNativeThemeDark: 'get-native-theme-dark',

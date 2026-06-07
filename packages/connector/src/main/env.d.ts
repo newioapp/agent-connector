@@ -6,3 +6,4 @@ declare const __ENABLE_DEV_TOOLS__: boolean;
 declare const __LOG_LEVEL__: 'debug' | 'info' | 'warn' | 'error';
 declare const __NEWIO_STAGE__: 'dev' | 'integ' | 'prod';
 declare const __WS_PROACTIVE_RECONNECT_MS__: string;
+declare const __INCLUDE_ENV_SELECTOR__: boolean;
