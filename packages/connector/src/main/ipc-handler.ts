@@ -23,6 +23,7 @@ import type {
   Stage,
   StageConfig,
 } from '../shared/types';
+import { STAGES } from '../shared/types';
 import type { DaemonConnectionStatus } from '../shared/ipc-events';
 import { EVENT_CHANNELS } from '../shared/ipc-events';
 import type { StoreSchema } from './store';
@@ -74,6 +75,15 @@ export class IpcHandler implements IpcApi {
   }
 
   async setStage(stage: Stage): Promise<void> {
+    // IPC input is untrusted runtime data even when the UI hides the selector.
+    // Enforce the dev-only gate and validate the value at the trust boundary,
+    // not just in the renderer, so a prod build can't be coaxed into a bad stage.
+    if (!__INCLUDE_ENV_SELECTOR__) {
+      throw new Error('Stage switching is disabled in this build.');
+    }
+    if (!STAGES.includes(stage)) {
+      throw new Error(`Invalid stage: ${stage}`);
+    }
     if (stage === this.store.get('stage')) {
       return;
     }
