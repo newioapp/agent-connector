@@ -8,6 +8,8 @@ import { AgentListItem } from './components/AgentListItem';
 import { AgentDetailPanel } from './components/AgentDetailPanel';
 import { AgentFormPanel } from './components/AgentFormPanel';
 import { SettingsPanel } from './components/SettingsPanel';
+import { DaemonConnectionGate } from './components/DaemonConnectionGate';
+import type { DaemonConnectionStatus } from '../../shared/ipc-events';
 
 type PanelMode = { kind: 'view' } | { kind: 'add' } | { kind: 'edit'; agentId: string } | { kind: 'settings' };
 
@@ -54,10 +56,20 @@ export function App(): React.JSX.Element {
   const updateConfig = useAgentStore((s) => s.updateConfig);
   const setAgentInfo = useAgentStore((s) => s.setAgentInfo);
   const [panelMode, setPanelMode] = useState<PanelMode>({ kind: 'view' });
+  const [connection, setConnection] = useState<DaemonConnectionStatus>({ kind: 'connecting' });
 
+  // Track the daemon connection; the agent UI only renders once attached.
   useEffect(() => {
-    void load();
-  }, [load]);
+    void window.api.getDaemonConnection().then(setConnection);
+    return window.api.onDaemonConnectionChanged(setConnection);
+  }, []);
+
+  // (Re)load agents whenever we attach to the daemon.
+  useEffect(() => {
+    if (connection.kind === 'connected') {
+      void load();
+    }
+  }, [connection.kind, load]);
 
   useEffect(() => {
     const unsub1 = window.api.onAgentStatusChanged(({ agentId, status, error }) => {
@@ -131,6 +143,10 @@ export function App(): React.JSX.Element {
         <p className="text-sm">Select an agent or add a new one to get started.</p>
       </div>
     );
+  }
+
+  if (connection.kind !== 'connected') {
+    return <DaemonConnectionGate status={connection} onRetry={() => void window.api.reconnectDaemon()} />;
   }
 
   return (

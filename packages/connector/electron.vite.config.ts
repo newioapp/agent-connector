@@ -30,14 +30,7 @@ export default defineConfig({
   main: {
     build: {
       rollupOptions: {
-        external: [
-          '@newio/agent-engine',
-          'better-sqlite3',
-          'electron-log',
-          'electron-log/main',
-          'electron-store',
-          'electron-updater',
-        ],
+        external: ['@newio/agent-engine', 'electron-log', 'electron-log/main', 'electron-store', 'electron-updater'],
       },
     },
     define: {

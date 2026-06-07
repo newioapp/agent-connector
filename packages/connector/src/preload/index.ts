@@ -24,6 +24,8 @@ const api: ConnectorAPI = {
 
   // IpcApi
   getVersion: () => ipcRenderer.invoke(IPC_CHANNELS.getVersion),
+  getDaemonConnection: () => ipcRenderer.invoke(IPC_CHANNELS.getDaemonConnection),
+  reconnectDaemon: () => ipcRenderer.invoke(IPC_CHANNELS.reconnectDaemon),
   getTheme: () => ipcRenderer.invoke(IPC_CHANNELS.getTheme),
   setTheme: (theme) => ipcRenderer.invoke(IPC_CHANNELS.setTheme, theme),
   getNativeThemeDark: () => ipcRenderer.invoke(IPC_CHANNELS.getNativeThemeDark),
@@ -52,6 +54,7 @@ const api: ConnectorAPI = {
   onAgentPollAttempt: (callback) => onEvent(EVENT_CHANNELS['agent-poll-attempt'], callback),
   onAgentConfigUpdated: (callback) => onEvent(EVENT_CHANNELS['agent-config-updated'], callback),
   onAgentAcpInfo: (callback) => onEvent(EVENT_CHANNELS['agent-acp-info'], callback),
+  onDaemonConnectionChanged: (callback) => onEvent(EVENT_CHANNELS['daemon-connection-changed'], callback),
 };
 
 contextBridge.exposeInMainWorld('api', api);

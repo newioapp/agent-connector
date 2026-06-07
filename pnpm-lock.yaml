@@ -124,6 +124,9 @@ importers:
       '@newio/agent-sdk':
         specifier: workspace:*
         version: link:../sdk
+      '@newio/cli':
+        specifier: workspace:*
+        version: link:../cli
       ajv:
         specifier: ^8.18.0
         version: 8.18.0

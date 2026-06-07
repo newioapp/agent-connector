@@ -15,10 +15,17 @@ import type {
   UpdateMode,
   UpdateChannel,
 } from './types';
+import type { DaemonConnectionStatus } from './ipc-events';
 
 export interface IpcApi {
   /** Get the app version. */
   getVersion(): Promise<string>;
+
+  // Daemon connection
+  /** Current state of the connection to the daemon. */
+  getDaemonConnection(): Promise<DaemonConnectionStatus>;
+  /** Re-attempt connecting to the daemon (e.g. after the user starts it). */
+  reconnectDaemon(): Promise<void>;
 
   // Theme
   getTheme(): Promise<ThemeSource>;
@@ -49,10 +56,6 @@ export interface IpcApi {
   /** Open a native directory picker dialog. Returns the selected path, or undefined if cancelled. */
   selectDirectory(): Promise<string | undefined>;
 
-  // Dialogs
-  /** Open a native directory picker dialog. Returns the selected path, or undefined if cancelled. */
-  selectDirectory(): Promise<string | undefined>;
-
   // Environment
   /** List supported shells available on the system. */
   listShells(): Promise<string[]>;
@@ -68,6 +71,8 @@ export interface IpcApi {
 /** Channel name for each IpcApi method. */
 export const IPC_CHANNELS: { readonly [K in keyof IpcApi]: string } = {
   getVersion: 'get-version',
+  getDaemonConnection: 'get-daemon-connection',
+  reconnectDaemon: 'reconnect-daemon',
   getTheme: 'get-theme',
   setTheme: 'set-theme',
   getNativeThemeDark: 'get-native-theme-dark',
