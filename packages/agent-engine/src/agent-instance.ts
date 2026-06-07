@@ -4,10 +4,10 @@
  * Each agent type provides its own implementation.
  * The instance manages its own SDK auth, WebSocket connection, and agent-specific logic.
  */
-import type { AgentRuntimeStatus, AgentInfo } from './types';
+import type { AgentRuntimeStatus, AgentErrorCode, AgentInfo } from './types';
 
 export interface AgentInstanceListener {
-  onStatusChanged(status: AgentRuntimeStatus, error?: string): void;
+  onStatusChanged(status: AgentRuntimeStatus, error?: string, errorCode?: AgentErrorCode): void;
   onApprovalUrl(approvalUrl: string): void;
   onPollAttempt(): void;
   onConfigUpdated(): void;
@@ -35,6 +35,8 @@ export interface AgentInstance {
   readonly status: AgentRuntimeStatus;
   /** Error message if status is 'error'. */
   readonly error?: string;
+  /** Actionable error category when status is 'error' and the cause is known. */
+  readonly errorCode?: AgentErrorCode;
   /** Runtime agent info — available after initialization. */
   getAgentInfo(): AgentInfo | undefined;
 }

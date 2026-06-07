@@ -102,6 +102,15 @@ agentCmd
   .requiredOption('--username <username>', 'Newio agent username (run "newio agent create-account" to make one)')
   .option('--cwd <dir>', 'working directory for the agent process')
   .addOption(new Option('--session-mode <mode>', 'session mode').choices([...agent.SESSION_MODE_CHOICES]))
+  // The agent subprocess runs with exactly the environment synced here — PATH (to
+  // find node + the agent binary), API keys, etc. Without it the agent often
+  // can't start. Omit to start empty and sync later with `newio agent env sync`.
+  .addOption(
+    new Option(
+      '--env-sync <source>',
+      'sync environment variables into the agent: a login shell path, "current" (the shell running this CLI), or "none"',
+    ),
+  )
   .action((_options: unknown, cmd: Command) => agent.agentAdd(stage, cmd.opts<AddOptions>()));
 
 agentCmd
@@ -166,8 +175,8 @@ envCmd
 
 envCmd
   .command('sync <agent>')
-  .description('Resolve env from the login shell')
-  .option('--shell <shell>', 'shell to resolve from (defaults to the first available)')
+  .description('Resolve env from a login shell (or "current") and merge into the agent')
+  .option('--shell <source>', 'shell to resolve from: a login shell path or "current" (defaults to first available)')
   .action((query: string, _options: unknown, cmd: Command) =>
     agent.envSync(stage, query, cmd.opts<{ shell?: string }>().shell),
   );
@@ -181,12 +190,19 @@ envCmd
 // top-level
 // ---------------------------------------------------------------------------
 
-program
-  .command('env')
-  .description('Environment helpers')
+const topEnvCmd = program.command('env').description('Environment helpers');
+
+topEnvCmd
   .command('shells')
   .description('List available login shells')
   .action(() => agent.envShells(stage));
+
+topEnvCmd
+  .command('print [shell]')
+  .description(
+    'Print the environment resolved from a shell ("current" for this CLI\'s shell; defaults to first available)',
+  )
+  .action((shell: string | undefined) => agent.envPrint(stage, shell));
 
 program
   .command('status')

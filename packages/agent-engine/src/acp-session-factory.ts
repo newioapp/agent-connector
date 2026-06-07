@@ -19,6 +19,7 @@ import type { AgentConfig, CreateSessionInput, SessionFactory } from './types';
 import type { AgentInfo } from './types';
 import { getLogger } from '@newio/agent-sdk';
 import { resolveCommand } from './utils';
+import { InvalidEnvironmentError } from './errors.js';
 
 const log = getLogger('acp-session-factory');
 
@@ -399,9 +400,9 @@ async function assertNodeAvailable(env?: Record<string, string>): Promise<void> 
     execFile('node', ['--version'], { env: { ...env, TERM: 'dumb' } }, (err) => {
       if (err) {
         reject(
-          new Error(
-            '"node" is not available on your system PATH. Node.js is required to run the Newio MCP server.\n\n' +
-              'Ensure Node.js is installed and available on your system PATH. (Check the Environment Variables tab.)',
+          new InvalidEnvironmentError(
+            '"node" is not available on the agent\'s PATH. Node.js is required to run the Newio MCP server. ' +
+              "Ensure Node.js is installed and that the agent's PATH points to it.",
           ),
         );
       } else {

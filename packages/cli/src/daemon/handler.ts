@@ -38,17 +38,30 @@ export class DaemonHandler implements RequestHandler {
     switch (method) {
       case 'agent.list': {
         return cfg.list().map((config) => {
-          const { status, error } = rt.getStatus(config.id);
+          const { status, error, errorCode } = rt.getStatus(config.id);
           const approvalUrl = rt.getApprovalUrl(config.id);
-          return { id: config.id, config, runtimeStatus: status, error, ...(approvalUrl ? { approvalUrl } : {}) };
+          return {
+            id: config.id,
+            config,
+            runtimeStatus: status,
+            error,
+            ...(errorCode ? { errorCode } : {}),
+            ...(approvalUrl ? { approvalUrl } : {}),
+          };
         });
       }
       case 'agent.add': {
         const input = decodeAddAgentInput(params.object(0, 'input'));
-        const shells = listAvailableShells();
-        const selectedShell = shells[0];
+        // Clients drive env sync: when the input carries envVars (even an empty
+        // object) we honor it verbatim. Only fall back to auto-sourcing from the
+        // first login shell when the client expressed no env intent at all
+        // (e.g. the desktop add flow, which syncs separately afterward).
+        if (input.envVars !== undefined) {
+          return cfg.add(input);
+        }
+        const selectedShell = listAvailableShells()[0];
         const envVars = selectedShell ? await getShellEnv(selectedShell) : undefined;
-        return cfg.add({ ...input, ...(envVars ? { envVars, envVarsShell: selectedShell } : {}) });
+        return cfg.add(envVars ? { ...input, envVars, envVarsShell: selectedShell } : input);
       }
       case 'agent.update': {
         const agentId = params.string(0, 'agentId');

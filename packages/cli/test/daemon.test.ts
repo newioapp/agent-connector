@@ -185,7 +185,7 @@ describe('DaemonServer / DaemonConnector', () => {
 
       ctx.server.notify('agent.statusChanged', { agentId: 'agent-1', status: 'running' });
       await new Promise((r) => setTimeout(r, 20));
-      expect(onStatusChanged).toHaveBeenCalledWith('agent-1', 'running', undefined);
+      expect(onStatusChanged).toHaveBeenCalledWith('agent-1', 'running', undefined, undefined);
     });
 
     it('broadcasts to multiple clients simultaneously', async () => {

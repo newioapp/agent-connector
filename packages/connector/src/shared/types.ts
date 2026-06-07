@@ -1,6 +1,7 @@
 export type {
   AgentType,
   AgentRuntimeStatus,
+  AgentErrorCode,
   AcpConfig,
   AgentInfo,
   Capability,

@@ -106,8 +106,8 @@ export async function runDaemon(): Promise<void> {
 
   // Runtime manager is recreated on reload; handler holds a mutable reference.
   const makeListener = (): StatusListener => ({
-    onStatusChanged(agentId, status, error) {
-      server.notify('agent.statusChanged', { agentId, status, error });
+    onStatusChanged(agentId, status, error, errorCode) {
+      server.notify('agent.statusChanged', { agentId, status, error, errorCode });
     },
     onApprovalUrl(agentId, approvalUrl) {
       server.notify('agent.approvalUrl', { agentId, approvalUrl });
