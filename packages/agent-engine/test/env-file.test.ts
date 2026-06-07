@@ -19,6 +19,23 @@ describe('env-file serialize/parse', () => {
     expect(parseEnvVars(serializeEnvVars(env))).toEqual(env);
   });
 
+  it('round-trips single-quote-plus-backslash values', () => {
+    const env = {
+      WIN_PATH: "C:\\Users\\O'Brien\\dev", // single quote + backslashes (not \n/\r)
+      LITERAL_BACKSLASH_N: "a\\nb'", // literal backslash-n next to a single quote
+      LITERAL_BACKSLASH_R: "x\\ry'", // literal backslash-r next to a single quote
+      SQUOTE_AND_DQUOTE: 'a\'b"c', // both quote kinds
+      SQUOTE_REAL_NEWLINE: "a'\nb", // single quote + real newline
+    };
+    expect(parseEnvVars(serializeEnvVars(env))).toEqual(env);
+  });
+
+  it('throws rather than silently corrupting a value dotenv cannot represent', () => {
+    // A single quote mixed with a comment marker and a double quote has no
+    // lossless dotenv form.
+    expect(() => serializeEnvVars({ K: 'a"\'#b' })).toThrow('cannot be represented');
+  });
+
   it('writes safe values unquoted and sorts keys', () => {
     const text = serializeEnvVars({ ZED: 'z', ALPHA: 'a' });
     expect(text).toBe('ALPHA=a\nZED=z\n');
