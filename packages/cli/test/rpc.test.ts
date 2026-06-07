@@ -37,9 +37,8 @@ describe('RpcError', () => {
 });
 
 describe('decodeAddAgentInput', () => {
-  it('decodes a full input', () => {
+  it('decodes a full login input', () => {
     const input = decodeAddAgentInput({
-      displayName: 'Bot',
       type: 'codex',
       newioUsername: 'bot',
       sessionMode: 'shared',
@@ -47,7 +46,6 @@ describe('decodeAddAgentInput', () => {
       envVars: { K: 'v' },
     });
     expect(input).toEqual({
-      displayName: 'Bot',
       type: 'codex',
       newioUsername: 'bot',
       sessionMode: 'shared',
@@ -56,20 +54,25 @@ describe('decodeAddAgentInput', () => {
     });
   });
 
-  it('requires displayName and type', () => {
-    expect(() => decodeAddAgentInput({ type: 'codex' })).toThrow('displayName');
-    expect(() => decodeAddAgentInput({ displayName: 'X' })).toThrow('type');
+  it('decodes a register (create-account) input with displayName', () => {
+    const input = decodeAddAgentInput({ type: 'codex', displayName: 'Bot' });
+    expect(input).toEqual({ type: 'codex', displayName: 'Bot' });
+  });
+
+  it('requires type and one of username/displayName', () => {
+    expect(() => decodeAddAgentInput({ newioUsername: 'bot' })).toThrow('type');
+    expect(() => decodeAddAgentInput({ type: 'codex' })).toThrow('newioUsername');
   });
 
   it('rejects an invalid agent type and session mode', () => {
-    expect(() => decodeAddAgentInput({ displayName: 'X', type: 'bogus' })).toThrow('Invalid agent type');
-    expect(() => decodeAddAgentInput({ displayName: 'X', type: 'codex', sessionMode: 'weird' })).toThrow(
+    expect(() => decodeAddAgentInput({ newioUsername: 'x', type: 'bogus' })).toThrow('Invalid agent type');
+    expect(() => decodeAddAgentInput({ newioUsername: 'x', type: 'codex', sessionMode: 'weird' })).toThrow(
       'Invalid session mode',
     );
   });
 
   it('requires acp.cwd when acp is present', () => {
-    expect(() => decodeAddAgentInput({ displayName: 'X', type: 'codex', acp: {} })).toThrow('cwd');
+    expect(() => decodeAddAgentInput({ newioUsername: 'x', type: 'codex', acp: {} })).toThrow('cwd');
   });
 });
 

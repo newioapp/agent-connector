@@ -94,13 +94,17 @@ function acpConfig(obj: Record<string, unknown>): AcpConfig | undefined {
 export function decodeAddAgentInput(obj: Record<string, unknown>): AddAgentInput {
   const acp = acpConfig(obj);
   const username = str(obj, 'newioUsername');
+  const displayName = str(obj, 'displayName');
   const mode = sessionMode(str(obj, 'sessionMode'));
   const envVars = stringRecord(obj, 'envVars');
   const envVarsShell = str(obj, 'envVarsShell');
+  if (username === undefined && displayName === undefined) {
+    throw RpcError.invalidParams('Expected either newioUsername (login) or displayName (register).');
+  }
   return {
-    displayName: requireStr(obj, 'displayName'),
     type: agentType(requireStr(obj, 'type')),
     ...(username !== undefined ? { newioUsername: username } : {}),
+    ...(displayName !== undefined ? { displayName } : {}),
     ...(mode !== undefined ? { sessionMode: mode } : {}),
     ...(acp !== undefined ? { acp } : {}),
     ...(envVars !== undefined ? { envVars } : {}),

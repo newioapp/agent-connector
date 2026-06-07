@@ -47,7 +47,13 @@ export function parseEnvPairs(pairs: readonly string[]): Record<string, string> 
   return result;
 }
 
-/** Resolve a user-supplied query to a single agent id. */
+/**
+ * Resolve a user-supplied query to a single agent id.
+ *
+ * Resolution order: exact config id → unique id prefix → Newio username
+ * (case-insensitive). A username shared by several configs is ambiguous — the
+ * user is asked to disambiguate with a config id.
+ */
 export async function resolveAgentId(connector: DaemonConnector, query: string): Promise<string> {
   const agents = await connector.listAgents();
   const exact = agents.find((a) => a.id === query);
@@ -56,39 +62,46 @@ export async function resolveAgentId(connector: DaemonConnector, query: string):
   }
   const byPrefix = agents.filter((a) => a.id.startsWith(query));
   if (byPrefix.length > 1) {
-    throw new Error(`Ambiguous agent "${query}" — matches ${byPrefix.length} agents.`);
+    throw new Error(`Ambiguous agent id prefix "${query}" — matches ${byPrefix.length} agents.`);
   }
   const [prefixMatch] = byPrefix;
   if (prefixMatch) {
     return prefixMatch.id;
   }
-  const [nameMatch, ...otherNames] = agents.filter((a) => a.config.newio?.displayName === query);
-  if (nameMatch && otherNames.length === 0) {
-    return nameMatch.id;
+  const queryLower = query.toLowerCase();
+  const byUsername = agents.filter((a) => a.config.newio?.username?.toLowerCase() === queryLower);
+  if (byUsername.length > 1) {
+    const ids = byUsername.map((a) => a.id.slice(0, 8)).join(', ');
+    throw new Error(`Username "${query}" is used by ${byUsername.length} configs (${ids}). Use a config id instead.`);
+  }
+  const [usernameMatch] = byUsername;
+  if (usernameMatch) {
+    return usernameMatch.id;
   }
   throw new Error(`No agent matching "${query}".`);
 }
 
 function printAgentTable(agents: readonly AgentStatusInfo[]): void {
   if (agents.length === 0) {
-    console.log('No agents configured. Add one with: newio agent add --type <type> --name <name>');
+    console.log('No agents configured. Create one with: newio agent create-account --type <type> --name <name>');
     return;
   }
   const rows = agents.map((a) => ({
     id: a.id.slice(0, 8),
     type: a.config.type,
-    name: a.config.newio?.displayName ?? '—',
+    // Username fills in after first login; until then show the display name (register path) or a dash.
+    username: a.config.newio?.username ?? (a.config.newio?.displayName ? `(${a.config.newio.displayName})` : '—'),
     status: a.error ? `${a.runtimeStatus} (${a.error})` : a.runtimeStatus,
   }));
   const w = {
     id: Math.max(2, ...rows.map((r) => r.id.length)),
     type: Math.max(4, ...rows.map((r) => r.type.length)),
-    name: Math.max(4, ...rows.map((r) => r.name.length)),
+    username: Math.max(8, ...rows.map((r) => r.username.length)),
   };
   const pad = (s: string, n: number): string => s.padEnd(n);
-  console.log(`${pad('ID', w.id)}  ${pad('TYPE', w.type)}  ${pad('NAME', w.name)}  STATUS`);
+  console.log(`${pad('ID', w.id)}  ${pad('TYPE', w.type)}  ${pad('USERNAME', w.username)}  STATUS`);
   for (const r of rows) {
-    console.log(`${pad(r.id, w.id)}  ${pad(r.type, w.type)}  ${pad(r.name, w.name)}  ${r.status}`);
+    console.log(`${pad(r.id, w.id)}  ${pad(r.type, w.type)}  ${pad(r.username, w.username)}  ${r.status}`);
   }
 }
 
@@ -137,9 +150,15 @@ async function startAndStream(stage: Stage, query: string): Promise<void> {
 
 export interface AddOptions {
   readonly type: string;
+  readonly username: string;
+  readonly cwd?: string;
+  readonly sessionMode?: string;
+}
+
+export interface CreateAccountOptions {
+  readonly type: string;
   readonly name: string;
   readonly cwd?: string;
-  readonly username?: string;
   readonly sessionMode?: string;
 }
 
@@ -154,17 +173,34 @@ export async function agentList(stage: Stage): Promise<void> {
   await withDaemon(stage, async (c) => printAgentTable(await c.listAgents()));
 }
 
+/** `agent add` — attach a runner config to an existing account, identified by username. */
 export async function agentAdd(stage: Stage, opts: AddOptions): Promise<void> {
   const input: AddAgentInput = {
-    displayName: opts.name,
     type: asAgentType(opts.type),
+    newioUsername: opts.username,
     acp: { cwd: opts.cwd ?? process.cwd() },
-    ...(opts.username ? { newioUsername: opts.username } : {}),
     ...(opts.sessionMode ? { sessionMode: asSessionMode(opts.sessionMode) } : {}),
   };
   const config = await withDaemon(stage, (c) => c.addAgent(input));
-  console.log(`Added agent ${config.id} (${config.newio?.displayName ?? opts.name}).`);
+  console.log(`Added agent ${config.id} for @${opts.username}.`);
   console.log(`Start it with: newio agent start ${config.id.slice(0, 8)}`);
+}
+
+/**
+ * `agent create-account` — register a new Newio agent account. The config is
+ * seeded with a display name; the username is chosen during browser approval on
+ * the first `agent start`.
+ */
+export async function agentCreateAccount(stage: Stage, opts: CreateAccountOptions): Promise<void> {
+  const input: AddAgentInput = {
+    type: asAgentType(opts.type),
+    displayName: opts.name,
+    acp: { cwd: opts.cwd ?? process.cwd() },
+    ...(opts.sessionMode ? { sessionMode: asSessionMode(opts.sessionMode) } : {}),
+  };
+  const config = await withDaemon(stage, (c) => c.addAgent(input));
+  console.log(`Created agent account config ${config.id} (${opts.name}).`);
+  console.log(`Start it to register and pick a username: newio agent start ${config.id.slice(0, 8)}`);
 }
 
 export async function agentRemove(stage: Stage, query: string): Promise<void> {

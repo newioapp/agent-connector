@@ -69,7 +69,6 @@ export function AgentFormPanel({
 
   const isEdit = !!editAgent;
 
-  const [name, setName] = useState('');
   const [type, setType] = useState<AgentType>('claude-code');
   const [sessionMode, setSessionMode] = useState<SessionMode>('isolated');
   const [newioUsername, setNewioUsername] = useState('');
@@ -83,7 +82,6 @@ export function AgentFormPanel({
     if (!editAgent) {
       return;
     }
-    setName(editAgent.newio?.displayName ?? '');
     setType(editAgent.type);
     setSessionMode(editAgent.sessionMode ?? 'isolated');
     setNewioUsername(editAgent.newio?.username ?? '');
@@ -95,7 +93,7 @@ export function AgentFormPanel({
   }, [editAgent]);
 
   const canSubmit =
-    name.trim().length > 0 && cwd.trim().length > 0 && (type !== 'custom' || executablePath.trim().length > 0);
+    newioUsername.trim().length > 0 && cwd.trim().length > 0 && (type !== 'custom' || executablePath.trim().length > 0);
 
   async function handleSubmit(): Promise<void> {
     if (!canSubmit || submitting) {
@@ -111,17 +109,15 @@ export function AgentFormPanel({
 
       if (isEdit) {
         await updateAgent(editAgent.id, {
-          displayName: name.trim(),
           newioUsername: newioUsername.trim(),
           sessionMode,
           acp: acpConfig,
         });
       } else {
         await addAgent({
-          displayName: name.trim(),
           type,
+          newioUsername: newioUsername.trim(),
           sessionMode,
-          ...(newioUsername.trim() ? { newioUsername: newioUsername.trim() } : {}),
           acp: acpConfig,
         });
       }
@@ -199,18 +195,13 @@ export function AgentFormPanel({
           <DirectoryPicker value={cwd} onChange={setCwd} />
         </Label>
 
-        {/* Display Name */}
-        <Label text="Display Name">
-          <Input placeholder="My Agent" value={name} onChange={(e) => setName(e.target.value)} />
-        </Label>
-
         {/* Newio username */}
         <Label
-          text="Newio Username (optional)"
+          text="Newio Username"
           hint={
             isEdit
               ? 'Changing this will clear the stored Newio identity and tokens.'
-              : 'Enter an existing agent username to login. Leave blank to register a new agent.'
+              : 'The existing agent account to log in as. Display name is synced from the account.'
           }
         >
           <Input placeholder="my_agent" value={newioUsername} onChange={(e) => setNewioUsername(e.target.value)} />

@@ -153,11 +153,21 @@ export interface SessionConfig {
 /** Default session idle timeout: 1 hour. */
 export const DEFAULT_SESSION_IDLE_TIMEOUT_MS = 60 * 60 * 1000;
 
+/**
+ * Input for creating an agent config. The identity seed decides what happens on
+ * first start (see `doApprovalFlow`):
+ *   - `newioUsername` present → login to that existing account.
+ *   - only `displayName` present → register a new account (username is chosen by
+ *     the owner during browser approval).
+ * Exactly one of the two is supplied by the CLI: `agent add` provides
+ * `newioUsername`, `agent create-account` provides `displayName`.
+ */
 export interface AddAgentInput {
-  readonly displayName: string;
   readonly type: AgentType;
-  /** Optional: existing Newio username to login with instead of registering a new agent. */
+  /** Existing Newio username to log in as (the `agent add` path). */
   readonly newioUsername?: string;
+  /** Display name used to register a new account (the `agent create-account` path). */
+  readonly displayName?: string;
   readonly sessionMode?: SessionMode;
   readonly acp?: AcpConfig;
   /** Optional: initial environment variables (e.g. synced from shell by the desktop app). */

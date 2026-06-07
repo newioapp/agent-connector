@@ -15,7 +15,7 @@ import { resolveConfig } from '../paths.js';
 import { version } from '../../package.json';
 import * as daemon from './daemon-commands.js';
 import * as agent from './agent-commands.js';
-import type { AddOptions, UpdateOptions } from './agent-commands.js';
+import type { AddOptions, CreateAccountOptions, UpdateOptions } from './agent-commands.js';
 
 // Resolved once at startup from NEWIO_STAGE / NEWIO_API_URL / NEWIO_WS_URL.
 const { stage } = resolveConfig();
@@ -97,13 +97,21 @@ agentCmd
 
 agentCmd
   .command('add')
-  .description('Add an agent')
+  .description('Add a runner config for an existing Newio agent account')
   .addOption(new Option('--type <type>', 'agent type').choices([...agent.AGENT_TYPE_CHOICES]).makeOptionMandatory())
-  .requiredOption('--name <name>', 'display name')
+  .requiredOption('--username <username>', 'existing Newio username to log in as')
   .option('--cwd <dir>', 'working directory for the agent process')
-  .option('--username <username>', 'existing Newio username to log in as')
   .addOption(new Option('--session-mode <mode>', 'session mode').choices([...agent.SESSION_MODE_CHOICES]))
   .action((_options: unknown, cmd: Command) => agent.agentAdd(stage, cmd.opts<AddOptions>()));
+
+agentCmd
+  .command('create-account')
+  .description('Register a new Newio agent account (username chosen at approval)')
+  .addOption(new Option('--type <type>', 'agent type').choices([...agent.AGENT_TYPE_CHOICES]).makeOptionMandatory())
+  .requiredOption('--name <name>', 'display name for the new account')
+  .option('--cwd <dir>', 'working directory for the agent process')
+  .addOption(new Option('--session-mode <mode>', 'session mode').choices([...agent.SESSION_MODE_CHOICES]))
+  .action((_options: unknown, cmd: Command) => agent.agentCreateAccount(stage, cmd.opts<CreateAccountOptions>()));
 
 agentCmd
   .command('remove <agent>')
