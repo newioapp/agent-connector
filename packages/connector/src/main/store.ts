@@ -5,13 +5,14 @@
  * This store holds only UI/desktop-specific settings.
  */
 import Store from 'electron-store';
-import type { ThemeSource } from '../shared/types';
-import type { UpdateMode, UpdateChannel } from '../shared/types';
+import type { ThemeSource, UpdateMode, UpdateChannel, Stage } from '../shared/types';
 
 export interface StoreSchema {
   readonly themeSource: ThemeSource;
   readonly updateMode: UpdateMode;
   readonly updateChannel: UpdateChannel;
+  /** Which stage's daemon the desktop attaches to. Defaults to the build's stage. */
+  readonly stage: Stage;
   readonly windowBounds: {
     readonly x?: number;
     readonly y?: number;
@@ -26,6 +27,7 @@ export function createStore(): Store<StoreSchema> {
       themeSource: 'system',
       updateMode: 'auto',
       updateChannel: 'latest',
+      stage: __NEWIO_STAGE__,
       windowBounds: { width: 960, height: 640 },
     },
   });

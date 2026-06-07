@@ -21,6 +21,8 @@ const newioStage = process.env.NEWIO_STAGE ?? 'prod';
 const enableDevTools = process.env.ENABLE_DEV_TOOLS ?? 'false';
 const logLevel = process.env.LOG_LEVEL ?? 'info';
 const wsProactiveReconnectMs = process.env.WS_PROACTIVE_RECONNECT_MS ?? '';
+// Dev builds can switch which stage's daemon they attach to; prod builds can't.
+const includeEnvSelector = process.env.INCLUDE_ENVIRONMENT_SELECTOR ?? 'false';
 
 // Read version from package.json for build-time injection.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -42,6 +44,7 @@ export default defineConfig({
       __LOG_LEVEL__: JSON.stringify(logLevel),
       __NEWIO_STAGE__: JSON.stringify(newioStage),
       __WS_PROACTIVE_RECONNECT_MS__: JSON.stringify(wsProactiveReconnectMs),
+      __INCLUDE_ENV_SELECTOR__: JSON.stringify(includeEnvSelector === 'true'),
     },
   },
   preload: {

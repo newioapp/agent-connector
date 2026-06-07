@@ -30,6 +30,11 @@ export class DaemonConnection {
     return this.status;
   }
 
+  /** The connected daemon's backend API base URL, if currently connected. */
+  getApiBaseUrl(): string | undefined {
+    return this.status.kind === 'connected' ? this.status.apiBaseUrl : undefined;
+  }
+
   /** Connect (or reconnect) and run the protocol handshake. Never throws — failures become status. */
   async connect(): Promise<void> {
     // A connect is already settling; ignore the overlapping call so its late

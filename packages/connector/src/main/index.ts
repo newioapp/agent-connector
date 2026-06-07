@@ -77,14 +77,15 @@ void app.whenReady().then(async () => {
   activeWindowManager = mainWindowManager;
 
   // The desktop is a thin client of the per-stage daemon — it owns no agent
-  // runtime or config of its own; everything goes over the socket.
-  const connection = new DaemonConnection(__NEWIO_STAGE__, mainWindowManager);
+  // runtime or config of its own; everything goes over the socket. The stage is
+  // persisted (dev builds can switch it); it defaults to the build's stage.
+  const connection = new DaemonConnection(store.get('stage'), mainWindowManager);
 
   // Apply persisted theme
   nativeTheme.themeSource = store.get('themeSource');
 
   // Register IPC handlers
-  const ipcHandler = new IpcHandler({ store, connection });
+  const ipcHandler = new IpcHandler({ store, connection, windows: mainWindowManager });
   registerIpcHandlers(ipcHandler);
 
   // Auto-update and force-update

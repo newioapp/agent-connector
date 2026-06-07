@@ -14,6 +14,7 @@ export interface ConnectorAPI extends IpcApi {
   onAgentConfigUpdated(callback: (data: MainToRendererEvents['agent-config-updated']) => void): () => void;
   onAgentAcpInfo(callback: (data: MainToRendererEvents['agent-acp-info']) => void): () => void;
   onDaemonConnectionChanged(callback: (data: MainToRendererEvents['daemon-connection-changed']) => void): () => void;
+  onAccountApprovalUrl(callback: (data: MainToRendererEvents['account-approval-url']) => void): () => void;
 }
 
 declare global {

@@ -10,7 +10,7 @@
 /* eslint-disable @typescript-eslint/require-await -- IpcApi interface requires Promise returns */
 import { app, dialog, shell, nativeTheme } from 'electron';
 import type Store from 'electron-store';
-import type { IpcApi } from '../shared/ipc-api';
+import type { IpcApi, CreateAccountResult } from '../shared/ipc-api';
 import type {
   ThemeSource,
   AgentConfig,
@@ -20,24 +20,33 @@ import type {
   AgentInfo,
   UpdateMode,
   UpdateChannel,
+  Stage,
+  StageConfig,
 } from '../shared/types';
+import { STAGES } from '../shared/types';
 import type { DaemonConnectionStatus } from '../shared/ipc-events';
+import { EVENT_CHANNELS } from '../shared/ipc-events';
 import type { StoreSchema } from './store';
 import type { DaemonConnection } from './daemon-connection';
+import type { MainWindowManager } from './main-window';
+import { createAccount } from './create-account';
 import { applyUpdateMode, applyUpdateChannel, manualCheckForUpdates } from './auto-updater';
 
 interface IpcHandlerDeps {
   readonly store: Store<StoreSchema>;
   readonly connection: DaemonConnection;
+  readonly windows: MainWindowManager;
 }
 
 export class IpcHandler implements IpcApi {
   private readonly store: Store<StoreSchema>;
   private readonly connection: DaemonConnection;
+  private readonly windows: MainWindowManager;
 
   constructor(deps: IpcHandlerDeps) {
     this.store = deps.store;
     this.connection = deps.connection;
+    this.windows = deps.windows;
   }
 
   /** Typed handle to the daemon RPC client. */
@@ -57,6 +66,45 @@ export class IpcHandler implements IpcApi {
 
   async reconnectDaemon(): Promise<void> {
     await this.connection.connect();
+  }
+
+  // Stage / environment -----------------------------------------------------
+
+  async getStageConfig(): Promise<StageConfig> {
+    return { stage: this.store.get('stage'), selectorEnabled: __INCLUDE_ENV_SELECTOR__ };
+  }
+
+  async setStage(stage: Stage): Promise<void> {
+    // IPC input is untrusted runtime data even when the UI hides the selector.
+    // Enforce the dev-only gate and validate the value at the trust boundary,
+    // not just in the renderer, so a prod build can't be coaxed into a bad stage.
+    if (!__INCLUDE_ENV_SELECTOR__) {
+      throw new Error('Stage switching is disabled in this build.');
+    }
+    if (!STAGES.includes(stage)) {
+      throw new Error(`Invalid stage: ${stage}`);
+    }
+    if (stage === this.store.get('stage')) {
+      return;
+    }
+    // Switching stages means attaching to a different daemon (per-stage socket);
+    // relaunch so the whole app re-resolves against the new stage cleanly.
+    this.store.set('stage', stage);
+    app.relaunch();
+    app.quit();
+  }
+
+  // Account -----------------------------------------------------------------
+
+  async createAccount(name: string): Promise<CreateAccountResult> {
+    const apiBaseUrl = this.connection.getApiBaseUrl();
+    if (!apiBaseUrl) {
+      throw new Error('Not connected to a daemon — cannot create an account.');
+    }
+    return createAccount(apiBaseUrl, name, (url) => {
+      void shell.openExternal(url);
+      this.windows.send(EVENT_CHANNELS['account-approval-url'], { url });
+    });
   }
 
   // Theme -------------------------------------------------------------------
