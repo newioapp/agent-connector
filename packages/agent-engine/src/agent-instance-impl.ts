@@ -243,8 +243,10 @@ export abstract class BaseAgentInstance implements AgentInstance {
       this.setStatus('running');
     } catch (err: unknown) {
       const wasAborted = abortController.signal.aborted;
-      await this.cleanup();
-      await this._sessionFactory?.terminate();
+      // Same ordered teardown as stop(): mark stopping BEFORE cleanup, so a
+      // session created earlier in start() (e.g. before sendGreeting() failed)
+      // doesn't trip the abnormal-termination re-entry when cleanup closes it.
+      await this.teardown();
 
       if (wasAborted) {
         log.info(`${this.logTag} Start aborted`);
@@ -478,14 +480,23 @@ export abstract class BaseAgentInstance implements AgentInstance {
   async stop(): Promise<void> {
     log.info(`${this.logTag} Stopping agent`);
     this.setStatus('stopping');
-    // Mark the factory as intentionally stopping BEFORE cleanup tears down the
-    // session manager and induces the ACP child to exit — otherwise that exit is
-    // misclassified as abnormal and fires a re-entrant cleanup that deadlocks.
+    await this.teardown();
+    this.setStatus('stopped');
+    log.info(`${this.logTag} Agent stopped`);
+  }
+
+  /**
+   * Ordered teardown shared by all intentional stop paths (`stop()` and the
+   * `start()` failure path). Order matters: mark the factory as stopping BEFORE
+   * `cleanup()` tears down the session manager and induces the ACP child to
+   * exit — otherwise that exit is misclassified as abnormal and fires a
+   * re-entrant cleanup that deadlocks. Not used by `onAbnormalTermination`,
+   * which reacts to an already-exited process.
+   */
+  private async teardown(): Promise<void> {
     this._sessionFactory?.markStopping();
     await this.cleanup();
     await this._sessionFactory?.terminate();
-    this.setStatus('stopped');
-    log.info(`${this.logTag} Agent stopped`);
   }
 
   /** Shared cleanup — tears down sessions, MCP server, WebSocket, and timers. */
