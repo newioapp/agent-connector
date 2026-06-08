@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
-import { existsSync, readFileSync, mkdirSync } from 'fs';
+import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'fs';
 import { FileAgentConfigManager } from '../src/file-agent-config-manager';
 
 function freshDir(): string {
@@ -157,4 +157,31 @@ describe('FileAgentConfigManager listing', () => {
     expect(mgr.list().map((c) => c.id)).not.toContain(a.id);
     expect(mgr.list()).toHaveLength(1);
   });
+});
+
+describe('FileAgentConfigManager path-traversal safety', () => {
+  let dataDir: string;
+  let mgr: FileAgentConfigManager;
+
+  beforeEach(() => {
+    dataDir = freshDir();
+    mgr = new FileAgentConfigManager(dataDir);
+  });
+
+  // '..' resolves to dataDir itself; without validation remove() would rmSync it.
+  for (const bad of ['..', '../..', 'a/b', '.']) {
+    it(`rejects a traversal id ${JSON.stringify(bad)} on remove without touching the filesystem`, () => {
+      const sentinel = join(dataDir, 'SENTINEL');
+      writeFileSync(sentinel, 'keep me');
+      expect(() => mgr.remove(bad)).toThrow(/Invalid agent id/);
+      expect(existsSync(sentinel)).toBe(true);
+      expect(existsSync(dataDir)).toBe(true);
+    });
+
+    it(`rejects a traversal id ${JSON.stringify(bad)} on get/getTokens/envFilePath`, () => {
+      expect(() => mgr.get(bad)).toThrow(/Invalid agent id/);
+      expect(() => mgr.getTokens(bad)).toThrow(/Invalid agent id/);
+      expect(() => mgr.envFilePath(bad)).toThrow(/Invalid agent id/);
+    });
+  }
 });

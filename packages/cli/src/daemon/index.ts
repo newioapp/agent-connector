@@ -14,6 +14,7 @@ import {
   FileAgentConfigManager,
   AgentRuntimeManager,
   JsonCronStore,
+  assertSafeAgentId,
   type EngineConfig,
   type StatusListener,
 } from '@newio/agent-engine';
@@ -103,8 +104,11 @@ export async function runDaemon(): Promise<void> {
 
   const agentConfigManager = new FileAgentConfigManager(dataDir);
   // One cron store per agent, scoped to its directory (agents/<id>/cron.json).
-  const cronStoreFactory = (agentId: string): JsonCronStore =>
-    new JsonCronStore(join(dataDir, 'agents', agentId, 'cron.json'));
+  // Validate before joining — agentId can originate from untrusted RPC params.
+  const cronStoreFactory = (agentId: string): JsonCronStore => {
+    assertSafeAgentId(agentId);
+    return new JsonCronStore(join(dataDir, 'agents', agentId, 'cron.json'));
+  };
 
   // Runtime manager is recreated on reload; handler holds a mutable reference.
   const makeListener = (): StatusListener => ({

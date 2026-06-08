@@ -1,6 +1,7 @@
 // Core types and interfaces
 export type { EngineConfig } from './engine-config.js';
 export type { CronStore, CronJobRow, CronStoreFactory } from './cron-store.js';
+export { isSafeAgentId, assertSafeAgentId } from './agent-id.js';
 export { JsonCronStore } from './json-cron-store.js';
 export type { AgentConfigManager, AgentTokens } from './agent-config-manager.js';
 export type {

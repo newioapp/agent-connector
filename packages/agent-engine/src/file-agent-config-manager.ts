@@ -19,6 +19,7 @@ import { randomUUID } from 'crypto';
 import type { AgentConfig, AddAgentInput, UpdateAgentInput, NewioIdentity } from './types';
 import type { AgentConfigManager, AgentTokens } from './agent-config-manager';
 import { serializeEnvVars, parseEnvVars, agentEnvFilePath } from './env-file';
+import { assertSafeAgentId } from './agent-id';
 import { getLogger } from '@newio/agent-sdk';
 
 const log = getLogger('file-agent-config-manager');
@@ -141,6 +142,10 @@ export class FileAgentConfigManager implements AgentConfigManager {
   // ---------------------------------------------------------------------------
 
   private agentDir(agentId: string): string {
+    // Guard against path traversal: agentId is joined into a filesystem path
+    // and may come from untrusted RPC input. Covers config.json, .credentials.json,
+    // and remove() (which rmSyncs this directory).
+    assertSafeAgentId(agentId);
     return join(this.agentsDir, agentId);
   }
 
@@ -154,6 +159,7 @@ export class FileAgentConfigManager implements AgentConfigManager {
 
   /** Absolute path of an agent's `.env` file. Public so callers (CLI edit) can locate it. */
   envFilePath(agentId: string): string {
+    assertSafeAgentId(agentId);
     return agentEnvFilePath(this.dataDir, agentId);
   }
 
