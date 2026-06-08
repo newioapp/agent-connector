@@ -88,6 +88,15 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
     await this.spawnAndInit();
   }
 
+  /**
+   * Flag an intentional stop before the session manager teardown causes the ACP
+   * child to exit. The `exit` handler checks this flag to decide whether the exit
+   * was expected — set it early so a normal shutdown isn't treated as abnormal.
+   */
+  markStopping(): void {
+    this.stopping = true;
+  }
+
   async terminate(): Promise<void> {
     log.info(`${this.logTag} ACP agent instance stopping...`);
     this.stopping = true;

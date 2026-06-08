@@ -159,6 +159,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
         `[${app.identity.username}]`,
       );
       this._sessionFactory.onAbnormalTermination((message) => {
+        // Ignore if a cleanup is already running (e.g. an intentional stop in
+        // progress) — re-entering cleanup races the in-flight teardown.
+        if (this.pendingCleanup) {
+          return;
+        }
         this.pendingCleanup = this.cleanup()
           .then(() => this._sessionFactory?.terminate())
           .then(() => {
@@ -473,6 +478,10 @@ export abstract class BaseAgentInstance implements AgentInstance {
   async stop(): Promise<void> {
     log.info(`${this.logTag} Stopping agent`);
     this.setStatus('stopping');
+    // Mark the factory as intentionally stopping BEFORE cleanup tears down the
+    // session manager and induces the ACP child to exit — otherwise that exit is
+    // misclassified as abnormal and fires a re-entrant cleanup that deadlocks.
+    this._sessionFactory?.markStopping();
     await this.cleanup();
     await this._sessionFactory?.terminate();
     this.setStatus('stopped');

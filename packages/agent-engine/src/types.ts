@@ -409,5 +409,12 @@ export interface SessionFactory {
 
   terminate(): Promise<void>;
 
+  /**
+   * Mark the factory as intentionally stopping BEFORE teardown induces the ACP
+   * child to exit. Without this, the process exit during a normal shutdown is
+   * misclassified as abnormal and triggers a re-entrant cleanup that deadlocks.
+   */
+  markStopping(): void;
+
   onAbnormalTermination(abnormalTerminationHandler: (details: string) => void): void;
 }
