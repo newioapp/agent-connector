@@ -49,6 +49,17 @@ ExecStart=${exec}
 ${envLines}
 Restart=on-failure
 RestartSec=5
+# Signal only the daemon on stop and let it tear down agents through its own
+# ordered shutdown (mark-stopping → cleanup → kill ACP child). This keeps the
+# daemon the single lifecycle authority and avoids systemd delivering SIGTERM to
+# ACP children out of band (which races the daemon's teardown). The cgroup is
+# still the backstop: after TimeoutStopSec, systemd SIGKILLs every remaining
+# process in the cgroup, so wedged children/grandchildren are never orphaned.
+KillMode=mixed
+# Graceful shutdown is bounded (~5s: agents stop concurrently, each waits ≤5s for
+# its ACP child before SIGKILL). 30s leaves headroom over that while capping a
+# wedged daemon well under systemd's 90s default before it escalates to SIGKILL.
+TimeoutStopSec=30
 
 [Install]
 WantedBy=default.target

@@ -32,6 +32,20 @@ describe('launchd', () => {
     expect(buildPlist('x', { ...baseOpts, enable: false })).toMatch(/<key>RunAtLoad<\/key>\s*<false\/>/);
   });
 
+  it('restarts only on crash (KeepAlive=SuccessfulExit:false) when enabled', () => {
+    // Enabled: relaunch only after an unsuccessful exit (the launchd analog of
+    // systemd Restart=on-failure), so a clean `daemon stop` stays stopped.
+    expect(buildPlist('x', { ...baseOpts, enable: true })).toMatch(
+      /<key>KeepAlive<\/key>\s*<dict>\s*<key>SuccessfulExit<\/key>\s*<false\/>\s*<\/dict>/,
+    );
+    // Not enabled: no persistence, no auto-restart at all.
+    expect(buildPlist('x', { ...baseOpts, enable: false })).toMatch(/<key>KeepAlive<\/key>\s*<false\/>/);
+  });
+
+  it('bounds graceful shutdown with a 30s ExitTimeOut before SIGKILL', () => {
+    expect(buildPlist('x', baseOpts)).toMatch(/<key>ExitTimeOut<\/key>\s*<integer>30<\/integer>/);
+  });
+
   it('XML-escapes env values', () => {
     const plist = buildPlist('x', { ...baseOpts, env: { TOKEN: 'a&b<c>"d' } });
     expect(plist).toContain('<string>a&amp;b&lt;c&gt;&quot;d</string>');
@@ -52,6 +66,8 @@ describe('systemd', () => {
     expect(unit).toContain('Environment="NEWIO_STAGE=dev"');
     expect(unit).toContain('Environment="HOME=/Users/nan"');
     expect(unit).toContain('Restart=on-failure');
+    expect(unit).toContain('KillMode=mixed');
+    expect(unit).toContain('TimeoutStopSec=30');
     expect(unit).toContain('WantedBy=default.target');
   });
 
