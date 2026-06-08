@@ -1,12 +1,14 @@
 /**
  * Environment variables tab — manage env vars passed to agent processes.
  *
- * Supports auto-populating from the user's login shell and manual editing.
- * Auto-saves with debounce on every change. Empty entries are pruned on unmount.
+ * Syncs from this app's own environment (basic essentials, or all) and supports
+ * manual editing. Auto-saves with debounce on every change. Empty entries are
+ * pruned on unmount.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Plus, Trash2, RefreshCw, Loader2, ChevronDown } from 'lucide-react';
-import type { AgentStatusInfo } from '../../../shared/types';
+import type { AgentStatusInfo, EnvSyncMode } from '../../../shared/types';
+import { ENV_SYNC_MODES } from '../../../shared/types';
 import { useAgentStore } from '../stores/agent-store';
 import { Button, Hint } from './ui';
 
@@ -15,13 +17,10 @@ interface EnvEntry {
   readonly value: string;
 }
 
-/** Extract short label from shell path, e.g. "/bin/zsh" → "zsh", "environment" → "environment". */
-function shellLabel(path: string): string {
-  if (path === 'environment') {
-    return 'environment';
-  }
-  return path.split('/').pop() ?? path;
-}
+const MODE_LABELS: Record<EnvSyncMode, string> = {
+  basic: 'basic — essentials only',
+  all: 'all — entire environment',
+};
 
 function entriesToRecord(entries: readonly EnvEntry[]): Record<string, string> {
   const result: Record<string, string> = {};
@@ -42,9 +41,8 @@ export function EnvVarsTab({ agent }: { readonly agent: AgentStatusInfo }): Reac
   const updateConfig = useAgentStore((s) => s.updateConfig);
   const [entries, setEntries] = useState<EnvEntry[]>([]);
   const [importing, setImporting] = useState(false);
-  const [shells, setShells] = useState<string[]>([]);
-  const [selectedShell, setSelectedShell] = useState('');
-  const [shellDropdownOpen, setShellDropdownOpen] = useState(false);
+  const [mode, setMode] = useState<EnvSyncMode>('basic');
+  const [modeDropdownOpen, setModeDropdownOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const disabled = agent.runtimeStatus !== 'stopped' && agent.runtimeStatus !== 'error';
@@ -54,19 +52,6 @@ export function EnvVarsTab({ agent }: { readonly agent: AgentStatusInfo }): Reac
   entriesRef.current = entries;
   const updateConfigRef = useRef(updateConfig);
   updateConfigRef.current = updateConfig;
-
-  // Load available shells on mount
-  useEffect(() => {
-    void window.api.listShells().then((available) => {
-      setShells(available);
-      const saved = agent.config.envVarsShell;
-      if (saved && available.includes(saved)) {
-        setSelectedShell(saved);
-      } else if (available.length > 0) {
-        setSelectedShell(available[0]);
-      }
-    });
-  }, [agent.id]);
 
   // Load from config on agent change only (not on config updates from our own saves)
   useEffect(() => {
@@ -107,22 +92,25 @@ export function EnvVarsTab({ agent }: { readonly agent: AgentStatusInfo }): Reac
     return () => clearTimeout(debounceRef.current);
   }, [entries]);
 
-  const handleSyncShellEnv = useCallback(async () => {
+  const handleSync = useCallback(async (syncMode: EnvSyncMode) => {
     setImporting(true);
     try {
-      const shellEnv = await window.api.getShellEnv(selectedShell);
-      const sorted = Object.entries(shellEnv)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([key, value]) => ({ key, value }));
-      setEntries(sorted);
-      // Persist the shell source alongside the env vars
-      const envVars = entriesToRecord(sorted);
-      const updated = await window.api.updateAgentEnvVars(agentIdRef.current, envVars, selectedShell);
+      const captured = await window.api.captureEnv(syncMode);
+      // Overlay captured vars onto existing ones (preserves manually-added keys).
+      const merged = new Map(entriesRef.current.filter(hasContent).map((e) => [e.key.trim(), e.value]));
+      for (const [key, value] of Object.entries(captured)) {
+        merged.set(key, value);
+      }
+      const next = [...merged.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => ({ key, value }));
+      setEntries(next);
+      // Persist immediately so a "Start agent" right after Sync uses the new env —
+      // don't leave it to the debounced autosave (which would leave a stale window).
+      const updated = await window.api.updateAgentEnvVars(agentIdRef.current, entriesToRecord(next));
       updateConfigRef.current(agentIdRef.current, updated);
     } finally {
       setImporting(false);
     }
-  }, [selectedShell]);
+  }, []);
 
   const handleAdd = useCallback(() => {
     setEntries((prev) => [...prev, { key: '', value: '' }]);
@@ -140,43 +128,40 @@ export function EnvVarsTab({ agent }: { readonly agent: AgentStatusInfo }): Reac
     <div className="flex flex-1 flex-col min-h-0">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-6 py-3">
-        {/* Shell selector + sync button */}
+        {/* Sync button + mode selector */}
         <div className="relative flex items-stretch">
           <button
             className="flex items-center gap-1.5 rounded-l-md border border-input px-2.5 py-1.5 text-xs text-foreground transition-colors hover:bg-accent disabled:opacity-40"
             disabled={disabled || importing}
-            onClick={() => void handleSyncShellEnv()}
+            onClick={() => void handleSync(mode)}
           >
             {importing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-            Sync from {shellLabel(selectedShell)}
+            Sync ({mode})
           </button>
-          {shells.length > 1 && (
-            <>
-              <button
-                className="flex items-center rounded-r-md border border-l-0 border-input px-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent"
-                onClick={() => setShellDropdownOpen((o) => !o)}
-              >
-                <ChevronDown size={12} className={shellDropdownOpen ? 'rotate-180' : ''} />
-              </button>
-              {shellDropdownOpen && (
-                <div className="absolute right-0 top-full z-10 mt-1 min-w-[160px] rounded-md border border-border bg-card py-1 shadow-md">
-                  {shells.map((s) => (
-                    <button
-                      key={s}
-                      className={`flex w-full px-3 py-1.5 text-left text-xs transition-colors hover:bg-accent ${
-                        s === selectedShell ? 'text-primary font-medium' : 'text-foreground'
-                      }`}
-                      onClick={() => {
-                        setSelectedShell(s);
-                        setShellDropdownOpen(false);
-                      }}
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </>
+          <button
+            className="flex items-center rounded-r-md border border-l-0 border-input px-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent disabled:opacity-40"
+            disabled={disabled || importing}
+            onClick={() => setModeDropdownOpen((o) => !o)}
+          >
+            <ChevronDown size={12} className={modeDropdownOpen ? 'rotate-180' : ''} />
+          </button>
+          {modeDropdownOpen && (
+            <div className="absolute right-0 top-full z-10 mt-1 min-w-[200px] rounded-md border border-border bg-card py-1 shadow-md">
+              {ENV_SYNC_MODES.map((m) => (
+                <button
+                  key={m}
+                  className={`flex w-full px-3 py-1.5 text-left text-xs transition-colors hover:bg-accent ${
+                    m === mode ? 'text-primary font-medium' : 'text-foreground'
+                  }`}
+                  onClick={() => {
+                    setMode(m);
+                    setModeDropdownOpen(false);
+                  }}
+                >
+                  {MODE_LABELS[m]}
+                </button>
+              ))}
+            </div>
           )}
         </div>
 
@@ -185,9 +170,10 @@ export function EnvVarsTab({ agent }: { readonly agent: AgentStatusInfo }): Reac
 
       {/* Hint */}
       <Hint className="mx-6 mt-1 mb-2">
-        Agent processes need environment variables to access shell commands and launch MCP servers. These are populated
-        from your login shell. You can override or add variables manually. All environment variables are stored locally
-        on this device only — they are never sent to the cloud.
+        Agent processes need environment variables to find executables (PATH) and reach the system keychain (USER). Sync
+        captures them from this app&apos;s environment — &quot;basic&quot; takes just the essentials, &quot;all&quot;
+        takes everything. You can override or add variables manually. All environment variables are stored locally on
+        this device only — they are never sent to the cloud.
       </Hint>
 
       {/* Table */}
@@ -196,8 +182,8 @@ export function EnvVarsTab({ agent }: { readonly agent: AgentStatusInfo }): Reac
           <div className="py-8 text-center text-xs text-muted-foreground">
             No environment variables configured.
             <br />
-            Click &quot;Sync from {selectedShell ? shellLabel(selectedShell) : 'Shell'}&quot; to populate from your
-            shell, or &quot;Add Variable&quot; to create manually.
+            Click &quot;Sync&quot; to populate from this app&apos;s environment, or &quot;Add Variable&quot; to create
+            manually.
           </div>
         ) : (
           <div className="space-y-1.5">

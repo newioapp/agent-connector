@@ -8,7 +8,6 @@
 import type { AgentConfigManager, AgentRuntimeManager } from '@newio/agent-engine';
 import type { RequestHandler } from './server.js';
 import type { Stage } from '../paths.js';
-import { listAvailableShells, getShellEnv } from './shell-env.js';
 import { Params, RpcError, RPC_PROTOCOL_VERSION } from './rpc.js';
 import { decodeAddAgentInput, decodeUpdateAgentInput } from './decode-agent.js';
 
@@ -51,17 +50,9 @@ export class DaemonHandler implements RequestHandler {
         });
       }
       case 'agent.add': {
-        const input = decodeAddAgentInput(params.object(0, 'input'));
-        // Clients drive env sync: when the input carries envVars (even an empty
-        // object) we honor it verbatim. Only fall back to auto-sourcing from the
-        // first login shell when the client expressed no env intent at all
-        // (e.g. the desktop add flow, which syncs separately afterward).
-        if (input.envVars !== undefined) {
-          return cfg.add(input);
-        }
-        const selectedShell = listAvailableShells()[0];
-        const envVars = selectedShell ? await getShellEnv(selectedShell) : undefined;
-        return cfg.add(envVars ? { ...input, envVars, envVarsShell: selectedShell } : input);
+        // Clients capture and supply envVars themselves (CLI/desktop, via captureEnv);
+        // the daemon never sources an environment of its own.
+        return cfg.add(decodeAddAgentInput(params.object(0, 'input')));
       }
       case 'agent.update': {
         const agentId = params.string(0, 'agentId');
@@ -88,13 +79,7 @@ export class DaemonHandler implements RequestHandler {
       case 'agent.updateEnvVars': {
         const agentId = params.string(0, 'agentId');
         const envVars = params.stringRecord(1, 'envVars');
-        const shell = params.optionalString(2, 'shell');
-        return cfg.update(agentId, { envVars, ...(shell ? { envVarsShell: shell } : {}) });
-      }
-      case 'env.listShells':
-        return listAvailableShells();
-      case 'env.getShellEnv': {
-        return getShellEnv(params.string(0, 'shell'));
+        return cfg.update(agentId, { envVars });
       }
       case 'daemon.handshake':
         return {

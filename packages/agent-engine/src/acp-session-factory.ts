@@ -19,6 +19,7 @@ import type { AgentConfig, CreateSessionInput, SessionFactory } from './types';
 import type { AgentInfo } from './types';
 import { getLogger } from '@newio/agent-sdk';
 import { resolveCommand } from './utils';
+import { inheritedBaseEnv } from './env-capture.js';
 import { InvalidEnvironmentError } from './errors.js';
 
 const log = getLogger('acp-session-factory');
@@ -120,7 +121,12 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
 
     const child = await spawnAsync(command, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...this.config.envVars, TERM: 'dumb' },
+      // Allowlisted identity vars from the host (USER/HOME/…), then the agent's
+      // configured env overlaid on top. The base is just a safety net so identity
+      // vars (which Claude Code keys its Keychain credential by) survive even if a
+      // config omits them; for `basic`/`all` the configured env already has them
+      // and wins here.
+      env: { ...inheritedBaseEnv(), ...this.config.envVars, TERM: 'dumb' },
       ...(cwd ? { cwd } : {}),
     });
 
@@ -397,7 +403,9 @@ function buildMcpServers(mcpSocketPath: string, mcpBridgePath: string): AcpMcpSe
 async function assertNodeAvailable(env?: Record<string, string>): Promise<void> {
   const { execFile } = await import('child_process');
   await new Promise<void>((resolve, reject) => {
-    execFile('node', ['--version'], { env: { ...env, TERM: 'dumb' } }, (err) => {
+    // Mirror the agent spawn env (allowlisted base + configured overlay) so the
+    // check validates the same PATH the agent process will actually run with.
+    execFile('node', ['--version'], { env: { ...inheritedBaseEnv(), ...env, TERM: 'dumb' } }, (err) => {
       if (err) {
         reject(
           new InvalidEnvironmentError(

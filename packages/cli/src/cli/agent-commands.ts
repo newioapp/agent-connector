@@ -16,7 +16,7 @@ import type {
   SessionMode,
   UpdateAgentInput,
 } from '@newio/agent-engine';
-import { agentEnvFilePath } from '@newio/agent-engine';
+import { agentEnvFilePath, captureEnv, asEnvSyncMode, DEFAULT_ENV_SYNC_MODE } from '@newio/agent-engine';
 import { AuthManager, NewioClient } from '@newio/agent-sdk';
 import { withDaemon, openConnection } from '../client/connect.js';
 import { resolveConfig, getDaemonPaths, type Stage } from '../paths.js';
@@ -59,43 +59,10 @@ export function parseEnvPairs(pairs: readonly string[]): Record<string, string> 
   return result;
 }
 
-/** Sentinel `--env-sync` sources (anything else is treated as a login shell path). */
-const ENV_SYNC_NONE = 'none';
-const ENV_SYNC_CURRENT = 'current';
-
-/** The CLI's own environment — i.e. the interactive shell that invoked `newio`. */
-function currentProcessEnv(): Record<string, string> {
-  return Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined));
-}
-
-interface ResolvedEnv {
-  readonly envVars: Record<string, string>;
-  /** Label to record as `envVarsShell` (omitted for `none`). */
-  readonly shell?: string;
-}
-
-/**
- * Resolve an `--env-sync` source to a concrete environment map.
- *
- * - `current` — capture the CLI's own env (the shell that ran `newio`). Resolved
- *   client-side, since the daemon runs as a service with a different environment.
- * - `none` — an empty map (no variables).
- * - anything else — treated as a login shell path and sourced via the daemon.
- */
-export async function resolveEnvSync(c: DaemonConnector, source: string): Promise<ResolvedEnv> {
-  if (source === ENV_SYNC_NONE) {
-    return { envVars: {} };
-  }
-  if (source === ENV_SYNC_CURRENT) {
-    return { envVars: currentProcessEnv(), shell: ENV_SYNC_CURRENT };
-  }
-  const shells = await c.listShells();
-  if (!shells.includes(source)) {
-    const choices = [ENV_SYNC_CURRENT, ENV_SYNC_NONE, ...shells].join(', ');
-    throw new Error(`Unknown env-sync source "${source}". Expected one of: ${choices}.`);
-  }
-  return { envVars: await c.getShellEnv(source), shell: source };
-}
+// Env capture (`basic`/`all`) is shared with the desktop app — see @newio/agent-engine.
+// When invoked from the CLI, `captureEnv` reads this process's own environment, i.e.
+// the interactive shell that ran `newio`.
+export { ENV_SYNC_MODES } from '@newio/agent-engine';
 
 /** First line of a (possibly multi-line) error message — for tight table cells. */
 export function firstLine(message: string): string {
@@ -260,30 +227,22 @@ export async function agentList(stage: Stage): Promise<void> {
 
 /** `agent add` — attach a runner config to an existing account, identified by username. */
 export async function agentAdd(stage: Stage, opts: AddOptions): Promise<void> {
+  // Capture from the CLI's own environment up front (client-side); the daemon's
+  // service environment is sparse and must not be the source.
+  const mode = opts.envSync ? asEnvSyncMode(opts.envSync) : DEFAULT_ENV_SYNC_MODE;
+  const envVars = captureEnv(mode);
   const config = await withDaemon(stage, async (c) => {
-    // Opt-in env syncing: with no --env-sync we send an explicit empty map, which
-    // both leaves the agent with no environment and tells the daemon not to
-    // auto-source a login shell.
-    const { envVars, shell } = await resolveEnvSync(c, opts.envSync ?? ENV_SYNC_NONE);
     const input: AddAgentInput = {
       type: asAgentType(opts.type),
       newioUsername: opts.username,
       acp: { cwd: opts.cwd ?? process.cwd() },
       envVars,
-      ...(shell ? { envVarsShell: shell } : {}),
       ...(opts.sessionMode ? { sessionMode: asSessionMode(opts.sessionMode) } : {}),
     };
     return c.addAgent(input);
   });
   console.log(`Added agent ${config.id} for @${opts.username}.`);
-  const synced = Object.keys(config.envVars).length;
-  if (synced > 0) {
-    console.log(
-      `Synced ${synced} environment variable(s)${config.envVarsShell ? ` from ${config.envVarsShell}` : ''}.`,
-    );
-  } else {
-    console.log(`No environment variables synced. Add them with: newio agent env sync ${config.id.slice(0, 8)}`);
-  }
+  console.log(`Synced ${Object.keys(config.envVars).length} environment variable(s) (${mode}).`);
   console.log(`Start it with: newio agent start ${config.id.slice(0, 8)}`);
 }
 
@@ -387,50 +346,30 @@ export async function envUnset(stage: Stage, query: string, keys: string[]): Pro
   console.log(`Removed ${keys.length} variable(s).`);
 }
 
-export async function envSync(stage: Stage, query: string, sourceArg?: string): Promise<void> {
-  // `none` is an add-time concept ("create with an empty environment") — it isn't
-  // a sync source. Allowing it here would also leave a stale `envVarsShell` label
-  // (the resolved shell is undefined, which the daemon/config manager treat as
-  // "leave unchanged"), so the command would report syncing from "none" while the
-  // old source persists. Reject it and point at the right tool for clearing vars.
-  if (sourceArg === ENV_SYNC_NONE) {
-    throw new Error(
-      '"none" is not a sync source. Sync from a login shell or "current"; to remove variables use: newio agent env unset <agent> <keys...>',
-    );
-  }
+export async function envSync(stage: Stage, query: string, modeArg?: string): Promise<void> {
+  const mode = modeArg ? asEnvSyncMode(modeArg) : DEFAULT_ENV_SYNC_MODE;
+  const captured = captureEnv(mode);
   await withDaemon(stage, async (c) => {
     const agentId = await resolveAgentId(c, query);
-    // Default to the first available login shell; `current` or a shell path are
-    // also accepted (see resolveEnvSync). Both always yield a defined shell label.
-    const source = sourceArg ?? (await c.listShells())[0];
-    if (!source) {
-      throw new Error('No login shell available to sync from.');
-    }
-    const { envVars: shellEnv, shell } = await resolveEnvSync(c, source);
-    // Overlay shell-derived vars on existing ones (preserves custom keys).
-    const next = { ...(await currentEnv(c, agentId)), ...shellEnv };
-    await c.updateAgentEnvVars(agentId, next, shell);
-    console.log(`Synced ${Object.keys(shellEnv).length} variable(s) from ${shell ?? source}.`);
+    // Overlay captured vars on existing ones (preserves custom keys set via `env set`).
+    const next = { ...(await currentEnv(c, agentId)), ...captured };
+    await c.updateAgentEnvVars(agentId, next);
+    console.log(`Synced ${Object.keys(captured).length} variable(s) (${mode}) from the current environment.`);
   });
 }
 
-/** `env print` — dump the environment a given shell would contribute, without touching any agent. */
-export async function envPrint(stage: Stage, sourceArg?: string): Promise<void> {
-  await withDaemon(stage, async (c) => {
-    const source = sourceArg ?? (await c.listShells())[0];
-    if (!source) {
-      throw new Error('No login shell available to read from.');
-    }
-    const { envVars, shell } = await resolveEnvSync(c, source);
-    const keys = Object.keys(envVars).sort();
-    if (keys.length === 0) {
-      console.log(`No environment variables resolved from ${shell ?? source}.`);
-      return;
-    }
-    for (const key of keys) {
-      console.log(`${key}=${envVars[key]}`);
-    }
-  });
+/** `env print` — dump what a sync mode would capture from the CLI's environment, without touching any agent. */
+export function envPrint(modeArg?: string): void {
+  const mode = modeArg ? asEnvSyncMode(modeArg) : DEFAULT_ENV_SYNC_MODE;
+  const env = captureEnv(mode);
+  const keys = Object.keys(env).sort();
+  if (keys.length === 0) {
+    console.log(`No environment variables resolved (${mode}).`);
+    return;
+  }
+  for (const key of keys) {
+    console.log(`${key}=${env[key]}`);
+  }
 }
 
 /** Open the agent's `.env` file in `$VISUAL`/`$EDITOR`. Changes apply on the agent's next start. */
@@ -472,13 +411,6 @@ function openInEditor(filePath: string): Promise<void> {
       }
     });
   });
-}
-
-export async function envShells(stage: Stage): Promise<void> {
-  const shells = await withDaemon(stage, (c) => c.listShells());
-  for (const shell of shells) {
-    console.log(shell);
-  }
 }
 
 // ---------------------------------------------------------------------------

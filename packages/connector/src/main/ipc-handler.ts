@@ -22,8 +22,10 @@ import type {
   UpdateChannel,
   Stage,
   StageConfig,
+  EnvSyncMode,
 } from '../shared/types';
 import { STAGES } from '../shared/types';
+import { captureEnv } from '@newio/agent-engine';
 import type { DaemonConnectionStatus } from '../shared/ipc-events';
 import { EVENT_CHANNELS } from '../shared/ipc-events';
 import type { StoreSchema } from './store';
@@ -182,16 +184,14 @@ export class IpcHandler implements IpcApi {
     await this.daemon.stopAgent(agentId);
   }
 
-  async listShells(): Promise<string[]> {
-    return this.daemon.listShells();
+  async captureEnv(mode: EnvSyncMode): Promise<Record<string, string>> {
+    // Capture from THIS process's environment (the desktop app), mirroring how the
+    // CLI captures from its own shell. Stays in the main process — never the daemon.
+    return captureEnv(mode);
   }
 
-  async getShellEnv(shell: string): Promise<Record<string, string>> {
-    return this.daemon.getShellEnv(shell);
-  }
-
-  async updateAgentEnvVars(agentId: string, envVars: Record<string, string>, shell?: string): Promise<AgentConfig> {
-    return this.daemon.updateAgentEnvVars(agentId, envVars, shell);
+  async updateAgentEnvVars(agentId: string, envVars: Record<string, string>): Promise<AgentConfig> {
+    return this.daemon.updateAgentEnvVars(agentId, envVars);
   }
 
   async getAgentInfo(agentId: string): Promise<AgentInfo | undefined> {
