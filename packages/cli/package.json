@@ -28,11 +28,17 @@
     "dev": "set -a && . ./.env && set +a && node dist/cli.js"
   },
   "dependencies": {
-    "@newio/agent-engine": "workspace:*",
-    "@newio/agent-sdk": "workspace:*",
-    "commander": "^13.1.0"
+    "@agentclientprotocol/sdk": "^0.17.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "commander": "^13.1.0",
+    "dotenv": "^17.4.2",
+    "ws": "^8.20.0",
+    "yaml": "^2.8.4",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@newio/agent-engine": "workspace:*",
+    "@newio/agent-sdk": "workspace:*",
     "@types/node": "^22.19.15",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",
