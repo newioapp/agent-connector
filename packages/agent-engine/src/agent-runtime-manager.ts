@@ -5,7 +5,7 @@
  * delegates start/stop to the instance, and relays status events to the UI.
  */
 import type { AgentConfigManager } from './agent-config-manager';
-import type { CronStore } from './cron-store';
+import type { CronStore, CronStoreFactory } from './cron-store';
 import type { EngineConfig } from './engine-config';
 import type { AgentRuntimeStatus, AgentErrorCode, AgentInfo } from './types';
 import type { AgentInstance } from './agent-instance';
@@ -24,21 +24,23 @@ export interface StatusListener {
 
 export class AgentRuntimeManager {
   private readonly instances = new Map<string, AgentInstance>();
+  /** Per-agent cron stores, opened on start and closed on stop. */
+  private readonly cronStores = new Map<string, CronStore>();
   /** Last browser-approval URL per agent while awaiting approval — for late-attaching clients. */
   private readonly approvalUrls = new Map<string, string>();
   private readonly configManager: AgentConfigManager;
-  private readonly cronStore: CronStore;
+  private readonly cronStoreFactory: CronStoreFactory;
   private readonly listener: StatusListener;
   private readonly engineConfig: EngineConfig;
 
   constructor(
     configManager: AgentConfigManager,
-    cronStore: CronStore,
+    cronStoreFactory: CronStoreFactory,
     listener: StatusListener,
     engineConfig: EngineConfig,
   ) {
     this.configManager = configManager;
-    this.cronStore = cronStore;
+    this.cronStoreFactory = cronStoreFactory;
     this.listener = listener;
     this.engineConfig = engineConfig;
   }
@@ -105,10 +107,17 @@ export class AgentRuntimeManager {
       },
     };
 
+    // Reuse the agent's store across restarts within this manager; open lazily.
+    let cronStore = this.cronStores.get(agentId);
+    if (!cronStore) {
+      cronStore = this.cronStoreFactory(agentId);
+      this.cronStores.set(agentId, cronStore);
+    }
+
     const instance: AgentInstance = new AgentInstanceImpl(
       config,
       this.configManager,
-      this.cronStore,
+      cronStore,
       instanceListener,
       this.engineConfig,
     );
@@ -127,6 +136,8 @@ export class AgentRuntimeManager {
     await instance.stop();
     this.instances.delete(agentId);
     this.approvalUrls.delete(agentId);
+    this.cronStores.get(agentId)?.close();
+    this.cronStores.delete(agentId);
     log.info(`Agent ${agentId} stopped and removed`);
   }
 

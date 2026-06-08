@@ -25,3 +25,11 @@ export interface CronStore {
   /** Close the store and release resources. */
   close(): void;
 }
+
+/**
+ * Builds a CronStore for a single agent. The runtime manager calls this when an
+ * agent starts, so each agent gets a store scoped to its own directory
+ * (`agents/<agentId>/cron.json`) — no shared file, hence no cross-agent write
+ * contention, and removing an agent's directory takes its crons with it.
+ */
+export type CronStoreFactory = (agentId: string) => CronStore;

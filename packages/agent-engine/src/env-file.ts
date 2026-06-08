@@ -21,7 +21,7 @@ import dotenv from 'dotenv';
 
 /** Absolute path of an agent's `.env` file within a data directory. */
 export function agentEnvFilePath(dataDir: string, agentId: string): string {
-  return join(dataDir, 'envs', `${agentId}.env`);
+  return join(dataDir, 'agents', agentId, '.env');
 }
 
 /** Values made only of these characters are safe to write without quoting. */

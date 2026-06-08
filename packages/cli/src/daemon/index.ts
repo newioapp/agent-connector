@@ -14,6 +14,7 @@ import {
   FileAgentConfigManager,
   AgentRuntimeManager,
   JsonCronStore,
+  assertSafeAgentId,
   type EngineConfig,
   type StatusListener,
 } from '@newio/agent-engine';
@@ -102,7 +103,12 @@ export async function runDaemon(): Promise<void> {
   };
 
   const agentConfigManager = new FileAgentConfigManager(dataDir);
-  const cronStore = new JsonCronStore(join(dataDir, 'cron.json'));
+  // One cron store per agent, scoped to its directory (agents/<id>/cron.json).
+  // Validate before joining — agentId can originate from untrusted RPC params.
+  const cronStoreFactory = (agentId: string): JsonCronStore => {
+    assertSafeAgentId(agentId);
+    return new JsonCronStore(join(dataDir, 'agents', agentId, 'cron.json'));
+  };
 
   // Runtime manager is recreated on reload; handler holds a mutable reference.
   const makeListener = (): StatusListener => ({
@@ -128,7 +134,7 @@ export async function runDaemon(): Promise<void> {
 
   const handler = new DaemonHandler({
     agentConfigManager,
-    agentRuntimeManager: new AgentRuntimeManager(agentConfigManager, cronStore, makeListener(), engineConfig),
+    agentRuntimeManager: new AgentRuntimeManager(agentConfigManager, cronStoreFactory, makeListener(), engineConfig),
     version,
     stage,
     apiBaseUrl,
@@ -147,7 +153,7 @@ export async function runDaemon(): Promise<void> {
 
       handler.deps.agentRuntimeManager = new AgentRuntimeManager(
         agentConfigManager,
-        cronStore,
+        cronStoreFactory,
         makeListener(),
         engineConfig,
       );
@@ -178,8 +184,8 @@ export async function runDaemon(): Promise<void> {
     }
     shuttingDown = true;
     log.info('Shutting down...');
+    // stopAll() closes each agent's cron store as it stops.
     await handler.deps.agentRuntimeManager.stopAll();
-    cronStore.close();
     await server.close();
     for (const path of [socketPath, pidPath]) {
       try {
