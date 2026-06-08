@@ -4,11 +4,16 @@ import { buildUnit, systemdUnit } from '../src/service/systemd';
 import type { InstallOptions } from '../src/service/types';
 
 const baseOpts: InstallOptions = {
-  nodePath: '/usr/local/bin/node',
-  cliEntryPath: '/usr/local/lib/node_modules/@newio/cli/dist/cli.js',
+  programArguments: ['/usr/local/bin/node', '/usr/local/lib/node_modules/@newio/cli/dist/cli.js', 'daemon', 'run'],
   env: { NEWIO_STAGE: 'dev', NEWIO_API_URL: 'https://api.example.test', HOME: '/Users/nan' },
   logPath: '/Users/nan/.newio-dev/connector/daemon.log',
   enable: true,
+};
+
+// A SEA build runs the signed `newio` binary directly, with no script path.
+const seaOpts: InstallOptions = {
+  ...baseOpts,
+  programArguments: ['/Users/nan/.newio/bin/newio', 'daemon', 'run'],
 };
 
 describe('launchd', () => {
@@ -25,6 +30,14 @@ describe('launchd', () => {
     expect(plist).toContain('<key>NEWIO_STAGE</key>');
     expect(plist).toContain('<string>dev</string>');
     expect(plist).toContain('<string>/Users/nan/.newio-dev/connector/daemon.log</string>');
+  });
+
+  it('builds a plist that runs the SEA binary directly (no node/script args)', () => {
+    const plist = buildPlist('app.newio.connectord', seaOpts);
+    expect(plist).toContain('<string>/Users/nan/.newio/bin/newio</string>');
+    expect(plist).toContain('<string>daemon</string>');
+    expect(plist).toContain('<string>run</string>');
+    expect(plist).not.toContain('<string>/usr/local/bin/node</string>');
   });
 
   it('sets RunAtLoad/KeepAlive from the enable flag', () => {
@@ -69,6 +82,11 @@ describe('systemd', () => {
     expect(unit).toContain('KillMode=mixed');
     expect(unit).toContain('TimeoutStopSec=30');
     expect(unit).toContain('WantedBy=default.target');
+  });
+
+  it('builds a unit that runs the SEA binary directly', () => {
+    const unit = buildUnit(seaOpts);
+    expect(unit).toContain('ExecStart=/Users/nan/.newio/bin/newio daemon run');
   });
 
   it('escapes quotes/backslashes in env values', () => {

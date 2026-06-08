@@ -118,6 +118,9 @@ importers:
       '@types/node':
         specifier: ^22.19.15
         version: 22.19.15
+      postject:
+        specifier: ^1.0.0-alpha.6
+        version: 1.0.0-alpha.6
       tsup:
         specifier: ^8.5.0
         version: 8.5.1(jiti@2.6.1)(postcss@8.5.8)(tsx@4.22.0)(typescript@5.9.3)(yaml@2.8.4)
@@ -5943,8 +5946,7 @@ snapshots:
 
   commander@5.1.0: {}
 
-  commander@9.5.0:
-    optional: true
+  commander@9.5.0: {}
 
   compare-func@2.0.0:
     dependencies:
@@ -7478,7 +7480,6 @@ snapshots:
   postject@1.0.0-alpha.6:
     dependencies:
       commander: 9.5.0
-    optional: true
 
   prelude-ls@1.2.1: {}
 

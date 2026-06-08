@@ -1,8 +1,10 @@
 /**
  * Linux systemd (--user) service manager.
  *
- * Installs a user unit at ~/.config/systemd/user that runs
- * `<node> <cli> daemon run`. stdout/stderr are captured by journald; logs are
+ * Installs a user unit at ~/.config/systemd/user that runs the daemon
+ * (`… daemon run`, from the caller's SEA-aware `programArguments`). For a SEA
+ * build that is the `newio` binary running itself, with no dependency on a
+ * system Node. stdout/stderr are captured by journald; logs are
  * read via `journalctl --user`. Restart=on-failure gives crash recovery;
  * `enable` adds boot/login persistence (WantedBy=default.target).
  */
@@ -33,7 +35,7 @@ function envLine(key: string, value: string): string {
 
 /** Pure unit-file generator (exported for testing). */
 export function buildUnit(opts: InstallOptions): string {
-  const exec = `${opts.nodePath} ${opts.cliEntryPath} daemon run`;
+  const exec = opts.programArguments.join(' ');
   const envLines = Object.entries(opts.env)
     .map(([k, v]) => envLine(k, v))
     .join('\n');
