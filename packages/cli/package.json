@@ -18,8 +18,18 @@
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "!dist/index.*"
   ],
+  "//publishConfig": "@newio/cli ships ONLY the `newio` binary to npm. The library export (DaemonConnector etc.) exists for the in-workspace Electron connector and is intentionally NOT importable from the published package: `exports` is stripped so the internal agent-engine/agent-sdk code bundled into the binary cannot be reached via `import '@newio/cli'`.",
+  "publishConfig": {
+    "exports": {
+      "./package.json": "./package.json"
+    },
+    "main": null,
+    "module": null,
+    "types": null
+  },
   "scripts": {
     "build": "tsup",
     "clean": "rm -rf dist",
