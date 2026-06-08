@@ -14,7 +14,8 @@
  * distributable). Notarization + stapling happen in the release workflow, after
  * signing — a pkg CAN be stapled, unlike the bare binary.
  *
- * Run `pnpm --filter @newio/cli run build:sea` first.
+ * Run a macOS SEA build first (e.g. `pnpm --filter @newio/cli run build:sea:mac`
+ * or `build:sea:mac:signed`).
  */
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, rmSync, existsSync, chmodSync, writeFileSync, statSync, readFileSync } from 'node:fs';
@@ -42,7 +43,9 @@ function run(cmd, args) {
 }
 
 if (!existsSync(seaBinary)) {
-  throw new Error(`SEA binary not found: ${seaBinary}. Run "pnpm --filter @newio/cli run build:sea" first.`);
+  throw new Error(
+    `SEA binary not found: ${seaBinary}. Run "pnpm --filter @newio/cli run build:sea:mac" (or build:sea:mac:signed) first.`,
+  );
 }
 
 // 1. Stage the payload: /usr/local/bin/newio

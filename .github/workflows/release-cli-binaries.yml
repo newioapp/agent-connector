@@ -103,22 +103,16 @@ jobs:
           echo "NEWIO_SIGN_IDENTITY=$APP_ID" >> "$GITHUB_ENV"
           echo "NEWIO_INSTALLER_IDENTITY=$INST_ID" >> "$GITHUB_ENV"
 
-      - name: Build signed SEA binary
-        run: pnpm --filter @newio/cli run build:sea
-
-      - name: Notarize binary
+      # Builds, Developer-ID-signs (NEWIO_SIGN_IDENTITY from the import step),
+      # and notarizes the binary. The script reads notary creds from the env
+      # vars below (a bare Mach-O can't be stapled — notarization records the
+      # ticket by hash so Gatekeeper passes quarantined downloads too).
+      - name: Build, sign + notarize SEA binary
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          cd packages/cli
-          # A bare Mach-O can't be stapled, but notarizing records the ticket by
-          # hash so Gatekeeper passes it on quarantined (browser) downloads too.
-          ditto -c -k build/sea/newio "$RUNNER_TEMP/newio-notarize.zip"
-          xcrun notarytool submit "$RUNNER_TEMP/newio-notarize.zip" \
-            --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" --wait
+        run: pnpm --filter @newio/cli run build:sea:mac:signed
 
       - name: Build, notarize + staple .pkg
         env:
@@ -175,9 +169,9 @@ jobs:
       - name: Build packages
         run: pnpm --filter "@newio/cli..." run build
 
-      # Linux binaries are unsigned (build:sea skips codesign off macOS).
+      # Linux binaries are unsigned.
       - name: Build SEA binary
-        run: pnpm --filter @newio/cli run build:sea
+        run: pnpm --filter @newio/cli run build:sea:linux
 
       - name: Package artifact
         run: |

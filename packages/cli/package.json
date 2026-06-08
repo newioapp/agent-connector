@@ -32,7 +32,9 @@
   },
   "scripts": {
     "build": "tsup",
-    "build:sea": "node scripts/build-sea.mjs",
+    "build:sea:linux": "bash scripts/build-linux-sea.sh",
+    "build:sea:mac": "bash scripts/build-mac-sea-unsigned.sh",
+    "build:sea:mac:signed": "bash scripts/build-mac-sea-signed.sh",
     "build:pkg": "node scripts/build-pkg.mjs",
     "clean": "rm -rf dist build",
     "typecheck": "tsc --noEmit",
