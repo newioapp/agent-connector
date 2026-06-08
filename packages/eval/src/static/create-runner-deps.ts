@@ -103,7 +103,11 @@ export async function createScenarioRunnerDeps(
     },
   };
 
+  // Eval is an in-workspace consumer, so it can run the engine's bridge file
+  // directly (the engine is always installed here, unlike the published CLI).
   const mcpBridgePath = fileURLToPath(import.meta.resolve('@newio/agent-engine/mcp-bridge'));
+  const mcpBridgeCommand = process.execPath;
+  const mcpBridgeArgsPrefix = [mcpBridgePath];
 
   // Build prompt formatter
   const promptFormatter = new EvalPromptFormatter(
@@ -123,7 +127,8 @@ export async function createScenarioRunnerDeps(
     promptFormatterVersion: config.promptVersion,
     skipToken: promptFormatter.skipToken,
     mcpSocketPath: socketPath,
-    mcpBridgePath,
+    mcpBridgeCommand,
+    mcpBridgeArgsPrefix,
     updateConfig: () => Promise.resolve(),
     reportContextWindow: () => Promise.resolve(),
   });

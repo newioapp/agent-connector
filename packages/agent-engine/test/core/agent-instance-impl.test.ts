@@ -68,7 +68,8 @@ function createInstance(): AgentInstanceImpl {
     appDisplayName: 'Test',
     appVersion: '0.0.1',
     dataDir: '/tmp',
-    mcpBridgePath: '/tmp/bridge.js',
+    mcpBridgeCommand: 'node',
+    mcpBridgeArgsPrefix: ['/tmp/bridge.js'],
   } as EngineConfig;
   const listener = {
     onStatusChanged: vi.fn(),

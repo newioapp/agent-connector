@@ -6,9 +6,8 @@
  * service manager — launchd/systemd — executes).
  */
 import { join } from 'path';
-import { mkdirSync, existsSync, writeFileSync, unlinkSync } from 'fs';
+import { mkdirSync, existsSync, writeFileSync, unlinkSync, realpathSync } from 'fs';
 import { createConnection } from 'net';
-import { createRequire } from 'module';
 import { setLogHandler, getLogger } from '@newio/agent-sdk';
 import {
   FileAgentConfigManager,
@@ -75,8 +74,18 @@ export async function runDaemon(): Promise<void> {
     mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   }
 
-  const require = createRequire(import.meta.url);
-  const mcpBridgePath = require.resolve('@newio/agent-engine/mcp-bridge');
+  // ACP agents launch the MCP bridge as `node <this-cli> mcp-bridge <socket>`.
+  // Resolve this CLI's own entrypoint (the `newio` binary) from argv and run it
+  // through the same Node binary we're running on — no reliance on `newio` being
+  // on the agent subprocess PATH, and no resolving the unpublished agent-engine
+  // bridge subpath.
+  const cliEntry = process.argv[1];
+  if (typeof cliEntry !== 'string' || cliEntry.length === 0) {
+    throw new Error('Cannot resolve the CLI entrypoint (process.argv[1] is unset).');
+  }
+  const cliEntryPath = realpathSync(cliEntry);
+  const mcpBridgeCommand = process.execPath;
+  const mcpBridgeArgsPrefix = [cliEntryPath, 'mcp-bridge'];
 
   // Refuse to start if another daemon already owns this stage's socket —
   // otherwise we'd unlink a live socket and become a second writer of dataDir.
@@ -99,7 +108,8 @@ export async function runDaemon(): Promise<void> {
     appDisplayName: 'Newio Connector Daemon',
     appVersion: version,
     dataDir,
-    mcpBridgePath,
+    mcpBridgeCommand,
+    mcpBridgeArgsPrefix,
   };
 
   const agentConfigManager = new FileAgentConfigManager(dataDir);

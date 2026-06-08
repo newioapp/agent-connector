@@ -335,7 +335,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
         externalReferenceId,
         promptFormatterVersion: this.promptManager.defaultVersion,
         mcpSocketPath: this.mcpSocketPath,
-        mcpBridgePath: this.engineConfig.mcpBridgePath,
+        mcpBridgeCommand: this.engineConfig.mcpBridgeCommand,
+        mcpBridgeArgsPrefix: this.engineConfig.mcpBridgeArgsPrefix,
         skipToken: this.promptManager.skipToken(this.promptManager.defaultVersion),
         updateConfig: async (config) => {
           await this.app.updateAgentMemberConfig(externalReferenceId, {
