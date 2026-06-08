@@ -16,6 +16,7 @@ import type {
   UpdateChannel,
   Stage,
   StageConfig,
+  EnvSyncMode,
 } from './types';
 import type { DaemonConnectionStatus } from './ipc-events';
 
@@ -78,12 +79,10 @@ export interface IpcApi {
   selectDirectory(): Promise<string | undefined>;
 
   // Environment
-  /** List supported shells available on the system. */
-  listShells(): Promise<string[]>;
-  /** Resolve environment variables from a specific shell. */
-  getShellEnv(shell: string): Promise<Record<string, string>>;
+  /** Capture environment variables from this app's own process (basic essentials, or all). */
+  captureEnv(mode: EnvSyncMode): Promise<Record<string, string>>;
   /** Update only the envVars on an agent config (no restart required). */
-  updateAgentEnvVars(agentId: string, envVars: Record<string, string>, shell?: string): Promise<AgentConfig>;
+  updateAgentEnvVars(agentId: string, envVars: Record<string, string>): Promise<AgentConfig>;
 
   /** Get runtime agent info (capabilities, auth methods) for a running agent. */
   getAgentInfo(agentId: string): Promise<AgentInfo | undefined>;
@@ -113,8 +112,7 @@ export const IPC_CHANNELS: { readonly [K in keyof IpcApi]: string } = {
   removeAgent: 'remove-agent',
   startAgent: 'start-agent',
   stopAgent: 'stop-agent',
-  listShells: 'list-shells',
-  getShellEnv: 'get-shell-env',
+  captureEnv: 'capture-env',
   updateAgentEnvVars: 'update-agent-env-vars',
   getAgentInfo: 'get-agent-info',
 };

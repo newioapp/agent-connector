@@ -60,7 +60,6 @@ export class FileAgentConfigManager implements AgentConfigManager {
       // Display name is left unset here; it's synced from the account on first login.
       newio: { username: input.newioUsername },
       ...(input.sessionMode !== undefined ? { sessionMode: input.sessionMode } : {}),
-      ...(input.envVarsShell ? { envVarsShell: input.envVarsShell } : {}),
       ...(input.acp ? { acp: input.acp } : {}),
     };
     this.writeStored([...this.readStored(), stored]);
@@ -87,7 +86,6 @@ export class FileAgentConfigManager implements AgentConfigManager {
       ...existing,
       newio,
       ...(updates.sessionMode !== undefined ? { sessionMode: updates.sessionMode } : {}),
-      ...(updates.envVarsShell !== undefined ? { envVarsShell: updates.envVarsShell } : {}),
       ...(updates.acp !== undefined ? { acp: updates.acp } : {}),
     };
     const copy = [...stored];

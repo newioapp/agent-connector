@@ -134,9 +134,6 @@ export interface AgentConfig {
   /** Environment variables passed to the agent process. */
   readonly envVars: Readonly<Record<string, string>>;
 
-  /** Shell used to source envVars (e.g. "/bin/zsh"). */
-  readonly envVarsShell?: string;
-
   readonly acp?: AcpConfig;
 }
 
@@ -165,10 +162,8 @@ export interface AddAgentInput {
   readonly newioUsername: string;
   readonly sessionMode?: SessionMode;
   readonly acp?: AcpConfig;
-  /** Optional: initial environment variables (e.g. synced from shell by the desktop app). */
+  /** Optional: initial environment variables, captured from the configuring process's environment. */
   readonly envVars?: Readonly<Record<string, string>>;
-  /** Optional: shell used to source envVars. */
-  readonly envVarsShell?: string;
 }
 
 export interface UpdateAgentInput {
@@ -176,7 +171,6 @@ export interface UpdateAgentInput {
   readonly newioUsername?: string;
   readonly sessionMode?: SessionMode;
   readonly envVars?: Readonly<Record<string, string>>;
-  readonly envVarsShell?: string;
   readonly acp?: AcpConfig;
 }
 

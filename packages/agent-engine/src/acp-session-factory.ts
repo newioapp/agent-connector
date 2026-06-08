@@ -120,7 +120,11 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
 
     const child = await spawnAsync(command, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...this.config.envVars, TERM: 'dumb' },
+      // Inherit the daemon's own environment, then overlay the agent's configured
+      // vars. The inherited base guarantees identity vars like USER/HOME (which
+      // Claude Code keys its Keychain credential by) are present even if a config
+      // was created without them; configured vars still win.
+      env: { ...process.env, ...this.config.envVars, TERM: 'dumb' },
       ...(cwd ? { cwd } : {}),
     });
 
@@ -397,7 +401,9 @@ function buildMcpServers(mcpSocketPath: string, mcpBridgePath: string): AcpMcpSe
 async function assertNodeAvailable(env?: Record<string, string>): Promise<void> {
   const { execFile } = await import('child_process');
   await new Promise<void>((resolve, reject) => {
-    execFile('node', ['--version'], { env: { ...env, TERM: 'dumb' } }, (err) => {
+    // Mirror the agent spawn env (inherited base + configured overlay) so the check
+    // validates the same PATH the agent process will actually run with.
+    execFile('node', ['--version'], { env: { ...process.env, ...env, TERM: 'dumb' } }, (err) => {
       if (err) {
         reject(
           new InvalidEnvironmentError(

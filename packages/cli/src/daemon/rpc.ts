@@ -11,7 +11,7 @@
  * RPC protocol version. Bump on breaking changes to the method/params contract
  * so clients (CLI, desktop) can detect skew via `daemon.handshake`.
  */
-export const RPC_PROTOCOL_VERSION = 1;
+export const RPC_PROTOCOL_VERSION = 2;
 
 /** Standard JSON-RPC 2.0 error codes (plus an app-level range). */
 export const JsonRpcErrorCode = {

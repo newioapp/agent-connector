@@ -95,14 +95,12 @@ export function decodeAddAgentInput(obj: Record<string, unknown>): AddAgentInput
   const acp = acpConfig(obj);
   const mode = sessionMode(str(obj, 'sessionMode'));
   const envVars = stringRecord(obj, 'envVars');
-  const envVarsShell = str(obj, 'envVarsShell');
   return {
     type: agentType(requireStr(obj, 'type')),
     newioUsername: requireStr(obj, 'newioUsername'),
     ...(mode !== undefined ? { sessionMode: mode } : {}),
     ...(acp !== undefined ? { acp } : {}),
     ...(envVars !== undefined ? { envVars } : {}),
-    ...(envVarsShell !== undefined ? { envVarsShell } : {}),
   };
 }
 
@@ -111,14 +109,12 @@ export function decodeUpdateAgentInput(obj: Record<string, unknown>): UpdateAgen
   const username = str(obj, 'newioUsername');
   const mode = sessionMode(str(obj, 'sessionMode'));
   const envVars = stringRecord(obj, 'envVars');
-  const envVarsShell = str(obj, 'envVarsShell');
   const acp = acpConfig(obj);
   return {
     ...(displayName !== undefined ? { displayName } : {}),
     ...(username !== undefined ? { newioUsername: username } : {}),
     ...(mode !== undefined ? { sessionMode: mode } : {}),
     ...(envVars !== undefined ? { envVars } : {}),
-    ...(envVarsShell !== undefined ? { envVarsShell } : {}),
     ...(acp !== undefined ? { acp } : {}),
   };
 }

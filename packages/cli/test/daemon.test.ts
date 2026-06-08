@@ -4,6 +4,7 @@ import { join } from 'path';
 import { randomUUID } from 'crypto';
 import { DaemonServer } from '../src/daemon/server';
 import { DaemonHandler } from '../src/daemon/handler';
+import { RPC_PROTOCOL_VERSION } from '../src/daemon/rpc';
 import { DaemonClient } from '../src/client';
 import { DaemonConnector } from '../src/connector';
 import type { AgentConfigManager } from '@newio/agent-engine';
@@ -114,7 +115,7 @@ describe('DaemonServer / DaemonConnector', () => {
     it('daemon.handshake returns protocol + version + stage + apiBaseUrl', async () => {
       const hs = await ctx.connector.handshake();
       expect(hs).toEqual({
-        protocolVersion: 1,
+        protocolVersion: RPC_PROTOCOL_VERSION,
         version: '1.2.3',
         stage: 'prod',
         apiBaseUrl: 'https://api.newio.app',

@@ -57,16 +57,8 @@ export class DaemonConnector {
   getAgentInfo(agentId: string): Promise<AgentInfo | null> {
     return this.client.call('agent.getInfo', [agentId]);
   }
-  updateAgentEnvVars(agentId: string, envVars: Record<string, string>, shell?: string): Promise<AgentConfig> {
-    return this.client.call('agent.updateEnvVars', [agentId, envVars, shell]);
-  }
-
-  // Environment methods
-  listShells(): Promise<string[]> {
-    return this.client.call('env.listShells');
-  }
-  getShellEnv(shell: string): Promise<Record<string, string>> {
-    return this.client.call('env.getShellEnv', [shell]);
+  updateAgentEnvVars(agentId: string, envVars: Record<string, string>): Promise<AgentConfig> {
+    return this.client.call('agent.updateEnvVars', [agentId, envVars]);
   }
 
   // Daemon methods
