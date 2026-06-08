@@ -23,6 +23,27 @@ const BASIC_ENV_PREFIXES: readonly string[] = ['LC_'];
 /** Never captured, in either mode: cwd-derived vars — the agent's cwd is set explicitly. */
 const EXCLUDED_ENV_KEYS = new Set(['PWD', 'OLDPWD']);
 
+/**
+ * Host-process vars inherited as a fallback for agent spawns, so identity vars
+ * (which Claude Code keys its Keychain credential by) are present even when an
+ * agent's configured envVars omit them. Deliberately tight — an allowlist, not
+ * the daemon's whole environment; PATH/secrets/etc. come from the agent's own
+ * configured env, which for `basic`/`all` already includes USER/HOME.
+ */
+const INHERITED_ENV_KEYS: readonly string[] = ['HOME', 'USER', 'LOGNAME', 'TMPDIR'];
+
+/** Pick the allowlisted identity vars from `source` (defaults to this process's environment). */
+export function inheritedBaseEnv(source: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const key of INHERITED_ENV_KEYS) {
+    const value = source[key];
+    if (value !== undefined) {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
 /** Narrow a raw string to an EnvSyncMode, throwing on anything else. */
 export function asEnvSyncMode(value: string): EnvSyncMode {
   const match = ENV_SYNC_MODES.find((m) => m === value);

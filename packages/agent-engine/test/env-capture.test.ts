@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { captureEnv, asEnvSyncMode, ENV_SYNC_MODES } from '../src/env-capture';
+import { captureEnv, asEnvSyncMode, ENV_SYNC_MODES, inheritedBaseEnv } from '../src/env-capture';
 
 describe('captureEnv', () => {
   it('basic keeps only allowlisted essentials (incl. LC_* locale) and drops the rest', () => {
@@ -33,6 +33,18 @@ describe('captureEnv', () => {
     } finally {
       delete process.env['NEWIO_ENV_CAPTURE_TEST'];
     }
+  });
+});
+
+describe('inheritedBaseEnv', () => {
+  it('keeps only the allowlisted identity vars, dropping PATH/secrets', () => {
+    expect(
+      inheritedBaseEnv({ HOME: '/Users/nan', USER: 'nan', LOGNAME: 'nan', TMPDIR: '/tmp', PATH: '/x', SECRET: 's' }),
+    ).toEqual({ HOME: '/Users/nan', USER: 'nan', LOGNAME: 'nan', TMPDIR: '/tmp' });
+  });
+
+  it('omits keys absent from the source', () => {
+    expect(inheritedBaseEnv({ USER: 'nan' })).toEqual({ USER: 'nan' });
   });
 });
 
