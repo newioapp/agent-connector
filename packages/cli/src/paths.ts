@@ -30,7 +30,7 @@ export function resolveStage(value: string | undefined): Stage {
 }
 
 export interface DaemonPaths {
-  /** Persistent data dir: cron.json + per-agent dirs under agents/<agentId>/. */
+  /** Persistent data dir: per-agent state under agents/<agentId>/ (config, credentials, env, cron). */
   readonly dataDir: string;
   /** Unix domain socket the daemon listens on / the client connects to. */
   readonly socketPath: string;

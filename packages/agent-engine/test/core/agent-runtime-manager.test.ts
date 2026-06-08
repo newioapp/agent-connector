@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AgentRuntimeManager } from '../../src/agent-runtime-manager';
 import type { StatusListener } from '../../src/agent-runtime-manager';
 import type { AgentConfigManager } from '../../src/agent-config-manager';
-import type { CronStore } from '../../src/cron-store';
+import type { CronStoreFactory } from '../../src/cron-store';
 import type { AgentConfig } from '../../src/types';
 import type { EngineConfig } from '../../src/engine-config';
 
@@ -40,8 +40,13 @@ function mockConfigManager(configs: AgentConfig[]): AgentConfigManager {
   };
 }
 
-function mockCronStore(): CronStore {
-  return {} as CronStore;
+function mockCronStoreFactory(): CronStoreFactory {
+  return () => ({
+    saveCron: vi.fn(),
+    deleteCron: vi.fn(),
+    listCrons: vi.fn(() => []),
+    close: vi.fn(),
+  });
 }
 
 const mockEngineConfig: EngineConfig = {
@@ -66,16 +71,16 @@ function mockListener(): StatusListener {
 
 describe('AgentRuntimeManager', () => {
   let configManager: AgentConfigManager;
-  let sessionStore: CronStore;
+  let cronStoreFactory: CronStoreFactory;
   let listener: StatusListener;
   let manager: AgentRuntimeManager;
 
   beforeEach(() => {
     vi.clearAllMocks();
     configManager = mockConfigManager([makeConfig('agent-1', 'alice'), makeConfig('agent-2', 'bob')]);
-    sessionStore = mockCronStore();
+    cronStoreFactory = mockCronStoreFactory();
     listener = mockListener();
-    manager = new AgentRuntimeManager(configManager, sessionStore, listener, mockEngineConfig);
+    manager = new AgentRuntimeManager(configManager, cronStoreFactory, listener, mockEngineConfig);
 
     // Default mock instance behavior
     MockAgentInstanceImpl.mockImplementation(() => {
@@ -144,7 +149,7 @@ describe('AgentRuntimeManager', () => {
         makeConfig('agent-1', 'alice'),
         makeConfig('agent-2', 'alice'), // same username
       ]);
-      manager = new AgentRuntimeManager(configManager, sessionStore, listener, mockEngineConfig);
+      manager = new AgentRuntimeManager(configManager, cronStoreFactory, listener, mockEngineConfig);
 
       manager.start('agent-1');
       expect(() => manager.start('agent-2')).toThrow('already running with username @alice');
@@ -152,7 +157,7 @@ describe('AgentRuntimeManager', () => {
 
     it('prevents two agents with the same username using different casing', () => {
       configManager = mockConfigManager([makeConfig('agent-1', 'Alice'), makeConfig('agent-2', 'alice')]);
-      manager = new AgentRuntimeManager(configManager, sessionStore, listener, mockEngineConfig);
+      manager = new AgentRuntimeManager(configManager, cronStoreFactory, listener, mockEngineConfig);
 
       manager.start('agent-1');
       expect(() => manager.start('agent-2')).toThrow('already running with username @alice');
@@ -160,7 +165,7 @@ describe('AgentRuntimeManager', () => {
 
     it('allows same username if the other agent is stopped', async () => {
       configManager = mockConfigManager([makeConfig('agent-1', 'alice'), makeConfig('agent-2', 'alice')]);
-      manager = new AgentRuntimeManager(configManager, sessionStore, listener, mockEngineConfig);
+      manager = new AgentRuntimeManager(configManager, cronStoreFactory, listener, mockEngineConfig);
 
       manager.start('agent-1');
       await manager.stop('agent-1');
