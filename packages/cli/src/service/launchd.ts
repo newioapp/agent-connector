@@ -3,7 +3,10 @@
  *
  * Installs a LaunchAgent plist at ~/Library/LaunchAgents that runs
  * `<node> <cli> daemon run`. The plist living in LaunchAgents is what gives
- * login persistence; RunAtLoad/KeepAlive control start-on-login + crash restart.
+ * login persistence; RunAtLoad controls start-on-login and KeepAlive
+ * (`SuccessfulExit=false`) restarts only on crash — the launchd analog of
+ * systemd's `Restart=on-failure`. ExitTimeOut bounds graceful shutdown before
+ * launchd escalates to SIGKILL.
  */
 import { execFileSync } from 'child_process';
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from 'fs';
@@ -37,6 +40,18 @@ export function buildPlist(label: string, opts: InstallOptions): string {
     .join('\n');
   const bool = (b: boolean): string => (b ? '<true/>' : '<false/>');
 
+  // KeepAlive mirrors systemd's `Restart=on-failure`: relaunch only after an
+  // UNsuccessful exit (a crash). A graceful shutdown calls process.exit(0) —
+  // a successful exit — so `newio daemon stop` (SIGTERM) actually stays stopped
+  // instead of being immediately relaunched by launchd. When the service isn't
+  // enabled there's no persistence, so no auto-restart at all.
+  const keepAlive = opts.enable
+    ? `<dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>`
+    : '<false/>';
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -54,7 +69,9 @@ ${envXml}
   <key>RunAtLoad</key>
   ${bool(opts.enable)}
   <key>KeepAlive</key>
-  ${bool(opts.enable)}
+  ${keepAlive}
+  <key>ExitTimeOut</key>
+  <integer>30</integer>
   <key>ProcessType</key>
   <string>Background</string>
   <key>StandardOutPath</key>
@@ -129,7 +146,12 @@ export class LaunchdServiceManager implements ServiceManager {
   }
 
   stop(): void {
-    // Stop the running instance without removing the plist.
+    // SIGTERM the daemon and let it shut down gracefully (exit 0). KeepAlive is
+    // `SuccessfulExit=false`, so launchd won't relaunch a clean exit — the stop
+    // sticks without unloading the plist. A force SIGKILL would be a kill-by-
+    // signal (an UNsuccessful exit) and get relaunched, so a wedged daemon's
+    // escape hatch is `uninstall` (bootout), which is launchd-managed and SIGKILLs
+    // after ExitTimeOut.
     try {
       this.launchctl(['kill', 'SIGTERM', this.serviceTarget]);
     } catch {

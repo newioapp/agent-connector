@@ -230,3 +230,47 @@ describe('AgentInstanceImpl — permission request routing', () => {
     );
   });
 });
+
+describe('AgentInstanceImpl — intentional teardown ordering', () => {
+  // Regression guard: the deliberate stop paths (stop() and the start() failure
+  // path) must mark the factory as stopping BEFORE cleanup tears down the
+  // session manager — which closes the ACP child. If the order flips, the
+  // child's exit is seen with stopping===false, misclassified as abnormal, and
+  // fires a re-entrant cleanup that deadlocks.
+  function injectTeardownSpies(instance: AgentInstanceImpl): string[] {
+    const order: string[] = [];
+    const rec = instance as unknown as Record<string, unknown>;
+    rec['_sessionFactory'] = {
+      markStopping: vi.fn(() => order.push('markStopping')),
+      terminate: vi.fn(() => {
+        order.push('factory.terminate');
+        return Promise.resolve();
+      }),
+    };
+    rec['_sessionManager'] = {
+      terminate: vi.fn(() => {
+        order.push('sessionManager.terminate');
+        return Promise.resolve();
+      }),
+    };
+    return order;
+  }
+
+  it('marks stopping before session-manager teardown, then terminates (stop)', async () => {
+    const instance = createInstance();
+    const order = injectTeardownSpies(instance);
+
+    await instance.stop();
+
+    expect(order).toEqual(['markStopping', 'sessionManager.terminate', 'factory.terminate']);
+  });
+
+  it('uses the same ordering on the shared teardown() helper', async () => {
+    const instance = createInstance();
+    const order = injectTeardownSpies(instance);
+
+    await (instance as unknown as Record<string, () => Promise<void>>)['teardown']!.call(instance);
+
+    expect(order).toEqual(['markStopping', 'sessionManager.terminate', 'factory.terminate']);
+  });
+});
