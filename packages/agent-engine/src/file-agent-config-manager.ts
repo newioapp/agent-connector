@@ -19,7 +19,7 @@ import { randomUUID } from 'crypto';
 import type { AgentConfig, AddAgentInput, UpdateAgentInput, NewioIdentity } from './types';
 import type { AgentConfigManager, AgentTokens } from './agent-config-manager';
 import { serializeEnvVars, parseEnvVars, agentEnvFilePath } from './env-file';
-import { assertSafeAgentId } from './agent-id';
+import { assertSafeAgentId, isSafeAgentId } from './agent-id';
 import { getLogger } from '@newio/agent-sdk';
 
 const log = getLogger('file-agent-config-manager');
@@ -170,11 +170,16 @@ export class FileAgentConfigManager implements AgentConfigManager {
     if (!existsSync(this.agentsDir)) {
       return [];
     }
-    return readdirSync(this.agentsDir, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .filter((id) => existsSync(this.configPath(id)))
-      .sort();
+    return (
+      readdirSync(this.agentsDir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        // Skip stray/unexpected directory names (e.g. .backup) rather than letting
+        // configPath() throw on them — one bad dir must not break list().
+        .filter(isSafeAgentId)
+        .filter((id) => existsSync(this.configPath(id)))
+        .sort()
+    );
   }
 
   // ---------------------------------------------------------------------------

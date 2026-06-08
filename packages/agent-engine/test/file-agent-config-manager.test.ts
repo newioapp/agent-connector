@@ -161,6 +161,16 @@ describe('FileAgentConfigManager listing', () => {
     expect(mgr.list()).toEqual([]);
   });
 
+  it('ignores stray directories with unsafe names instead of throwing', () => {
+    const a = mgr.add({ type: 'codex', newioUsername: 'a' });
+    // Stray dirs that would fail id validation if fed into configPath().
+    for (const stray of ['.backup', 'bad.name', '..stuff']) {
+      mkdirSync(join(dataDir, 'agents', stray), { recursive: true });
+    }
+    expect(() => mgr.list()).not.toThrow();
+    expect(mgr.list().map((c) => c.id)).toEqual([a.id]);
+  });
+
   it('drops a removed agent from the listing', () => {
     const a = mgr.add({ type: 'codex', newioUsername: 'a' });
     mgr.add({ type: 'codex', newioUsername: 'b' });
