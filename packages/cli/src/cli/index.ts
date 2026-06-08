@@ -203,6 +203,17 @@ program
   .description('Daemon health + agent overview')
   .action(() => agent.status(stage));
 
+// Internal: the MCP stdio↔UDS bridge an ACP agent spawns as its MCP server.
+// Launched by the daemon as `node <cli-entry> mcp-bridge <socket>` (never by a
+// user), so it stays dependency-free and off the documented surface.
+program
+  .command('mcp-bridge <socketPath>', { hidden: true })
+  .description('Relay an MCP stdio server to the daemon Unix socket (internal)')
+  .action(async (socketPath: string) => {
+    const { runMcpBridge } = await import('./mcp-bridge.js');
+    runMcpBridge(socketPath);
+  });
+
 program.parseAsync(process.argv).catch((err: unknown) => {
   console.error(err instanceof Error ? err.message : String(err));
   process.exit(1);

@@ -19,8 +19,18 @@ export interface EngineConfig {
   readonly appVersion: string;
   /** Directory for persistent data (config, tokens). Typically ~/.newio/connector/ or similar. */
   readonly dataDir: string;
-  /** Absolute path to the MCP bridge script (node entrypoint). */
-  readonly mcpBridgePath: string;
+  /**
+   * Command an ACP agent runs to launch the Newio MCP bridge (a stdio↔UDS relay).
+   * Typically `process.execPath` (the running Node binary).
+   */
+  readonly mcpBridgeCommand: string;
+  /**
+   * Args placed before the MCP socket path when launching the bridge. The socket
+   * path is appended at session creation, so the final argv is
+   * `[...mcpBridgeArgsPrefix, mcpSocketPath]`. Typically
+   * `[<absolute-cli-entry>, 'mcp-bridge']`.
+   */
+  readonly mcpBridgeArgsPrefix: readonly string[];
   /** Override the proactive WebSocket reconnect interval in ms (default: 1h50m). */
   readonly wsProactiveReconnectMs?: number;
 }

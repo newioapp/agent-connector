@@ -256,7 +256,7 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
 
     const result = await conn.newSession({
       cwd: config.cwd,
-      mcpServers: buildMcpServers(input.mcpSocketPath, input.mcpBridgePath),
+      mcpServers: buildMcpServers(input.mcpSocketPath, input.mcpBridgeCommand, input.mcpBridgeArgsPrefix),
     });
 
     const session = new AcpAgentSession({
@@ -387,13 +387,18 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
   }
 }
 
-function buildMcpServers(mcpSocketPath: string, mcpBridgePath: string): AcpMcpServer[] {
-  log.debug(`MCP bridge path: ${mcpBridgePath}`);
+function buildMcpServers(
+  mcpSocketPath: string,
+  mcpBridgeCommand: string,
+  mcpBridgeArgsPrefix: readonly string[],
+): AcpMcpServer[] {
+  const args = [...mcpBridgeArgsPrefix, mcpSocketPath];
+  log.debug(`MCP bridge: ${mcpBridgeCommand} ${args.join(' ')}`);
   return [
     {
       name: 'newio',
-      command: 'node',
-      args: [mcpBridgePath, mcpSocketPath],
+      command: mcpBridgeCommand,
+      args,
       env: [],
     },
   ];

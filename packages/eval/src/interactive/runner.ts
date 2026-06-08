@@ -82,6 +82,7 @@ export async function runInteractiveScenario(
   const mockApp = new MockNewioApp({ backend, userId: agentUser.userId });
 
   // --- Target agent instance ---
+  // In-workspace consumer: run the engine's bridge file directly via this Node.
   const mcpBridgePath = fileURLToPath(import.meta.resolve('@newio/agent-engine/mcp-bridge'));
   const targetConfig: AgentConfig = {
     id: 'eval-target',
@@ -98,7 +99,8 @@ export async function runInteractiveScenario(
     appDisplayName: 'Newio Eval',
     appVersion: '0.1.0',
     dataDir: tmpdir(),
-    mcpBridgePath,
+    mcpBridgeCommand: process.execPath,
+    mcpBridgeArgsPrefix: [mcpBridgePath],
   };
 
   const targetInstance = new EvalAgentInstance({

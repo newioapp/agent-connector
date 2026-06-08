@@ -389,8 +389,10 @@ export interface CreateSessionInput {
   readonly externalReferenceId: string;
   readonly promptFormatterVersion: string;
   readonly mcpSocketPath: string;
-  /** Absolute path to the MCP bridge script (node entrypoint). */
-  readonly mcpBridgePath: string;
+  /** Command an ACP agent runs to launch the Newio MCP bridge. */
+  readonly mcpBridgeCommand: string;
+  /** Args before the MCP socket path: final argv is `[...mcpBridgeArgsPrefix, mcpSocketPath]`. */
+  readonly mcpBridgeArgsPrefix: readonly string[];
   readonly skipToken: string;
   readonly updateConfig: (config: SessionConfig) => Promise<void>;
   readonly reportContextWindow: (contextWindow: ContextWindow) => Promise<void>;
