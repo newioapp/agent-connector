@@ -61,7 +61,7 @@ describe('env-file serialize/parse', () => {
     expect(parseEnvVars(text)).toEqual({ FOO: 'bar', BAZ: 'qux', QUOTED: 'spaced value' });
   });
 
-  it('builds the per-agent env path under envs/', () => {
-    expect(agentEnvFilePath('/data', 'abc')).toBe('/data/envs/abc.env');
+  it('builds the per-agent env path under agents/<id>/', () => {
+    expect(agentEnvFilePath('/data', 'abc')).toBe('/data/agents/abc/.env');
   });
 });

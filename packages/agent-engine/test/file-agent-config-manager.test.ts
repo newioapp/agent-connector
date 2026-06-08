@@ -11,6 +11,11 @@ function freshDir(): string {
   return dir;
 }
 
+/** Path of an agent's directory under the data dir. */
+function agentDir(dataDir: string, agentId: string): string {
+  return join(dataDir, 'agents', agentId);
+}
+
 describe('FileAgentConfigManager env files', () => {
   let dataDir: string;
   let mgr: FileAgentConfigManager;
@@ -29,7 +34,7 @@ describe('FileAgentConfigManager env files', () => {
     expect(readFileSync(envPath, 'utf8')).toContain('API_KEY=secret');
 
     // config.json does NOT contain envVars
-    const rawConfig = readFileSync(join(dataDir, 'config.json'), 'utf8');
+    const rawConfig = readFileSync(join(agentDir(dataDir, cfg.id), 'config.json'), 'utf8');
     expect(rawConfig).not.toContain('envVars');
     expect(rawConfig).not.toContain('secret');
   });
@@ -55,16 +60,101 @@ describe('FileAgentConfigManager env files', () => {
     expect(mgr.get(cfg.id)?.envVars).toEqual({ A: '1' });
   });
 
-  it('deletes the .env file when the agent is removed', () => {
+  it('removes the whole agent directory when the agent is removed', () => {
     const cfg = mgr.add({ type: 'codex', newioUsername: 'bot', envVars: { A: '1' } });
-    const envPath = mgr.envFilePath(cfg.id);
-    expect(existsSync(envPath)).toBe(true);
+    const dir = agentDir(dataDir, cfg.id);
+    expect(existsSync(dir)).toBe(true);
     mgr.remove(cfg.id);
-    expect(existsSync(envPath)).toBe(false);
+    expect(existsSync(dir)).toBe(false);
+    expect(mgr.get(cfg.id)).toBeUndefined();
   });
 
   it('treats an agent with no .env file as having empty envVars', () => {
     const cfg = mgr.add({ type: 'codex', newioUsername: 'bot' });
     expect(mgr.get(cfg.id)?.envVars).toEqual({});
+  });
+});
+
+describe('FileAgentConfigManager tokens', () => {
+  let dataDir: string;
+  let mgr: FileAgentConfigManager;
+
+  beforeEach(() => {
+    dataDir = freshDir();
+    mgr = new FileAgentConfigManager(dataDir);
+  });
+
+  it('persists tokens to a per-agent .credentials.json file', () => {
+    const cfg = mgr.add({ type: 'codex', newioUsername: 'bot' });
+    mgr.setTokens(cfg.id, { accessToken: 'access-1', refreshToken: 'refresh-1' });
+
+    const credPath = join(agentDir(dataDir, cfg.id), '.credentials.json');
+    expect(existsSync(credPath)).toBe(true);
+
+    // A fresh instance reads them back from disk.
+    expect(new FileAgentConfigManager(dataDir).getTokens(cfg.id)).toEqual({
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+    });
+  });
+
+  it('returns undefined tokens for an agent that has none', () => {
+    const cfg = mgr.add({ type: 'codex', newioUsername: 'bot' });
+    expect(mgr.getTokens(cfg.id)).toBeUndefined();
+  });
+
+  it('clears tokens without removing the agent', () => {
+    const cfg = mgr.add({ type: 'codex', newioUsername: 'bot' });
+    mgr.setTokens(cfg.id, { accessToken: 'a', refreshToken: 'r' });
+    mgr.clearTokens(cfg.id);
+    expect(mgr.getTokens(cfg.id)).toBeUndefined();
+    expect(mgr.get(cfg.id)).toBeDefined();
+  });
+
+  it('clears tokens when the username changes', () => {
+    const cfg = mgr.add({ type: 'codex', newioUsername: 'bot' });
+    mgr.setTokens(cfg.id, { accessToken: 'a', refreshToken: 'r' });
+    mgr.update(cfg.id, { newioUsername: 'bot2' });
+    expect(mgr.getTokens(cfg.id)).toBeUndefined();
+  });
+
+  it("keeps each agent's tokens isolated", () => {
+    const a = mgr.add({ type: 'codex', newioUsername: 'a' });
+    const b = mgr.add({ type: 'codex', newioUsername: 'b' });
+    mgr.setTokens(a.id, { accessToken: 'a-access', refreshToken: 'a-refresh' });
+    mgr.setTokens(b.id, { accessToken: 'b-access', refreshToken: 'b-refresh' });
+    expect(mgr.getTokens(a.id)?.accessToken).toBe('a-access');
+    expect(mgr.getTokens(b.id)?.accessToken).toBe('b-access');
+  });
+});
+
+describe('FileAgentConfigManager listing', () => {
+  let dataDir: string;
+  let mgr: FileAgentConfigManager;
+
+  beforeEach(() => {
+    dataDir = freshDir();
+    mgr = new FileAgentConfigManager(dataDir);
+  });
+
+  it('lists all added agents', () => {
+    const a = mgr.add({ type: 'codex', newioUsername: 'a' });
+    const b = mgr.add({ type: 'claude-code', newioUsername: 'b' });
+    const ids = mgr.list().map((c) => c.id);
+    expect(ids).toContain(a.id);
+    expect(ids).toContain(b.id);
+    expect(ids).toHaveLength(2);
+  });
+
+  it('returns an empty list for a fresh data dir', () => {
+    expect(mgr.list()).toEqual([]);
+  });
+
+  it('drops a removed agent from the listing', () => {
+    const a = mgr.add({ type: 'codex', newioUsername: 'a' });
+    mgr.add({ type: 'codex', newioUsername: 'b' });
+    mgr.remove(a.id);
+    expect(mgr.list().map((c) => c.id)).not.toContain(a.id);
+    expect(mgr.list()).toHaveLength(1);
   });
 });
