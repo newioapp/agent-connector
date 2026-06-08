@@ -73,6 +73,17 @@ describe('FileAgentConfigManager env files', () => {
     const cfg = mgr.add({ type: 'codex', newioUsername: 'bot' });
     expect(mgr.get(cfg.id)?.envVars).toEqual({});
   });
+
+  it('throws not-found when removing an id with no stored config', () => {
+    expect(() => mgr.remove(randomUUID())).toThrow(/not found/);
+  });
+
+  it('does not remove a stray directory that has no config.json', () => {
+    const strayId = randomUUID();
+    mkdirSync(join(dataDir, 'agents', strayId), { recursive: true });
+    expect(() => mgr.remove(strayId)).toThrow(/not found/);
+    expect(existsSync(join(dataDir, 'agents', strayId))).toBe(true);
+  });
 });
 
 describe('FileAgentConfigManager tokens', () => {

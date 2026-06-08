@@ -104,12 +104,14 @@ export class FileAgentConfigManager implements AgentConfigManager {
   }
 
   remove(agentId: string): void {
-    const dir = this.agentDir(agentId);
-    if (!existsSync(dir)) {
+    // Only remove a known agent (one with a stored config), not any directory
+    // that merely exists under agents/. readStored validates the id (path guard)
+    // via configPath -> agentDir before any filesystem mutation.
+    if (!this.readStored(agentId)) {
       throw new Error(`Agent ${agentId} not found.`);
     }
-    // One shot: removes config.json, .credentials.json, and .env together.
-    rmSync(dir, { recursive: true, force: true });
+    // One shot: removes config.json, .credentials.json, .env, and cron.json together.
+    rmSync(this.agentDir(agentId), { recursive: true, force: true });
   }
 
   setNewioIdentity(agentId: string, identity: NewioIdentity): AgentConfig {
