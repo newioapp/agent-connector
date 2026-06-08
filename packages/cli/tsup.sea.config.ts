@@ -19,5 +19,15 @@ export default defineConfig({
   clean: true,
   dts: false,
   outDir: 'build/sea',
-  noExternal: [/.*/],
+  // Bundle everything (a SEA has no node_modules) EXCEPT sharp/blurhash/@img.
+  // `noExternal` overrides `external` in tsup, so the deny-list lives in the
+  // noExternal regex itself (negative lookahead) rather than in `external`.
+  noExternal: [/^(?!sharp$|blurhash$|@img\/).+/],
+  // sharp is a native (.node) module — it can't live inside a SEA. Keeping it
+  // (and its @img/* platform bindings) external means we don't ship dead, broken
+  // sharp JS in the binary. At runtime the `import('sharp')` rejects and
+  // agent-engine falls back to null: image blurhash/dimensions are disabled in
+  // SEA builds, but media uploads still work. blurhash needs sharp's decoded
+  // pixels, so it's out too.
+  external: ['sharp', 'blurhash', /^@img\//],
 });

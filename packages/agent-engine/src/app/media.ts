@@ -1,5 +1,12 @@
 /**
  * Media helpers — file upload and download for NewioApp.
+ *
+ * Note: sharp + blurhash are loaded lazily and treated as optional. In the
+ * `newio` SEA (single-executable) build they are deliberately NOT bundled —
+ * sharp is a native (.node) module that can't live inside a SEA — so the
+ * imports below reject and both `getSharp`/`getBlurhash` return null. Image
+ * blurhash placeholders and dimension metadata are therefore unavailable in SEA
+ * builds; file uploads are unaffected. See packages/cli/tsup.sea.config.ts.
  */
 import type { NewioClient } from '@newio/agent-sdk';
 import type { Attachment, AttachmentType, ImageMetadata } from '@newio/agent-sdk';
