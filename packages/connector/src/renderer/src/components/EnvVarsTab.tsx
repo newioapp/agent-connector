@@ -97,13 +97,16 @@ export function EnvVarsTab({ agent }: { readonly agent: AgentStatusInfo }): Reac
     try {
       const captured = await window.api.captureEnv(syncMode);
       // Overlay captured vars onto existing ones (preserves manually-added keys).
-      setEntries((prev) => {
-        const merged = new Map(prev.filter(hasContent).map((e) => [e.key.trim(), e.value]));
-        for (const [key, value] of Object.entries(captured)) {
-          merged.set(key, value);
-        }
-        return [...merged.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => ({ key, value }));
-      });
+      const merged = new Map(entriesRef.current.filter(hasContent).map((e) => [e.key.trim(), e.value]));
+      for (const [key, value] of Object.entries(captured)) {
+        merged.set(key, value);
+      }
+      const next = [...merged.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => ({ key, value }));
+      setEntries(next);
+      // Persist immediately so a "Start agent" right after Sync uses the new env —
+      // don't leave it to the debounced autosave (which would leave a stale window).
+      const updated = await window.api.updateAgentEnvVars(agentIdRef.current, entriesToRecord(next));
+      updateConfigRef.current(agentIdRef.current, updated);
     } finally {
       setImporting(false);
     }
