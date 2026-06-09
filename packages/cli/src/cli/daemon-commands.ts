@@ -71,10 +71,12 @@ export function daemonStart(opts: DaemonStartOptions): void {
   const service = createServiceManager(opts.stage);
   service.install(resolveInstallOptions(opts));
   console.log(describeStatus(opts.stage, service.status()));
-  // A stage-named binary (newio-dev/newio-integ) already implies its stage; the
-  // plain `newio` binary needs NEWIO_STAGE to address a non-prod daemon.
+  // Hint NEWIO_STAGE for any non-prod stage — this stays correct even when the
+  // prod `newio` binary is driving a non-prod stage via NEWIO_STAGE. The command
+  // itself is whatever was invoked (e.g. `newio-dev`), so a stage-named install
+  // still gets a runnable hint.
   const cmd = cliCommandName();
-  const envPrefix = opts.stage === 'prod' || cmd !== 'newio' ? '' : `NEWIO_STAGE=${opts.stage} `;
+  const envPrefix = opts.stage === 'prod' ? '' : `NEWIO_STAGE=${opts.stage} `;
   console.log(`Logs: ${envPrefix}${cmd} daemon logs -f`);
 }
 
