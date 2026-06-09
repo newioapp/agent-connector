@@ -21,6 +21,7 @@ import { agentEnvFilePath, captureEnv, asEnvSyncMode, DEFAULT_ENV_SYNC_MODE } fr
 import { AuthManager, NewioClient } from '@newio/agent-sdk';
 import { withDaemon, openConnection } from '../client/connect.js';
 import { resolveConfig, getDaemonPaths, stageSuffix, type Stage } from '../paths.js';
+import { printApprovalUrl } from './qr.js';
 
 const AGENT_TYPES: readonly AgentType[] = ['claude-code', 'kiro-cli', 'codex', 'cursor', 'gemini', 'custom'];
 const SESSION_MODES: readonly SessionMode[] = ['isolated', 'shared'];
@@ -167,7 +168,7 @@ async function startAndStream(stage: Stage, query: string): Promise<void> {
   const connector = await openConnection(stage, {
     onApprovalUrl(id, url) {
       if (id === agentId) {
-        console.log(`Approve this agent in your browser:\n  ${url}`);
+        printApprovalUrl('Approve this agent in your browser:', url);
       }
     },
     onPollAttempt(id) {
@@ -263,7 +264,7 @@ export async function agentCreateAccount(opts: CreateAccountOptions): Promise<vo
   const { apiBaseUrl } = resolveConfig();
   const auth = new AuthManager(apiBaseUrl);
   const handle = await auth.register({ name: opts.name });
-  console.log(`Approve this new account in your browser:\n  ${handle.approvalUrl}`);
+  printApprovalUrl('Approve this new account in your browser:', handle.approvalUrl);
   await handle.waitForApproval({ onPollAttempt: () => process.stdout.write('.') });
   const client = new NewioClient({ baseUrl: apiBaseUrl, tokenProvider: auth.tokenProvider });
   const me = await client.getMe({});
