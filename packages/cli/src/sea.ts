@@ -11,6 +11,8 @@
  * than to the generic, Node.js-Foundation-signed `node` it would otherwise use.
  */
 import { realpathSync } from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
 
 /**
  * True when running as an injected Single Executable Application.
@@ -56,4 +58,32 @@ export function resolveSelfExec(): SelfExec {
   }
   // Resolve symlinks (npm bin shim) to the real dist/cli.js.
   return { execPath: process.execPath, entryArgs: [realpathSync(cliEntry)] };
+}
+
+/**
+ * The stable, on-PATH path to run the daemon *service* from.
+ *
+ * The versioned installer (install.sh) puts the binary at
+ * `~/.local/share/newio/versions/<version>` with a stable `~/.local/bin/newio`
+ * symlink. `process.execPath` resolves through that symlink to the versioned
+ * file, so baking it into the launchd plist / systemd unit would pin the service
+ * to one version and break when that version is pruned on update. Prefer the
+ * stable launcher symlink when it points back at this binary, so a version flip
+ * applies on the daemon's next start without rewriting the unit.
+ *
+ * Falls back to `execPath` when there's no such symlink (custom install dir,
+ * running from a build dir, or the `node script.js` form — where `execPath` is
+ * `node`, not a `newio` launcher).
+ */
+export function resolveLauncherPath(execPath: string): string {
+  const binDir = process.env['NEWIO_BIN_DIR'] ?? join(homedir(), '.local', 'bin');
+  const launcher = join(binDir, 'newio');
+  try {
+    if (realpathSync(launcher) === realpathSync(execPath)) {
+      return launcher;
+    }
+  } catch {
+    // No launcher symlink (or it doesn't resolve) — use the binary directly.
+  }
+  return execPath;
 }
