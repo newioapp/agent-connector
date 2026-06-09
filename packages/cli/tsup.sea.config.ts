@@ -43,16 +43,23 @@ export default defineConfig({
   dts: false,
   outDir: 'build/sea',
   // Bundle everything (a SEA has no node_modules) EXCEPT sharp + its @img/*
-  // platform bindings. `noExternal` overrides `external` in tsup, so the
-  // deny-list lives in the noExternal regex itself (negative lookahead) rather
-  // than in `external`.
-  noExternal: [/^(?!sharp$|@img\/).+/],
+  // platform bindings, and node-gyp. `noExternal` overrides `external` in tsup,
+  // so the deny-list lives in the noExternal regex itself (negative lookahead)
+  // rather than in `external`.
+  //
+  // node-gyp is excluded because @npmcli/arborist (bundled in for `newio
+  // adapter install`) has a `require.resolve('node-gyp/bin/node-gyp.js')` in its
+  // run-script path. That path is only hit when running install scripts, which
+  // the adapter installer never does (it reifies with ignoreScripts: true), so
+  // the require is dead code — leaving node-gyp external keeps esbuild from
+  // warning on it and keeps a multi-MB build tool out of the binary.
+  noExternal: [/^(?!sharp$|@img\/|node-gyp).+/],
   // sharp is a native (.node) module — it can't live inside a SEA blob (dlopen
   // needs a real file path). Keeping it (and its @img/* bindings) external means
   // we don't ship dead, broken sharp JS in the binary. The SEA build instead
   // ships sharp's full runtime closure as a sidecar `native/node_modules/` dir
   // next to the binary, which agent-engine's getSharp() resolves at runtime (see
   // packages/agent-engine/src/app/media.ts). blurhash is pure JS and IS bundled.
-  external: ['sharp', /^@img\//],
+  external: ['sharp', /^@img\//, 'node-gyp'],
   esbuildPlugins: [fixLegacyOctalPlugin],
 });

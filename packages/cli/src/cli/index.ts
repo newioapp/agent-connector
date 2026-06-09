@@ -15,6 +15,7 @@ import { resolveConfig, getDaemonPaths } from '../paths.js';
 import { version } from '../../package.json';
 import * as daemon from './daemon-commands.js';
 import * as agent from './agent-commands.js';
+import * as adapter from './adapter-commands.js';
 import type { AddOptions, CreateAccountOptions, UpdateOptions } from './agent-commands.js';
 import * as updater from './update-commands.js';
 import type { UpdateContext } from './update-commands.js';
@@ -203,6 +204,44 @@ envCmd
   .command('edit <agent>')
   .description('Open the agent env file in $VISUAL/$EDITOR')
   .action((query: string) => agent.envEdit(stage, query));
+
+// ---------------------------------------------------------------------------
+// adapter
+// ---------------------------------------------------------------------------
+
+const adapterCmd = program
+  .command('adapter')
+  .description('Install and version the managed ACP agent adapters (claude, codex)');
+
+adapterCmd
+  .command('list')
+  .description('List installed adapters and their active version')
+  .action(() => adapter.adapterList(stage));
+
+adapterCmd
+  .command('versions <adapter>')
+  .description('List versions available to install from the registry')
+  .action((arg: string) => adapter.adapterVersions(stage, arg));
+
+adapterCmd
+  .command('install <adapter>')
+  .description('Install an adapter (<name>[@version], defaults to latest)')
+  .action((arg: string) => adapter.adapterInstall(stage, arg));
+
+adapterCmd
+  .command('use <adapter>')
+  .description('Switch the active version (<name>@<version>)')
+  .action((arg: string) => adapter.adapterUse(stage, arg));
+
+adapterCmd
+  .command('uninstall <adapter>')
+  .description('Remove an installed version (<name>@<version>)')
+  .action((arg: string) => adapter.adapterUninstall(stage, arg));
+
+adapterCmd
+  .command('which <adapter>')
+  .description('Print the resolved launch command for the active version')
+  .action((arg: string) => adapter.adapterWhich(stage, arg));
 
 // ---------------------------------------------------------------------------
 // top-level

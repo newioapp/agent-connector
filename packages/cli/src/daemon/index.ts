@@ -14,6 +14,7 @@ import {
   AgentRuntimeManager,
   JsonCronStore,
   assertSafeAgentId,
+  adaptersRoot,
   type EngineConfig,
   type StatusListener,
 } from '@newio/agent-engine';
@@ -112,6 +113,14 @@ export async function runDaemon(): Promise<void> {
     // system `node` needed, so agents can skip the node preflight. The
     // `node dist/cli.js` (npm) form still relies on a real `node`, so keep it.
     mcpBridgeIsSelfContained: isSeaBinary(),
+    // Auto-install a managed adapter (claude/codex) the first time an agent of
+    // that type starts without it. Lazily imports the installer so arborist's
+    // dependency graph only loads when an install actually runs, not on every
+    // daemon start.
+    ensureAdapterInstalled: async (key: string): Promise<void> => {
+      const { installAdapter } = await import('../adapters/installer.js');
+      await installAdapter(adaptersRoot(dataDir), key);
+    },
   };
 
   const agentConfigManager = new FileAgentConfigManager(dataDir);

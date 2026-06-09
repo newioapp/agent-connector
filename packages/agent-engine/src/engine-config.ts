@@ -49,4 +49,13 @@ export interface EngineConfig {
   readonly mcpBridgeIsSelfContained?: boolean;
   /** Override the proactive WebSocket reconnect interval in ms (default: 1h50m). */
   readonly wsProactiveReconnectMs?: number;
+  /**
+   * Install a managed adapter (by friendly key, e.g. `claude`/`codex`) on
+   * demand. Called when a managed-type agent starts and its adapter is neither
+   * installed in the managed dir nor present on PATH (the spawn fails ENOENT).
+   * Supplied by the daemon, wired to the CLI's arborist-based installer; omitted
+   * by consumers that don't manage adapters (e.g. evals), in which case a missing
+   * adapter surfaces as an actionable error instead of being auto-installed.
+   */
+  readonly ensureAdapterInstalled?: (key: string) => Promise<void>;
 }

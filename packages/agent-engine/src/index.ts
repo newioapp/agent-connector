@@ -48,6 +48,26 @@ export { BaseAgentInstance, AgentInstanceImpl } from './agent-instance-impl.js';
 export type { CreateSessionInput, SessionFactory } from './types.js';
 export type { NewioAppForAgent, SessionManager, NewioAppForSession, InboundEvent } from './types.js';
 
+// Managed adapters — registry + on-disk store (the CLI installer writes into
+// this layout; the spawn path reads it).
+export {
+  MANAGED_ADAPTERS,
+  MANAGED_ADAPTER_KEYS,
+  managedAdapterByKey,
+  managedAdapterByType,
+} from './adapters/adapter-spec.js';
+export type { ManagedAdapterSpec } from './adapters/adapter-spec.js';
+export {
+  adaptersRoot,
+  adapterDir,
+  versionDir,
+  listInstalledVersions,
+  getActiveVersion,
+  setActiveVersion,
+  resolveBinEntry,
+  resolveActiveBinEntry,
+} from './adapters/adapter-store.js';
+
 // Config manager implementation
 export { FileAgentConfigManager } from './file-agent-config-manager.js';
 export { serializeEnvVars, parseEnvVars, agentEnvFilePath } from './env-file.js';

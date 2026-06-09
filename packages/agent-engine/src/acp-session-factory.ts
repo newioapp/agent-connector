@@ -18,7 +18,7 @@ import type { AgentSession } from './agent-session';
 import type { AgentConfig, CreateSessionInput, SessionFactory } from './types';
 import type { AgentInfo } from './types';
 import { getLogger } from '@newio/agent-sdk';
-import { resolveCommand } from './utils';
+import { resolveSpawn } from './utils';
 import { inheritedBaseEnv } from './env-capture.js';
 import { InvalidEnvironmentError } from './errors.js';
 
@@ -77,6 +77,13 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
      * system `node`, so the startup node-availability preflight is skipped.
      */
     private readonly mcpBridgeIsSelfContained: boolean = false,
+    /**
+     * Root of the connector-managed adapter installs (`<dataDir>/adapters`).
+     * When set, a managed agent type (claude-code/codex) with an active install
+     * is launched from there instead of PATH. Omitted by callers that don't
+     * manage adapters (e.g. evals).
+     */
+    private readonly adaptersRoot?: string,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -133,7 +140,7 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
     this.stopping = false;
 
     const { cwd } = config;
-    const { command, args } = resolveCommand(this.config.type, config);
+    const { command, args } = resolveSpawn(this.config.type, config, this.adaptersRoot);
 
     log.info(`${this.logTag} Spawning: ${command} ${args.join(' ')}`);
 

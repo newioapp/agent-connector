@@ -39,6 +39,8 @@ import WebSocket from 'ws';
 import { PromptFormatterImpl } from './prompt-formatter';
 import { AcpSessionFactory } from './acp-session-factory.js';
 import { collectAgentMessage, resolveCommand, extractErrorMessage } from './utils.js';
+import { managedAdapterByType } from './adapters/adapter-spec.js';
+import { adaptersRoot, resolveActiveBinEntry } from './adapters/adapter-store.js';
 import { SharedSessionManager } from './shared-session-manager.js';
 import { IsolatedSessionManager } from './isolated-session-manager.js';
 import { SessionEventProcessorImpl } from './session-event-processor-impl.js';
@@ -189,6 +191,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         this.engineConfig.appVersion,
         `[${app.identity.username}]`,
         this.engineConfig.mcpBridgeIsSelfContained ?? false,
+        adaptersRoot(this.engineConfig.dataDir),
       );
       this._sessionFactory.onAbnormalTermination((message) => {
         // Ignore if a cleanup is already running (e.g. an intentional stop in
@@ -206,7 +209,18 @@ export abstract class BaseAgentInstance implements AgentInstance {
           });
       });
 
-      await this._sessionFactory.init();
+      try {
+        await this._sessionFactory.init();
+      } catch (err: unknown) {
+        // If the spawn failed only because a managed adapter isn't installed,
+        // install it on demand and retry once. Triggers strictly on ENOENT, so
+        // an adapter already present on PATH (spawn succeeds) is never touched.
+        if (await this.tryAutoInstallAdapter(err)) {
+          await this._sessionFactory.init();
+        } else {
+          throw err;
+        }
+      }
       const agentInfo = this._sessionFactory.getAgentInfo();
       if (agentInfo) {
         this.listener.onAgentInfo(agentInfo);
@@ -300,10 +314,17 @@ export abstract class BaseAgentInstance implements AgentInstance {
         this.setStatus('error', err.message, err.errorCode);
       } else if (isErrnoException(err) && err.code === 'ENOENT') {
         const executable = this.config.acp ? resolveCommand(this.config.type, this.config.acp).command : 'unknown';
+        // For a managed adapter that hasn't been installed, point at the install
+        // command rather than the bare "put it on PATH" advice.
+        const managed = managedAdapterByType(this.config.type);
+        const hint =
+          managed && !this.config.acp?.executablePath
+            ? `Install the ${managed.key} adapter, then restart: newio adapter install ${managed.key}`
+            : `Make sure it is installed and available on the agent's PATH, or set the executable path in the agent config.`;
         log.warn(`${this.logTag} Executable not found: ${executable}`);
         this.setStatus(
           'error',
-          `"${executable}" not found. Make sure it is installed and available on the agent's PATH, or set the executable path in the agent config.\n\n${err.stack ?? err.message}`,
+          `"${executable}" not found. ${hint}\n\n${err.stack ?? err.message}`,
           'invalid_environment',
         );
       } else {
@@ -312,6 +333,44 @@ export abstract class BaseAgentInstance implements AgentInstance {
         this.setStatus('error', message);
       }
     }
+  }
+
+  /**
+   * Auto-install a managed adapter after an ENOENT spawn failure. Returns true
+   * when an install ran (caller should retry the spawn), false otherwise.
+   *
+   * Guards keep this narrow and loop-free: it fires only for a managed type with
+   * no executable override, only when the spawn failed ENOENT, only when the
+   * connector is configured to install adapters, and only when the adapter isn't
+   * already installed in the managed dir (so a missing-`node` ENOENT on an
+   * already-installed adapter doesn't trigger a pointless reinstall + retry).
+   */
+  private async tryAutoInstallAdapter(err: unknown): Promise<boolean> {
+    if (!(isErrnoException(err) && err.code === 'ENOENT')) {
+      return false;
+    }
+    const ensure = this.engineConfig.ensureAdapterInstalled;
+    if (!ensure) {
+      return false;
+    }
+    if ((this.config.acp?.executablePath?.trim().length ?? 0) > 0) {
+      return false;
+    }
+    const spec = managedAdapterByType(this.config.type);
+    if (!spec) {
+      return false;
+    }
+    const root = adaptersRoot(this.engineConfig.dataDir);
+    if (resolveActiveBinEntry(root, spec.key) !== undefined) {
+      return false;
+    }
+    log.info(`${this.logTag} Adapter "${spec.key}" not found — installing it now`);
+    // Surfaced to the CLI start stream / agent table while the download runs.
+    this.setStatus('initializing', `Installing the ${spec.key} adapter (first run)…`);
+    await ensure(spec.key);
+    log.info(`${this.logTag} Adapter "${spec.key}" installed`);
+    this.setStatus('initializing');
+    return true;
   }
 
   private getNewioAppForSession(): NewioAppForSession {
