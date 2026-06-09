@@ -9,6 +9,7 @@ import { dirname } from 'path';
 import { spawn } from 'child_process';
 import type { DaemonConnector } from '../connector.js';
 import type {
+  AcpConfig,
   AddAgentInput,
   AgentErrorCode,
   AgentStatusInfo,
@@ -206,6 +207,7 @@ export interface AddOptions {
   readonly type: string;
   readonly username: string;
   readonly cwd?: string;
+  readonly exec?: string;
   readonly sessionMode?: string;
   readonly envSync?: string;
 }
@@ -217,6 +219,7 @@ export interface CreateAccountOptions {
 export interface UpdateOptions {
   readonly name?: string;
   readonly cwd?: string;
+  readonly exec?: string;
   readonly username?: string;
   readonly sessionMode?: string;
 }
@@ -229,13 +232,17 @@ export async function agentList(stage: Stage): Promise<void> {
 export async function agentAdd(stage: Stage, opts: AddOptions): Promise<void> {
   // Capture from the CLI's own environment up front (client-side); the daemon's
   // service environment is sparse and must not be the source.
+  const type = asAgentType(opts.type);
+  if (type === 'custom' && !opts.exec) {
+    throw new Error('A custom agent requires --exec "<command> [args…]" (the ACP executable to spawn).');
+  }
   const mode = opts.envSync ? asEnvSyncMode(opts.envSync) : DEFAULT_ENV_SYNC_MODE;
   const envVars = captureEnv(mode);
   const config = await withDaemon(stage, async (c) => {
     const input: AddAgentInput = {
-      type: asAgentType(opts.type),
+      type,
       newioUsername: opts.username,
-      acp: { cwd: opts.cwd ?? process.cwd() },
+      acp: { cwd: opts.cwd ?? process.cwd(), ...(opts.exec ? { executablePath: opts.exec } : {}) },
       envVars,
       ...(opts.sessionMode ? { sessionMode: asSessionMode(opts.sessionMode) } : {}),
     };
@@ -289,13 +296,32 @@ export async function agentInfo(stage: Stage, query: string): Promise<void> {
 }
 
 export async function agentUpdate(stage: Stage, query: string, opts: UpdateOptions): Promise<void> {
-  const updates: UpdateAgentInput = {
-    ...(opts.name !== undefined ? { displayName: opts.name } : {}),
-    ...(opts.username !== undefined ? { newioUsername: opts.username } : {}),
-    ...(opts.sessionMode !== undefined ? { sessionMode: asSessionMode(opts.sessionMode) } : {}),
-    ...(opts.cwd !== undefined ? { acp: { cwd: opts.cwd } } : {}),
-  };
-  await withDaemon(stage, async (c) => c.updateAgent(await resolveAgentId(c, query), updates));
+  await withDaemon(stage, async (c) => {
+    const agentId = await resolveAgentId(c, query);
+    // `acp` is replaced wholesale by the config manager, so merge with the
+    // existing config to avoid wiping the field the user didn't pass.
+    let acp: AcpConfig | undefined;
+    if (opts.cwd !== undefined || opts.exec !== undefined) {
+      const agents = await c.listAgents();
+      const existing = agents.find((a) => a.id === agentId)?.config.acp;
+      const cwd = opts.cwd ?? existing?.cwd ?? process.cwd();
+      const executablePath = opts.exec ?? existing?.executablePath;
+      acp = {
+        cwd,
+        ...(executablePath !== undefined ? { executablePath } : {}),
+        ...(existing?.kiroCliTrustAllTools !== undefined
+          ? { kiroCliTrustAllTools: existing.kiroCliTrustAllTools }
+          : {}),
+      };
+    }
+    const updates: UpdateAgentInput = {
+      ...(opts.name !== undefined ? { displayName: opts.name } : {}),
+      ...(opts.username !== undefined ? { newioUsername: opts.username } : {}),
+      ...(opts.sessionMode !== undefined ? { sessionMode: asSessionMode(opts.sessionMode) } : {}),
+      ...(acp !== undefined ? { acp } : {}),
+    };
+    await c.updateAgent(agentId, updates);
+  });
   console.log('Updated.');
 }
 

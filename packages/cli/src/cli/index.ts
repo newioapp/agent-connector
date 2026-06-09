@@ -101,6 +101,10 @@ agentCmd
   .addOption(new Option('--type <type>', 'agent type').choices([...agent.AGENT_TYPE_CHOICES]).makeOptionMandatory())
   .requiredOption('--username <username>', 'Newio agent username (run "newio agent create-account" to make one)')
   .option('--cwd <dir>', 'working directory for the agent process')
+  .option(
+    '--exec <command>',
+    'ACP executable to spawn, with args (required for --type custom; overrides the default binary for built-in types), e.g. --exec "my-agent acp"',
+  )
   .addOption(new Option('--session-mode <mode>', 'session mode').choices([...agent.SESSION_MODE_CHOICES]))
   // The agent subprocess runs with exactly the environment synced here — PATH (to
   // find node + the agent binary), USER (Claude Code keys its Keychain credential
@@ -148,6 +152,7 @@ agentCmd
   .description('Update agent config')
   .option('--name <name>', 'display name')
   .option('--cwd <dir>', 'working directory')
+  .option('--exec <command>', 'ACP executable to spawn, with args (overrides the default binary)')
   .option('--username <username>', 'Newio username')
   .addOption(new Option('--session-mode <mode>', 'session mode').choices([...agent.SESSION_MODE_CHOICES]))
   .action((query: string, _options: unknown, cmd: Command) =>

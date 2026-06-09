@@ -6,7 +6,7 @@ import { DaemonServer } from '../src/daemon/server';
 import { DaemonHandler } from '../src/daemon/handler';
 import { DaemonClient } from '../src/client';
 import { DaemonConnector } from '../src/connector';
-import { parseEnvPairs, resolveAgentId, firstLine, remediationHint } from '../src/cli/agent-commands';
+import { parseEnvPairs, resolveAgentId, firstLine, remediationHint, agentAdd } from '../src/cli/agent-commands';
 import { daemonLogsHint } from '../src/cli/daemon-commands';
 import type { DaemonConnector } from '../src/connector';
 import type { AgentConfig, AgentConfigManager, AgentRuntimeManager } from '@newio/agent-engine';
@@ -60,6 +60,12 @@ describe('remediationHint', () => {
 
   it('returns undefined for an unknown/absent error code', () => {
     expect(remediationHint(undefined, 'aaaa1111')).toBeUndefined();
+  });
+});
+
+describe('agentAdd', () => {
+  it('rejects a custom agent with no --exec before touching the daemon', async () => {
+    await expect(agentAdd('prod', { type: 'custom', username: 'bob' })).rejects.toThrow('custom agent requires --exec');
   });
 });
 

@@ -513,6 +513,73 @@ describe('AcpSessionConfigHandler', () => {
       });
     });
 
+    it('falls back to an advertised model when the persisted model is incompatible (Codex scenario)', async () => {
+      // A Codex runner inherits a persisted "opus" model and defaults to its own
+      // 'default' placeholder. Both must be skipped in favour of a real model.
+      const unstable_setSessionModel = vi.fn().mockImplementation(({ modelId }: { modelId: string }) => {
+        if (modelId === 'opus' || modelId === 'default') {
+          return Promise.reject(new Error(`The '${modelId}' model is not supported`));
+        }
+        return Promise.resolve(undefined);
+      });
+      const conn = mockConnection({ unstable_setSessionModel } as never);
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        conn,
+        updateConfig,
+        makeSessionResponse({
+          models: {
+            availableModels: [
+              { modelId: 'default', name: 'Default' },
+              { modelId: 'gpt-5-codex', name: 'GPT-5 Codex' },
+            ],
+            currentModelId: 'default',
+          },
+        }),
+      );
+
+      await handler.applySessionConfig({ acpModel: 'opus' });
+
+      // Tried the persisted model, skipped 'default', landed on the real model.
+      expect(unstable_setSessionModel).toHaveBeenCalledWith({ sessionId: 'sess-1', modelId: 'opus' });
+      expect(unstable_setSessionModel).not.toHaveBeenCalledWith({ sessionId: 'sess-1', modelId: 'default' });
+      expect(unstable_setSessionModel).toHaveBeenCalledWith({ sessionId: 'sess-1', modelId: 'gpt-5-codex' });
+      expect(handler.listModels()?.selectedId).toBe('gpt-5-codex');
+      expect(updateConfig).toHaveBeenCalledWith({ acpModel: 'gpt-5-codex', acpMode: null });
+    });
+
+    it('reports the original selection when no usable fallback model exists', async () => {
+      const conn = mockConnection({
+        unstable_setSessionModel: vi.fn().mockRejectedValue(new Error('model not available')),
+      });
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        conn,
+        updateConfig,
+        makeSessionResponse({
+          // Only the failed id and 'default' are advertised — nothing to fall back to.
+          models: {
+            availableModels: [
+              { modelId: 'opus', name: 'Opus' },
+              { modelId: 'default', name: 'Default' },
+            ],
+            currentModelId: 'default',
+          },
+        }),
+      );
+
+      await handler.applySessionConfig({ acpModel: 'opus' });
+
+      expect(handler.listModels()?.selectedId).toBe('default');
+      expect(updateConfig).toHaveBeenCalledWith({ acpModel: 'default', acpMode: null });
+    });
+
     it('does not report when setModel succeeds', async () => {
       const updateConfig = mockUpdateConfig();
       const handler = new AcpSessionConfigHandler(

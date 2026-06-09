@@ -153,6 +153,13 @@ export class AcpSessionConfigHandler {
         await this.setModel(config.acpModel);
       } catch {
         log.warn(`[${this.sessionType}/${this.externalReferenceId}] Model ${config.acpModel} not available`);
+        // The persisted model is incompatible with this agent (e.g. a Codex
+        // runner inheriting a Claude "opus" model). Don't leave the session on
+        // whatever it defaulted to — some agents default to a placeholder model
+        // that they then reject at prompt time (Codex + ChatGPT account rejects
+        // its own 'default'). Fall back to a real advertised model so the first
+        // prompt (the greeting) doesn't fail.
+        await this.trySelectFallbackModel(config.acpModel);
         needsReport = true;
       }
     }
@@ -169,6 +176,36 @@ export class AcpSessionConfigHandler {
     if (needsReport) {
       await this.reportCurrentConfig();
     }
+  }
+
+  /**
+   * Select the first advertised model that successfully applies, used when the
+   * persisted model failed. Skips the failed id and the literal 'default'
+   * placeholder (which some agents advertise but reject at prompt time).
+   */
+  private async trySelectFallbackModel(failedModelId: string): Promise<void> {
+    const options = this.modelConfig?.options;
+    if (!options || options.length === 0) {
+      log.warn(`[${this.sessionType}/${this.externalReferenceId}] No advertised models to fall back to`);
+      return;
+    }
+    for (const option of options) {
+      if (option.id === failedModelId || option.id === 'default') {
+        continue;
+      }
+      try {
+        await this.setModel(option.id);
+        log.info(
+          `[${this.sessionType}/${this.externalReferenceId}] Fell back to model "${option.id}" after "${failedModelId}" was unavailable`,
+        );
+        return;
+      } catch {
+        log.warn(
+          `[${this.sessionType}/${this.externalReferenceId}] Fallback model "${option.id}" also failed, trying next`,
+        );
+      }
+    }
+    log.warn(`[${this.sessionType}/${this.externalReferenceId}] No usable fallback model found`);
   }
 
   /** Report the current model/mode back to the backend (corrects stale persisted values). */
