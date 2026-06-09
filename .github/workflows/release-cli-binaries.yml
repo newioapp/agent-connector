@@ -1,8 +1,11 @@
 name: Release CLI Binaries
 
 # Builds the self-contained `newio` SEA binaries (no system Node) for macOS +
-# Linux, signs/notarizes on macOS, builds a notarized+stapled .pkg, and pushes
-# everything to the per-stage downloads CDN that install.sh reads from.
+# Linux and pushes them to the per-stage downloads CDN that install.sh reads
+# from. The macOS binary is ad-hoc signed only (unsigned) — distribution is via
+# curl|bash, which doesn't quarantine, so Gatekeeper isn't invoked. Developer ID
+# signing/notarization happens on the Electron-app side (which bundles the
+# daemon), not for this standalone CLI.
 #
 # Separate from release-cli.yml (npm publish): that fires on `cli-v*` only and
 # is untouched by the `dev-`/`integ-` prefixed tags here, so prod `cli-v*` runs
@@ -72,72 +75,20 @@ jobs:
       - name: Build packages
         run: pnpm --filter "@newio/cli..." run build
 
-      - name: Import signing certificates
-        env:
-          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_INSTALLER_CERTIFICATE_BASE64: ${{ secrets.APPLE_INSTALLER_CERTIFICATE_BASE64 }}
-          APPLE_INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_INSTALLER_CERTIFICATE_PASSWORD }}
-        run: |
-          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain-db
-          security create-keychain -p "" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "" $KEYCHAIN_PATH
+      # Ad-hoc-signed (unsigned) build: no Developer ID, no notarization, no
+      # .pkg. Distributed only via curl|bash, which doesn't set the quarantine
+      # xattr, so Gatekeeper isn't invoked; the ad-hoc signature is enough to run
+      # on Apple Silicon. Proper signing happens on the Electron-app side (which
+      # bundles the daemon), not here. The signing scripts + build:pkg remain in
+      # the repo for that path and for local use.
+      - name: Build SEA binary (unsigned)
+        run: pnpm --filter @newio/cli run build:sea:mac
 
-          # Developer ID Application — signs the binary.
-          APP_CERT=$RUNNER_TEMP/app.p12
-          echo -n "$APPLE_CERTIFICATE_BASE64" | base64 --decode -o $APP_CERT
-          security import $APP_CERT -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-
-          # Developer ID Installer — signs the .pkg.
-          INST_CERT=$RUNNER_TEMP/installer.p12
-          echo -n "$APPLE_INSTALLER_CERTIFICATE_BASE64" | base64 --decode -o $INST_CERT
-          security import $INST_CERT -P "$APPLE_INSTALLER_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-
-          security set-key-partition-list -S apple-tool:,apple: -k "" $KEYCHAIN_PATH
-          security list-keychains -d user -s $KEYCHAIN_PATH login.keychain-db
-
-          # Export the resolved identity names for later steps.
-          APP_ID=$(security find-identity -v -p codesigning $KEYCHAIN_PATH | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)"/\1/')
-          INST_ID=$(security find-identity -v $KEYCHAIN_PATH | grep "Developer ID Installer" | head -1 | sed -E 's/.*"(.*)"/\1/')
-          echo "NEWIO_SIGN_IDENTITY=$APP_ID" >> "$GITHUB_ENV"
-          echo "NEWIO_INSTALLER_IDENTITY=$INST_ID" >> "$GITHUB_ENV"
-
-      # Builds, Developer-ID-signs (NEWIO_SIGN_IDENTITY from the import step),
-      # and notarizes the binary. The script reads notary creds from the env
-      # vars below (a bare Mach-O can't be stapled — notarization records the
-      # ticket by hash so Gatekeeper passes quarantined downloads too).
-      - name: Build, sign + notarize SEA binary
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: pnpm --filter @newio/cli run build:sea:mac:signed
-
-      - name: Build, notarize + staple .pkg
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          NEWIO_VERSION: ${{ needs.prepare.outputs.version }}
-        run: |
-          pnpm --filter @newio/cli run build:pkg
-          PKG="packages/cli/build/pkg/newio-${NEWIO_VERSION}.pkg"
-          xcrun notarytool submit "$PKG" \
-            --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" --wait
-          xcrun stapler staple "$PKG"
-
-      - name: Cleanup keychain
-        if: always()
-        run: security delete-keychain $RUNNER_TEMP/build.keychain-db 2>/dev/null || true
-
-      - name: Package artifacts
+      - name: Package artifact
         run: |
           cd packages/cli
           mkdir -p out
           tar -czf "out/newio-darwin-${{ matrix.arch }}.tar.gz" -C build/sea newio
-          cp "build/pkg/newio-${{ needs.prepare.outputs.version }}.pkg" "out/newio-darwin-${{ matrix.arch }}.pkg"
 
       - uses: actions/upload-artifact@v6
         with:
@@ -201,10 +152,10 @@ jobs:
       - name: Assemble release dir + checksums
         run: |
           mkdir -p release
-          find artifacts -type f \( -name '*.tar.gz' -o -name '*.pkg' \) -exec cp {} release/ \;
+          find artifacts -type f -name '*.tar.gz' -exec cp {} release/ \;
           cp packages/cli/scripts/install.sh release/install.sh
           cd release
-          sha256sum *.tar.gz *.pkg > SHA256SUMS
+          sha256sum *.tar.gz > SHA256SUMS
           ls -la
 
       - uses: aws-actions/configure-aws-credentials@v6
