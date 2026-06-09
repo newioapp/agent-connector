@@ -2,8 +2,11 @@
  * Media tools — upload/download attachments.
  */
 import { z } from 'zod';
+import { getLogger } from '@newio/agent-sdk';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { IdGetter, NewioAppForMcp, ToolCallHook } from '../types.js';
+
+const log = getLogger('mcp-media-tools');
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 
@@ -33,6 +36,7 @@ export function registerMediaTools(
     async ({ filePaths }) => {
       onToolCall?.('upload_attachment_to_current_conversation', { filePaths });
       const convId = requireCurrentConversationId(getCurrentConversationId);
+      log.debug(`upload_attachment_to_current_conversation → conversation ${convId} (${filePaths.length} file(s))`);
       await app.sendMessage(convId, undefined, { filePaths });
       return text(`Uploaded ${filePaths.length} file(s) to conversation ${convId}`);
     },

@@ -47,7 +47,7 @@ export class SharedSessionManager implements SessionManager {
   private readonly injectedConversationIds = new Set<string>();
   /** Tracks which user scopes have already been injected into the shared session. */
   private readonly injectedUserIds = new Set<string>();
-  /** Serializes session launches so only one runs at a time (protects latestMcpServer wiring). */
+  /** Serializes session launches so only one runs at a time (keeps MCP bridge wiring unambiguous). */
   private launchQueue: Promise<void> = Promise.resolve();
   private idleTimer?: ReturnType<typeof setInterval>;
   private cleaningUpIdleSessions = false;
@@ -219,9 +219,10 @@ export class SharedSessionManager implements SessionManager {
   }
 
   /**
-   * Enqueue a session launch so only one runs at a time.
-   * This ensures the MCP bridge that connects during launch is correctly
-   * wired to the right session via `latestMcpServer`.
+   * Enqueue a session launch so only one runs at a time. Each launch holds until
+   * its MCP bridge connection has been wired (see BaseAgentInstance.launchSession),
+   * so the connection that arrives unambiguously belongs to the launch that
+   * triggered it — even for agents that connect after `newSession` returns.
    */
   private enqueueLaunch(handoffNote?: string): Promise<AgentSession> {
     const launch = this.launchQueue.then(() => this.launchSession(handoffNote));

@@ -47,8 +47,22 @@ import { NewioAppForMcp, NewioMcpServerInterface } from './mcp/types.js';
 
 const log = getLogger('agent-instance-impl');
 
+/**
+ * Max time a session launch waits for the agent's MCP bridge to connect to the
+ * UDS socket before proceeding unwired. Some agents (kiro/claude) connect during
+ * `newSession`; others (codex-acp) connect shortly after it returns. This bounds
+ * the wait so a misbehaving agent that never connects can't wedge the launch queue.
+ */
+const MCP_CONNECT_TIMEOUT_MS = 10_000;
+
 function isErrnoException(err: unknown): err is NodeJS.ErrnoException {
   return err instanceof Error && 'code' in err;
+}
+
+/** Rendezvous between a session launch and the MCP bridge connection it triggers. */
+interface McpWiringWaiter {
+  readonly promise: Promise<NewioMcpServerInterface>;
+  readonly resolve: (server: NewioMcpServerInterface) => void;
 }
 
 export abstract class BaseAgentInstance implements AgentInstance {
@@ -76,8 +90,14 @@ export abstract class BaseAgentInstance implements AgentInstance {
   protected abortController = new AbortController();
   private pendingCleanup?: Promise<void>;
   private udsServer?: Server;
-  /** Most recently created MCP server awaiting a sessionId to be wired. */
-  protected pendingMcpServer?: NewioMcpServerInterface;
+  /**
+   * Set while a session launch is awaiting its MCP bridge connection. The UDS
+   * `onConnection` handler resolves this when the bridge connects, regardless of
+   * whether that happens during `newSession` (kiro/claude) or after it returns
+   * (codex-acp). Launches are serialized by the session manager's launch queue,
+   * so at most one waiter is outstanding at a time.
+   */
+  private pendingMcpWiring?: McpWiringWaiter;
 
   constructor(
     protected readonly config: AgentConfig,
@@ -137,11 +157,22 @@ export abstract class BaseAgentInstance implements AgentInstance {
         socketPath: mcpSocketPath,
         onConnection: (transport) => {
           log.info(`${this.logTag} MCP client connected via ${mcpSocketPath}`);
-          if (this.pendingMcpServer) {
-            log.warn(`${this.logTag} New MCP connection arrived before previous one was wired to a session`);
-          }
           const mcpServer = this.createMcpServer(app);
-          this.pendingMcpServer = mcpServer;
+          const waiter = this.pendingMcpWiring;
+          if (waiter) {
+            // Hand the server to the launch awaiting it. The launch wires the
+            // conversation-id getter once its session exists, in either arrival order.
+            this.pendingMcpWiring = undefined;
+            waiter.resolve(mcpServer);
+          } else {
+            // No launch is waiting — e.g. the connection arrived after a launch
+            // timed out, or a stray reconnect. There is no session to bind it to,
+            // so it stays unwired (conversation-scoped tools will report no active
+            // conversation). This should not happen in normal serialized operation.
+            log.warn(
+              `${this.logTag} MCP connection arrived with no session launch awaiting it — leaving conversation-id getter unwired`,
+            );
+          }
           void mcpServer.connect(transport);
         },
       });
@@ -320,16 +351,68 @@ export abstract class BaseAgentInstance implements AgentInstance {
       throw new Error('Agent is stopping — session launch aborted');
     }
 
-    const session = await this.createSessionWithErrorHandling(type, externalReferenceId);
+    // Arrange the rendezvous BEFORE creating the session so we capture the MCP
+    // bridge connection regardless of when it arrives: during `newSession`
+    // (kiro/claude connect their MCP servers before responding) or after it
+    // returns (codex-acp connects lazily). Because the session manager serializes
+    // launches, exactly one waiter is outstanding, so the connection that arrives
+    // unambiguously belongs to this launch.
+    let resolveMcp!: (server: NewioMcpServerInterface) => void;
+    const mcpServerPromise = new Promise<NewioMcpServerInterface>((resolve) => {
+      resolveMcp = resolve;
+    });
+    this.pendingMcpWiring = { promise: mcpServerPromise, resolve: resolveMcp };
 
-    // Wire MCP sessionId
-    if (this.pendingMcpServer) {
-      this.pendingMcpServer.setCurrentConversationIdGetter(() => session.currentConversationId);
-      this.pendingMcpServer = undefined;
-      log.debug(`${this.logTag} Wired externalReferenceId ${type}:${externalReferenceId} to pending MCP server`);
+    try {
+      const session = await this.createSessionWithErrorHandling(type, externalReferenceId);
+
+      // Wait for the MCP bridge to connect, then wire the conversation-id getter.
+      // The getter reads the session's live `currentConversationId`, which is set
+      // per-prompt — so conversation-scoped tools (e.g. upload_attachment) resolve
+      // the active conversation no matter which session owns the connection.
+      const mcpServer = await this.awaitMcpConnection(mcpServerPromise, type, externalReferenceId);
+      if (mcpServer) {
+        mcpServer.setCurrentConversationIdGetter(() => session.currentConversationId);
+        log.info(`${this.logTag} Wired externalReferenceId ${type}:${externalReferenceId} to MCP server`);
+      }
+
+      return session;
+    } finally {
+      // Stop accepting a connection for this launch. A connection that arrives
+      // after this point (e.g. past the timeout) hits the no-waiter branch in
+      // onConnection and is logged rather than mis-bound to a later launch.
+      this.pendingMcpWiring = undefined;
     }
+  }
 
-    return session;
+  /**
+   * Wait (bounded) for the MCP bridge connection belonging to the in-flight
+   * launch. Returns the server once connected, or `undefined` if it never
+   * connects within {@link MCP_CONNECT_TIMEOUT_MS} — in which case the session
+   * still runs, but conversation-scoped tools will report no active conversation.
+   */
+  private async awaitMcpConnection(
+    serverPromise: Promise<NewioMcpServerInterface>,
+    type: SessionType,
+    externalReferenceId: string,
+  ): Promise<NewioMcpServerInterface | undefined> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<undefined>((resolve) => {
+      timer = setTimeout(() => resolve(undefined), MCP_CONNECT_TIMEOUT_MS);
+    });
+    try {
+      const result = await Promise.race([serverPromise, timeout]);
+      if (!result) {
+        log.error(
+          `${this.logTag} MCP bridge did not connect within ${MCP_CONNECT_TIMEOUT_MS}ms for ${type}:${externalReferenceId} — conversation-scoped tools will be unwired`,
+        );
+      }
+      return result;
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
   }
 
   private async createSessionWithErrorHandling(type: SessionType, externalReferenceId: string): Promise<AgentSession> {
@@ -369,10 +452,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
       });
       return session;
     } catch (err) {
-      if (this.pendingMcpServer) {
-        log.debug(`${this.logTag} Clearing pending MCP server after session creation failure`);
-        this.pendingMcpServer = undefined;
-      }
+      // The waiter is cleared by launchSession's `finally`. If the MCP bridge
+      // connected before the failure, onConnection already handed its server to
+      // the (now-discarded) waiter; that orphaned server is torn down when the
+      // bridge's socket closes.
+      log.debug(`${this.logTag} Session creation failed for ${type}:${externalReferenceId}`);
       throw err;
     }
   }

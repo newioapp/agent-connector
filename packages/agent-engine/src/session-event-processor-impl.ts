@@ -70,6 +70,9 @@ export class SessionEventProcessorImpl implements SessionEventProcessor {
     const ownerId = this.app.identity.ownerId;
     const ownerVisible = ownerId && (await this.app.isConversationMember(conversationId, ownerId));
     try {
+      log.debug(
+        `Prompting session ${session.correlationId} for conversation ${conversationId} with ${messages.length} message(s)`,
+      );
       for await (const segment of session.prompt(userText, conversationId)) {
         const text = segment.text.trim();
         if (
