@@ -169,6 +169,10 @@ export class AcpSessionConfigHandler {
         await this.setMode(config.acpMode);
       } catch {
         log.warn(`[${this.sessionType}/${this.externalReferenceId}] Mode ${config.acpMode} not available`);
+        // As with the model, a persisted mode may not exist on this agent (e.g.
+        // inherited from a different agent type). Fall back to a real advertised
+        // mode so the session isn't left on an incompatible one.
+        await this.trySelectFallbackMode(config.acpMode);
         needsReport = true;
       }
     }
@@ -206,6 +210,37 @@ export class AcpSessionConfigHandler {
       }
     }
     log.warn(`[${this.sessionType}/${this.externalReferenceId}] No usable fallback model found`);
+  }
+
+  /**
+   * Select the first advertised mode that successfully applies, used when the
+   * persisted mode failed. Skips the failed id. Unlike the model fallback there
+   * is no 'default' placeholder to avoid — an agent's current mode is a real,
+   * usable mode, so any advertised mode is a valid fallback target.
+   */
+  private async trySelectFallbackMode(failedModeId: string): Promise<void> {
+    const options = this.modeConfig?.options;
+    if (!options || options.length === 0) {
+      log.warn(`[${this.sessionType}/${this.externalReferenceId}] No advertised modes to fall back to`);
+      return;
+    }
+    for (const option of options) {
+      if (option.id === failedModeId) {
+        continue;
+      }
+      try {
+        await this.setMode(option.id);
+        log.info(
+          `[${this.sessionType}/${this.externalReferenceId}] Fell back to mode "${option.id}" after "${failedModeId}" was unavailable`,
+        );
+        return;
+      } catch {
+        log.warn(
+          `[${this.sessionType}/${this.externalReferenceId}] Fallback mode "${option.id}" also failed, trying next`,
+        );
+      }
+    }
+    log.warn(`[${this.sessionType}/${this.externalReferenceId}] No usable fallback mode found`);
   }
 
   /** Report the current model/mode back to the backend (corrects stale persisted values). */

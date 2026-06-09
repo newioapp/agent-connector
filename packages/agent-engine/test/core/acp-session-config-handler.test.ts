@@ -597,5 +597,62 @@ describe('AcpSessionConfigHandler', () => {
 
       expect(updateConfig).not.toHaveBeenCalled();
     });
+
+    it('falls back to an advertised mode when the persisted mode is incompatible', async () => {
+      const setSessionMode = vi.fn().mockImplementation(({ modeId }: { modeId: string }) => {
+        if (modeId === 'plan') {
+          return Promise.reject(new Error(`mode '${modeId}' not supported`));
+        }
+        return Promise.resolve(undefined);
+      });
+      const conn = mockConnection({ setSessionMode } as never);
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        conn,
+        updateConfig,
+        makeSessionResponse({
+          modes: {
+            availableModes: [
+              { id: 'code', name: 'Code' },
+              { id: 'review', name: 'Review' },
+            ],
+            currentModeId: 'code',
+          },
+        }),
+      );
+
+      await handler.applySessionConfig({ acpMode: 'plan' });
+
+      expect(setSessionMode).toHaveBeenCalledWith({ sessionId: 'sess-1', modeId: 'plan' });
+      expect(setSessionMode).toHaveBeenCalledWith({ sessionId: 'sess-1', modeId: 'code' });
+      expect(handler.listModes()?.selectedId).toBe('code');
+      expect(updateConfig).toHaveBeenCalledWith({ acpModel: null, acpMode: 'code' });
+    });
+
+    it('reports the original mode when no usable fallback mode exists', async () => {
+      const conn = mockConnection({
+        setSessionMode: vi.fn().mockRejectedValue(new Error('mode not available')),
+      });
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        conn,
+        updateConfig,
+        makeSessionResponse({
+          // Only the failed id is advertised — nothing to fall back to.
+          modes: { availableModes: [{ id: 'plan', name: 'Plan' }], currentModeId: 'plan' },
+        }),
+      );
+
+      await handler.applySessionConfig({ acpMode: 'plan' });
+
+      expect(handler.listModes()?.selectedId).toBe('plan');
+      expect(updateConfig).toHaveBeenCalledWith({ acpModel: null, acpMode: 'plan' });
+    });
   });
 });
