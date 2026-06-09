@@ -174,7 +174,7 @@ envCmd
 
 envCmd
   .command('sync <agent>')
-  .description('Capture env from this shell and merge into the agent')
+  .description("Capture env from this shell and replace the agent's environment")
   .addOption(
     new Option('--mode <mode>', 'which variables to capture').choices([...agent.ENV_SYNC_MODES]).default('basic'),
   )

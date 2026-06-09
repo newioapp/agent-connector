@@ -17,7 +17,7 @@ import {
   type EngineConfig,
   type StatusListener,
 } from '@newio/agent-engine';
-import { resolveSelfExec } from '../sea.js';
+import { resolveSelfExec, isSeaBinary } from '../sea.js';
 import { DaemonServer } from './server.js';
 import { DaemonHandler } from './handler.js';
 import { resolveConfig, getDaemonPaths } from '../paths.js';
@@ -107,6 +107,10 @@ export async function runDaemon(): Promise<void> {
     dataDir,
     mcpBridgeCommand,
     mcpBridgeArgsPrefix,
+    // As a SEA, the bridge is the self-contained binary re-invoking itself — no
+    // system `node` needed, so agents can skip the node preflight. The
+    // `node dist/cli.js` (npm) form still relies on a real `node`, so keep it.
+    mcpBridgeIsSelfContained: isSeaBinary(),
   };
 
   const agentConfigManager = new FileAgentConfigManager(dataDir);

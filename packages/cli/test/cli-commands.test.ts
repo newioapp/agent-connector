@@ -7,6 +7,7 @@ import { DaemonHandler } from '../src/daemon/handler';
 import { DaemonClient } from '../src/client';
 import { DaemonConnector } from '../src/connector';
 import { parseEnvPairs, resolveAgentId, firstLine, remediationHint } from '../src/cli/agent-commands';
+import { daemonLogsHint } from '../src/cli/daemon-commands';
 import type { DaemonConnector } from '../src/connector';
 import type { AgentConfig, AgentConfigManager, AgentRuntimeManager } from '@newio/agent-engine';
 
@@ -18,6 +19,26 @@ describe('parseEnvPairs', () => {
   it('rejects malformed pairs', () => {
     expect(() => parseEnvPairs(['NOEQUALS'])).toThrow('Invalid KEY=VALUE');
     expect(() => parseEnvPairs(['=novalue'])).toThrow('Invalid KEY=VALUE');
+  });
+});
+
+describe('daemonLogsHint', () => {
+  it('omits the prefix when the command name already implies the installed stage', () => {
+    expect(daemonLogsHint('prod', 'newio')).toBe('newio daemon logs -f');
+    expect(daemonLogsHint('dev', 'newio-dev')).toBe('newio-dev daemon logs -f');
+    expect(daemonLogsHint('integ', 'newio-integ')).toBe('newio-integ daemon logs -f');
+  });
+
+  it('prefixes NEWIO_STAGE when the prod binary drives a non-prod stage', () => {
+    expect(daemonLogsHint('dev', 'newio')).toBe('NEWIO_STAGE=dev newio daemon logs -f');
+    expect(daemonLogsHint('integ', 'newio')).toBe('NEWIO_STAGE=integ newio daemon logs -f');
+  });
+
+  it('prefixes NEWIO_STAGE when a stage-named binary drives a different stage', () => {
+    // Without the prefix, `newio-dev daemon logs` would resolve back to dev,
+    // not the prod daemon that was just installed.
+    expect(daemonLogsHint('prod', 'newio-dev')).toBe('NEWIO_STAGE=prod newio-dev daemon logs -f');
+    expect(daemonLogsHint('integ', 'newio-dev')).toBe('NEWIO_STAGE=integ newio-dev daemon logs -f');
   });
 });
 

@@ -19,7 +19,7 @@ import type {
 import { agentEnvFilePath, captureEnv, asEnvSyncMode, DEFAULT_ENV_SYNC_MODE } from '@newio/agent-engine';
 import { AuthManager, NewioClient } from '@newio/agent-sdk';
 import { withDaemon, openConnection } from '../client/connect.js';
-import { resolveConfig, getDaemonPaths, type Stage } from '../paths.js';
+import { resolveConfig, getDaemonPaths, stageSuffix, type Stage } from '../paths.js';
 
 const AGENT_TYPES: readonly AgentType[] = ['claude-code', 'kiro-cli', 'codex', 'cursor', 'gemini', 'custom'];
 const SESSION_MODES: readonly SessionMode[] = ['isolated', 'shared'];
@@ -351,10 +351,17 @@ export async function envSync(stage: Stage, query: string, modeArg?: string): Pr
   const captured = captureEnv(mode);
   await withDaemon(stage, async (c) => {
     const agentId = await resolveAgentId(c, query);
-    // Overlay captured vars on existing ones (preserves custom keys set via `env set`).
-    const next = { ...(await currentEnv(c, agentId)), ...captured };
-    await c.updateAgentEnvVars(agentId, next);
-    console.log(`Synced ${Object.keys(captured).length} variable(s) (${mode}) from the current environment.`);
+    // Sync is authoritative: the agent's environment becomes EXACTLY what was
+    // captured from this shell. Existing vars are cleared — stale entries from a
+    // previous sync (e.g. an earlier `--mode all`) and keys added via `env set`
+    // are dropped, so the result is reproducible. Re-apply custom keys with
+    // `env set` after a sync.
+    const previousCount = Object.keys(await currentEnv(c, agentId)).length;
+    await c.updateAgentEnvVars(agentId, captured);
+    const capturedCount = Object.keys(captured).length;
+    console.log(
+      `Synced ${capturedCount} variable(s) (${mode}) from the current environment, replacing ${previousCount} existing variable(s).`,
+    );
   });
 }
 
@@ -420,7 +427,7 @@ function openInEditor(filePath: string): Promise<void> {
 export async function status(stage: Stage): Promise<void> {
   await withDaemon(stage, async (c) => {
     const version = await c.version();
-    console.log(`newio daemon (${stage}): online, version ${version}`);
+    console.log(`newio daemon${stageSuffix(stage)}: online, version ${version}`);
     // Make the active backend obvious whenever it isn't the default (prod).
     if (stage !== 'prod') {
       const { apiBaseUrl } = resolveConfig();

@@ -31,6 +31,16 @@ export interface EngineConfig {
    * `[<absolute-cli-entry>, 'mcp-bridge']`.
    */
   readonly mcpBridgeArgsPrefix: readonly string[];
+  /**
+   * Whether the MCP bridge runs as a self-contained executable (a Node SEA
+   * binary that re-invokes itself), as opposed to a `node <script>` invocation.
+   *
+   * When true, no system `node` is required on the agent's PATH, so the startup
+   * node-availability preflight is skipped. When false/omitted (e.g. an
+   * `npm i -g` install, or evals that launch the bridge via `node`), the
+   * preflight runs and surfaces a clear error if `node` is missing.
+   */
+  readonly mcpBridgeIsSelfContained?: boolean;
   /** Override the proactive WebSocket reconnect interval in ms (default: 1h50m). */
   readonly wsProactiveReconnectMs?: number;
 }

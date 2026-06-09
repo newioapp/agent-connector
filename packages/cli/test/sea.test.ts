@@ -2,7 +2,21 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, symlinkSync, realpathSync, chmodSync } from 'fs';
 import { join, delimiter } from 'path';
 import { tmpdir } from 'os';
-import { resolveLauncherPath } from '../src/sea';
+import { resolveLauncherPath, cliCommandName } from '../src/sea';
+
+describe('cliCommandName', () => {
+  it('returns a recognizable newio* command basename', () => {
+    expect(cliCommandName('newio')).toBe('newio');
+    expect(cliCommandName('newio-dev')).toBe('newio-dev');
+    expect(cliCommandName('/home/u/.local/bin/newio-integ')).toBe('newio-integ');
+  });
+
+  it('falls back to newio for anything else (e.g. node from source)', () => {
+    expect(cliCommandName('node')).toBe('newio');
+    expect(cliCommandName('/usr/bin/node')).toBe('newio');
+    expect(cliCommandName('')).toBe('newio');
+  });
+});
 
 describe('resolveLauncherPath', () => {
   const origBinDir = process.env['NEWIO_BIN_DIR'];
@@ -65,6 +79,21 @@ describe('resolveLauncherPath', () => {
     const { execPath, launcher, binDir } = makeInstall();
     process.env['NEWIO_BIN_DIR'] = binDir;
     expect(resolveLauncherPath(execPath, '/nonexistent/elsewhere')).toBe(launcher);
+  });
+
+  it('uses the stage-named command for the NEWIO_BIN_DIR fallback', () => {
+    const dir = makeTmpDir();
+    mkdirSync(join(dir, 'versions'), { recursive: true });
+    const target = join(dir, 'versions', '0.1.0');
+    writeFileSync(target, '#!/bin/sh\n');
+    chmodSync(target, 0o755);
+    const binDir = join(dir, 'bin');
+    mkdirSync(binDir);
+    const launcher = join(binDir, 'newio-dev'); // stage-named symlink
+    symlinkSync(target, launcher);
+    process.env['NEWIO_BIN_DIR'] = binDir;
+    // argv0 basename is newio-dev → the fallback looks for `newio-dev`, not `newio`.
+    expect(resolveLauncherPath(target, '/nonexistent/newio-dev')).toBe(launcher);
   });
 
   it('falls back to execPath when nothing resolves back to the binary', () => {

@@ -26,8 +26,13 @@ if (process.platform !== 'darwin') {
   throw new Error('build-pkg is macOS only (needs pkgbuild/productbuild).');
 }
 
+// Command name (and on-disk binary name). Defaults to `newio`; per-stage builds
+// set NEWIO_BIN_NAME=newio-dev / newio-integ so the installed command carries
+// the stage. Must match the name the SEA build produced under build/sea/.
+const binName = process.env['NEWIO_BIN_NAME'] ?? 'newio';
+
 const pkgDir = join(dirname(fileURLToPath(import.meta.url)), '..');
-const seaBinary = join(pkgDir, 'build', 'sea', 'newio');
+const seaBinary = join(pkgDir, 'build', 'sea', binName);
 const pkgBuildDir = join(pkgDir, 'build', 'pkg');
 const pkgRoot = join(pkgBuildDir, 'root');
 const componentPkg = join(pkgBuildDir, 'newio-component.pkg');
@@ -35,7 +40,7 @@ const componentPkg = join(pkgBuildDir, 'newio-component.pkg');
 const PKG_ID = 'app.newio.cli';
 const version = process.env['NEWIO_VERSION'] ?? JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8')).version;
 const installerIdentity = process.env['NEWIO_INSTALLER_IDENTITY']; // unset → unsigned
-const finalPkg = join(pkgBuildDir, `newio-${version}.pkg`);
+const finalPkg = join(pkgBuildDir, `${binName}-${version}.pkg`);
 
 function run(cmd, args) {
   console.log(`\n$ ${cmd} ${args.join(' ')}`);
@@ -52,8 +57,8 @@ if (!existsSync(seaBinary)) {
 rmSync(pkgBuildDir, { recursive: true, force: true });
 const binDest = join(pkgRoot, 'usr', 'local', 'bin');
 mkdirSync(binDest, { recursive: true });
-copyFileSync(seaBinary, join(binDest, 'newio'));
-chmodSync(join(binDest, 'newio'), 0o755);
+copyFileSync(seaBinary, join(binDest, binName));
+chmodSync(join(binDest, binName), 0o755);
 
 // 2. Build the component pkg (payload → install-location /).
 run('pkgbuild', [

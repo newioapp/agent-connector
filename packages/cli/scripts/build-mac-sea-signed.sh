@@ -24,7 +24,10 @@ NOTARIZE=1
 
 BUILD_DIR="build/sea"
 BLOB="$BUILD_DIR/newio.blob"
-OUT="$BUILD_DIR/newio"
+# Final binary name. Defaults to `newio`; per-stage release builds set
+# NEWIO_BIN_NAME=newio-dev / newio-integ so the three stages don't collide once
+# installed (the installed command name carries the stage).
+OUT="$BUILD_DIR/${NEWIO_BIN_NAME:-newio}"
 FUSE="NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2"
 IDENTIFIER="app.newio.connectord"
 

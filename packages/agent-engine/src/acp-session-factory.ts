@@ -72,6 +72,11 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
     private readonly appDisplayName: string,
     private readonly appVersion: string,
     private readonly logTag: string,
+    /**
+     * When true, the MCP bridge is self-contained (a SEA binary) and needs no
+     * system `node`, so the startup node-availability preflight is skipped.
+     */
+    private readonly mcpBridgeIsSelfContained: boolean = false,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -84,7 +89,11 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
       throw new Error('ACP config missing');
     }
 
-    await assertNodeAvailable(this.config.envVars);
+    // A self-contained (SEA) bridge re-invokes our own binary and needs no
+    // system `node`; only verify node when the bridge launches via `node`.
+    if (!this.mcpBridgeIsSelfContained) {
+      await assertNodeAvailable(this.config.envVars);
+    }
     await this.spawnAndInit();
   }
 

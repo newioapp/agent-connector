@@ -157,6 +157,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         this.engineConfig.appDisplayName,
         this.engineConfig.appVersion,
         `[${app.identity.username}]`,
+        this.engineConfig.mcpBridgeIsSelfContained ?? false,
       );
       this._sessionFactory.onAbnormalTermination((message) => {
         // Ignore if a cleanup is already running (e.g. an intentional stop in
