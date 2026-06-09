@@ -44,6 +44,7 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.17.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "blurhash": "^2.0.5",
     "commander": "^13.1.0",
     "dotenv": "^17.4.2",
     "qrcode-terminal": "^0.12.0",
@@ -51,7 +52,7 @@
     "yaml": "^2.8.4",
     "zod": "^4.3.6"
   },
-  "//optionalDependencies": "sharp powers image blurhash/dimension metadata on media upload and is optional — the CLI degrades gracefully without it. On `npm i -g` npm fetches the matching @img/* prebuild for the user's platform; the SEA build instead ships sharp's runtime closure as a sidecar dir next to the binary (see scripts/build-*-sea*). blurhash is a (build-time) devDependency, not listed here, because it's pure JS and bundled into the binary.",
+  "//optionalDependencies": "sharp powers image blurhash/dimension metadata on media upload and is optional — the CLI degrades gracefully without it. On `npm i -g` npm fetches the matching @img/* prebuild for the user's platform; the SEA build instead ships sharp's runtime closure as a sidecar dir next to the binary (see scripts/build-*-sea*). blurhash (pure JS) is a regular runtime dependency: external + npm-installed for the npm build, bundled into the binary for the SEA build (which has no node_modules).",
   "optionalDependencies": {
     "sharp": "^0.34.5"
   },
@@ -60,7 +61,6 @@
     "@newio/agent-sdk": "workspace:*",
     "@types/node": "^22.19.15",
     "@types/qrcode-terminal": "^0.12.2",
-    "blurhash": "^2.0.5",
     "postject": "^1.0.0-alpha.6",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",

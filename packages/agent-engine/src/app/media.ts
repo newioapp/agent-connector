@@ -17,6 +17,24 @@
 import type { NewioClient } from '@newio/agent-sdk';
 import type { Attachment, AttachmentType, ImageMetadata } from '@newio/agent-sdk';
 
+/**
+ * True when running as an injected Single Executable Application.
+ *
+ * Resolved via `process.getBuiltinModule('node:sea')` rather than a static or
+ * dynamic `import('node:sea')`: the bundler rewrites the bare import and strips
+ * the `node:` prefix (→ `import('sea')`), which the SEA embedder's `require`
+ * then rejects. `getBuiltinModule` (Node ≥ 20.16) is a plain runtime call the
+ * bundler leaves untouched. Mirrors `isSeaBinary()` in packages/cli/src/sea.ts
+ * (not importable here — cli depends on agent-engine, not vice versa).
+ */
+function isSeaRuntime(): boolean {
+  try {
+    return process.getBuiltinModule('node:sea').isSea();
+  } catch {
+    return false;
+  }
+}
+
 /** Cached lazy import for sharp (optional peer dependency). */
 let sharpLoaded = false;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -28,8 +46,7 @@ async function getSharp(): Promise<typeof sharpDefault> {
     try {
       /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
       let mod: any;
-      const sea = await import('node:sea');
-      if (sea.isSea()) {
+      if (isSeaRuntime()) {
         // SEA build: sharp ships as a sidecar `native/node_modules/` dir beside
         // the executable. Anchor a require at that dir so sharp — and its
         // transitive deps (detect-libc, semver, @img/*) — resolve from the
