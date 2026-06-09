@@ -103,7 +103,7 @@ agentCmd
   .option('--cwd <dir>', 'working directory for the agent process')
   .option(
     '--exec <command>',
-    'ACP executable to spawn, with args (required for --type custom; overrides the default binary for built-in types), e.g. --exec "my-agent acp"',
+    'ACP executable to spawn, optionally with args (required for --type custom; for built-in types it overrides the binary and any extra args are appended to the default invocation), e.g. --exec "/opt/bin/codex-acp" or --exec "node wrapper.js"',
   )
   .addOption(new Option('--session-mode <mode>', 'session mode').choices([...agent.SESSION_MODE_CHOICES]))
   // The agent subprocess runs with exactly the environment synced here — PATH (to
@@ -152,7 +152,7 @@ agentCmd
   .description('Update agent config')
   .option('--name <name>', 'display name')
   .option('--cwd <dir>', 'working directory')
-  .option('--exec <command>', 'ACP executable to spawn, with args (overrides the default binary)')
+  .option('--exec <command>', 'ACP executable to spawn, optionally with args (overrides the default binary)')
   .option('--username <username>', 'Newio username')
   .addOption(new Option('--session-mode <mode>', 'session mode').choices([...agent.SESSION_MODE_CHOICES]))
   .action((query: string, _options: unknown, cmd: Command) =>

@@ -15,38 +15,42 @@ export function resolveCommand(
   type: AgentType,
   config: AcpConfig,
 ): { readonly command: string; readonly args: readonly string[] } {
+  // The configured executable is split on whitespace for ALL types — the first
+  // token is the binary, the rest are extra args. This lets an override be a
+  // bare path ("/opt/bin/gemini") or a wrapped command ("node wrapper.js"). For
+  // built-in types the type's required ACP args come first and these extra args
+  // follow; for custom the split IS the full invocation.
+  const override = config.executablePath?.trim().split(/\s+/).filter(Boolean) ?? [];
+  const overrideCommand = override[0];
+  const overrideArgs = override.slice(1);
+
   if (type === 'kiro-cli') {
-    const command = config.executablePath ?? 'kiro-cli';
-    const args = config.kiroCliTrustAllTools !== false ? ['acp', '--trust-all-tools'] : ['acp'];
-    return { command, args };
+    const command = overrideCommand ?? 'kiro-cli';
+    const baseArgs = config.kiroCliTrustAllTools !== false ? ['acp', '--trust-all-tools'] : ['acp'];
+    return { command, args: [...baseArgs, ...overrideArgs] };
   }
 
   if (type === 'claude-code') {
-    return { command: config.executablePath ?? 'claude-agent-acp', args: [] };
+    return { command: overrideCommand ?? 'claude-agent-acp', args: overrideArgs };
   }
 
   if (type === 'codex') {
-    return { command: config.executablePath ?? 'codex-acp', args: [] };
+    return { command: overrideCommand ?? 'codex-acp', args: overrideArgs };
   }
 
   if (type === 'cursor') {
-    return { command: config.executablePath ?? 'agent', args: ['acp'] };
+    return { command: overrideCommand ?? 'agent', args: ['acp', ...overrideArgs] };
   }
 
   if (type === 'gemini') {
-    return { command: config.executablePath ?? 'gemini', args: ['--acp'] };
+    return { command: overrideCommand ?? 'gemini', args: ['--acp', ...overrideArgs] };
   }
 
-  // custom: user provides the full command string, possibly with args baked in
-  if (!config.executablePath) {
+  // custom: the override is the entire invocation — no built-in binary or args.
+  if (overrideCommand === undefined) {
     throw new Error('No executable path configured for custom agent type');
   }
-  const parts = config.executablePath.trim().split(/\s+/).filter(Boolean);
-  const command = parts[0];
-  if (command === undefined) {
-    throw new Error('No executable path configured for custom agent type');
-  }
-  return { command, args: parts.slice(1) };
+  return { command: overrideCommand, args: overrideArgs };
 }
 
 /** Extract a human-readable message from an unknown error (handles Error instances and plain objects). */
