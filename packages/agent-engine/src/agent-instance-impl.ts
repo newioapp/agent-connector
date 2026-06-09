@@ -458,11 +458,12 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
     log.debug(`${this.logTag} [${session.correlationId}] Generating greeting for owner...`);
 
-    // The ACP connection itself (spawn + initialize + newSession) has already
-    // succeeded by this point. The greeting is a best-effort prompt — if it
-    // fails (e.g. an incompatible persisted model that couldn't be corrected, or
-    // a transient agent error) we do NOT abort startup. The agent comes up
-    // running so the next real message can proceed; we just skip the greeting.
+    // The greeting doubles as a connection test: it exercises a full prompt
+    // round-trip so configuration problems (bad model, broken auth, etc.) surface
+    // at launch rather than silently on the first real message. Failures here are
+    // intentionally fatal. By this point the persisted session config — including
+    // the fallback model selection in applySessionConfig — has already been
+    // applied, so a valid model is in effect before this prompt runs.
     let greeting: string | undefined;
     try {
       greeting = await collectAgentMessage(
@@ -470,15 +471,13 @@ export abstract class BaseAgentInstance implements AgentInstance {
       );
     } catch (err: unknown) {
       const message = extractErrorMessage(err);
-      log.warn(
-        `${this.logTag} [${session.correlationId}] Greeting prompt failed, continuing without greeting: ${message}`,
-      );
-      return;
+      log.error(`${this.logTag} [${session.correlationId}] Greeting prompt failed: ${message}`);
+      throw new Error(`ACP agent connection test failed: ${message}`);
     }
 
     if (!greeting || greeting.trim().length === 0) {
-      log.warn(`${this.logTag} [${session.correlationId}] Agent returned empty greeting, skipping`);
-      return;
+      log.error(`${this.logTag} [${session.correlationId}] Agent returned empty greeting`);
+      throw new Error('ACP agent test failed: agent returned an empty response');
     }
 
     await this.app.sendMessage(ownerDmConversationId, greeting.trim());

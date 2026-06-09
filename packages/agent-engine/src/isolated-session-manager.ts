@@ -262,8 +262,12 @@ export class IsolatedSessionManager implements SessionManager {
 
     log.info(`${this.logTag} Session ready: key=${type}/${externalReferenceId} → correlation=${session.correlationId}`);
 
-    // Apply persisted acpModel/acpMode from the backend (conversation sessions only)
-    void this.applyPersistedSessionConfig(type, externalReferenceId, session);
+    // Apply persisted acpModel/acpMode from the backend (conversation sessions
+    // only). Awaited — and not fire-and-forget — so the configured (or
+    // fallback-selected) model is in effect before the first prompt runs on this
+    // session. The greeting prompt acts as a connection test and must not race a
+    // pending model change (e.g. a Codex runner left on its rejected 'default').
+    await this.applyPersistedSessionConfig(type, externalReferenceId, session);
 
     return session;
   }
