@@ -55,6 +55,16 @@ describe('getDaemonPaths', () => {
     expect(paths.downloadsDir).toBe(join(homedir(), '.newio-downloads'));
   });
 
+  it('caches the update check beside the data dir, stage-scoped', () => {
+    expect(getDaemonPaths('prod').updateCachePath).toBe(join(homedir(), '.newio', 'update-check.json'));
+    expect(getDaemonPaths('dev').updateCachePath).toBe(join(homedir(), '.newio-dev', 'update-check.json'));
+  });
+
+  it('keeps the update cache out of connector/ so daemon uninstall preserves it', () => {
+    const paths = getDaemonPaths('dev');
+    expect(paths.updateCachePath.startsWith(paths.dataDir)).toBe(false);
+  });
+
   it('stage-suffixes both the data dir and the downloads dir for non-prod', () => {
     expect(getDaemonPaths('dev').dataDir).toBe(join(homedir(), '.newio-dev', 'connector'));
     expect(getDaemonPaths('dev').downloadsDir).toBe(join(homedir(), '.newio-dev-downloads'));
@@ -74,6 +84,7 @@ describe('resolveConfig', () => {
     delete process.env['NEWIO_STAGE'];
     delete process.env['NEWIO_API_URL'];
     delete process.env['NEWIO_WS_URL'];
+    delete process.env['NEWIO_CDN_URL'];
   });
 
   afterEach(() => {
@@ -85,6 +96,7 @@ describe('resolveConfig', () => {
       stage: 'prod',
       apiBaseUrl: 'https://api.newio.app',
       wsUrl: 'wss://ws.newio.app',
+      cdnBaseUrl: 'https://cdn.newio.app',
     });
   });
 
@@ -92,10 +104,12 @@ describe('resolveConfig', () => {
     process.env['NEWIO_STAGE'] = 'dev';
     process.env['NEWIO_API_URL'] = 'https://api.example.test';
     process.env['NEWIO_WS_URL'] = 'wss://ws.example.test';
+    process.env['NEWIO_CDN_URL'] = 'https://cdn.example.test';
     expect(resolveConfig()).toEqual({
       stage: 'dev',
       apiBaseUrl: 'https://api.example.test',
       wsUrl: 'wss://ws.example.test',
+      cdnBaseUrl: 'https://cdn.example.test',
     });
   });
 
@@ -105,6 +119,12 @@ describe('resolveConfig', () => {
       stage: 'integ',
       apiBaseUrl: 'https://api.newio.app',
       wsUrl: 'wss://ws.newio.app',
+      cdnBaseUrl: 'https://cdn.newio.app',
     });
+  });
+
+  it('strips a trailing slash from NEWIO_CDN_URL so the manifest path joins cleanly', () => {
+    process.env['NEWIO_CDN_URL'] = 'https://cdn.example.test/';
+    expect(resolveConfig().cdnBaseUrl).toBe('https://cdn.example.test');
   });
 });

@@ -11,14 +11,26 @@
  * surface. End users always resolve to `prod`.
  */
 import { Command, Option } from 'commander';
-import { resolveConfig } from '../paths.js';
+import { resolveConfig, getDaemonPaths } from '../paths.js';
 import { version } from '../../package.json';
 import * as daemon from './daemon-commands.js';
 import * as agent from './agent-commands.js';
 import type { AddOptions, CreateAccountOptions, UpdateOptions } from './agent-commands.js';
+import * as updater from './update-commands.js';
+import type { UpdateContext } from './update-commands.js';
 
-// Resolved once at startup from NEWIO_STAGE / NEWIO_API_URL / NEWIO_WS_URL.
-const { stage } = resolveConfig();
+// Resolved once at startup from NEWIO_STAGE / NEWIO_API_URL / NEWIO_WS_URL / NEWIO_CDN_URL.
+const { stage, cdnBaseUrl } = resolveConfig();
+
+// Everything the self-updater needs: which channel (CDN) to check, the running
+// version, and where to cache the once-per-day result for this stage.
+const updateContext: UpdateContext = {
+  stage,
+  cdnBaseUrl,
+  currentVersion: version,
+  cachePath: getDaemonPaths(stage).updateCachePath,
+  argv0: process.argv[1] ?? process.argv0,
+};
 
 const program = new Command();
 program
@@ -208,6 +220,15 @@ program
   .description('Daemon health + agent overview')
   .action(() => agent.status(stage));
 
+program
+  .command('update')
+  .description('Check for a newer newio release and install it')
+  .option('--check', 'only report whether an update is available; do not install')
+  .option('-y, --yes', 'install without prompting for confirmation')
+  .action((_options: unknown, cmd: Command) =>
+    updater.update(updateContext, cmd.opts<{ check?: boolean; yes?: boolean }>()),
+  );
+
 // Internal: the MCP stdio↔UDS bridge an ACP agent spawns as its MCP server.
 // Launched by the daemon as `node <cli-entry> mcp-bridge <socket>` (never by a
 // user), so it stays dependency-free and off the documented surface.
@@ -219,7 +240,19 @@ program
     runMcpBridge(socketPath);
   });
 
-program.parseAsync(process.argv).catch((err: unknown) => {
-  console.error(err instanceof Error ? err.message : String(err));
-  process.exit(1);
-});
+// `mcp-bridge` is an internal stdio relay — its stdout is the MCP transport, so
+// it must never emit an update notice. Everything else gets the passive,
+// once-per-day reminder after the command completes (TTY-gated inside).
+const isInternalBridge = process.argv[2] === 'mcp-bridge';
+
+program
+  .parseAsync(process.argv)
+  .then(async () => {
+    if (!isInternalBridge) {
+      await updater.notifyIfUpdateAvailable(updateContext);
+    }
+  })
+  .catch((err: unknown) => {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  });

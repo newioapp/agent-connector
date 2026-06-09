@@ -81,6 +81,12 @@ export interface DaemonPaths {
    * user-facing files; organized as `<downloadsDir>/<username>/<conversationId>/`.
    */
   readonly downloadsDir: string;
+  /**
+   * Where the self-updater caches its last CDN version check, so it polls the
+   * manifest at most once per day. A stage-scoped sibling of the data dir (e.g.
+   * `~/.newio-dev/update-check.json`) so each stage tracks its own channel.
+   */
+  readonly updateCachePath: string;
 }
 
 /** Resolve the per-stage data directory and well-known file paths. */
@@ -95,19 +101,29 @@ export function getDaemonPaths(stage: Stage): DaemonPaths {
     // Sibling of `home`, not nested under it: `.newio-downloads` (prod),
     // `.newio-dev-downloads`, `.newio-integ-downloads`.
     downloadsDir: join(homedir(), `${home}-downloads`),
+    // Beside the data dir (not under connector/, which the daemon owns) so a
+    // `daemon uninstall` doesn't wipe the update cadence: `~/.newio/update-check.json`.
+    updateCachePath: join(homedir(), home, 'update-check.json'),
   };
 }
 
 // Production endpoints — the only URLs hardcoded in this (private) repo. Non-prod
 // stage URLs are never checked in; internal testers supply them via the
-// NEWIO_API_URL / NEWIO_WS_URL env vars.
+// NEWIO_API_URL / NEWIO_WS_URL / NEWIO_CDN_URL env vars.
 const PROD_API_URL = 'https://api.newio.app';
 const PROD_WS_URL = 'wss://ws.newio.app';
+// Download CDN — where install.sh + the self-updater fetch binaries and the
+// version manifest. Each stage has its OWN downloads bucket + CloudFront
+// distribution (see .github/workflows/release-cli-binaries.yml), so dev/integ
+// testers point here with NEWIO_CDN_URL exactly as they do for the API URL.
+const PROD_CDN_URL = 'https://cdn.newio.app';
 
 export interface ResolvedConfig {
   readonly stage: Stage;
   readonly apiBaseUrl: string;
   readonly wsUrl: string;
+  /** Download CDN base (no trailing slash). The version manifest + binaries live under `${cdnBaseUrl}/downloads/cli`. */
+  readonly cdnBaseUrl: string;
 }
 
 /**
@@ -124,5 +140,6 @@ export function resolveConfig(): ResolvedConfig {
     stage: resolveStage(process.env['NEWIO_STAGE']),
     apiBaseUrl: process.env['NEWIO_API_URL'] ?? PROD_API_URL,
     wsUrl: process.env['NEWIO_WS_URL'] ?? PROD_WS_URL,
+    cdnBaseUrl: (process.env['NEWIO_CDN_URL'] ?? PROD_CDN_URL).replace(/\/+$/, ''),
   };
 }

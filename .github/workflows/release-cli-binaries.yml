@@ -167,6 +167,12 @@ jobs:
           mkdir -p release
           find artifacts -type f -name '*.tar.gz' -exec cp {} release/ \;
           cp packages/cli/scripts/install.sh release/install.sh
+          # version.json is the "what's latest" manifest the in-CLI self-updater
+          # (`newio update`) polls, served from the same per-stage CDN as the
+          # binaries. Written to both the latest/ and v<version>/ paths below.
+          printf '{"version":"%s","publishedAt":"%s"}\n' \
+            "${{ needs.prepare.outputs.version }}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            > release/version.json
           cd release
           sha256sum *.tar.gz > SHA256SUMS
           ls -la
