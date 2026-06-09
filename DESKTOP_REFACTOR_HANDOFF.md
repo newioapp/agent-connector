@@ -10,6 +10,13 @@ The daemon-client refactor (Task #7) is now functionally complete.
 
 Tasks #1–#6 are merged to `main` (PRs #183–#186).
 
+> **Next — Task #8: bundle + supervise the daemon inside the Electron app**
+> (Option B). The standalone SEA CLI + `curl|bash` distribution merged in PR #205;
+> the desktop app should now *contain* the daemon and run it as a per-user
+> LaunchAgent so desktop users don't install the CLI separately. This **reverses**
+> the "daemon ships as a separate install only" decision under *Decisions to make
+> before coding* below. Full plan in **Task #8** near the end of this doc.
+
 ## Goal
 
 Make the Electron connector a **thin UI client of the daemon**, the same way the
@@ -161,12 +168,13 @@ connector changes, no behavior change to existing CLI flows.)
 
 ## Decisions to make before coding
 
-- **Daemon discovery/spawn.** We agreed the daemon ships as a **separate npm/global
-  install** (`npm i -g @newio/cli`). So the desktop should NOT bundle+spawn it by
-  default — it attaches to a running daemon. Decide the UX when none is running:
-  (a) show "start the daemon" guidance (like the CLI), or (b) offer to run
-  `newio daemon start` on the user's behalf via the service manager. Recommend (a)
-  for v1.
+- **Daemon discovery/spawn.** ⚠️ **SUPERSEDED by Task #8 (2026-06-09).** The
+  original decision was that the daemon ships as a **separate npm/global install**
+  (`npm i -g @newio/cli`) and the desktop only *attaches* to a running daemon. We
+  are now **reversing** this for the desktop: the Electron app **bundles and
+  supervises** the daemon (still attaching over the same socket; the standalone CLI
+  stays the headless/server path). See Task #8. The "what if none is running" UX
+  below still applies as a fallback when the embedded daemon is disabled.
 - **Protocol skew UX.** `handshake` mismatch → desktop must tell the user to update
   the daemon (or vice-versa). Design the message/modal.
 - **Stage selection.** The desktop has a dev/prod environment selector
@@ -199,6 +207,53 @@ status leaves `awaiting_approval`, and `agent.list` returns it as
   here for the desktop).
 - `packages/cli/src/connector.ts` / `client.ts` — the `DaemonConnector` the desktop
   will use.
+
+## Task #8: Bundle + supervise the daemon in the Electron app (Option B)
+
+**Status:** planned (2026-06-09). Reverses the "separate install only" decision above.
+
+**Goal:** the desktop app **bundles and supervises** the daemon (as a LaunchAgent),
+so desktop users don't install the CLI separately and the daemon inherits the app's
+Developer ID signing/notarization + product-name attribution (and `sharp`/`blurhash`
+work, since native modules are fine in Electron). The standalone SEA + `curl|bash`
+CLI (PR #205) stays the **headless/server** path. Both run the same daemon code
+against the same per-stage socket, so the Task #7 thin-client wiring is unchanged —
+the app just becomes another way to *launch* the daemon it already connects to.
+
+**Decisions already made (don't re-litigate):**
+- **LaunchAgent, not a child process.** Background persistence when the app is closed
+  is the point; a child process (`utilityProcess.fork`) gives none. Trade-off: BTM
+  shows the product Name but the *Developer* stays the app's cert ("Nan Qin" until an
+  org account — tracked separately).
+- **Run via Electron-as-Node (`ELECTRON_RUN_AS_NODE=1`), not a bundled SEA binary.**
+  Electron already ships Node; bundling the ~109 MB SEA would duplicate the runtime.
+  The LaunchAgent program is the app's own executable + a small asar-unpacked daemon
+  entry that calls `runDaemon()`.
+- **Register via the CLI's existing service manager first** (write plist/unit +
+  `launchctl bootstrap`, reusing PR #205's `InstallOptions.programArguments`).
+  Evaluate `SMAppService` (macOS 13+, best attribution + Login Items UX) as a
+  follow-up — Electron has no agent API, so it needs a native shim.
+- **Attach-if-running.** On launch, check the per-stage socket; attach if a daemon is
+  already up (e.g. a user's CLI daemon), else install/start the app's LaunchAgent.
+  Gate behind a setting (default on). Single-writer holds — the daemon refuses to
+  start on a live socket.
+
+**Gotchas an explorer won't infer:**
+- The **MCP bridge** is spawned via `process.execPath` (= Electron here), so those
+  spawns also need `ELECTRON_RUN_AS_NODE=1` (intersects `resolveSelfExec`'s non-SEA
+  branch from PR #205; the bridge is already `asarUnpack`ed).
+- The daemon runs V8 under the hardened runtime → the **JIT entitlements**
+  (`allow-jit`, `allow-unsigned-executable-memory`) must cover the helper process,
+  not just the renderer.
+- **Uninstall**: removing the `.app` won't remove the LaunchAgent — needs an explicit
+  "remove background service" path (the setting toggle + an uninstall hook).
+
+**Where to start:** export `runDaemon` + `createServiceManager` from `@newio/cli`,
+then add an `EmbeddedDaemon` launcher in the connector main (resolve socket → install
+the LaunchAgent if not alive → `DaemonConnector.connect`). Reuse from PR #205: the
+service managers, `InstallOptions.programArguments`, `resolveSelfExec`, and systemd
+arg-quoting. Everything else (electron-builder config, `asarUnpack`, the IPC surface,
+`@newio/cli` exports) is discoverable in-repo — explore it.
 
 ## Validation gate (run from agent-connector root before every push)
 
