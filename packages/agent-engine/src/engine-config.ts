@@ -20,6 +20,12 @@ export interface EngineConfig {
   /** Directory for persistent data (config, tokens). Typically ~/.newio/connector/ or similar. */
   readonly dataDir: string;
   /**
+   * Directory for agent-downloaded attachments. When omitted, NewioApp falls
+   * back to its own default (`~/newio-downloads`). The daemon supplies a hidden,
+   * stage-suffixed dir (e.g. `~/.newio-dev-downloads`) so stages stay isolated.
+   */
+  readonly downloadsDir?: string;
+  /**
    * Command an ACP agent runs to launch the Newio MCP bridge (a stdio↔UDS relay).
    * Typically `process.execPath` (the running Node binary).
    */

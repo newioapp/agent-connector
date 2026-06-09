@@ -70,7 +70,7 @@ export async function runDaemon(): Promise<void> {
 
   const { stage, apiBaseUrl, wsUrl } = resolveConfig();
 
-  const { dataDir, socketPath, pidPath } = getDaemonPaths(stage);
+  const { dataDir, socketPath, pidPath, downloadsDir } = getDaemonPaths(stage);
   if (!existsSync(dataDir)) {
     mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   }
@@ -105,6 +105,7 @@ export async function runDaemon(): Promise<void> {
     appDisplayName: 'Newio Connector Daemon',
     appVersion: version,
     dataDir,
+    downloadsDir,
     mcpBridgeCommand,
     mcpBridgeArgsPrefix,
     // As a SEA, the bridge is the self-contained binary re-invoking itself — no
