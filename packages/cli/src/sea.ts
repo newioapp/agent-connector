@@ -12,7 +12,7 @@
  */
 import { realpathSync } from 'fs';
 import { homedir } from 'os';
-import { join } from 'path';
+import { join, resolve, delimiter } from 'path';
 
 /**
  * True when running as an injected Single Executable Application.
@@ -64,26 +64,84 @@ export function resolveSelfExec(): SelfExec {
  * The stable, on-PATH path to run the daemon *service* from.
  *
  * The versioned installer (install.sh) puts the binary at
- * `~/.local/share/newio/versions/<version>` with a stable `~/.local/bin/newio`
- * symlink. `process.execPath` resolves through that symlink to the versioned
- * file, so baking it into the launchd plist / systemd unit would pin the service
- * to one version and break when that version is pruned on update. Prefer the
- * stable launcher symlink when it points back at this binary, so a version flip
- * applies on the daemon's next start without rewriting the unit.
+ * `~/.local/share/newio/versions/<version>` with a stable launcher symlink (by
+ * default `~/.local/bin/newio`, or a custom `NEWIO_BIN_DIR`). `process.execPath`
+ * resolves *through* that symlink to the versioned file, so baking it into the
+ * launchd plist / systemd unit would pin the service to one version and break
+ * when that version is pruned on update. Prefer a stable launcher symlink that
+ * resolves back to this binary, so a version flip applies on the daemon's next
+ * start without rewriting the unit.
  *
- * Falls back to `execPath` when there's no such symlink (custom install dir,
- * running from a build dir, or the `node script.js` form — where `execPath` is
- * `node`, not a `newio` launcher).
+ * Candidates, best first:
+ *   1. how the CLI was actually invoked — `process.argv0` preserves the
+ *      un-resolved launcher path (or the PATH command name), so this captures a
+ *      custom install dir even when `NEWIO_BIN_DIR` isn't set at daemon-start
+ *      time (unlike `execPath`/`argv[0]`, which Node resolves);
+ *   2. an explicit `NEWIO_BIN_DIR`;
+ *   3. the default `~/.local/bin`.
+ * Falls back to `execPath` when none resolve back to this binary (e.g. invoked
+ * by its versioned real path, a build dir, or the `node script.js` form where
+ * `execPath` is `node`).
  */
-export function resolveLauncherPath(execPath: string): string {
-  const binDir = process.env['NEWIO_BIN_DIR'] ?? join(homedir(), '.local', 'bin');
-  const launcher = join(binDir, 'newio');
+export function resolveLauncherPath(execPath: string, argv0: string = process.argv0): string {
+  let realExec: string;
   try {
-    if (realpathSync(launcher) === realpathSync(execPath)) {
-      return launcher;
-    }
+    realExec = realpathSync(execPath);
   } catch {
-    // No launcher symlink (or it doesn't resolve) — use the binary directly.
+    return execPath;
+  }
+
+  const candidates: string[] = [];
+  const invoked = resolveInvokedLauncher(argv0);
+  if (invoked !== undefined) {
+    candidates.push(invoked);
+  }
+  const binEnv = process.env['NEWIO_BIN_DIR'];
+  if (typeof binEnv === 'string' && binEnv.length > 0) {
+    candidates.push(join(binEnv, 'newio'));
+  }
+  candidates.push(join(homedir(), '.local', 'bin', 'newio'));
+
+  for (const launcher of candidates) {
+    // Want a *different* path that resolves to the same binary (a stable
+    // symlink), not the versioned file itself.
+    if (launcher === realExec) {
+      continue;
+    }
+    try {
+      if (realpathSync(launcher) === realExec) {
+        return launcher;
+      }
+    } catch {
+      // not a real path — skip
+    }
   }
   return execPath;
+}
+
+/**
+ * Turn `process.argv0` into an absolute path: a slash-containing path is
+ * resolved against cwd; a bare command name is looked up on `PATH` (the shell
+ * runs the first match, so that's the launcher that was invoked).
+ */
+function resolveInvokedLauncher(argv0: string): string | undefined {
+  if (argv0.length === 0) {
+    return undefined;
+  }
+  if (argv0.includes('/')) {
+    return resolve(argv0);
+  }
+  for (const dir of (process.env['PATH'] ?? '').split(delimiter)) {
+    if (dir.length === 0) {
+      continue;
+    }
+    const candidate = join(dir, argv0);
+    try {
+      realpathSync(candidate);
+      return candidate;
+    } catch {
+      // keep looking
+    }
+  }
+  return undefined;
 }
