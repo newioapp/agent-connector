@@ -488,10 +488,8 @@ describe('AcpSessionConfigHandler', () => {
   });
 
   describe('applySessionConfig', () => {
-    it('reports corrected config when setModel fails', async () => {
-      const conn = mockConnection({
-        unstable_setSessionModel: vi.fn().mockRejectedValue(new Error('model not available')),
-      });
+    it('applies a persisted model the agent advertises and does not report', async () => {
+      const conn = mockConnection();
       const updateConfig = mockUpdateConfig();
       const handler = new AcpSessionConfigHandler(
         'conversation',
@@ -500,35 +498,117 @@ describe('AcpSessionConfigHandler', () => {
         conn,
         updateConfig,
         makeSessionResponse({
-          models: { availableModels: [{ modelId: 'fallback', name: 'Fallback' }], currentModelId: 'fallback' },
+          models: {
+            availableModels: [
+              { modelId: 'a', name: 'A' },
+              { modelId: 'b', name: 'B' },
+            ],
+            currentModelId: 'a',
+          },
         }),
       );
 
-      await handler.applySessionConfig({ acpModel: 'unavailable-model' });
+      await handler.applySessionConfig({ acpModel: 'b' });
 
-      expect(conn.unstable_setSessionModel).toHaveBeenCalledWith({ sessionId: 'sess-1', modelId: 'unavailable-model' });
-      expect(updateConfig).toHaveBeenCalledWith({
-        acpModel: 'fallback',
-        acpMode: null,
-      });
+      expect(conn.unstable_setSessionModel).toHaveBeenCalledWith({ sessionId: 'sess-1', modelId: 'b' });
+      expect(handler.listModels()?.selectedId).toBe('b');
+      expect(updateConfig).not.toHaveBeenCalled();
     });
 
-    it('does not report when setModel succeeds', async () => {
+    it('does NOT apply a persisted model the agent does not advertise; keeps current and reports it (Codex scenario)', async () => {
+      // A Codex runner inherits a persisted "opus" model from its Claude days.
+      // setModel would accept it silently and only the later prompt would fail,
+      // so we must not apply it — leave Codex on its valid current model.
+      const conn = mockConnection();
       const updateConfig = mockUpdateConfig();
       const handler = new AcpSessionConfigHandler(
         'conversation',
         'conv-1',
         'sess-1',
-        mockConnection(),
+        conn,
         updateConfig,
         makeSessionResponse({
-          models: { availableModels: [{ modelId: 'a', name: 'A' }], currentModelId: 'a' },
+          models: {
+            availableModels: [
+              { modelId: 'gpt-5-codex', name: 'GPT-5 Codex' },
+              { modelId: 'gpt-5', name: 'GPT-5' },
+            ],
+            currentModelId: 'gpt-5-codex',
+          },
         }),
       );
 
-      await handler.applySessionConfig({ acpModel: 'a' });
+      await handler.applySessionConfig({ acpModel: 'opus' });
 
+      expect(conn.unstable_setSessionModel).not.toHaveBeenCalled();
+      expect(handler.listModels()?.selectedId).toBe('gpt-5-codex');
+      expect(updateConfig).toHaveBeenCalledWith({ acpModel: 'gpt-5-codex', acpMode: null });
+    });
+
+    it('does NOT apply any model when the agent advertises none; reports null', async () => {
+      const conn = mockConnection();
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        conn,
+        updateConfig,
+        makeSessionResponse(),
+      );
+
+      await handler.applySessionConfig({ acpModel: 'opus' });
+
+      expect(conn.unstable_setSessionModel).not.toHaveBeenCalled();
+      expect(updateConfig).toHaveBeenCalledWith({ acpModel: null, acpMode: null });
+    });
+
+    it('applies a persisted mode the agent advertises and does not report', async () => {
+      const conn = mockConnection();
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        conn,
+        updateConfig,
+        makeSessionResponse({
+          modes: {
+            availableModes: [
+              { id: 'code', name: 'Code' },
+              { id: 'review', name: 'Review' },
+            ],
+            currentModeId: 'code',
+          },
+        }),
+      );
+
+      await handler.applySessionConfig({ acpMode: 'review' });
+
+      expect(conn.setSessionMode).toHaveBeenCalledWith({ sessionId: 'sess-1', modeId: 'review' });
+      expect(handler.listModes()?.selectedId).toBe('review');
       expect(updateConfig).not.toHaveBeenCalled();
+    });
+
+    it('does NOT apply a persisted mode the agent does not advertise; keeps current and reports it', async () => {
+      const conn = mockConnection();
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        conn,
+        updateConfig,
+        makeSessionResponse({
+          modes: { availableModes: [{ id: 'code', name: 'Code' }], currentModeId: 'code' },
+        }),
+      );
+
+      await handler.applySessionConfig({ acpMode: 'plan' });
+
+      expect(conn.setSessionMode).not.toHaveBeenCalled();
+      expect(handler.listModes()?.selectedId).toBe('code');
+      expect(updateConfig).toHaveBeenCalledWith({ acpModel: null, acpMode: 'code' });
     });
   });
 });

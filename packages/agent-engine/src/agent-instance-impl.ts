@@ -458,6 +458,12 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
     log.debug(`${this.logTag} [${session.correlationId}] Generating greeting for owner...`);
 
+    // The greeting doubles as a connection test: it exercises a full prompt
+    // round-trip so configuration problems (bad model, broken auth, etc.) surface
+    // at launch rather than silently on the first real message. Failures here are
+    // intentionally fatal. By this point the persisted session config has already
+    // been applied (only advertised/valid model+mode values are set), so a valid
+    // model is in effect before this prompt runs.
     let greeting: string | undefined;
     try {
       greeting = await collectAgentMessage(

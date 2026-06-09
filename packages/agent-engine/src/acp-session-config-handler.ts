@@ -143,25 +143,39 @@ export class AcpSessionConfigHandler {
   }
 
   /**
-   * Apply acpModel/acpMode config. Reports corrected values back if unavailable.
+   * Apply acpModel/acpMode config. Only applies a value the agent actually
+   * advertises (from the session response or a later config_option_update);
+   * otherwise the persisted value is left unapplied and the session's current
+   * (valid) selection is reported back to correct the stale backend value.
+   *
+   * Why the validity gate rather than a try/catch: `setSessionModel` /
+   * `setSessionConfigOption` accept an unknown id silently and only surface the
+   * problem much later, at prompt time (e.g. a Codex runner that inherited a
+   * Claude "opus" model ends up on a model the ChatGPT account rejects when the
+   * first prompt runs). Setting never throws, so a try/catch fallback never
+   * fires — we must validate up front and simply not apply an unsupported value.
    */
   async applySessionConfig(config: SessionConfigUpdate): Promise<void> {
     let needsReport = false;
 
     if (config.acpModel) {
-      try {
+      if (this.isAdvertisedModel(config.acpModel)) {
         await this.setModel(config.acpModel);
-      } catch {
-        log.warn(`[${this.sessionType}/${this.externalReferenceId}] Model ${config.acpModel} not available`);
+      } else {
+        log.warn(
+          `[${this.sessionType}/${this.externalReferenceId}] Persisted model "${config.acpModel}" is not advertised by this agent; keeping current model "${this.modelConfig?.selectedId ?? 'unknown'}"`,
+        );
         needsReport = true;
       }
     }
 
     if (config.acpMode) {
-      try {
+      if (this.isAdvertisedMode(config.acpMode)) {
         await this.setMode(config.acpMode);
-      } catch {
-        log.warn(`[${this.sessionType}/${this.externalReferenceId}] Mode ${config.acpMode} not available`);
+      } else {
+        log.warn(
+          `[${this.sessionType}/${this.externalReferenceId}] Persisted mode "${config.acpMode}" is not advertised by this agent; keeping current mode "${this.modeConfig?.selectedId ?? 'unknown'}"`,
+        );
         needsReport = true;
       }
     }
@@ -169,6 +183,16 @@ export class AcpSessionConfigHandler {
     if (needsReport) {
       await this.reportCurrentConfig();
     }
+  }
+
+  /** Whether the agent advertises a model with this id (from session response or config_option_update). */
+  private isAdvertisedModel(modelId: string): boolean {
+    return this.modelConfig?.options.some((o) => o.id === modelId) ?? false;
+  }
+
+  /** Whether the agent advertises a mode with this id. */
+  private isAdvertisedMode(modeId: string): boolean {
+    return this.modeConfig?.options.some((o) => o.id === modeId) ?? false;
   }
 
   /** Report the current model/mode back to the backend (corrects stale persisted values). */
