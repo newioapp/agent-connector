@@ -122,8 +122,15 @@ export interface ResolvedConfig {
   readonly stage: Stage;
   readonly apiBaseUrl: string;
   readonly wsUrl: string;
-  /** Download CDN base (no trailing slash). The version manifest + binaries live under `${cdnBaseUrl}/downloads/cli`. */
-  readonly cdnBaseUrl: string;
+  /**
+   * Download CDN base (no trailing slash); the version manifest + binaries live
+   * under `${cdnBaseUrl}/downloads/cli`. Unlike the API/WS URLs, this does NOT
+   * fall back to prod for a non-prod stage: it's only the hardcoded prod CDN for
+   * `prod`, or an explicit `NEWIO_CDN_URL`, else `undefined`. The updater mutates
+   * the installed binary, so a `newio-dev` build with no override must refuse to
+   * check/install rather than silently pull the prod channel.
+   */
+  readonly cdnBaseUrl: string | undefined;
 }
 
 /**
@@ -133,13 +140,29 @@ export interface ResolvedConfig {
  * testing knobs. End users with no env set resolve to `prod` with the production
  * endpoints. Internal testers set `NEWIO_STAGE` (for data-dir/socket isolation)
  * and `NEWIO_API_URL` / `NEWIO_WS_URL` to point at a non-prod backend. If the
- * stage is set without matching URLs, requests simply fall back to prod.
+ * stage is set without matching URLs, requests simply fall back to prod — except
+ * the download CDN (see {@link resolveCdnBaseUrl}), which must not.
  */
 export function resolveConfig(): ResolvedConfig {
+  const stage = resolveStage(process.env['NEWIO_STAGE']);
   return {
-    stage: resolveStage(process.env['NEWIO_STAGE']),
+    stage,
     apiBaseUrl: process.env['NEWIO_API_URL'] ?? PROD_API_URL,
     wsUrl: process.env['NEWIO_WS_URL'] ?? PROD_WS_URL,
-    cdnBaseUrl: (process.env['NEWIO_CDN_URL'] ?? PROD_CDN_URL).replace(/\/+$/, ''),
+    cdnBaseUrl: resolveCdnBaseUrl(stage),
   };
+}
+
+/**
+ * Resolve the download CDN base, or `undefined` when it can't be safely
+ * determined. An explicit `NEWIO_CDN_URL` always wins (trailing slash trimmed).
+ * Otherwise only `prod` has a compiled-in CDN; a non-prod stage with no override
+ * returns `undefined` so the updater fails fast instead of pulling prod binaries.
+ */
+function resolveCdnBaseUrl(stage: Stage): string | undefined {
+  const override = process.env['NEWIO_CDN_URL'];
+  if (override !== undefined && override !== '') {
+    return override.replace(/\/+$/, '');
+  }
+  return stage === 'prod' ? PROD_CDN_URL : undefined;
 }

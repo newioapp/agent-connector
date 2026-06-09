@@ -16,7 +16,8 @@ import { applyUpdateViaInstaller } from '../update/apply.js';
 
 export interface UpdateContext {
   readonly stage: Stage;
-  readonly cdnBaseUrl: string;
+  /** Download CDN base, or undefined when a non-prod stage has no NEWIO_CDN_URL. */
+  readonly cdnBaseUrl: string | undefined;
   readonly currentVersion: string;
   readonly cachePath: string;
   /** How the CLI was invoked, for the correct command name in hints. */
@@ -34,6 +35,13 @@ export interface UpdateOptions {
 export async function update(ctx: UpdateContext, options: UpdateOptions): Promise<void> {
   const cmd = cliCommandName(ctx.argv0);
   const suffix = stageSuffix(ctx.stage);
+
+  // Non-prod with no CDN configured: refuse rather than silently target prod.
+  if (ctx.cdnBaseUrl === undefined) {
+    console.error(`Updates for the ${ctx.stage} channel require NEWIO_CDN_URL to be set to its download CDN.`);
+    process.exitCode = 1;
+    return;
+  }
 
   console.log('Checking for updates…');
   const status = await checkForUpdate({
@@ -97,6 +105,10 @@ export async function update(ctx: UpdateContext, options: UpdateOptions): Promis
 export async function notifyIfUpdateAvailable(ctx: UpdateContext): Promise<void> {
   // Keep scripts, pipes, and the daemon service output clean.
   if (!process.stdout.isTTY) {
+    return;
+  }
+  // No safely-resolved CDN (non-prod without NEWIO_CDN_URL) → nothing to check.
+  if (ctx.cdnBaseUrl === undefined) {
     return;
   }
   try {
