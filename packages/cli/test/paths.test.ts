@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { resolveStage, resolveConfig, stageFromCommandName } from '../src/paths';
+import { homedir } from 'os';
+import { join } from 'path';
+import { resolveStage, resolveConfig, stageFromCommandName, getDaemonPaths } from '../src/paths';
 
 describe('stageFromCommandName', () => {
   it('infers the stage from a stage-named command', () => {
@@ -43,6 +45,25 @@ describe('resolveStage', () => {
   it('throws on an unknown non-empty value instead of falling back', () => {
     expect(() => resolveStage('devv')).toThrow(/Invalid NEWIO_STAGE "devv"/);
     expect(() => resolveStage('staging')).toThrow(/Expected one of: dev, integ, prod/);
+  });
+});
+
+describe('getDaemonPaths', () => {
+  it('roots prod under ~/.newio with a sibling ~/.newio-downloads', () => {
+    const paths = getDaemonPaths('prod');
+    expect(paths.dataDir).toBe(join(homedir(), '.newio', 'connector'));
+    expect(paths.downloadsDir).toBe(join(homedir(), '.newio-downloads'));
+  });
+
+  it('stage-suffixes both the data dir and the downloads dir for non-prod', () => {
+    expect(getDaemonPaths('dev').dataDir).toBe(join(homedir(), '.newio-dev', 'connector'));
+    expect(getDaemonPaths('dev').downloadsDir).toBe(join(homedir(), '.newio-dev-downloads'));
+    expect(getDaemonPaths('integ').downloadsDir).toBe(join(homedir(), '.newio-integ-downloads'));
+  });
+
+  it('keeps the downloads dir a hidden sibling, not nested under the data dir', () => {
+    const paths = getDaemonPaths('dev');
+    expect(paths.downloadsDir.startsWith(paths.dataDir)).toBe(false);
   });
 });
 

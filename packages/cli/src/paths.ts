@@ -74,6 +74,13 @@ export interface DaemonPaths {
   readonly pidPath: string;
   /** Log file (used when not captured by a service manager). */
   readonly logPath: string;
+  /**
+   * Directory for agent-downloaded attachments. A hidden, stage-suffixed sibling
+   * of the data dir (e.g. `~/.newio-dev-downloads`) so dev/integ/prod downloads
+   * never mix. Kept separate from `dataDir` (internal plumbing) because it holds
+   * user-facing files; organized as `<downloadsDir>/<username>/<conversationId>/`.
+   */
+  readonly downloadsDir: string;
 }
 
 /** Resolve the per-stage data directory and well-known file paths. */
@@ -85,6 +92,9 @@ export function getDaemonPaths(stage: Stage): DaemonPaths {
     socketPath: join(dataDir, 'daemon.sock'),
     pidPath: join(dataDir, 'daemon.pid'),
     logPath: join(dataDir, 'daemon.log'),
+    // Sibling of `home`, not nested under it: `.newio-downloads` (prod),
+    // `.newio-dev-downloads`, `.newio-integ-downloads`.
+    downloadsDir: join(homedir(), `${home}-downloads`),
   };
 }
 
