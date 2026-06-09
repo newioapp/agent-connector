@@ -4,7 +4,7 @@
  * These only need the service manager (fs + launchctl/systemctl), not the
  * daemon RPC socket — except `reload`, which sends an RPC to the running daemon.
  */
-import { getDaemonPaths, resolveConfig, stageSuffix, type Stage } from '../paths.js';
+import { getDaemonPaths, resolveConfig, stageSuffix, stageFromCommandName, type Stage } from '../paths.js';
 import { createServiceManager, type InstallOptions, type ServiceStatus } from '../service/index.js';
 import { withDaemon } from '../client/connect.js';
 import { resolveSelfExec, resolveLauncherPath, cliCommandName } from '../sea.js';
@@ -67,17 +67,27 @@ function describeStatus(stage: Stage, status: ServiceStatus): string {
   }
 }
 
+/**
+ * The `… daemon logs -f` command to print after install.
+ *
+ * `cmd` is the invoked command name (e.g. `newio` or `newio-dev`). It's prefixed
+ * with `NEWIO_STAGE=<stage>` only when that command name wouldn't resolve to the
+ * installed `stage` on its own — i.e. whenever the name's inferred stage differs
+ * from the stage actually installed. That covers both the prod `newio` binary
+ * driving a non-prod stage (`NEWIO_STAGE=dev newio …`) and a stage-named binary
+ * driving a different stage (`NEWIO_STAGE=prod newio-dev …`), so the printed
+ * command always targets the daemon that was just installed.
+ */
+export function daemonLogsHint(stage: Stage, cmd: string): string {
+  const envPrefix = stageFromCommandName(cmd) === stage ? '' : `NEWIO_STAGE=${stage} `;
+  return `${envPrefix}${cmd} daemon logs -f`;
+}
+
 export function daemonStart(opts: DaemonStartOptions): void {
   const service = createServiceManager(opts.stage);
   service.install(resolveInstallOptions(opts));
   console.log(describeStatus(opts.stage, service.status()));
-  // Hint NEWIO_STAGE for any non-prod stage — this stays correct even when the
-  // prod `newio` binary is driving a non-prod stage via NEWIO_STAGE. The command
-  // itself is whatever was invoked (e.g. `newio-dev`), so a stage-named install
-  // still gets a runnable hint.
-  const cmd = cliCommandName();
-  const envPrefix = opts.stage === 'prod' ? '' : `NEWIO_STAGE=${opts.stage} `;
-  console.log(`Logs: ${envPrefix}${cmd} daemon logs -f`);
+  console.log(`Logs: ${daemonLogsHint(opts.stage, cliCommandName())}`);
 }
 
 export function daemonStop(stage: Stage): void {
