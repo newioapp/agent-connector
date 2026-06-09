@@ -46,6 +46,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "commander": "^13.1.0",
     "dotenv": "^17.4.2",
+    "qrcode-terminal": "^0.12.0",
     "ws": "^8.20.0",
     "yaml": "^2.8.4",
     "zod": "^4.3.6"
@@ -54,6 +55,7 @@
     "@newio/agent-engine": "workspace:*",
     "@newio/agent-sdk": "workspace:*",
     "@types/node": "^22.19.15",
+    "@types/qrcode-terminal": "^0.12.2",
     "postject": "^1.0.0-alpha.6",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",
