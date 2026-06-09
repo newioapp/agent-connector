@@ -238,8 +238,6 @@ export class IsolatedSessionManager implements SessionManager {
   ): Promise<AgentSession> {
     const session = await this.newSession(type, externalReferenceId);
 
-    await this.provideContext(session, handoffNote);
-
     // Wire status listener
     session.onStatus((status, conversationId) => {
       if (conversationId) {
@@ -263,11 +261,13 @@ export class IsolatedSessionManager implements SessionManager {
     log.info(`${this.logTag} Session ready: key=${type}/${externalReferenceId} → correlation=${session.correlationId}`);
 
     // Apply persisted acpModel/acpMode from the backend (conversation sessions
-    // only). Awaited — and not fire-and-forget — so the configured (or
-    // fallback-selected) model is in effect before the first prompt runs on this
-    // session. The greeting prompt acts as a connection test and must not race a
-    // pending model change (e.g. a Codex runner left on its rejected 'default').
+    // only) BEFORE providing context. Awaited — and not fire-and-forget — and
+    // ahead of provideContext, which issues the session's first prompt: that
+    // prompt (and the later greeting connection test) must run with the
+    // configured model/mode already in effect, not race a pending change.
     await this.applyPersistedSessionConfig(type, externalReferenceId, session);
+
+    await this.provideContext(session, handoffNote);
 
     return session;
   }

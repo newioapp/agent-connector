@@ -143,36 +143,39 @@ export class AcpSessionConfigHandler {
   }
 
   /**
-   * Apply acpModel/acpMode config. Reports corrected values back if unavailable.
+   * Apply acpModel/acpMode config. Only applies a value the agent actually
+   * advertises (from the session response or a later config_option_update);
+   * otherwise the persisted value is left unapplied and the session's current
+   * (valid) selection is reported back to correct the stale backend value.
+   *
+   * Why the validity gate rather than a try/catch: `setSessionModel` /
+   * `setSessionConfigOption` accept an unknown id silently and only surface the
+   * problem much later, at prompt time (e.g. a Codex runner that inherited a
+   * Claude "opus" model ends up on a model the ChatGPT account rejects when the
+   * first prompt runs). Setting never throws, so a try/catch fallback never
+   * fires — we must validate up front and simply not apply an unsupported value.
    */
   async applySessionConfig(config: SessionConfigUpdate): Promise<void> {
     let needsReport = false;
 
     if (config.acpModel) {
-      try {
+      if (this.isAdvertisedModel(config.acpModel)) {
         await this.setModel(config.acpModel);
-      } catch {
-        log.warn(`[${this.sessionType}/${this.externalReferenceId}] Model ${config.acpModel} not available`);
-        // The persisted model is incompatible with this agent (e.g. a Codex
-        // runner inheriting a Claude "opus" model). Don't leave the session on
-        // whatever it defaulted to — some agents default to a placeholder model
-        // that they then reject at prompt time (Codex + ChatGPT account rejects
-        // its own 'default'). Fall back to a real advertised model so the first
-        // prompt (the greeting) doesn't fail.
-        await this.trySelectFallbackModel(config.acpModel);
+      } else {
+        log.warn(
+          `[${this.sessionType}/${this.externalReferenceId}] Persisted model "${config.acpModel}" is not advertised by this agent; keeping current model "${this.modelConfig?.selectedId ?? 'unknown'}"`,
+        );
         needsReport = true;
       }
     }
 
     if (config.acpMode) {
-      try {
+      if (this.isAdvertisedMode(config.acpMode)) {
         await this.setMode(config.acpMode);
-      } catch {
-        log.warn(`[${this.sessionType}/${this.externalReferenceId}] Mode ${config.acpMode} not available`);
-        // As with the model, a persisted mode may not exist on this agent (e.g.
-        // inherited from a different agent type). Fall back to a real advertised
-        // mode so the session isn't left on an incompatible one.
-        await this.trySelectFallbackMode(config.acpMode);
+      } else {
+        log.warn(
+          `[${this.sessionType}/${this.externalReferenceId}] Persisted mode "${config.acpMode}" is not advertised by this agent; keeping current mode "${this.modeConfig?.selectedId ?? 'unknown'}"`,
+        );
         needsReport = true;
       }
     }
@@ -182,65 +185,14 @@ export class AcpSessionConfigHandler {
     }
   }
 
-  /**
-   * Select the first advertised model that successfully applies, used when the
-   * persisted model failed. Skips the failed id and the literal 'default'
-   * placeholder (which some agents advertise but reject at prompt time).
-   */
-  private async trySelectFallbackModel(failedModelId: string): Promise<void> {
-    const options = this.modelConfig?.options;
-    if (!options || options.length === 0) {
-      log.warn(`[${this.sessionType}/${this.externalReferenceId}] No advertised models to fall back to`);
-      return;
-    }
-    for (const option of options) {
-      if (option.id === failedModelId || option.id === 'default') {
-        continue;
-      }
-      try {
-        await this.setModel(option.id);
-        log.info(
-          `[${this.sessionType}/${this.externalReferenceId}] Fell back to model "${option.id}" after "${failedModelId}" was unavailable`,
-        );
-        return;
-      } catch {
-        log.warn(
-          `[${this.sessionType}/${this.externalReferenceId}] Fallback model "${option.id}" also failed, trying next`,
-        );
-      }
-    }
-    log.warn(`[${this.sessionType}/${this.externalReferenceId}] No usable fallback model found`);
+  /** Whether the agent advertises a model with this id (from session response or config_option_update). */
+  private isAdvertisedModel(modelId: string): boolean {
+    return this.modelConfig?.options.some((o) => o.id === modelId) ?? false;
   }
 
-  /**
-   * Select the first advertised mode that successfully applies, used when the
-   * persisted mode failed. Skips the failed id. Unlike the model fallback there
-   * is no 'default' placeholder to avoid — an agent's current mode is a real,
-   * usable mode, so any advertised mode is a valid fallback target.
-   */
-  private async trySelectFallbackMode(failedModeId: string): Promise<void> {
-    const options = this.modeConfig?.options;
-    if (!options || options.length === 0) {
-      log.warn(`[${this.sessionType}/${this.externalReferenceId}] No advertised modes to fall back to`);
-      return;
-    }
-    for (const option of options) {
-      if (option.id === failedModeId) {
-        continue;
-      }
-      try {
-        await this.setMode(option.id);
-        log.info(
-          `[${this.sessionType}/${this.externalReferenceId}] Fell back to mode "${option.id}" after "${failedModeId}" was unavailable`,
-        );
-        return;
-      } catch {
-        log.warn(
-          `[${this.sessionType}/${this.externalReferenceId}] Fallback mode "${option.id}" also failed, trying next`,
-        );
-      }
-    }
-    log.warn(`[${this.sessionType}/${this.externalReferenceId}] No usable fallback mode found`);
+  /** Whether the agent advertises a mode with this id. */
+  private isAdvertisedMode(modeId: string): boolean {
+    return this.modeConfig?.options.some((o) => o.id === modeId) ?? false;
   }
 
   /** Report the current model/mode back to the backend (corrects stale persisted values). */

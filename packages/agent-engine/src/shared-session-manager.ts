@@ -238,8 +238,6 @@ export class SharedSessionManager implements SessionManager {
   private async launchSession(handoffNote?: string): Promise<AgentSession> {
     const session = await this.newSession(SESSION_TYPE, SHARED_SESSION_ID);
 
-    await this.provideContext(session, handoffNote);
-
     // Wire status listener
     session.onStatus((status, conversationId) => {
       if (conversationId) {
@@ -263,7 +261,11 @@ export class SharedSessionManager implements SessionManager {
     log.info(`${this.logTag} Shared Session ready`);
 
     // Apply persisted acpModel/acpMode config from the owner DM conversation
+    // BEFORE providing context — provideContext issues the session's first
+    // prompt, which must run with the configured model/mode already in effect.
     await this.applyPersistedSessionConfig(session);
+
+    await this.provideContext(session, handoffNote);
 
     return session;
   }
