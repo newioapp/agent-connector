@@ -7,7 +7,7 @@
 import { getDaemonPaths, resolveConfig, type Stage } from '../paths.js';
 import { createServiceManager, type InstallOptions, type ServiceStatus } from '../service/index.js';
 import { withDaemon } from '../client/connect.js';
-import { resolveSelfExec } from '../sea.js';
+import { resolveSelfExec, resolveLauncherPath } from '../sea.js';
 
 export interface DaemonStartOptions {
   readonly stage: Stage;
@@ -39,9 +39,12 @@ function resolveInstallOptions(opts: DaemonStartOptions): InstallOptions {
   // binary itself, or `node dist/cli.js`. SEA-aware so the unit never depends on
   // a system Node and is attributed to our signature on macOS.
   const { execPath, entryArgs } = resolveSelfExec();
+  // For the SEA form, prefer the stable on-PATH launcher symlink over the
+  // version-pinned real path so updates apply on the daemon's next start.
+  const programExec = entryArgs.length === 0 ? resolveLauncherPath(execPath) : execPath;
 
   return {
-    programArguments: [execPath, ...entryArgs, 'daemon', 'run'],
+    programArguments: [programExec, ...entryArgs, 'daemon', 'run'],
     env,
     logPath,
     enable: opts.enable,
