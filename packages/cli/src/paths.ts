@@ -4,7 +4,7 @@
  * Both sides must agree on where the daemon's Unix socket lives, so this is the
  * single source of truth for the data directory layout.
  */
-import { join } from 'path';
+import { join, basename } from 'path';
 import { homedir } from 'os';
 
 export type Stage = 'dev' | 'integ' | 'prod';
@@ -12,21 +12,57 @@ export type Stage = 'dev' | 'integ' | 'prod';
 const STAGES: readonly Stage[] = ['dev', 'integ', 'prod'];
 
 /**
+ * Infer the stage from the command name the CLI was invoked as.
+ *
+ * The internal-testing builds install stage-named binaries (`newio-dev` /
+ * `newio-integ`) so all three stages can coexist on one machine. Deriving the
+ * stage from that name lets `newio-dev <cmd>` reach the dev daemon's socket (and
+ * `~/.newio-dev` data dir) without the user setting NEWIO_STAGE on every call.
+ * The plain `newio` command — and any other name (e.g. `node` when run from
+ * source) — resolves to prod. An explicit NEWIO_STAGE always wins (see
+ * {@link resolveStage}).
+ */
+export function stageFromCommandName(command: string): Stage {
+  switch (basename(command)) {
+    case 'newio-dev':
+      return 'dev';
+    case 'newio-integ':
+      return 'integ';
+    default:
+      return 'prod';
+  }
+}
+
+/**
  * Validate a stage value from the environment.
  *
- * Unset (or empty) defaults to 'prod'. A non-empty value that isn't a known
- * stage is rejected loudly so typos like `NEWIO_STAGE=devv` fail fast instead
- * of silently falling back to prod.
+ * Unset (or empty) falls back to the stage implied by the invoked command name
+ * (`command`, default `process.argv0`) — see {@link stageFromCommandName} —
+ * which is 'prod' for the plain `newio` binary. A non-empty value that isn't a
+ * known stage is rejected loudly so typos like `NEWIO_STAGE=devv` fail fast
+ * instead of silently falling back to prod.
  */
-export function resolveStage(value: string | undefined): Stage {
+export function resolveStage(value: string | undefined, command: string = process.argv0): Stage {
   if (value === undefined || value === '') {
-    return 'prod';
+    return stageFromCommandName(command);
   }
   const stage = STAGES.find((s) => s === value);
   if (stage === undefined) {
     throw new Error(`Invalid NEWIO_STAGE "${value}". Expected one of: ${STAGES.join(', ')}.`);
   }
   return stage;
+}
+
+/**
+ * User-facing stage suffix for CLI output, e.g. ` (dev)`.
+ *
+ * Prod is the only end-user stage, so it must stay invisible — `dev`/`integ` are
+ * internal testing knobs and end users should never learn they exist. Prod
+ * returns an empty string; non-prod returns a parenthetical so internal testers
+ * can tell instances apart.
+ */
+export function stageSuffix(stage: Stage): string {
+  return stage === 'prod' ? '' : ` (${stage})`;
 }
 
 export interface DaemonPaths {

@@ -1,10 +1,37 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { resolveStage, resolveConfig } from '../src/paths';
+import { resolveStage, resolveConfig, stageFromCommandName } from '../src/paths';
+
+describe('stageFromCommandName', () => {
+  it('infers the stage from a stage-named command', () => {
+    expect(stageFromCommandName('newio-dev')).toBe('dev');
+    expect(stageFromCommandName('newio-integ')).toBe('integ');
+  });
+
+  it('resolves plain newio and anything unrecognized to prod', () => {
+    expect(stageFromCommandName('newio')).toBe('prod');
+    expect(stageFromCommandName('node')).toBe('prod');
+    expect(stageFromCommandName('newio-bogus')).toBe('prod');
+  });
+
+  it('uses the basename, so an absolute launcher path still resolves', () => {
+    expect(stageFromCommandName('/home/u/.local/bin/newio-dev')).toBe('dev');
+    expect(stageFromCommandName('/usr/local/bin/newio')).toBe('prod');
+  });
+});
 
 describe('resolveStage', () => {
-  it('defaults to prod when unset or empty', () => {
+  it('defaults to the command-name stage when unset or empty', () => {
+    // Default command (process.argv0 = node under vitest) → prod.
     expect(resolveStage(undefined)).toBe('prod');
     expect(resolveStage('')).toBe('prod');
+    // An explicit stage-named command is honored when NEWIO_STAGE is unset.
+    expect(resolveStage(undefined, 'newio-dev')).toBe('dev');
+    expect(resolveStage('', '/opt/bin/newio-integ')).toBe('integ');
+  });
+
+  it('lets an explicit NEWIO_STAGE override the command name', () => {
+    expect(resolveStage('prod', 'newio-dev')).toBe('prod');
+    expect(resolveStage('integ', 'newio')).toBe('integ');
   });
 
   it('returns known stages', () => {

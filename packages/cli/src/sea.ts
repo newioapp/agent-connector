@@ -12,7 +12,7 @@
  */
 import { realpathSync } from 'fs';
 import { homedir } from 'os';
-import { join, resolve, delimiter } from 'path';
+import { join, resolve, delimiter, basename } from 'path';
 
 /**
  * True when running as an injected Single Executable Application.
@@ -31,6 +31,20 @@ export function isSeaBinary(): boolean {
     // Older Node without `node:sea`, or any lookup failure → not a SEA.
     return false;
   }
+}
+
+/**
+ * The on-PATH command name this CLI is installed as: `newio` (prod), or the
+ * stage-named `newio-dev` / `newio-integ` for internal-testing builds. Derived
+ * from how the CLI was invoked (`argv0`), defaulting to `newio` for anything
+ * that isn't a recognizable `newio*` command (e.g. `node` when run from source).
+ *
+ * Used both to locate the stable launcher symlink (so a stage-named install
+ * resolves to its own symlink) and to print correct command hints in help text.
+ */
+export function cliCommandName(argv0: string = process.argv0): string {
+  const base = basename(argv0);
+  return base.startsWith('newio') ? base : 'newio';
 }
 
 export interface SelfExec {
@@ -91,6 +105,9 @@ export function resolveLauncherPath(execPath: string, argv0: string = process.ar
     return execPath;
   }
 
+  // The installed command name (newio / newio-dev / newio-integ) the stable
+  // launcher symlink is named after — derived from how this CLI was invoked.
+  const cmdName = cliCommandName(argv0);
   const candidates: string[] = [];
   const invoked = resolveInvokedLauncher(argv0);
   if (invoked !== undefined) {
@@ -98,9 +115,9 @@ export function resolveLauncherPath(execPath: string, argv0: string = process.ar
   }
   const binEnv = process.env['NEWIO_BIN_DIR'];
   if (typeof binEnv === 'string' && binEnv.length > 0) {
-    candidates.push(join(binEnv, 'newio'));
+    candidates.push(join(binEnv, cmdName));
   }
-  candidates.push(join(homedir(), '.local', 'bin', 'newio'));
+  candidates.push(join(homedir(), '.local', 'bin', cmdName));
 
   for (const launcher of candidates) {
     // Want a *different* path that resolves to the same binary (a stable

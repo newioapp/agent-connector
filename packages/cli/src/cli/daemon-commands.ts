@@ -4,10 +4,10 @@
  * These only need the service manager (fs + launchctl/systemctl), not the
  * daemon RPC socket — except `reload`, which sends an RPC to the running daemon.
  */
-import { getDaemonPaths, resolveConfig, type Stage } from '../paths.js';
+import { getDaemonPaths, resolveConfig, stageSuffix, type Stage } from '../paths.js';
 import { createServiceManager, type InstallOptions, type ServiceStatus } from '../service/index.js';
 import { withDaemon } from '../client/connect.js';
-import { resolveSelfExec, resolveLauncherPath } from '../sea.js';
+import { resolveSelfExec, resolveLauncherPath, cliCommandName } from '../sea.js';
 
 export interface DaemonStartOptions {
   readonly stage: Stage;
@@ -52,7 +52,7 @@ function resolveInstallOptions(opts: DaemonStartOptions): InstallOptions {
 }
 
 function describeStatus(stage: Stage, status: ServiceStatus): string {
-  const prefix = `newio daemon (${stage}):`;
+  const prefix = `newio daemon${stageSuffix(stage)}:`;
   switch (status.state) {
     case 'not-installed':
       return `${prefix} not installed`;
@@ -71,19 +71,22 @@ export function daemonStart(opts: DaemonStartOptions): void {
   const service = createServiceManager(opts.stage);
   service.install(resolveInstallOptions(opts));
   console.log(describeStatus(opts.stage, service.status()));
-  const envPrefix = opts.stage === 'prod' ? '' : `NEWIO_STAGE=${opts.stage} `;
-  console.log(`Logs: ${envPrefix}newio daemon logs -f`);
+  // A stage-named binary (newio-dev/newio-integ) already implies its stage; the
+  // plain `newio` binary needs NEWIO_STAGE to address a non-prod daemon.
+  const cmd = cliCommandName();
+  const envPrefix = opts.stage === 'prod' || cmd !== 'newio' ? '' : `NEWIO_STAGE=${opts.stage} `;
+  console.log(`Logs: ${envPrefix}${cmd} daemon logs -f`);
 }
 
 export function daemonStop(stage: Stage): void {
   createServiceManager(stage).stop();
-  console.log(`Stopped newio daemon (${stage}).`);
+  console.log(`Stopped newio daemon${stageSuffix(stage)}.`);
 }
 
 export function daemonRestart(stage: Stage): void {
   const service = createServiceManager(stage);
   if (!service.isInstalled()) {
-    throw new Error(`Daemon (${stage}) is not installed. Run \`newio daemon start\` first.`);
+    throw new Error(`Daemon${stageSuffix(stage)} is not installed. Run \`newio daemon start\` first.`);
   }
   service.restart();
   console.log(describeStatus(stage, service.status()));
@@ -99,10 +102,10 @@ export function daemonLogs(stage: Stage, opts: { follow: boolean; lines: number 
 
 export function daemonUninstall(stage: Stage): void {
   createServiceManager(stage).uninstall();
-  console.log(`Uninstalled newio daemon (${stage}).`);
+  console.log(`Uninstalled newio daemon${stageSuffix(stage)}.`);
 }
 
 export async function daemonReload(stage: Stage): Promise<void> {
   await withDaemon(stage, (c) => c.reload());
-  console.log(`Reloaded newio daemon (${stage}).`);
+  console.log(`Reloaded newio daemon${stageSuffix(stage)}.`);
 }

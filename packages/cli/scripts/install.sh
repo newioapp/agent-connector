@@ -7,25 +7,30 @@
 # Detects your OS/arch, downloads the matching `newio` binary from the CDN,
 # verifies its SHA-256, and installs it with a versioned layout:
 #
-#   ~/.local/share/newio/versions/<version>   the actual binary, one file per version
-#   ~/.local/bin/newio  ->  versions/<version> a stable symlink on your PATH
+#   ~/.local/share/<cmd>/versions/<version>   the actual binary, one file per version
+#   ~/.local/bin/<cmd>  ->  versions/<version> a stable symlink on your PATH
+#
+# <cmd> is the command name baked into the downloaded binary: `newio` for the
+# public (prod) build, or `newio-dev` / `newio-integ` for the internal-testing
+# builds, so all three can be installed side by side. The command's stage is
+# inferred from its name, so `newio-dev <cmd>` targets the dev daemon with no
+# extra env.
 #
 # Updates drop a new file in versions/ and atomically flip the symlink, so the
-# `newio daemon` service (which points at the symlink) picks up the new version
+# `<cmd> daemon` service (which points at the symlink) picks up the new version
 # on its next start, and previous versions stay for rollback. No system Node
 # required — the binary is fully self-contained.
 #
 # Knobs (env vars):
 #   NEWIO_INSTALL_BASE_URL  Override the CDN base (default: prod).
 #   NEWIO_BIN_DIR           Symlink dir on PATH (default: ~/.local/bin).
-#   NEWIO_DATA_DIR          Versioned binaries dir (default: ~/.local/share/newio).
+#   NEWIO_DATA_DIR          Versioned binaries dir (default: ~/.local/share/<cmd>).
 #   NEWIO_VERSION           Install a specific published version instead of latest.
 #   NEWIO_KEEP_VERSIONS     How many versions to retain (default: 3).
 set -euo pipefail
 
 BASE_URL="${NEWIO_INSTALL_BASE_URL:-https://cdn.newio.app/downloads/cli}"
 BIN_DIR="${NEWIO_BIN_DIR:-$HOME/.local/bin}"
-DATA_DIR="${NEWIO_DATA_DIR:-$HOME/.local/share/newio}"
 VERSION="${NEWIO_VERSION:-latest}"
 KEEP_VERSIONS="${NEWIO_KEEP_VERSIONS:-3}"
 
@@ -73,22 +78,37 @@ else
 fi
 [ "$actual" = "$expected" ] || err "checksum mismatch (expected $expected, got $actual)"
 
-# --- extract + resolve version ---------------------------------------------
+# --- extract + resolve command name + version ------------------------------
 tar -xzf "$tmp/$archive" -C "$tmp"
-[ -f "$tmp/newio" ] || err "archive did not contain a newio binary"
-chmod 0755 "$tmp/newio"
+# The archive holds a single, stage-named binary: `newio` (prod), `newio-dev`,
+# or `newio-integ`. Its name becomes the installed command and the data-dir
+# namespace, so the three stages coexist without colliding.
+cli_name=""
+for cand in newio newio-dev newio-integ; do
+  if [ -f "$tmp/$cand" ]; then
+    cli_name="$cand"
+    break
+  fi
+done
+[ -n "$cli_name" ] || err "archive did not contain a newio binary"
+bin_src="$tmp/$cli_name"
+chmod 0755 "$bin_src"
 # The binary names its own version dir (also a smoke test that it runs).
-resolved="$("$tmp/newio" --version 2>/dev/null || true)"
+resolved="$("$bin_src" --version 2>/dev/null || true)"
 [ -n "$resolved" ] || err "could not run the downloaded binary to determine its version"
+
+# Per-command data dir (default), so newio / newio-dev / newio-integ are
+# isolated. Prod keeps the historical ~/.local/share/newio path.
+DATA_DIR="${NEWIO_DATA_DIR:-$HOME/.local/share/$cli_name}"
 
 # --- install (versioned) + flip symlink ------------------------------------
 dest="$DATA_DIR/versions/$resolved"
-info "Installing newio $resolved to $dest"
+info "Installing $cli_name $resolved to $dest"
 mkdir -p "$DATA_DIR/versions"
-install -m 0755 "$tmp/newio" "$dest"
+install -m 0755 "$bin_src" "$dest"
 
 mkdir -p "$BIN_DIR"
-ln -sfn "$dest" "$BIN_DIR/newio" # atomic-ish replace of the stable launcher
+ln -sfn "$dest" "$BIN_DIR/$cli_name" # atomic-ish replace of the stable launcher
 
 # --- prune old versions (keep the symlink target + newest KEEP_VERSIONS) ----
 # Best-effort: run in a subshell with errexit/pipefail off so a no-match grep
@@ -122,7 +142,7 @@ if ! printf '%s' ":$PATH:" | grep -q ":$BIN_DIR:"; then
   fi
 fi
 
-info "Installed newio $resolved ($BIN_DIR/newio -> $dest)"
+info "Installed $cli_name $resolved ($BIN_DIR/$cli_name -> $dest)"
 echo
 echo "Next: start the background daemon with"
-echo "    newio daemon start"
+echo "    $cli_name daemon start"

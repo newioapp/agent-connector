@@ -33,20 +33,25 @@ jobs:
     outputs:
       version: ${{ steps.parse.outputs.version }}
       stage: ${{ steps.parse.outputs.stage }}
+      binname: ${{ steps.parse.outputs.binname }}
     steps:
       - name: Parse tag
         id: parse
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
+          # Stage-named binary so the three stages coexist once installed: the
+          # installed command name carries the stage (newio-dev / newio-integ),
+          # and the CLI infers its stage from that name.
           if [[ "$TAG" == dev-cli-v* ]]; then
-            STAGE="dev"; VERSION="${TAG#dev-cli-v}"
+            STAGE="dev"; VERSION="${TAG#dev-cli-v}"; BINNAME="newio-dev"
           elif [[ "$TAG" == integ-cli-v* ]]; then
-            STAGE="integ"; VERSION="${TAG#integ-cli-v}"
+            STAGE="integ"; VERSION="${TAG#integ-cli-v}"; BINNAME="newio-integ"
           else
-            STAGE="prod"; VERSION="${TAG#cli-v}"
+            STAGE="prod"; VERSION="${TAG#cli-v}"; BINNAME="newio"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "stage=$STAGE" >> "$GITHUB_OUTPUT"
+          echo "binname=$BINNAME" >> "$GITHUB_OUTPUT"
 
   build-mac:
     needs: prepare
@@ -83,12 +88,14 @@ jobs:
       # the repo for that path and for local use.
       - name: Build SEA binary (unsigned)
         run: pnpm --filter @newio/cli run build:sea:mac
+        env:
+          NEWIO_BIN_NAME: ${{ needs.prepare.outputs.binname }}
 
       - name: Package artifact
         run: |
           cd packages/cli
           mkdir -p out
-          tar -czf "out/newio-darwin-${{ matrix.arch }}.tar.gz" -C build/sea newio
+          tar -czf "out/newio-darwin-${{ matrix.arch }}.tar.gz" -C build/sea "${{ needs.prepare.outputs.binname }}"
 
       - uses: actions/upload-artifact@v6
         with:
@@ -123,12 +130,14 @@ jobs:
       # Linux binaries are unsigned.
       - name: Build SEA binary
         run: pnpm --filter @newio/cli run build:sea:linux
+        env:
+          NEWIO_BIN_NAME: ${{ needs.prepare.outputs.binname }}
 
       - name: Package artifact
         run: |
           cd packages/cli
           mkdir -p out
-          tar -czf "out/newio-linux-${{ matrix.arch }}.tar.gz" -C build/sea newio
+          tar -czf "out/newio-linux-${{ matrix.arch }}.tar.gz" -C build/sea "${{ needs.prepare.outputs.binname }}"
 
       - uses: actions/upload-artifact@v6
         with:
