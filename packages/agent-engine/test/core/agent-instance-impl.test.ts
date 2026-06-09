@@ -231,6 +231,103 @@ describe('AgentInstanceImpl — permission request routing', () => {
   });
 });
 
+describe('AgentInstanceImpl — MCP bridge wiring rendezvous', () => {
+  // The conversation-id getter must be wired regardless of whether the agent's
+  // MCP bridge connects DURING `newSession` (kiro/claude) or AFTER it returns
+  // (codex-acp). Launches are serialized by the session manager, so exactly one
+  // wiring waiter is outstanding and the connection pairs with this launch.
+  interface FakeMcpServer {
+    setCurrentConversationIdGetter: ReturnType<typeof vi.fn>;
+    connect: ReturnType<typeof vi.fn>;
+  }
+
+  function makeMcpServer(): FakeMcpServer {
+    return { setCurrentConversationIdGetter: vi.fn(), connect: vi.fn().mockResolvedValue(undefined) };
+  }
+
+  function setupForLaunch(instance: AgentInstanceImpl, createSession: ReturnType<typeof vi.fn>): void {
+    const rec = instance as unknown as Record<string, unknown>;
+    rec['_app'] = { identity: { userId: 'agent-1', username: 'a', displayName: 'A', ownerId: 'owner-1' } };
+    rec['_sessionFactory'] = { createSession };
+    rec['_promptManager'] = { defaultVersion: 'v1', skipToken: () => '_skip' };
+    rec['_mcpSocketPath'] = '/tmp/x.sock';
+  }
+
+  function getWiring(instance: AgentInstanceImpl): { resolve: (server: unknown) => void } | undefined {
+    return (instance as unknown as Record<string, { resolve: (server: unknown) => void } | undefined>)[
+      'pendingMcpWiring'
+    ];
+  }
+
+  function callLaunch(instance: AgentInstanceImpl, type: string, ref: string): Promise<unknown> {
+    const fn = (instance as unknown as Record<string, Function>)['launchSession']!;
+    return fn.call(instance, type, ref);
+  }
+
+  it('wires the conversation-id getter when the bridge connects during newSession', async () => {
+    const instance = createInstance();
+    const mcpServer = makeMcpServer();
+    const session = { currentConversationId: 'conv-1' };
+    // Connection-first: the bridge connects (resolving the waiter) before newSession returns.
+    const createSession = vi.fn(() => {
+      getWiring(instance)!.resolve(mcpServer);
+      return Promise.resolve(session);
+    });
+    setupForLaunch(instance, createSession);
+
+    const result = await callLaunch(instance, 'conversation', 'conv-1');
+
+    expect(result).toBe(session);
+    expect(mcpServer.setCurrentConversationIdGetter).toHaveBeenCalledTimes(1);
+    const getter = mcpServer.setCurrentConversationIdGetter.mock.calls[0]![0] as () => string | undefined;
+    expect(getter()).toBe('conv-1');
+    expect(getWiring(instance)).toBeUndefined();
+  });
+
+  it('wires the getter when the bridge connects after newSession returns (codex-acp)', async () => {
+    const instance = createInstance();
+    const mcpServer = makeMcpServer();
+    const session = { currentConversationId: 'conv-2' };
+    // Session-first: newSession resolves before the bridge connects.
+    const createSession = vi.fn().mockResolvedValue(session);
+    setupForLaunch(instance, createSession);
+
+    const launchPromise = callLaunch(instance, 'conversation', 'conv-2');
+    // Let createSession resolve, then simulate the bridge connecting on a later tick.
+    await Promise.resolve();
+    getWiring(instance)!.resolve(mcpServer);
+
+    const result = await launchPromise;
+
+    expect(result).toBe(session);
+    expect(mcpServer.setCurrentConversationIdGetter).toHaveBeenCalledTimes(1);
+    const getter = mcpServer.setCurrentConversationIdGetter.mock.calls[0]![0] as () => string | undefined;
+    expect(getter()).toBe('conv-2');
+  });
+
+  it('proceeds without wiring (and clears the waiter) if the bridge never connects', async () => {
+    vi.useFakeTimers();
+    try {
+      const instance = createInstance();
+      const session = { currentConversationId: 'conv-3' };
+      const createSession = vi.fn().mockResolvedValue(session);
+      setupForLaunch(instance, createSession);
+
+      const launchPromise = callLaunch(instance, 'conversation', 'conv-3');
+      // Never resolve the waiter; advance past the connect timeout.
+      await vi.advanceTimersByTimeAsync(10_000);
+      const result = await launchPromise;
+
+      expect(result).toBe(session);
+      // Waiter cleared so a late connection hits the no-waiter branch instead of
+      // mis-binding to a subsequent launch.
+      expect(getWiring(instance)).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('AgentInstanceImpl — intentional teardown ordering', () => {
   // Regression guard: the deliberate stop paths (stop() and the start() failure
   // path) must mark the factory as stopping BEFORE cleanup tears down the
