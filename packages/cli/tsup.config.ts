@@ -19,11 +19,16 @@ export default defineConfig([
   // external and are declared in this package's `dependencies` so npm installs
   // them. The daemon is reached via `newio daemon run` and is code-split out of
   // the client path via a dynamic import in cli/index.ts.
+  //
+  // blurhash is bundled (it's pure JS) so it never needs to be a declared
+  // dependency. sharp stays external — it's a native module declared in
+  // optionalDependencies and resolved from node_modules at runtime (npm install)
+  // or from a sidecar dir (SEA build).
   {
     entry: { cli: 'src/cli/index.ts' },
     format: ['esm'],
     sourcemap: true,
     splitting: true,
-    noExternal: [/^@newio\//],
+    noExternal: [/^@newio\//, 'blurhash'],
   },
 ]);

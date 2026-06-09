@@ -42,16 +42,17 @@ export default defineConfig({
   clean: true,
   dts: false,
   outDir: 'build/sea',
-  // Bundle everything (a SEA has no node_modules) EXCEPT sharp/blurhash/@img.
-  // `noExternal` overrides `external` in tsup, so the deny-list lives in the
-  // noExternal regex itself (negative lookahead) rather than in `external`.
-  noExternal: [/^(?!sharp$|blurhash$|@img\/).+/],
-  // sharp is a native (.node) module — it can't live inside a SEA. Keeping it
-  // (and its @img/* platform bindings) external means we don't ship dead, broken
-  // sharp JS in the binary. At runtime the `import('sharp')` rejects and
-  // agent-engine falls back to null: image blurhash/dimensions are disabled in
-  // SEA builds, but media uploads still work. blurhash needs sharp's decoded
-  // pixels, so it's out too.
-  external: ['sharp', 'blurhash', /^@img\//],
+  // Bundle everything (a SEA has no node_modules) EXCEPT sharp + its @img/*
+  // platform bindings. `noExternal` overrides `external` in tsup, so the
+  // deny-list lives in the noExternal regex itself (negative lookahead) rather
+  // than in `external`.
+  noExternal: [/^(?!sharp$|@img\/).+/],
+  // sharp is a native (.node) module — it can't live inside a SEA blob (dlopen
+  // needs a real file path). Keeping it (and its @img/* bindings) external means
+  // we don't ship dead, broken sharp JS in the binary. The SEA build instead
+  // ships sharp's full runtime closure as a sidecar `native/node_modules/` dir
+  // next to the binary, which agent-engine's getSharp() resolves at runtime (see
+  // packages/agent-engine/src/app/media.ts). blurhash is pure JS and IS bundled.
+  external: ['sharp', /^@img\//],
   esbuildPlugins: [fixLegacyOctalPlugin],
 });

@@ -2,10 +2,15 @@
 /**
  * Build a macOS `.pkg` installer for the `newio` CLI (macOS only).
  *
- * Wraps the already-built SEA binary (build/sea/newio) into a flat installer
- * that drops `newio` at /usr/local/bin/newio. The daemon LaunchAgent is NOT
- * created here — that stays a per-user action (`newio daemon start`); the pkg
- * only needs to put the binary on PATH.
+ * Wraps the already-built SEA binary (build/sea/newio) + its native sidecar
+ * (build/sea/native) into a flat installer that lays them out as:
+ *   /usr/local/lib/<cmd>/<cmd>       the binary
+ *   /usr/local/lib/<cmd>/native/     sharp's native sidecar
+ *   /usr/local/bin/<cmd> -> ../lib/<cmd>/<cmd>   symlink on PATH
+ * The binary lives under lib/ (not bin/) so its native/ sidecar sits beside it;
+ * the runtime resolves sharp from native/ next to the symlink-resolved binary.
+ * The daemon LaunchAgent is NOT created here — that stays a per-user action
+ * (`newio daemon start`); the pkg only needs to put the command on PATH.
  *
  * Signing: a `.pkg` is signed with a **Developer ID Installer** cert (distinct
  * from the Developer ID Application cert used on the binary itself). Set
@@ -18,7 +23,18 @@
  * or `build:sea:mac:signed`).
  */
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, rmSync, existsSync, chmodSync, writeFileSync, statSync, readFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  cpSync,
+  symlinkSync,
+  mkdirSync,
+  rmSync,
+  existsSync,
+  chmodSync,
+  writeFileSync,
+  statSync,
+  readFileSync,
+} from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -33,6 +49,7 @@ const binName = process.env['NEWIO_BIN_NAME'] ?? 'newio';
 
 const pkgDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 const seaBinary = join(pkgDir, 'build', 'sea', binName);
+const seaNative = join(pkgDir, 'build', 'sea', 'native');
 const pkgBuildDir = join(pkgDir, 'build', 'pkg');
 const pkgRoot = join(pkgBuildDir, 'root');
 const componentPkg = join(pkgBuildDir, 'newio-component.pkg');
@@ -52,13 +69,27 @@ if (!existsSync(seaBinary)) {
     `SEA binary not found: ${seaBinary}. Run "pnpm --filter @newio/cli run build:sea:mac" (or build:sea:mac:signed) first.`,
   );
 }
+if (!existsSync(seaNative)) {
+  throw new Error(
+    `Native sidecar not found: ${seaNative}. The SEA build copies sharp's runtime closure here — re-run the SEA build.`,
+  );
+}
 
-// 1. Stage the payload: /usr/local/bin/newio
+// 1. Stage the payload:
+//      /usr/local/lib/<cmd>/<cmd>      binary
+//      /usr/local/lib/<cmd>/native/    sharp sidecar
+//      /usr/local/bin/<cmd> -> ../lib/<cmd>/<cmd>
 rmSync(pkgBuildDir, { recursive: true, force: true });
+const libDest = join(pkgRoot, 'usr', 'local', 'lib', binName);
+mkdirSync(libDest, { recursive: true });
+copyFileSync(seaBinary, join(libDest, binName));
+chmodSync(join(libDest, binName), 0o755);
+cpSync(seaNative, join(libDest, 'native'), { recursive: true });
+
 const binDest = join(pkgRoot, 'usr', 'local', 'bin');
 mkdirSync(binDest, { recursive: true });
-copyFileSync(seaBinary, join(binDest, binName));
-chmodSync(join(binDest, binName), 0o755);
+// Relative symlink so realpath() lands in the lib dir where native/ lives.
+symlinkSync(join('..', 'lib', binName, binName), join(binDest, binName));
 
 // 2. Build the component pkg (payload → install-location /).
 run('pkgbuild', [
