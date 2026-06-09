@@ -1,4 +1,27 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'tsup';
+import type { Options } from 'tsup';
+
+type EsbuildPlugin = NonNullable<Options['esbuildPlugins']>[number];
+
+// esbuild parses every bundled file in strict mode (the root tsconfig sets
+// `strict: true`, which implies `alwaysStrict`), and strict mode forbids legacy
+// octal escape sequences. `qrcode-terminal` (used for the agent-approval QR) is
+// an old CommonJS dep whose source still writes ANSI codes as `\033[40m`, so it
+// fails to bundle into the SEA. The npm build never hits this because it keeps
+// deps external; the SEA inlines everything. Rewrite the offending escapes to
+// their hex form (`\x1b`) on load — scoped to this one dependency.
+const fixLegacyOctalPlugin: EsbuildPlugin = {
+  name: 'fix-legacy-octal',
+  setup(build) {
+    build.onLoad({ filter: /qrcode-terminal[\\/].*\.js$/ }, (args) => {
+      const source = readFileSync(args.path, 'utf8');
+      // \033 (octal ESC) -> \x1b (hex ESC): same byte, strict-mode-legal.
+      const contents = source.replace(/\\033/g, '\\x1b');
+      return { contents, loader: 'js' };
+    });
+  },
+};
 
 // SEA bundle — one self-contained CommonJS file for Node's Single Executable
 // Application (`node --experimental-sea-config`). Unlike the npm build, this:
@@ -30,4 +53,5 @@ export default defineConfig({
   // SEA builds, but media uploads still work. blurhash needs sharp's decoded
   // pixels, so it's out too.
   external: ['sharp', 'blurhash', /^@img\//],
+  esbuildPlugins: [fixLegacyOctalPlugin],
 });
