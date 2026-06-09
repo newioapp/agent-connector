@@ -29,13 +29,33 @@ function unitPath(stage: Stage): string {
 
 /** Quote a value for an `Environment=` line (systemd uses double quotes). */
 function envLine(key: string, value: string): string {
-  const escaped = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  // systemd also does %-specifier expansion in Environment values, so a literal
+  // `%` must be doubled (same rule as ExecStart args, see systemdEscapeArg).
+  const escaped = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/%/g, '%%');
   return `Environment="${key}=${escaped}"`;
+}
+
+/**
+ * Escape a single argv element for a systemd `ExecStart` command line.
+ *
+ * Unlike launchd's structured `ProgramArguments` array, systemd parses
+ * `ExecStart` as a command line with its own rules: whitespace splits arguments,
+ * `%` starts a specifier, and `"`/`\` are quoting/escape characters. Wrap each
+ * argument in double quotes and escape those characters so a path with spaces
+ * (e.g. a `NEWIO_INSTALL_DIR` override like `/home/me/Newio Bin/newio`) stays a
+ * single argument instead of being split.
+ */
+function systemdEscapeArg(arg: string): string {
+  const escaped = arg
+    .replace(/\\/g, '\\\\') // backslash first
+    .replace(/"/g, '\\"') // then the quote we wrap with
+    .replace(/%/g, '%%'); // literal percent (not a specifier)
+  return `"${escaped}"`;
 }
 
 /** Pure unit-file generator (exported for testing). */
 export function buildUnit(opts: InstallOptions): string {
-  const exec = opts.programArguments.join(' ');
+  const exec = opts.programArguments.map(systemdEscapeArg).join(' ');
   const envLines = Object.entries(opts.env)
     .map(([k, v]) => envLine(k, v))
     .join('\n');

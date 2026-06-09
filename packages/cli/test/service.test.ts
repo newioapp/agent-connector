@@ -73,8 +73,9 @@ describe('systemd', () => {
 
   it('builds a unit running `daemon run` with baked env and crash restart', () => {
     const unit = buildUnit(baseOpts);
+    // Each argv element is double-quoted (systemd command-line, not a raw array).
     expect(unit).toContain(
-      'ExecStart=/usr/local/bin/node /usr/local/lib/node_modules/@newio/cli/dist/cli.js daemon run',
+      'ExecStart="/usr/local/bin/node" "/usr/local/lib/node_modules/@newio/cli/dist/cli.js" "daemon" "run"',
     );
     expect(unit).toContain('Environment="NEWIO_STAGE=dev"');
     expect(unit).toContain('Environment="HOME=/Users/nan"');
@@ -86,11 +87,27 @@ describe('systemd', () => {
 
   it('builds a unit that runs the SEA binary directly', () => {
     const unit = buildUnit(seaOpts);
-    expect(unit).toContain('ExecStart=/Users/nan/.newio/bin/newio daemon run');
+    expect(unit).toContain('ExecStart="/Users/nan/.newio/bin/newio" "daemon" "run"');
   });
 
-  it('escapes quotes/backslashes in env values', () => {
-    const unit = buildUnit({ ...baseOpts, env: { TOKEN: 'a"b\\c' } });
-    expect(unit).toContain('Environment="TOKEN=a\\"b\\\\c"');
+  it('keeps a binary path with spaces as a single ExecStart argument', () => {
+    // Reachable via a NEWIO_INSTALL_DIR override; an unquoted join would split
+    // "/home/me/Newio Bin/newio" into two arguments and break the unit.
+    const unit = buildUnit({
+      ...baseOpts,
+      programArguments: ['/home/me/Newio Bin/newio', 'daemon', 'run'],
+    });
+    expect(unit).toContain('ExecStart="/home/me/Newio Bin/newio" "daemon" "run"');
+  });
+
+  it('escapes %, quotes, and backslashes in ExecStart args', () => {
+    const unit = buildUnit({ ...baseOpts, programArguments: ['a%b"c\\d', 'run'] });
+    // % -> %% (specifier), " -> \", \ -> \\, each arg double-quoted.
+    expect(unit).toContain('ExecStart="a%%b\\"c\\\\d" "run"');
+  });
+
+  it('escapes quotes/backslashes/percent in env values', () => {
+    const unit = buildUnit({ ...baseOpts, env: { TOKEN: 'a"b\\c%d' } });
+    expect(unit).toContain('Environment="TOKEN=a\\"b\\\\c%%d"');
   });
 });
