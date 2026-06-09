@@ -4,11 +4,18 @@
 #
 #   curl -fsSL https://cdn.newio.app/downloads/cli/install.sh | bash
 #
-# Detects your OS/arch, downloads the matching `newio` binary from the CDN,
+# Detects your OS/arch, downloads the matching `newio` archive from the CDN,
 # verifies its SHA-256, and installs it with a versioned layout:
 #
-#   ~/.local/share/<cmd>/versions/<version>   the actual binary, one file per version
-#   ~/.local/bin/<cmd>  ->  versions/<version> a stable symlink on your PATH
+#   ~/.local/share/<cmd>/versions/<version>/<cmd>     the binary, one dir per version
+#   ~/.local/share/<cmd>/versions/<version>/native/   sharp's native sidecar
+#   ~/.local/bin/<cmd>  ->  versions/<version>/<cmd>   a stable symlink on your PATH
+#
+# Each version is its own DIRECTORY (not a bare file) because the binary ships
+# with a `native/` sidecar next to it: sharp is a native module that can't live
+# inside the self-contained binary, so it travels alongside and is resolved at
+# runtime from `native/` beside the (symlink-resolved) executable. Keeping the
+# binary + native/ together per version keeps rollback isolated.
 #
 # <cmd> is the command name baked into the downloaded binary: `newio` for the
 # public (prod) build, or `newio-dev` / `newio-integ` for the internal-testing
@@ -16,7 +23,7 @@
 # inferred from its name, so `newio-dev <cmd>` targets the dev daemon with no
 # extra env.
 #
-# Updates drop a new file in versions/ and atomically flip the symlink, so the
+# Updates drop a new dir in versions/ and atomically flip the symlink, so the
 # `<cmd> daemon` service (which points at the symlink) picks up the new version
 # on its next start, and previous versions stay for rollback. No system Node
 # required — the binary is fully self-contained.
@@ -80,9 +87,10 @@ fi
 
 # --- extract + resolve command name + version ------------------------------
 tar -xzf "$tmp/$archive" -C "$tmp"
-# The archive holds a single, stage-named binary: `newio` (prod), `newio-dev`,
-# or `newio-integ`. Its name becomes the installed command and the data-dir
-# namespace, so the three stages coexist without colliding.
+# The archive holds a stage-named binary — `newio` (prod), `newio-dev`, or
+# `newio-integ` — plus a `native/` sidecar dir. The binary's name becomes the
+# installed command and the data-dir namespace, so the three stages coexist
+# without colliding.
 cli_name=""
 for cand in newio newio-dev newio-integ; do
   if [ -f "$tmp/$cand" ]; then
@@ -93,7 +101,8 @@ done
 [ -n "$cli_name" ] || err "archive did not contain a newio binary"
 bin_src="$tmp/$cli_name"
 chmod 0755 "$bin_src"
-# The binary names its own version dir (also a smoke test that it runs).
+# The binary names its own version dir (also a smoke test that it runs). It
+# resolves its native/ sidecar from beside itself, so this works in $tmp too.
 resolved="$("$bin_src" --version 2>/dev/null || true)"
 [ -n "$resolved" ] || err "could not run the downloaded binary to determine its version"
 
@@ -101,14 +110,20 @@ resolved="$("$bin_src" --version 2>/dev/null || true)"
 # isolated. Prod keeps the historical ~/.local/share/newio path.
 DATA_DIR="${NEWIO_DATA_DIR:-$HOME/.local/share/$cli_name}"
 
-# --- install (versioned) + flip symlink ------------------------------------
+# --- install (versioned dir) + flip symlink --------------------------------
+# Each version is a directory holding the binary + its native/ sidecar, so the
+# runtime finds native/ next to the (symlink-resolved) executable.
 dest="$DATA_DIR/versions/$resolved"
 info "Installing $cli_name $resolved to $dest"
-mkdir -p "$DATA_DIR/versions"
-install -m 0755 "$bin_src" "$dest"
+rm -rf "$dest" # clean reinstall of the same version
+mkdir -p "$dest"
+install -m 0755 "$bin_src" "$dest/$cli_name"
+[ -d "$tmp/native" ] && cp -R "$tmp/native" "$dest/native"
 
 mkdir -p "$BIN_DIR"
-ln -sfn "$dest" "$BIN_DIR/$cli_name" # atomic-ish replace of the stable launcher
+# Symlink points at the binary INSIDE the version dir; realpath() resolves it so
+# native/ is found as its sibling.
+ln -sfn "$dest/$cli_name" "$BIN_DIR/$cli_name" # atomic-ish replace of the launcher
 
 # --- prune old versions (keep the symlink target + newest KEEP_VERSIONS) ----
 # Best-effort: run in a subshell with errexit/pipefail off so a no-match grep
@@ -120,7 +135,7 @@ ln -sfn "$dest" "$BIN_DIR/$cli_name" # atomic-ish replace of the stable launcher
     current="$(basename "$dest")"
     # shellcheck disable=SC2012
     ls -1t "$DATA_DIR/versions" 2>/dev/null | grep -vx "$current" | tail -n +"$KEEP_VERSIONS" | while IFS= read -r old; do
-      [ -n "$old" ] && rm -f "$DATA_DIR/versions/$old"
+      [ -n "$old" ] && rm -rf "$DATA_DIR/versions/$old"
     done
   fi
 ) || true

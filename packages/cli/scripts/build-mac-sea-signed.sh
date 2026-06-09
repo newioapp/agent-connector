@@ -54,11 +54,19 @@ codesign --remove-signature "$OUT"
 pnpm exec postject "$OUT" NODE_SEA_BLOB "$BLOB" \
   --sentinel-fuse "$FUSE" --macho-segment-name NODE_SEA
 
-# 6. Developer ID sign: hardened runtime + JIT entitlements + secure timestamp.
+# 6. Copy sharp's native runtime closure into build/sea/native (sharp can't live
+#    inside the SEA blob). Done before signing so both Mach-O sidecar files are
+#    covered by the Developer ID signature and included in notarization.
+node scripts/copy-sea-sidecar.mjs
+
+# 7. Developer ID sign: hardened runtime + JIT entitlements + secure timestamp.
+#    Sign the binary, then the sidecar's .node/.dylib (a nested sign on the
+#    binary does not reach sidecar files).
 codesign --force --sign "$SIGN_IDENTITY" --identifier "$IDENTIFIER" \
   --options runtime --entitlements sea/entitlements.plist --timestamp "$OUT"
 codesign --verify --strict --verbose=2 "$OUT"
-echo "✓ Signed $OUT as: $SIGN_IDENTITY"
+bash scripts/sign-sea-sidecar.sh "$SIGN_IDENTITY"
+echo "✓ Signed $OUT + native sidecar as: $SIGN_IDENTITY"
 
 if [ "$NOTARIZE" -eq 1 ]; then
   # Read a credential from env first (CI), then the newio-build keychain (local).
@@ -75,11 +83,16 @@ if [ "$NOTARIZE" -eq 1 ]; then
   A_PW="$(cred APPLE_APP_SPECIFIC_PASSWORD APPLE_APP_SPECIFIC_PASSWORD)"
   A_TEAM="$(cred APPLE_TEAM_ID APPLE_TEAM_ID)"
 
+  # Notarize the binary AND the sidecar Mach-O files together: stage both into a
+  # dir and zip with --keepParent so every signed Mach-O is submitted.
+  STAGE="$(mktemp -d)"
+  cp "$OUT" "$STAGE/"
+  cp -R "$BUILD_DIR/native" "$STAGE/native"
   ZIP="$(mktemp -d)/newio.zip"
-  ditto -c -k "$OUT" "$ZIP"
+  ditto -c -k --keepParent "$STAGE" "$ZIP"
   echo "Submitting to Apple notary service (this can take a few minutes)…"
   xcrun notarytool submit "$ZIP" --apple-id "$A_ID" --password "$A_PW" --team-id "$A_TEAM" --wait
-  echo "✓ Notarized (bare binary — ticket is online-only, cannot be stapled)"
+  echo "✓ Notarized (bare binary + sidecar — ticket is online-only, cannot be stapled)"
 else
   echo "  (skipped notarization: --no-notarize)"
 fi

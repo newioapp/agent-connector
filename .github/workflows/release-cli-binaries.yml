@@ -95,7 +95,9 @@ jobs:
         run: |
           cd packages/cli
           mkdir -p out
-          tar -czf "out/newio-darwin-${{ matrix.arch }}.tar.gz" -C build/sea "${{ needs.prepare.outputs.binname }}"
+          # Include the sharp native sidecar (native/) alongside the binary — the
+          # runtime resolves sharp from native/ next to the executable.
+          tar -czf "out/newio-darwin-${{ matrix.arch }}.tar.gz" -C build/sea "${{ needs.prepare.outputs.binname }}" native
 
       - uses: actions/upload-artifact@v6
         with:
@@ -137,7 +139,9 @@ jobs:
         run: |
           cd packages/cli
           mkdir -p out
-          tar -czf "out/newio-linux-${{ matrix.arch }}.tar.gz" -C build/sea "${{ needs.prepare.outputs.binname }}"
+          # Include the sharp native sidecar (native/) alongside the binary — the
+          # runtime resolves sharp from native/ next to the executable.
+          tar -czf "out/newio-linux-${{ matrix.arch }}.tar.gz" -C build/sea "${{ needs.prepare.outputs.binname }}" native
 
       - uses: actions/upload-artifact@v6
         with:

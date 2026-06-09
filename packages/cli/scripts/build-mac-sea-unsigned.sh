@@ -7,7 +7,8 @@
 # Developer-ID-signed, notarized binary.
 #
 # Pipeline: tsup bundle -> SEA blob -> copy node -> strip signature -> postject
-# inject -> ad-hoc re-sign. Build the workspace deps first:
+# inject -> ad-hoc re-sign -> copy sharp native sidecar -> ad-hoc sign its
+# Mach-O files. Build the workspace deps first:
 #   pnpm --filter "@newio/cli..." run build
 set -euo pipefail
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" # packages/cli
@@ -40,5 +41,10 @@ pnpm exec postject "$OUT" NODE_SEA_BLOB "$BLOB" \
 codesign --force --sign - --identifier "$IDENTIFIER" \
   --options runtime --entitlements sea/entitlements.plist "$OUT"
 codesign --verify --verbose=2 "$OUT"
+
+# 7. Copy sharp's native runtime closure into build/sea/native (sharp can't live
+#    inside the SEA blob) and ad-hoc sign its Mach-O files so they load on arm64.
+node scripts/copy-sea-sidecar.mjs
+bash scripts/sign-sea-sidecar.sh -
 
 echo "✓ Built $OUT (macOS, ad-hoc — local validation only) — $("$OUT" --version)"

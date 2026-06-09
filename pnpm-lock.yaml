@@ -93,6 +93,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@4.3.6)
+      blurhash:
+        specifier: ^2.0.5
+        version: 2.0.5
       commander:
         specifier: ^13.1.0
         version: 13.1.0
@@ -136,6 +139,10 @@ importers:
       vitest:
         specifier: ^3.2.3
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.15)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.22.0)(yaml@2.8.4)
+    optionalDependencies:
+      sharp:
+        specifier: ^0.34.5
+        version: 0.34.5
 
   packages/connector:
     dependencies:

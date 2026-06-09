@@ -6,7 +6,8 @@
 # needed at runtime). Linux binaries aren't code-signed.
 #
 # Pipeline: tsup bundle -> SEA blob -> copy node -> postject inject (ELF: no
-# Mach-O segment name). Build the workspace deps first:
+# Mach-O segment name) -> copy sharp native sidecar. Build the workspace deps
+# first:
 #   pnpm --filter "@newio/cli..." run build
 set -euo pipefail
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" # packages/cli
@@ -34,5 +35,9 @@ chmod 755 "$OUT"
 
 # 4. Inject the blob (ELF needs no segment name; no signing on Linux).
 pnpm exec postject "$OUT" NODE_SEA_BLOB "$BLOB" --sentinel-fuse "$FUSE"
+
+# 5. Copy sharp's native runtime closure into build/sea/native (sharp can't live
+#    inside the SEA blob). Ships next to the binary; resolved at runtime.
+node scripts/copy-sea-sidecar.mjs
 
 echo "✓ Built $OUT (linux, unsigned) — $("$OUT" --version)"

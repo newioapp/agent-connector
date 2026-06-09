@@ -1,15 +1,39 @@
 /**
  * Media helpers — file upload and download for NewioApp.
  *
- * Note: sharp + blurhash are loaded lazily and treated as optional. In the
- * `newio` SEA (single-executable) build they are deliberately NOT bundled —
- * sharp is a native (.node) module that can't live inside a SEA — so the
- * imports below reject and both `getSharp`/`getBlurhash` return null. Image
- * blurhash placeholders and dimension metadata are therefore unavailable in SEA
- * builds; file uploads are unaffected. See packages/cli/tsup.sea.config.ts.
+ * Note: sharp is a native (.node) module and is loaded lazily + treated as
+ * optional. How it's resolved depends on the runtime:
+ *   - npm install / dev: a normal `import('sharp')` resolves it from
+ *     node_modules (declared in @newio/cli's optionalDependencies).
+ *   - `newio` SEA (single-executable) build: sharp can't live inside the SEA
+ *     blob (dlopen needs a real file path), so the build ships it as a sidecar
+ *     `native/node_modules/` directory next to the binary. We detect the SEA
+ *     via `node:sea` and resolve sharp from that sidecar instead.
+ * If neither resolves, `getSharp()` returns null and image blurhash/dimension
+ * metadata is silently skipped — file uploads are unaffected. blurhash itself
+ * is pure JS and is bundled normally. See packages/cli/tsup.sea.config.ts and
+ * packages/cli/scripts/build-*-sea*.
  */
 import type { NewioClient } from '@newio/agent-sdk';
 import type { Attachment, AttachmentType, ImageMetadata } from '@newio/agent-sdk';
+
+/**
+ * True when running as an injected Single Executable Application.
+ *
+ * Resolved via `process.getBuiltinModule('node:sea')` rather than a static or
+ * dynamic `import('node:sea')`: the bundler rewrites the bare import and strips
+ * the `node:` prefix (→ `import('sea')`), which the SEA embedder's `require`
+ * then rejects. `getBuiltinModule` (Node ≥ 20.16) is a plain runtime call the
+ * bundler leaves untouched. Mirrors `isSeaBinary()` in packages/cli/src/sea.ts
+ * (not importable here — cli depends on agent-engine, not vice versa).
+ */
+function isSeaRuntime(): boolean {
+  try {
+    return process.getBuiltinModule('node:sea').isSea();
+  } catch {
+    return false;
+  }
+}
 
 /** Cached lazy import for sharp (optional peer dependency). */
 let sharpLoaded = false;
@@ -20,8 +44,28 @@ async function getSharp(): Promise<typeof sharpDefault> {
   if (!sharpLoaded) {
     sharpLoaded = true;
     try {
-      const mod = await import('sharp');
-      sharpDefault = mod.default as typeof sharpDefault;
+      /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
+      let mod: any;
+      if (isSeaRuntime()) {
+        // SEA build: sharp ships as a sidecar `native/node_modules/` dir beside
+        // the executable. Anchor a require at that dir so sharp — and its
+        // transitive deps (detect-libc, semver, @img/*) — resolve from the
+        // sidecar rather than the (sharp-less) bundled module graph. The require
+        // boundary is untyped (`any`), hence the disables above.
+        const { createRequire } = await import('node:module');
+        const path = await import('node:path');
+        const fs = await import('node:fs');
+        // process.execPath may be a PATH symlink (install.sh) — resolve it so
+        // `native/` is found next to the real binary, not the symlink.
+        const baseDir = path.dirname(fs.realpathSync(process.execPath));
+        const sideRequire = createRequire(path.join(baseDir, 'native', 'noop.js'));
+        mod = sideRequire('sharp');
+      } else {
+        // npm / dev: sharp resolves from node_modules normally.
+        mod = await import('sharp');
+      }
+      sharpDefault = mod.default ?? mod;
+      /* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
     } catch {
       sharpDefault = null;
     }
