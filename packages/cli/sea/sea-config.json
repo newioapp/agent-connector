@@ -1,0 +1,7 @@
+{
+  "main": "build/sea/newio-sea.cjs",
+  "output": "build/sea/newio.blob",
+  "disableExperimentalSEAWarning": true,
+  "useSnapshot": false,
+  "useCodeCache": false
+}

@@ -4,17 +4,17 @@
  * These only need the service manager (fs + launchctl/systemctl), not the
  * daemon RPC socket — except `reload`, which sends an RPC to the running daemon.
  */
-import { realpathSync } from 'fs';
 import { getDaemonPaths, resolveConfig, type Stage } from '../paths.js';
 import { createServiceManager, type InstallOptions, type ServiceStatus } from '../service/index.js';
 import { withDaemon } from '../client/connect.js';
+import { resolveSelfExec } from '../sea.js';
 
 export interface DaemonStartOptions {
   readonly stage: Stage;
   readonly enable: boolean;
 }
 
-/** Build the install options (node/cli paths + baked environment) for a stage. */
+/** Build the install options (service argv + baked environment) for a stage. */
 function resolveInstallOptions(opts: DaemonStartOptions): InstallOptions {
   // Resolve the fully-formed URLs (from env, or stage defaults) and bake them
   // into the unit so the service is self-contained even if defaults change.
@@ -35,10 +35,13 @@ function resolveInstallOptions(opts: DaemonStartOptions): InstallOptions {
     env['PATH'] = process.env['PATH'];
   }
 
+  // Run the daemon via the same executable we're running as: the `newio` SEA
+  // binary itself, or `node dist/cli.js`. SEA-aware so the unit never depends on
+  // a system Node and is attributed to our signature on macOS.
+  const { execPath, entryArgs } = resolveSelfExec();
+
   return {
-    nodePath: process.execPath,
-    // argv[1] is the CLI entry node was invoked with; resolve symlinks (npm bin).
-    cliEntryPath: realpathSync(process.argv[1] ?? ''),
+    programArguments: [execPath, ...entryArgs, 'daemon', 'run'],
     env,
     logPath,
     enable: opts.enable,

@@ -4,11 +4,16 @@ import { buildUnit, systemdUnit } from '../src/service/systemd';
 import type { InstallOptions } from '../src/service/types';
 
 const baseOpts: InstallOptions = {
-  nodePath: '/usr/local/bin/node',
-  cliEntryPath: '/usr/local/lib/node_modules/@newio/cli/dist/cli.js',
+  programArguments: ['/usr/local/bin/node', '/usr/local/lib/node_modules/@newio/cli/dist/cli.js', 'daemon', 'run'],
   env: { NEWIO_STAGE: 'dev', NEWIO_API_URL: 'https://api.example.test', HOME: '/Users/nan' },
   logPath: '/Users/nan/.newio-dev/connector/daemon.log',
   enable: true,
+};
+
+// A SEA build runs the signed `newio` binary directly, with no script path.
+const seaOpts: InstallOptions = {
+  ...baseOpts,
+  programArguments: ['/Users/nan/.newio/bin/newio', 'daemon', 'run'],
 };
 
 describe('launchd', () => {
@@ -25,6 +30,14 @@ describe('launchd', () => {
     expect(plist).toContain('<key>NEWIO_STAGE</key>');
     expect(plist).toContain('<string>dev</string>');
     expect(plist).toContain('<string>/Users/nan/.newio-dev/connector/daemon.log</string>');
+  });
+
+  it('builds a plist that runs the SEA binary directly (no node/script args)', () => {
+    const plist = buildPlist('app.newio.connectord', seaOpts);
+    expect(plist).toContain('<string>/Users/nan/.newio/bin/newio</string>');
+    expect(plist).toContain('<string>daemon</string>');
+    expect(plist).toContain('<string>run</string>');
+    expect(plist).not.toContain('<string>/usr/local/bin/node</string>');
   });
 
   it('sets RunAtLoad/KeepAlive from the enable flag', () => {
@@ -60,8 +73,9 @@ describe('systemd', () => {
 
   it('builds a unit running `daemon run` with baked env and crash restart', () => {
     const unit = buildUnit(baseOpts);
+    // Each argv element is double-quoted (systemd command-line, not a raw array).
     expect(unit).toContain(
-      'ExecStart=/usr/local/bin/node /usr/local/lib/node_modules/@newio/cli/dist/cli.js daemon run',
+      'ExecStart="/usr/local/bin/node" "/usr/local/lib/node_modules/@newio/cli/dist/cli.js" "daemon" "run"',
     );
     expect(unit).toContain('Environment="NEWIO_STAGE=dev"');
     expect(unit).toContain('Environment="HOME=/Users/nan"');
@@ -71,8 +85,29 @@ describe('systemd', () => {
     expect(unit).toContain('WantedBy=default.target');
   });
 
-  it('escapes quotes/backslashes in env values', () => {
-    const unit = buildUnit({ ...baseOpts, env: { TOKEN: 'a"b\\c' } });
-    expect(unit).toContain('Environment="TOKEN=a\\"b\\\\c"');
+  it('builds a unit that runs the SEA binary directly', () => {
+    const unit = buildUnit(seaOpts);
+    expect(unit).toContain('ExecStart="/Users/nan/.newio/bin/newio" "daemon" "run"');
+  });
+
+  it('keeps a binary path with spaces as a single ExecStart argument', () => {
+    // Reachable via a NEWIO_INSTALL_DIR override; an unquoted join would split
+    // "/home/me/Newio Bin/newio" into two arguments and break the unit.
+    const unit = buildUnit({
+      ...baseOpts,
+      programArguments: ['/home/me/Newio Bin/newio', 'daemon', 'run'],
+    });
+    expect(unit).toContain('ExecStart="/home/me/Newio Bin/newio" "daemon" "run"');
+  });
+
+  it('escapes %, quotes, and backslashes in ExecStart args', () => {
+    const unit = buildUnit({ ...baseOpts, programArguments: ['a%b"c\\d', 'run'] });
+    // % -> %% (specifier), " -> \", \ -> \\, each arg double-quoted.
+    expect(unit).toContain('ExecStart="a%%b\\"c\\\\d" "run"');
+  });
+
+  it('escapes quotes/backslashes/percent in env values', () => {
+    const unit = buildUnit({ ...baseOpts, env: { TOKEN: 'a"b\\c%d' } });
+    expect(unit).toContain('Environment="TOKEN=a\\"b\\\\c%%d"');
   });
 });

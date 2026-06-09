@@ -32,7 +32,11 @@
   },
   "scripts": {
     "build": "tsup",
-    "clean": "rm -rf dist",
+    "build:sea:linux": "bash scripts/build-linux-sea.sh",
+    "build:sea:mac": "bash scripts/build-mac-sea-unsigned.sh",
+    "build:sea:mac:signed": "bash scripts/build-mac-sea-signed.sh",
+    "build:pkg": "node scripts/build-pkg.mjs",
+    "clean": "rm -rf dist build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "dev": "set -a && . ./.env && set +a && node dist/cli.js"
@@ -50,6 +54,7 @@
     "@newio/agent-engine": "workspace:*",
     "@newio/agent-sdk": "workspace:*",
     "@types/node": "^22.19.15",
+    "postject": "^1.0.0-alpha.6",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",
     "vitest": "^3.2.3"

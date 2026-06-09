@@ -3,8 +3,9 @@
  *
  * The daemon runs under the platform service manager (launchd on macOS, systemd
  * --user on Linux) so it gets crash-restart, boot persistence, and log capture
- * for free. Each implementation generates a unit/plist that runs
- * `<node> <cli> daemon run`, then drives the OS tooling to install/start it.
+ * for free. Each implementation generates a unit/plist from the caller's
+ * `programArguments` (the SEA-aware `… daemon run` argv), then drives the OS
+ * tooling to install/start it.
  */
 import type { Stage } from '../paths.js';
 
@@ -19,10 +20,13 @@ export interface ServiceStatus {
 }
 
 export interface InstallOptions {
-  /** Absolute path to the Node executable that runs the daemon. */
-  readonly nodePath: string;
-  /** Absolute path to the CLI entry script (`dist/cli.js`). */
-  readonly cliEntryPath: string;
+  /**
+   * Full argv the service unit runs to start the daemon, ending in
+   * `daemon run`. For a SEA build this is `[<newio>, 'daemon', 'run']` (the
+   * signed binary runs itself); for the `node script.js` form it is
+   * `[<node>, <cli.js>, 'daemon', 'run']`. Built SEA-aware by the caller.
+   */
+  readonly programArguments: readonly string[];
   /** Environment baked into the unit (NEWIO_STAGE/URLs, HOME, PATH). */
   readonly env: Record<string, string>;
   /** Where stdout/stderr is written (launchd); systemd uses journald. */

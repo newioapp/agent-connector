@@ -1,9 +1,12 @@
 /**
  * macOS launchd service manager.
  *
- * Installs a LaunchAgent plist at ~/Library/LaunchAgents that runs
- * `<node> <cli> daemon run`. The plist living in LaunchAgents is what gives
- * login persistence; RunAtLoad controls start-on-login and KeepAlive
+ * Installs a LaunchAgent plist at ~/Library/LaunchAgents that runs the daemon
+ * (`… daemon run`, from the caller's SEA-aware `programArguments`). For a SEA
+ * build that is the signed `newio` binary running itself, so launchd (and macOS
+ * privacy prompts) attribute the daemon to our signature rather than to the
+ * generic `node`. The plist living in LaunchAgents is what gives login
+ * persistence; RunAtLoad controls start-on-login and KeepAlive
  * (`SuccessfulExit=false`) restarts only on crash — the launchd analog of
  * systemd's `Restart=on-failure`. ExitTimeOut bounds graceful shutdown before
  * launchd escalates to SIGKILL.
@@ -33,8 +36,7 @@ function xmlEscape(value: string): string {
 
 /** Pure plist generator (exported for testing). */
 export function buildPlist(label: string, opts: InstallOptions): string {
-  const args = [opts.nodePath, opts.cliEntryPath, 'daemon', 'run'];
-  const argXml = args.map((a) => `    <string>${xmlEscape(a)}</string>`).join('\n');
+  const argXml = opts.programArguments.map((a) => `    <string>${xmlEscape(a)}</string>`).join('\n');
   const envXml = Object.entries(opts.env)
     .map(([k, v]) => `    <key>${xmlEscape(k)}</key>\n    <string>${xmlEscape(v)}</string>`)
     .join('\n');

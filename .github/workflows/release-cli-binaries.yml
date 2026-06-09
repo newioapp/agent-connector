@@ -1,0 +1,177 @@
+name: Release CLI Binaries
+
+# Builds the self-contained `newio` SEA binaries (no system Node) for macOS +
+# Linux and pushes them to the per-stage downloads CDN that install.sh reads
+# from. The macOS binary is ad-hoc signed only (unsigned) — distribution is via
+# curl|bash, which doesn't quarantine, so Gatekeeper isn't invoked. Developer ID
+# signing/notarization happens on the Electron-app side (which bundles the
+# daemon), not for this standalone CLI.
+#
+# Separate from release-cli.yml (npm publish): that fires on `cli-v*` only and
+# is untouched by the `dev-`/`integ-` prefixed tags here, so prod `cli-v*` runs
+# both (npm + binaries), exactly as intended.
+
+on:
+  push:
+    tags:
+      - 'cli-v*'
+      - 'dev-cli-v*'
+      - 'integ-cli-v*'
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: release-cli-binaries-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.parse.outputs.version }}
+      stage: ${{ steps.parse.outputs.stage }}
+    steps:
+      - name: Parse tag
+        id: parse
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [[ "$TAG" == dev-cli-v* ]]; then
+            STAGE="dev"; VERSION="${TAG#dev-cli-v}"
+          elif [[ "$TAG" == integ-cli-v* ]]; then
+            STAGE="integ"; VERSION="${TAG#integ-cli-v}"
+          else
+            STAGE="prod"; VERSION="${TAG#cli-v}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "stage=$STAGE" >> "$GITHUB_OUTPUT"
+
+  build-mac:
+    needs: prepare
+    # macOS 26 to match the connector release runners.
+    runs-on: ${{ matrix.arch == 'x64' && 'macos-26-intel' || 'macos-26' }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Set version from tag
+        run: pnpm --filter @newio/cli exec npm pkg set version="${{ needs.prepare.outputs.version }}"
+
+      # Build agent-sdk -> agent-engine -> cli so the SEA bundle resolves the
+      # internal packages from their dist output.
+      - name: Build packages
+        run: pnpm --filter "@newio/cli..." run build
+
+      # Ad-hoc-signed (unsigned) build: no Developer ID, no notarization, no
+      # .pkg. Distributed only via curl|bash, which doesn't set the quarantine
+      # xattr, so Gatekeeper isn't invoked; the ad-hoc signature is enough to run
+      # on Apple Silicon. Proper signing happens on the Electron-app side (which
+      # bundles the daemon), not here. The signing scripts + build:pkg remain in
+      # the repo for that path and for local use.
+      - name: Build SEA binary (unsigned)
+        run: pnpm --filter @newio/cli run build:sea:mac
+
+      - name: Package artifact
+        run: |
+          cd packages/cli
+          mkdir -p out
+          tar -czf "out/newio-darwin-${{ matrix.arch }}.tar.gz" -C build/sea newio
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: mac-${{ matrix.arch }}
+          retention-days: 1
+          path: packages/cli/out/*
+
+  build-linux:
+    needs: prepare
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Set version from tag
+        run: pnpm --filter @newio/cli exec npm pkg set version="${{ needs.prepare.outputs.version }}"
+
+      - name: Build packages
+        run: pnpm --filter "@newio/cli..." run build
+
+      # Linux binaries are unsigned.
+      - name: Build SEA binary
+        run: pnpm --filter @newio/cli run build:sea:linux
+
+      - name: Package artifact
+        run: |
+          cd packages/cli
+          mkdir -p out
+          tar -czf "out/newio-linux-${{ matrix.arch }}.tar.gz" -C build/sea newio
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: linux-${{ matrix.arch }}
+          retention-days: 1
+          path: packages/cli/out/*
+
+  publish:
+    needs: [prepare, build-mac, build-linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: packages/cli/scripts
+
+      - uses: actions/download-artifact@v6
+        with:
+          path: artifacts
+
+      - name: Assemble release dir + checksums
+        run: |
+          mkdir -p release
+          find artifacts -type f -name '*.tar.gz' -exec cp {} release/ \;
+          cp packages/cli/scripts/install.sh release/install.sh
+          cd release
+          sha256sum *.tar.gz > SHA256SUMS
+          ls -la
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets[format('{0}_ROLE_ARN', needs.prepare.outputs.stage == 'dev' && 'DEV' || needs.prepare.outputs.stage == 'integ' && 'INTEG' || 'PROD')] }}
+          aws-region: us-east-1
+
+      - name: Upload to S3 (latest + versioned)
+        run: |
+          BUCKET="${{ secrets[format('{0}_DOWNLOADS_BUCKET', needs.prepare.outputs.stage == 'dev' && 'DEV' || needs.prepare.outputs.stage == 'integ' && 'INTEG' || 'PROD')] }}"
+          VERSION="${{ needs.prepare.outputs.version }}"
+          aws s3 cp release/ "s3://${BUCKET}/downloads/cli/" --recursive
+          aws s3 cp release/ "s3://${BUCKET}/downloads/cli/v${VERSION}/" --recursive
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ secrets[format('{0}_DISTRIBUTION_ID', needs.prepare.outputs.stage == 'dev' && 'DEV' || needs.prepare.outputs.stage == 'integ' && 'INTEG' || 'PROD')] }}" \
+            --paths "/downloads/cli/*"
