@@ -25,6 +25,13 @@ import { InvalidEnvironmentError } from './errors.js';
 const log = getLogger('acp-session-factory');
 
 /**
+ * Grace period after asking the ACP child to terminate (stdin EOF + SIGTERM)
+ * before escalating to SIGKILL. Well-behaved agents exit within milliseconds of
+ * SIGTERM; this only bounds one that ignores it.
+ */
+const GRACEFUL_EXIT_TIMEOUT_MS = 5000;
+
+/**
  * Awaitable spawn — resolves with the child process once the OS has successfully
  * created it (`spawn` event), or rejects if the process fails to start (e.g. ENOENT).
  */
@@ -251,11 +258,17 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
       return;
     }
 
+    // Ask the child to shut down. Close stdin (the ACP agent sees EOF on its
+    // client connection) AND send SIGTERM — closing stdin alone isn't enough:
+    // some ACP agents don't exit on EOF and would otherwise sit until the
+    // SIGKILL timeout. (Under a foreground Ctrl-C the child already got SIGINT
+    // and we returned above, so SIGTERM is only ever sent in daemon mode.)
     if (child.stdin && !child.stdin.destroyed) {
       child.stdin.end();
     }
+    child.kill('SIGTERM');
 
-    // Wait for graceful exit via stdin EOF, then force kill
+    // Wait for graceful exit, then force kill.
     const exited = await Promise.race([
       new Promise<boolean>((resolve) => {
         child.once('exit', () => resolve(true));
@@ -263,11 +276,13 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
           resolve(true);
         }
       }),
-      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5000)),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), GRACEFUL_EXIT_TIMEOUT_MS)),
     ]);
 
     if (!exited) {
-      log.warn(`${this.logTag} Child process did not exit within 5s, sending SIGKILL`);
+      log.warn(
+        `${this.logTag} Child process did not exit within ${GRACEFUL_EXIT_TIMEOUT_MS / 1000}s of SIGTERM, sending SIGKILL`,
+      );
       child.kill('SIGKILL');
     }
 

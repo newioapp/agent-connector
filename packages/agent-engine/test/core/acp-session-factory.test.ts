@@ -196,7 +196,7 @@ describe('AcpSessionFactory.killProcess', () => {
     expect(child.stdin.end).not.toHaveBeenCalled();
   });
 
-  it('resolves as soon as a live child emits exit (no SIGKILL)', async () => {
+  it('asks a live child to terminate via stdin EOF + SIGTERM and resolves on exit (no SIGKILL)', async () => {
     const factory = createFactory();
     const child = makeChild({ exitCode: null, signalCode: null });
     child.stdin.destroyed = false;
@@ -206,17 +206,18 @@ describe('AcpSessionFactory.killProcess', () => {
 
     const done = killProcess(factory);
     // The factory's own exit handler isn't wired here, so emit + flip the flag
-    // the way the real handler would.
+    // the way the real handler would (e.g. the child exiting after SIGTERM).
     f.childExited = true;
     child.exitCode = 0;
-    child.emit('exit', 0, null);
+    child.emit('exit', 0, 'SIGTERM');
     await done;
 
     expect(child.stdin.end).toHaveBeenCalledTimes(1);
-    expect(child.kill).not.toHaveBeenCalled();
+    expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+    expect(child.kill).not.toHaveBeenCalledWith('SIGKILL');
   });
 
-  it('SIGKILLs a live child that never exits within the timeout', async () => {
+  it('escalates to SIGKILL when a live child ignores SIGTERM past the timeout', async () => {
     vi.useFakeTimers();
     try {
       const factory = createFactory();
@@ -227,6 +228,9 @@ describe('AcpSessionFactory.killProcess', () => {
       f.childExited = false;
 
       const done = killProcess(factory);
+      // SIGTERM is sent up front; the child never exits, so after the grace
+      // period it escalates to SIGKILL.
+      expect(child.kill).toHaveBeenCalledWith('SIGTERM');
       await vi.advanceTimersByTimeAsync(5000);
       await done;
 
