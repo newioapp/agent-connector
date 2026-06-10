@@ -20,6 +20,7 @@ import {
 import { resolveSelfExec, isSeaBinary } from '../sea.js';
 import { DaemonServer } from './server.js';
 import { DaemonHandler } from './handler.js';
+import { createDaemonFileLog } from './file-log.js';
 import { resolveConfig, getDaemonPaths } from '../paths.js';
 import { version } from '../../package.json';
 
@@ -51,10 +52,20 @@ function isSocketAlive(socketPath: string): Promise<boolean> {
  * runtime, and serves JSON-RPC over the stage's Unix socket until SIGINT/SIGTERM.
  */
 export async function runDaemon(): Promise<void> {
+  // A launchd-managed daemon gets NEWIO_LOG_FILE baked into its plist and owns a
+  // rotating log file at that path (launchd no longer captures our stdout, so the
+  // file can't grow unbounded and we never rotate it out from under an open
+  // handle). Foreground `daemon run` and the systemd path (Linux → journald)
+  // leave the var unset and log to the console.
+  const logFilePath = process.env['NEWIO_LOG_FILE'];
+  const fileLog = logFilePath ? createDaemonFileLog(logFilePath) : undefined;
   setLogHandler((level, name, message, args) => {
-    // Foreground `daemon run` writes to the terminal / service-manager journal,
-    // so prefix each line with an ISO timestamp to make logs sortable and to
-    // give shutdown/lifecycle events a wall-clock reference.
+    if (fileLog) {
+      fileLog.write(level, name, message, args);
+      return;
+    }
+    // Foreground / journald: prefix each line with an ISO timestamp to make logs
+    // sortable and to give shutdown/lifecycle events a wall-clock reference.
     const prefix = `${new Date().toISOString()} [${name}]`;
     if (level === 'error') {
       console.error(prefix, message, ...args);
@@ -62,6 +73,20 @@ export async function runDaemon(): Promise<void> {
       console.warn(prefix, message, ...args);
     } else {
       console.log(prefix, message, ...args);
+    }
+  });
+
+  // launchd no longer captures stderr, so an otherwise-uncaught exception would
+  // vanish. Log it to the rotating file (flushing before we exit) and exit
+  // non-zero so the service manager restarts us — preserving the crash trace
+  // that StandardErrorPath used to provide.
+  process.on('uncaughtException', (err) => {
+    log.error('Uncaught exception — exiting', err);
+    const exit = (): never => process.exit(1);
+    if (fileLog) {
+      void fileLog.close().then(exit, exit);
+    } else {
+      exit();
     }
   });
 
@@ -210,6 +235,10 @@ export async function runDaemon(): Promise<void> {
       }
     }
     log.info('Shutdown complete');
+    // Flush the rotating log file before exiting so the final lines aren't lost.
+    if (fileLog) {
+      await fileLog.close();
+    }
     process.exit(0);
   }
 

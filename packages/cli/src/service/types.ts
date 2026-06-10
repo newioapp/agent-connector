@@ -29,7 +29,10 @@ export interface InstallOptions {
   readonly programArguments: readonly string[];
   /** Environment baked into the unit (NEWIO_STAGE/URLs, HOME, PATH). */
   readonly env: Record<string, string>;
-  /** Where stdout/stderr is written (launchd); systemd uses journald. */
+  /**
+   * Path the daemon writes its size-rotated log file to. Baked into the launchd
+   * plist as `NEWIO_LOG_FILE`; the systemd path ignores it and logs to journald.
+   */
   readonly logPath: string;
   /** Start on login/boot (install-and-enable). */
   readonly enable: boolean;

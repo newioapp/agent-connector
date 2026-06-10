@@ -10,6 +10,11 @@
  * (`SuccessfulExit=false`) restarts only on crash — the launchd analog of
  * systemd's `Restart=on-failure`. ExitTimeOut bounds graceful shutdown before
  * launchd escalates to SIGKILL.
+ *
+ * Logging: rather than capturing stdout to an unbounded file via
+ * StandardOutPath, the plist bakes `NEWIO_LOG_FILE` and the daemon writes its
+ * own size-rotated log there (see daemon/file-log.ts) — the rough equivalent of
+ * journald's built-in rotation on the systemd side.
  */
 import { execFileSync } from 'child_process';
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from 'fs';
@@ -37,7 +42,11 @@ function xmlEscape(value: string): string {
 /** Pure plist generator (exported for testing). */
 export function buildPlist(label: string, opts: InstallOptions): string {
   const argXml = opts.programArguments.map((a) => `    <string>${xmlEscape(a)}</string>`).join('\n');
-  const envXml = Object.entries(opts.env)
+  // Bake NEWIO_LOG_FILE so the daemon writes (and rotates) its own log file
+  // rather than launchd capturing stdout into an unbounded file via
+  // StandardOutPath. See packages/cli/src/daemon/file-log.ts.
+  const env = { ...opts.env, NEWIO_LOG_FILE: opts.logPath };
+  const envXml = Object.entries(env)
     .map(([k, v]) => `    <key>${xmlEscape(k)}</key>\n    <string>${xmlEscape(v)}</string>`)
     .join('\n');
   const bool = (b: boolean): string => (b ? '<true/>' : '<false/>');
@@ -76,10 +85,6 @@ ${envXml}
   <integer>30</integer>
   <key>ProcessType</key>
   <string>Background</string>
-  <key>StandardOutPath</key>
-  <string>${xmlEscape(opts.logPath)}</string>
-  <key>StandardErrorPath</key>
-  <string>${xmlEscape(opts.logPath)}</string>
 </dict>
 </plist>
 `;
@@ -184,7 +189,11 @@ export class LaunchdServiceManager implements ServiceManager {
 
   logs(opts: LogsOptions): void {
     const { logPath } = getDaemonPaths(this.stage);
-    const args = ['-n', String(opts.lines), ...(opts.follow ? ['-f'] : []), logPath];
+    // `-F` (not `-f`) follows by name and reopens on rotation. The daemon writes
+    // a size-rotated log (see daemon/file-log.ts), so when the active file is
+    // renamed away a plain `-f` would keep reading the stale inode and miss all
+    // subsequent lines; `-F` reattaches to the freshly-created daemon.log.
+    const args = ['-n', String(opts.lines), ...(opts.follow ? ['-F'] : []), logPath];
     execFileSync('tail', args, { stdio: 'inherit' });
   }
 }

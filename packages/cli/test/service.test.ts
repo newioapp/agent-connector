@@ -29,7 +29,16 @@ describe('launchd', () => {
     expect(plist).toContain('<string>run</string>');
     expect(plist).toContain('<key>NEWIO_STAGE</key>');
     expect(plist).toContain('<string>dev</string>');
+  });
+
+  it('bakes NEWIO_LOG_FILE so the daemon owns its rotating log (not launchd)', () => {
+    const plist = buildPlist('app.newio.connectord.dev', baseOpts);
+    expect(plist).toContain('<key>NEWIO_LOG_FILE</key>');
     expect(plist).toContain('<string>/Users/nan/.newio-dev/connector/daemon.log</string>');
+    // launchd must NOT also capture stdout/stderr to the same file, or it would
+    // keep writing to the inode after the daemon rotates it away.
+    expect(plist).not.toContain('StandardOutPath');
+    expect(plist).not.toContain('StandardErrorPath');
   });
 
   it('builds a plist that runs the SEA binary directly (no node/script args)', () => {
