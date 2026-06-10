@@ -55,6 +55,16 @@ describe('getDaemonPaths', () => {
     expect(paths.downloadsDir).toBe(join(homedir(), '.newio-downloads'));
   });
 
+  it('caches the update check beside the data dir, stage-scoped', () => {
+    expect(getDaemonPaths('prod').updateCachePath).toBe(join(homedir(), '.newio', 'update-check.json'));
+    expect(getDaemonPaths('dev').updateCachePath).toBe(join(homedir(), '.newio-dev', 'update-check.json'));
+  });
+
+  it('keeps the update cache out of connector/ so daemon uninstall preserves it', () => {
+    const paths = getDaemonPaths('dev');
+    expect(paths.updateCachePath.startsWith(paths.dataDir)).toBe(false);
+  });
+
   it('stage-suffixes both the data dir and the downloads dir for non-prod', () => {
     expect(getDaemonPaths('dev').dataDir).toBe(join(homedir(), '.newio-dev', 'connector'));
     expect(getDaemonPaths('dev').downloadsDir).toBe(join(homedir(), '.newio-dev-downloads'));
@@ -74,6 +84,7 @@ describe('resolveConfig', () => {
     delete process.env['NEWIO_STAGE'];
     delete process.env['NEWIO_API_URL'];
     delete process.env['NEWIO_WS_URL'];
+    delete process.env['NEWIO_CDN_URL'];
   });
 
   afterEach(() => {
@@ -85,6 +96,7 @@ describe('resolveConfig', () => {
       stage: 'prod',
       apiBaseUrl: 'https://api.newio.app',
       wsUrl: 'wss://ws.newio.app',
+      cdnBaseUrl: 'https://cdn.newio.app',
     });
   });
 
@@ -92,19 +104,39 @@ describe('resolveConfig', () => {
     process.env['NEWIO_STAGE'] = 'dev';
     process.env['NEWIO_API_URL'] = 'https://api.example.test';
     process.env['NEWIO_WS_URL'] = 'wss://ws.example.test';
+    process.env['NEWIO_CDN_URL'] = 'https://cdn.example.test';
     expect(resolveConfig()).toEqual({
       stage: 'dev',
       apiBaseUrl: 'https://api.example.test',
       wsUrl: 'wss://ws.example.test',
+      cdnBaseUrl: 'https://cdn.example.test',
     });
   });
 
-  it('keeps prod URLs when only the stage is set', () => {
+  it('keeps prod API/WS URLs when only the stage is set, but never the prod CDN', () => {
     process.env['NEWIO_STAGE'] = 'integ';
+    // API/WS fall back to prod (existing behavior); the CDN must NOT — it stays
+    // undefined so the updater refuses rather than targeting the prod channel.
     expect(resolveConfig()).toEqual({
       stage: 'integ',
       apiBaseUrl: 'https://api.newio.app',
       wsUrl: 'wss://ws.newio.app',
+      cdnBaseUrl: undefined,
     });
+  });
+
+  it('leaves the CDN undefined for a non-prod stage with no NEWIO_CDN_URL', () => {
+    process.env['NEWIO_STAGE'] = 'dev';
+    expect(resolveConfig().cdnBaseUrl).toBeUndefined();
+  });
+
+  it('uses the hardcoded prod CDN for prod with no override', () => {
+    expect(resolveConfig().cdnBaseUrl).toBe('https://cdn.newio.app');
+  });
+
+  it('honors NEWIO_CDN_URL for a non-prod stage, stripping a trailing slash', () => {
+    process.env['NEWIO_STAGE'] = 'dev';
+    process.env['NEWIO_CDN_URL'] = 'https://cdn.example.test/';
+    expect(resolveConfig().cdnBaseUrl).toBe('https://cdn.example.test');
   });
 });
