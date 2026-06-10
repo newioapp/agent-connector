@@ -10,7 +10,7 @@
  * Each session processes its own event queue concurrently.
  * Subclasses implement session creation and greeting logic.
  */
-import { ApprovalTimeoutError, ConnectionRejectedError, NotFoundApiError } from '@newio/agent-sdk';
+import { ApprovalTimeoutError, ConnectionRejectedError, NotFoundApiError, SHARED_SESSION_ID } from '@newio/agent-sdk';
 import { NewioApp } from './app/index.js';
 import type { ActionOption, ActionRequest } from '@newio/agent-sdk';
 import { NewioMcpServer, startUdsServer } from './mcp/index.js';
@@ -27,11 +27,16 @@ import type {
   SessionFactory,
   NewioAppForSession,
   SessionType,
+  CreateSessionInput,
+  SharedInjectionState,
 } from './types';
 import type { AgentInfo, AgentErrorCode, PermissionRequestOption } from './types';
 import { InvalidEnvironmentError } from './errors.js';
 import type { AgentInstance, AgentInstanceListener } from './agent-instance';
 import type { CronStore } from './cron-store';
+import type { SessionStore } from './session-store';
+import { sessionStoreKey } from './session-store';
+import { JsonSessionStore } from './json-session-store.js';
 import type { EngineConfig } from './engine-config';
 import { PromptManager } from './prompt-manager';
 import { getLogger } from '@newio/agent-sdk';
@@ -55,8 +60,21 @@ const log = getLogger('agent-instance-impl');
  */
 const MCP_CONNECT_TIMEOUT_MS = 10_000;
 
+/**
+ * After a failed `loadSession`, wait this long before arming the fallback
+ * create's MCP waiter. The MCP socket path is shared, so a bridge spawned by the
+ * rejected `loadSession` could connect late; during this drain `pendingMcpWiring`
+ * is undefined, so that stale bridge hits the no-waiter path instead of stealing
+ * the fallback create's waiter. Best-effort (the fallback path is already rare).
+ */
+const RESUME_FALLBACK_MCP_DRAIN_MS = 250;
+
 function isErrnoException(err: unknown): err is NodeJS.ErrnoException {
   return err instanceof Error && 'code' in err;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** Rendezvous between a session launch and the MCP bridge connection it triggers. */
@@ -81,6 +99,12 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private _ownerDmConversationId?: string;
   private _sessionFactory?: SessionFactory;
   private _sessionManager?: SessionManager;
+  /**
+   * Maps `sessionType/externalReferenceId` → the correlationId of the session
+   * that last served it, so the next event can resume (`session/load`) instead
+   * of creating fresh. Persisted to disk; survives idle teardown and restarts.
+   */
+  private _sessionStore?: SessionStore;
   /** Socket path for the MCP UDS server. Set after auth in start(). */
   private _mcpSocketPath?: string;
 
@@ -152,6 +176,12 @@ export abstract class BaseAgentInstance implements AgentInstance {
       await app.init();
 
       this._promptManager = await this.createPromptManager();
+
+      // Open the per-agent session store (mirrors the cron store location) so
+      // launches can resume the prior ACP session instead of always creating new.
+      this._sessionStore = new JsonSessionStore(
+        join(this.engineConfig.dataDir, 'agents', this.config.id, 'sessions.json'),
+      );
 
       this.udsServer = startUdsServer({
         socketPath: mcpSocketPath,
@@ -237,7 +267,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         this._sessionManager = new SharedSessionManager(
           `[${app.identity.username}]`,
           eventProcessor,
-          (sessionType, externalReferenceId) => this.launchSession(sessionType, externalReferenceId),
+          (sessionType, externalReferenceId, resume) => this.launchSession(sessionType, externalReferenceId, resume),
           (correlationId) => this.sessionFactory.destroySession(correlationId),
           this._promptManager,
           this.getNewioAppForSession(),
@@ -247,7 +277,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         this._sessionManager = new IsolatedSessionManager(
           `[${app.identity.username}]`,
           eventProcessor,
-          (sessionType, externalReferenceId) => this.launchSession(sessionType, externalReferenceId),
+          (sessionType, externalReferenceId, resume) => this.launchSession(sessionType, externalReferenceId, resume),
           (correlationId) => this.sessionFactory.destroySession(correlationId),
           this._promptManager,
           this.getNewioAppForSession(),
@@ -327,7 +357,27 @@ export abstract class BaseAgentInstance implements AgentInstance {
       getConversationMemberIds: (conversationId) => this.app.getConversationMemberIds(conversationId),
       getMemberInfo: (conversationId, userId) => this.app.getMemberInfo(conversationId, userId),
       agentUserId: this.app.identity.userId,
+      loadSharedInjectionState: () => this.loadSharedInjectionState(),
+      persistSharedInjectionState: (conversationIds, userIds) =>
+        this.persistSharedInjectionState(conversationIds, userIds),
     };
+  }
+
+  /** Store key for the single shared session (shared mode only). */
+  private get sharedSessionKey(): string {
+    return sessionStoreKey('conversation', SHARED_SESSION_ID);
+  }
+
+  private loadSharedInjectionState(): SharedInjectionState {
+    const stored = this._sessionStore?.get(this.sharedSessionKey);
+    return {
+      conversationIds: stored?.injectedConversationIds ?? [],
+      userIds: stored?.injectedUserIds ?? [],
+    };
+  }
+
+  private persistSharedInjectionState(conversationIds: readonly string[], userIds: readonly string[]): void {
+    this._sessionStore?.setInjectionState(this.sharedSessionKey, conversationIds, userIds);
   }
 
   private async loadMemoryForSession(conversationId?: string) {
@@ -346,17 +396,26 @@ export abstract class BaseAgentInstance implements AgentInstance {
     return this.app.loadSessionMemory(conversationId, participantIds);
   }
 
-  private async launchSession(type: SessionType, externalReferenceId: string): Promise<AgentSession> {
+  private async launchSession(type: SessionType, externalReferenceId: string, resume: boolean): Promise<AgentSession> {
     if (this.abortController.signal.aborted) {
       throw new Error('Agent is stopping — session launch aborted');
     }
+    return this.createOrResumeSession(type, externalReferenceId, resume);
+  }
 
-    // Arrange the rendezvous BEFORE creating the session so we capture the MCP
-    // bridge connection regardless of when it arrives: during `newSession`
-    // (kiro/claude connect their MCP servers before responding) or after it
-    // returns (codex-acp connects lazily). Because the session manager serializes
-    // launches, exactly one waiter is outstanding, so the connection that arrives
-    // unambiguously belongs to this launch.
+  /**
+   * Run a single ACP session op (`produce`) with its own MCP bridge rendezvous,
+   * then wire the conversation-id getter once the bridge connects. The waiter is
+   * scoped to ONE op and cleared in `finally`, so a failed resume's bridge can't
+   * be mistaken for the create-fallback's bridge.
+   */
+  private async launchWithMcpWiring(
+    type: SessionType,
+    externalReferenceId: string,
+    produce: () => Promise<AgentSession>,
+  ): Promise<AgentSession> {
+    // Arm the rendezvous BEFORE the op so we capture the MCP bridge connection
+    // whether it arrives during the op (kiro/claude) or after it returns (codex-acp).
     let resolveMcp!: (server: NewioMcpServerInterface) => void;
     const mcpServerPromise = new Promise<NewioMcpServerInterface>((resolve) => {
       resolveMcp = resolve;
@@ -364,12 +423,10 @@ export abstract class BaseAgentInstance implements AgentInstance {
     this.pendingMcpWiring = { promise: mcpServerPromise, resolve: resolveMcp };
 
     try {
-      const session = await this.createSessionWithErrorHandling(type, externalReferenceId);
+      const session = await produce();
 
-      // Wait for the MCP bridge to connect, then wire the conversation-id getter.
-      // The getter reads the session's live `currentConversationId`, which is set
-      // per-prompt — so conversation-scoped tools (e.g. upload_attachment) resolve
-      // the active conversation no matter which session owns the connection.
+      // The getter reads the session's live `currentConversationId` (set per-prompt),
+      // so conversation-scoped tools resolve the active conversation.
       const mcpServer = await this.awaitMcpConnection(mcpServerPromise, type, externalReferenceId);
       if (mcpServer) {
         mcpServer.setCurrentConversationIdGetter(() => session.currentConversationId);
@@ -378,9 +435,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
       return session;
     } finally {
-      // Stop accepting a connection for this launch. A connection that arrives
-      // after this point (e.g. past the timeout) hits the no-waiter branch in
-      // onConnection and is logged rather than mis-bound to a later launch.
       this.pendingMcpWiring = undefined;
     }
   }
@@ -415,50 +469,97 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
   }
 
-  private async createSessionWithErrorHandling(type: SessionType, externalReferenceId: string): Promise<AgentSession> {
+  /**
+   * Build the CreateSessionInput for both paths. `promptFormatterVersion` is
+   * passed in so the version and its `skipToken` come from the same formatter —
+   * resume uses the persisted version, create uses the default.
+   */
+  private buildSessionInput(
+    type: SessionType,
+    externalReferenceId: string,
+    promptFormatterVersion: string,
+  ): CreateSessionInput {
     const ownerId = this.app.identity.ownerId;
     if (!ownerId) {
       throw new Error('Cannot create session: ownerId is not set');
     }
-    try {
-      const session = await this.sessionFactory.createSession({
-        type,
-        externalReferenceId,
-        promptFormatterVersion: this.promptManager.defaultVersion,
-        mcpSocketPath: this.mcpSocketPath,
-        mcpBridgeCommand: this.engineConfig.mcpBridgeCommand,
-        mcpBridgeArgsPrefix: this.engineConfig.mcpBridgeArgsPrefix,
-        skipToken: this.promptManager.skipToken(this.promptManager.defaultVersion),
-        updateConfig: async (config) => {
-          await this.app.updateAgentMemberConfig(externalReferenceId, {
+    return {
+      type,
+      externalReferenceId,
+      promptFormatterVersion,
+      mcpSocketPath: this.mcpSocketPath,
+      mcpBridgeCommand: this.engineConfig.mcpBridgeCommand,
+      mcpBridgeArgsPrefix: this.engineConfig.mcpBridgeArgsPrefix,
+      skipToken: this.promptManager.skipToken(promptFormatterVersion),
+      updateConfig: async (config) => {
+        await this.app.updateAgentMemberConfig(externalReferenceId, {
+          acpModel: config.acpModel,
+          acpMode: config.acpMode,
+        });
+        // In shared mode, also persist to the owner DM as the canonical config source
+        if (
+          this.config.sessionMode === 'shared' &&
+          this._ownerDmConversationId &&
+          externalReferenceId !== this._ownerDmConversationId
+        ) {
+          await this.app.updateAgentMemberConfig(this._ownerDmConversationId, {
             acpModel: config.acpModel,
             acpMode: config.acpMode,
           });
-          // In shared mode, also persist to the owner DM as the canonical config source
-          if (
-            this.config.sessionMode === 'shared' &&
-            this._ownerDmConversationId &&
-            externalReferenceId !== this._ownerDmConversationId
-          ) {
-            await this.app.updateAgentMemberConfig(this._ownerDmConversationId, {
-              acpModel: config.acpModel,
-              acpMode: config.acpMode,
-            });
-          }
-        },
-        reportContextWindow: async (context) => {
-          await this.app.sendContextWindowUpdate(ownerId, type, externalReferenceId, context.size, context.used);
-        },
-      });
-      return session;
-    } catch (err) {
-      // The waiter is cleared by launchSession's `finally`. If the MCP bridge
-      // connected before the failure, onConnection already handed its server to
-      // the (now-discarded) waiter; that orphaned server is torn down when the
-      // bridge's socket closes.
-      log.debug(`${this.logTag} Session creation failed for ${type}:${externalReferenceId}`);
-      throw err;
+        }
+      },
+      reportContextWindow: async (context) => {
+        await this.app.sendContextWindowUpdate(ownerId, type, externalReferenceId, context.size, context.used);
+      },
+    };
+  }
+
+  /**
+   * Resume the prior session for this key (via `session/load`) when `resume` is
+   * set and a mapping exists; otherwise — or if resume fails — create a fresh
+   * session whose correlationId is persisted for next time. The returned
+   * session's `resumed` flag tells the caller whether context injection is needed.
+   */
+  private async createOrResumeSession(
+    type: SessionType,
+    externalReferenceId: string,
+    resume: boolean,
+  ): Promise<AgentSession> {
+    const key = sessionStoreKey(type, externalReferenceId);
+    const stored = resume ? this._sessionStore?.get(key) : undefined;
+
+    let resumeFailed = false;
+    if (stored) {
+      try {
+        // A formatter version we can no longer satisfy means a stale instruction.
+        this.promptManager.assertPromptFormatterVersion(stored.promptFormatterVersion);
+        const resumeInput = this.buildSessionInput(type, externalReferenceId, stored.promptFormatterVersion);
+        const session = await this.launchWithMcpWiring(type, externalReferenceId, () =>
+          this.sessionFactory.resumeSession({ ...resumeInput, correlationId: stored.correlationId }),
+        );
+        log.info(`${this.logTag} Resumed session ${type}:${externalReferenceId} → ${stored.correlationId}`);
+        return session;
+      } catch (err: unknown) {
+        log.warn(
+          `${this.logTag} Failed to resume session ${type}:${externalReferenceId} (${stored.correlationId}) — falling back to new session`,
+          err,
+        );
+        resumeFailed = true;
+      }
     }
+
+    if (resumeFailed) {
+      // Let any stale MCP bridge from the rejected loadSession land on the
+      // no-waiter path before we arm the fallback create's waiter.
+      await delay(RESUME_FALLBACK_MCP_DRAIN_MS);
+    }
+
+    const createInput = this.buildSessionInput(type, externalReferenceId, this.promptManager.defaultVersion);
+    const session = await this.launchWithMcpWiring(type, externalReferenceId, () =>
+      this.sessionFactory.createSession(createInput),
+    );
+    this._sessionStore?.set(key, session.correlationId, createInput.promptFormatterVersion);
+    return session;
   }
 
   private wireEventHandlers(app: NewioAppForAgent, sessionManager: SessionManager) {
@@ -609,6 +710,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
     if (this._app) {
       this._app.dispose();
       this._app = undefined;
+    }
+
+    if (this._sessionStore) {
+      this._sessionStore.close();
+      this._sessionStore = undefined;
     }
   }
 

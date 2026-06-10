@@ -15,7 +15,7 @@ import type * as acp from '@agentclientprotocol/sdk';
 import type { McpServer as AcpMcpServer } from '@agentclientprotocol/sdk';
 import { AcpAgentSession } from './acp-agent-session';
 import type { AgentSession } from './agent-session';
-import type { AgentConfig, CreateSessionInput, SessionFactory } from './types';
+import type { AgentConfig, CreateSessionInput, ResumeSessionInput, SessionFactory } from './types';
 import type { AgentInfo } from './types';
 import { getLogger } from '@newio/agent-sdk';
 import { resolveCommand } from './utils';
@@ -346,6 +346,7 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
       connection: conn,
       sessionResponse: result,
       disposable: this.supportsClose,
+      resumed: false,
       username: this.config.newio?.username,
       skipToken: input.skipToken,
       updateConfig: input.updateConfig,
@@ -353,6 +354,41 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
     });
     this.registerSession(result.sessionId, session);
     log.info(`${this.logTag} Session created: ${result.sessionId}`);
+
+    return session;
+  }
+
+  async resumeSession(input: ResumeSessionInput): Promise<AgentSession> {
+    const config = this.config.acp;
+    if (!config) {
+      throw new Error('ACP config missing');
+    }
+
+    log.info(`${this.logTag} Resuming ACP session: ${input.correlationId}`);
+    const conn = this.getConnection();
+
+    const loadResult = await conn.loadSession({
+      sessionId: input.correlationId,
+      cwd: config.cwd,
+      mcpServers: buildMcpServers(input.mcpSocketPath, input.mcpBridgeCommand, input.mcpBridgeArgsPrefix),
+    });
+
+    const session = new AcpAgentSession({
+      type: input.type,
+      externalReferenceId: input.externalReferenceId,
+      promptFormatterVersion: input.promptFormatterVersion,
+      correlationId: input.correlationId,
+      connection: conn,
+      sessionResponse: loadResult,
+      disposable: this.supportsClose,
+      resumed: true,
+      username: this.config.newio?.username,
+      skipToken: input.skipToken,
+      updateConfig: input.updateConfig,
+      reportContextWindow: input.reportContextWindow,
+    });
+    this.registerSession(input.correlationId, session);
+    log.info(`${this.logTag} Session resumed: ${input.correlationId}`);
 
     return session;
   }

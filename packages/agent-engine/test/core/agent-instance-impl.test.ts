@@ -261,7 +261,8 @@ describe('AgentInstanceImpl — MCP bridge wiring rendezvous', () => {
 
   function callLaunch(instance: AgentInstanceImpl, type: string, ref: string): Promise<unknown> {
     const fn = (instance as unknown as Record<string, Function>)['launchSession']!;
-    return fn.call(instance, type, ref);
+    // resume=false → no store lookup; exercises the fresh-create MCP wiring path.
+    return fn.call(instance, type, ref, false);
   }
 
   it('wires the conversation-id getter when the bridge connects during newSession', async () => {
@@ -322,6 +323,41 @@ describe('AgentInstanceImpl — MCP bridge wiring rendezvous', () => {
       // Waiter cleared so a late connection hits the no-waiter branch instead of
       // mis-binding to a subsequent launch.
       expect(getWiring(instance)).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('drains before the fallback create after a failed resume', async () => {
+    vi.useFakeTimers();
+    try {
+      const instance = createInstance();
+      const mcpServer = makeMcpServer();
+      const session = { currentConversationId: 'conv-1' };
+      const resumeSession = vi.fn().mockRejectedValue(new Error('no such session'));
+      const createSession = vi.fn(() => {
+        getWiring(instance)!.resolve(mcpServer);
+        return Promise.resolve(session);
+      });
+      const rec = instance as unknown as Record<string, unknown>;
+      rec['_app'] = { identity: { userId: 'agent-1', username: 'a', displayName: 'A', ownerId: 'owner-1' } };
+      rec['_sessionFactory'] = { resumeSession, createSession };
+      rec['_promptManager'] = { defaultVersion: 'v1', skipToken: () => '_skip', assertPromptFormatterVersion: vi.fn() };
+      rec['_mcpSocketPath'] = '/tmp/x.sock';
+      rec['_sessionStore'] = { get: () => ({ correlationId: 'old', promptFormatterVersion: 'v1' }), set: vi.fn() };
+
+      const fn = (instance as unknown as Record<string, Function>)['launchSession']!;
+      const launchPromise = fn.call(instance, 'conversation', 'conv-1', true);
+
+      // Resume fails immediately, but the fallback create must wait out the drain.
+      await vi.advanceTimersByTimeAsync(100);
+      expect(resumeSession).toHaveBeenCalledTimes(1);
+      expect(createSession).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(200);
+      const result = await launchPromise;
+      expect(createSession).toHaveBeenCalledTimes(1);
+      expect(result).toBe(session);
     } finally {
       vi.useRealTimers();
     }

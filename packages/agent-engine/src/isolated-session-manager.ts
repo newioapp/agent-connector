@@ -63,7 +63,11 @@ export class IsolatedSessionManager implements SessionManager {
   constructor(
     private readonly logTag: string,
     private readonly eventProcessor: SessionEventProcessor,
-    private readonly newSession: (sessionType: SessionType, externalReferenceId: string) => Promise<AgentSession>,
+    private readonly newSession: (
+      sessionType: SessionType,
+      externalReferenceId: string,
+      resume: boolean,
+    ) => Promise<AgentSession>,
     private readonly endSession: (correlationId: string) => Promise<void>,
     private readonly promptManager: PromptManager,
     private readonly app: NewioAppForSession,
@@ -220,8 +224,12 @@ export class IsolatedSessionManager implements SessionManager {
    * so the connection that arrives unambiguously belongs to the launch that
    * triggered it — even for agents that connect after `newSession` returns.
    */
-  private enqueueLaunch(type: SessionType, externalReferenceId: string, handoffNote?: string): Promise<AgentSession> {
-    const launch = this.launchQueue.then(() => this.launchSession(type, externalReferenceId, handoffNote));
+  private enqueueLaunch(
+    type: SessionType,
+    externalReferenceId: string,
+    opts: { resume?: boolean; handoffNote?: string } = {},
+  ): Promise<AgentSession> {
+    const launch = this.launchQueue.then(() => this.launchSession(type, externalReferenceId, opts));
     this.launchQueue = launch.then(
       () => {},
       (err: unknown) => {
@@ -231,13 +239,17 @@ export class IsolatedSessionManager implements SessionManager {
     return launch;
   }
 
-  /** Launch a session — always creates a fresh session, wire MCP and status hooks. */
+  /**
+   * Launch a session — resumes the prior session when `opts.resume` is set
+   * (default), else creates fresh. Wires MCP and status hooks. A resumed session
+   * already holds its instruction + memory, so context injection is skipped.
+   */
   private async launchSession(
     type: SessionType,
     externalReferenceId: string,
-    handoffNote?: string,
+    opts: { resume?: boolean; handoffNote?: string } = {},
   ): Promise<AgentSession> {
-    const session = await this.newSession(type, externalReferenceId);
+    const session = await this.newSession(type, externalReferenceId, opts.resume ?? true);
 
     // Wire status listener
     session.onStatus((status, conversationId) => {
@@ -268,7 +280,13 @@ export class IsolatedSessionManager implements SessionManager {
     // configured model/mode already in effect, not race a pending change.
     await this.applyPersistedSessionConfig(type, externalReferenceId, session);
 
-    await this.provideContext(session, handoffNote);
+    // A resumed session already holds its instruction + memory + prior turns;
+    // only fresh sessions need context injected.
+    if (session.resumed) {
+      log.info(`${this.logTag} Resumed session ${type}/${externalReferenceId} — skipping context injection`);
+    } else {
+      await this.provideContext(session, opts.handoffNote);
+    }
 
     return session;
   }
@@ -322,9 +340,10 @@ export class IsolatedSessionManager implements SessionManager {
     slot.session = undefined;
     await this.endSession(oldSession.correlationId);
 
-    // Launch new session (serialized through launch queue) and assign to slot
+    // Rotation needs a fresh context window, so disable resume; the create path
+    // overwrites the stored mapping with the new correlationId.
     try {
-      const newSession = await this.enqueueLaunch(type, externalReferenceId, handoffNote);
+      const newSession = await this.enqueueLaunch(type, externalReferenceId, { resume: false, handoffNote });
       slot.session = newSession;
       log.info(`${this.logTag} Session rotated: ${type}:${externalReferenceId} → ${newSession.correlationId}`);
     } catch (err: unknown) {
@@ -559,8 +578,9 @@ export class IsolatedSessionManager implements SessionManager {
   }
 
   /**
-   * End a session: inject session-end prompt (for conversation sessions),
-   * close queue, dispose if possible, remove from collection.
+   * End a session on idle: persist durable facts (memory-update prompt, for
+   * conversation sessions), then close. No handoff is generated — the stored
+   * mapping is retained so the next event resumes with context intact.
    */
   private async stopSession(slot: SessionSlot): Promise<void> {
     const session = slot.session;
@@ -570,24 +590,13 @@ export class IsolatedSessionManager implements SessionManager {
       return;
     }
 
-    // For conversation sessions, run session-end prompt to capture handoff
     if (slot.type === 'conversation') {
       try {
-        const fullOutput = await collectAgentMessage(
-          session.prompt(this.promptManager.buildSessionEndPrompt(session.promptFormatterVersion)),
+        await collectAgentMessage(
+          session.prompt(this.promptManager.buildMemoryUpdatePrompt(session.promptFormatterVersion)),
         );
-
-        const handoff = fullOutput
-          ? this.promptManager.extractHandoff(session.promptFormatterVersion, fullOutput)
-          : undefined;
-        if (handoff) {
-          await this.app.putHandoffNote(slot.externalReferenceId, handoff);
-          log.info(
-            `${this.logTag} Captured handoff for ${slot.type}:${slot.externalReferenceId} (${handoff.length} chars)`,
-          );
-        }
       } catch (err: unknown) {
-        log.warn(`${this.logTag} Session-end prompt failed for ${slot.type}:${slot.externalReferenceId}`, err);
+        log.warn(`${this.logTag} Memory-update prompt failed for ${slot.type}:${slot.externalReferenceId}`, err);
       }
     }
 
