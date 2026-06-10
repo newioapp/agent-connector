@@ -53,6 +53,9 @@ importers:
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
+      semver:
+        specifier: ^7.6.3
+        version: 7.7.4
       sharp:
         specifier: ^0.34.0
         version: 0.34.5
@@ -69,6 +72,9 @@ importers:
       '@types/node':
         specifier: ^22.19.15
         version: 22.19.15
+      '@types/semver':
+        specifier: ^7.5.8
+        version: 7.7.1
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
@@ -111,6 +117,9 @@ importers:
       qrcode-terminal:
         specifier: ^0.12.0
         version: 0.12.0
+      semver:
+        specifier: ^7.6.3
+        version: 7.7.4
       ws:
         specifier: ^8.20.0
         version: 8.20.0
@@ -1741,6 +1750,9 @@ packages:
 
   '@types/responselike@1.0.3':
     resolution: {integrity: sha512-H/+L+UkTV33uf49PH5pCAUBVPNj2nDBXTN+qS1dOwyyg24l3CcicicCA7ca+HMvJBZcFgl5r8e+RR6elsb4Lyw==}
+
+  '@types/semver@7.7.1':
+    resolution: {integrity: sha512-FmgJfu+MOcQ370SD0ev7EI8TlCAfKYU+B4m5T3yXc1CiRN94g/SZPtsCkk506aUDtlMnFZvasDwHHUcZUEaYuA==}
 
   '@types/verror@1.10.11':
     resolution: {integrity: sha512-RlDm9K7+o5stv0Co8i8ZRGxDbrTxhJtgjqjFyVh/tXQyl/rYtTKlnTvZ88oSTeYREWurwx20Js4kTuKCsFkUtg==}
@@ -5873,6 +5885,8 @@ snapshots:
   '@types/responselike@1.0.3':
     dependencies:
       '@types/node': 22.19.15
+
+  '@types/semver@7.7.1': {}
 
   '@types/verror@1.10.11':
     optional: true

@@ -96,11 +96,10 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
       throw new Error('ACP config missing');
     }
 
-    // A self-contained (SEA) bridge re-invokes our own binary and needs no
-    // system `node`; only verify node when the bridge launches via `node`.
-    if (!this.mcpBridgeIsSelfContained) {
-      await assertNodeAvailable(this.config.envVars);
-    }
+    // The node-availability preflight runs inside spawnAndInit, where the
+    // resolved spawn command is known — a managed adapter launches as
+    // `node <entry>` and needs system node even when the MCP bridge (SEA) does
+    // not.
     await this.spawnAndInit();
   }
 
@@ -141,6 +140,14 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
 
     const { cwd } = config;
     const { command, args } = resolveSpawn(this.config.type, config, this.adaptersRoot);
+
+    // Node is required when either the MCP bridge launches via `node` (i.e. not
+    // a self-contained SEA) OR the adapter itself is launched as `node <entry>`
+    // (a managed adapter install). A self-contained bridge alone does not exempt
+    // a managed adapter from needing system node.
+    if (!this.mcpBridgeIsSelfContained || command === 'node') {
+      await assertNodeAvailable(this.config.envVars);
+    }
 
     log.info(`${this.logTag} Spawning: ${command} ${args.join(' ')}`);
 

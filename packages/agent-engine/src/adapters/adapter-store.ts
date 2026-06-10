@@ -18,6 +18,7 @@
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { rcompare, valid } from 'semver';
 import { managedAdapterByKey } from './adapter-spec.js';
 
 /** File name of the active-version pointer inside an adapter's directory. */
@@ -42,9 +43,29 @@ export function versionDir(root: string, key: string, version: string): string {
   return join(root, key, version);
 }
 
+/** Sort versions newest-first by semver, falling back to lexical for non-semver. */
+export function sortVersionsDesc(versions: readonly string[]): string[] {
+  return [...versions].sort((a, b) => {
+    if (valid(a) !== null && valid(b) !== null) {
+      return rcompare(a, b);
+    }
+    return a < b ? 1 : a > b ? -1 : 0;
+  });
+}
+
 /**
- * Versions currently installed for an adapter, newest-first by string compare.
- * A directory counts as installed only if its node_modules is present.
+ * Whether a specific adapter version is fully installed — i.e. its package's bin
+ * entry actually resolves on disk, not merely that a node_modules dir exists.
+ * This rejects half-finished installs (e.g. a reify that failed partway).
+ */
+export function isVersionInstalled(root: string, key: string, version: string): boolean {
+  const entry = resolveBinEntry(root, key, version);
+  return entry !== undefined && existsSync(entry);
+}
+
+/**
+ * Versions currently installed for an adapter, newest-first by semver. A version
+ * counts as installed only if its adapter bin resolves (see isVersionInstalled).
  */
 export function listInstalledVersions(root: string, key: string): readonly string[] {
   const dir = adapterDir(root, key);
@@ -56,14 +77,11 @@ export function listInstalledVersions(root: string, key: string): readonly strin
     if (entry === ACTIVE_POINTER) {
       continue;
     }
-    const candidate = join(dir, entry);
-    if (statSync(candidate).isDirectory() && existsSync(join(candidate, 'node_modules'))) {
+    if (statSync(join(dir, entry)).isDirectory() && isVersionInstalled(root, key, entry)) {
       versions.push(entry);
     }
   }
-  // Reverse lexical order is a good-enough "newest first" for the display list;
-  // callers that need true semver ordering can sort themselves.
-  return versions.sort().reverse();
+  return sortVersionsDesc(versions);
 }
 
 /** The active version for an adapter, or undefined if none is set / installed. */

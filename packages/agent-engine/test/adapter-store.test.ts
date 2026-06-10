@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import {
   adaptersRoot,
   versionDir,
   listInstalledVersions,
+  isVersionInstalled,
   getActiveVersion,
   setActiveVersion,
   resolveBinEntry,
@@ -14,11 +15,24 @@ import {
 
 const CODEX_PKG = '@zed-industries/codex-acp';
 
-/** Write a fake installed version: node_modules/<pkg>/package.json with a bin. */
-function fakeInstall(root: string, key: string, version: string, pkg: string, bin: unknown): void {
+/**
+ * Write a fake installed version: node_modules/<pkg>/package.json with a bin,
+ * AND the bin entry file itself (installed-ness requires it to resolve on disk).
+ */
+function fakeInstall(
+  root: string,
+  key: string,
+  version: string,
+  pkg: string,
+  bin: string | Record<string, string>,
+): void {
   const pkgDir = join(versionDir(root, key, version), 'node_modules', pkg);
   mkdirSync(pkgDir, { recursive: true });
   writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name: pkg, version, bin }));
+  const rel = typeof bin === 'string' ? bin : Object.values(bin)[0]!;
+  const binPath = join(pkgDir, rel);
+  mkdirSync(dirname(binPath), { recursive: true });
+  writeFileSync(binPath, '#!/usr/bin/env node\n');
 }
 
 let tmp: string;
@@ -47,6 +61,21 @@ describe('adapter-store', () => {
   });
 
   it('listInstalledVersions is empty for an unknown / absent adapter dir', () => {
+    expect(listInstalledVersions(root, 'codex')).toEqual([]);
+  });
+
+  it('listInstalledVersions orders by semver, not lexically (0.10 > 0.9)', () => {
+    fakeInstall(root, 'codex', '0.9.0', CODEX_PKG, { 'codex-acp': 'bin/codex-acp.js' });
+    fakeInstall(root, 'codex', '0.10.0', CODEX_PKG, { 'codex-acp': 'bin/codex-acp.js' });
+    fakeInstall(root, 'codex', '0.10.1', CODEX_PKG, { 'codex-acp': 'bin/codex-acp.js' });
+    expect(listInstalledVersions(root, 'codex')).toEqual(['0.10.1', '0.10.0', '0.9.0']);
+  });
+
+  it('a version with node_modules but an unresolvable bin is not "installed"', () => {
+    // node_modules exists but the package/bin file is missing (e.g. a reify that
+    // failed partway) — must not count as installed.
+    mkdirSync(join(versionDir(root, 'codex', '0.16.0'), 'node_modules'), { recursive: true });
+    expect(isVersionInstalled(root, 'codex', '0.16.0')).toBe(false);
     expect(listInstalledVersions(root, 'codex')).toEqual([]);
   });
 

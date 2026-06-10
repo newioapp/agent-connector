@@ -62,6 +62,8 @@ export {
   adapterDir,
   versionDir,
   listInstalledVersions,
+  isVersionInstalled,
+  sortVersionsDesc,
   getActiveVersion,
   setActiveVersion,
   resolveBinEntry,

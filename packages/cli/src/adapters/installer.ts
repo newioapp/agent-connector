@@ -18,7 +18,7 @@
  * This module pulls in arborist's large dependency graph, so it is imported
  * lazily by the `adapter` CLI commands (never on the hot client path).
  */
-import { mkdirSync, existsSync } from 'fs';
+import { mkdirSync, rmSync } from 'fs';
 import Arborist from '@npmcli/arborist';
 import * as pacote from 'pacote';
 import {
@@ -27,6 +27,7 @@ import {
   getActiveVersion,
   setActiveVersion,
   listInstalledVersions,
+  sortVersionsDesc,
   type ManagedAdapterSpec,
 } from '@newio/agent-engine';
 
@@ -49,8 +50,7 @@ export interface RemoteVersions {
 export async function listRemoteVersions(key: string): Promise<RemoteVersions> {
   const spec = requireSpec(key);
   const packument = await pacote.packument(spec.pkg, { fullMetadata: false });
-  // packument.versions is insertion-ordered oldest-first; reverse for display.
-  const versions = Object.keys(packument.versions).reverse();
+  const versions = sortVersionsDesc(Object.keys(packument.versions));
   return { versions, latest: packument['dist-tags'].latest };
 }
 
@@ -77,11 +77,22 @@ export async function installAdapter(root: string, key: string, versionSpec = 'l
   const version = await resolveConcreteVersion(spec, versionSpec);
   const dir = versionDir(root, key, version);
 
-  const alreadyInstalled = existsSync(dir) && listInstalledVersions(root, key).includes(version);
+  // "Installed" means the bin actually resolves, not just that the dir exists —
+  // so a previously-failed install doesn't get mistaken for a good one.
+  const alreadyInstalled = listInstalledVersions(root, key).includes(version);
   if (!alreadyInstalled) {
+    // Start from a clean dir (a prior partial install may linger) and remove it
+    // if reify throws, so the version is never left half-installed — which would
+    // otherwise be skipped as "already installed" or made active while broken.
+    rmSync(dir, { recursive: true, force: true });
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     const arb = new Arborist({ path: dir, ignoreScripts: true });
-    await arb.reify({ add: [`${spec.pkg}@${version}`] });
+    try {
+      await arb.reify({ add: [`${spec.pkg}@${version}`] });
+    } catch (err) {
+      rmSync(dir, { recursive: true, force: true });
+      throw err;
+    }
   }
 
   let madeActive = false;
