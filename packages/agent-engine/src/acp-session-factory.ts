@@ -49,6 +49,19 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
   private connection?: ClientSideConnection;
   private abnormalTerminationHandler?: (details: string) => void;
 
+  /**
+   * Whether the ACP child has exited. Tracked explicitly because `exitCode` is
+   * `null` for a signal-killed child (only `signalCode` is set), and because the
+   * `exit` event fires once — re-attaching a listener after the fact never
+   * resolves. A foreground Ctrl-C signals the whole process group, so the child
+   * often dies a tick before teardown observes it.
+   */
+  private childExited = false;
+
+  /** Resolves when the ACP child exits. Re-armed on each spawn. */
+  private childExitPromise: Promise<void> = Promise.resolve();
+  private resolveChildExit: () => void = () => {};
+
   /** correlationId → live session, for routing acp.Client callbacks. */
   private readonly acpSessions = new Map<string, AcpAgentSession>();
 
@@ -131,6 +144,10 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
     }
 
     this.stopping = false;
+    this.childExited = false;
+    this.childExitPromise = new Promise<void>((resolve) => {
+      this.resolveChildExit = resolve;
+    });
 
     const { cwd } = config;
     const { command, args } = resolveCommand(this.config.type, config);
@@ -164,6 +181,8 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
     });
 
     child.on('exit', (code, signal) => {
+      this.childExited = true;
+      this.resolveChildExit();
       log.info(`${this.logTag} ACP agent exited (code=${String(code)}, signal=${String(signal)})`);
       if (!this.stopping) {
         this.childProcess = undefined;
@@ -222,6 +241,16 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
     this.stopping = true;
     this.childProcess = undefined;
 
+    // Already gone? Don't wait. A foreground Ctrl-C signals the whole process
+    // group, so the child is usually dead well before we get here. Note a
+    // signal-killed child has exitCode === null and signalCode set, so the old
+    // `exitCode !== null` check (and a freshly-attached `exit` listener that
+    // never fires again) would wait the full 5s before a pointless SIGKILL.
+    if (this.hasChildExited(child)) {
+      log.info(`${this.logTag} ACP process already exited`);
+      return;
+    }
+
     if (child.stdin && !child.stdin.destroyed) {
       child.stdin.end();
     }
@@ -230,7 +259,7 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
     const exited = await Promise.race([
       new Promise<boolean>((resolve) => {
         child.once('exit', () => resolve(true));
-        if (child.exitCode !== null) {
+        if (this.hasChildExited(child)) {
           resolve(true);
         }
       }),
@@ -331,14 +360,25 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
     }
     // A foreground Ctrl-C delivers SIGINT to the whole process group, so the ACP
     // child can already be dead by the time we tear sessions down. Issuing the
-    // graceful session/close RPC against a dead process blocks forever waiting
-    // for a response that never arrives — skip it when the child is gone.
-    const child = this.childProcess;
-    if (!child || child.exitCode !== null || child.signalCode !== null) {
+    // graceful session/close RPC against a dead process blocks waiting for a
+    // response that never arrives — skip it when the child is already gone.
+    if (this.hasChildExited(this.childProcess)) {
       log.debug(`${this.logTag} ACP process already exited — skipping session/close for ${correlationId}`);
       return;
     }
-    await session.dispose();
+    // The child may die mid-dispose: the exit event lags the SIGINT by a tick,
+    // so it can still look alive above yet expire while session/close is in
+    // flight. Race the close against the child exiting so a doomed RPC can't
+    // stall teardown for the full close timeout.
+    await Promise.race([session.dispose(), this.childExitPromise]);
+  }
+
+  /**
+   * Whether the ACP child has exited. True if the explicit flag is set, the
+   * child reference is gone, or the process reports an exit code/signal.
+   */
+  private hasChildExited(child: ChildProcess | undefined): boolean {
+    return this.childExited || !child || child.exitCode !== null || child.signalCode !== null;
   }
 
   // ---------------------------------------------------------------------------
