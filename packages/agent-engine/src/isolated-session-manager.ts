@@ -22,7 +22,6 @@ import {
   NewioAppForSession,
   SessionManager,
   SessionType,
-  LaunchedSession,
   DEFAULT_SESSION_IDLE_TIMEOUT_MS,
 } from './types';
 import { collectAgentMessage } from './utils';
@@ -68,7 +67,7 @@ export class IsolatedSessionManager implements SessionManager {
       sessionType: SessionType,
       externalReferenceId: string,
       resume: boolean,
-    ) => Promise<LaunchedSession>,
+    ) => Promise<AgentSession>,
     private readonly endSession: (correlationId: string) => Promise<void>,
     private readonly promptManager: PromptManager,
     private readonly app: NewioAppForSession,
@@ -250,7 +249,7 @@ export class IsolatedSessionManager implements SessionManager {
     externalReferenceId: string,
     opts: { resume?: boolean; handoffNote?: string } = {},
   ): Promise<AgentSession> {
-    const { session, resumed } = await this.newSession(type, externalReferenceId, opts.resume ?? true);
+    const session = await this.newSession(type, externalReferenceId, opts.resume ?? true);
 
     // Wire status listener
     session.onStatus((status, conversationId) => {
@@ -281,11 +280,9 @@ export class IsolatedSessionManager implements SessionManager {
     // configured model/mode already in effect, not race a pending change.
     await this.applyPersistedSessionConfig(type, externalReferenceId, session);
 
-    // A resumed session already carries its Newio instruction, memory, and prior
-    // turns — re-injecting would duplicate context. Only fresh sessions need it.
-    // `resumed` is the ACTUAL outcome (a requested resume can fall back to a fresh
-    // session), so a fallback still gets context.
-    if (resumed) {
+    // A resumed session already holds its instruction + memory + prior turns;
+    // only fresh sessions need context injected.
+    if (session.resumed) {
       log.info(`${this.logTag} Resumed session ${type}/${externalReferenceId} — skipping context injection`);
     } else {
       await this.provideContext(session, opts.handoffNote);
@@ -343,9 +340,8 @@ export class IsolatedSessionManager implements SessionManager {
     slot.session = undefined;
     await this.endSession(oldSession.correlationId);
 
-    // Launch a FRESH session (resume disabled — rotation's whole point is a new
-    // context window) and assign to slot. The new correlationId overwrites the
-    // stored mapping via the create path.
+    // Rotation needs a fresh context window, so disable resume; the create path
+    // overwrites the stored mapping with the new correlationId.
     try {
       const newSession = await this.enqueueLaunch(type, externalReferenceId, { resume: false, handoffNote });
       slot.session = newSession;
@@ -583,9 +579,8 @@ export class IsolatedSessionManager implements SessionManager {
 
   /**
    * End a session on idle: persist durable facts (memory-update prompt, for
-   * conversation sessions), close queue, dispose if possible, remove from
-   * collection. No handoff note is generated — the stored correlationId mapping
-   * is retained, so the next event resumes this session with its context intact.
+   * conversation sessions), then close. No handoff is generated — the stored
+   * mapping is retained so the next event resumes with context intact.
    */
   private async stopSession(slot: SessionSlot): Promise<void> {
     const session = slot.session;
@@ -595,9 +590,6 @@ export class IsolatedSessionManager implements SessionManager {
       return;
     }
 
-    // For conversation sessions, run the memory-update prompt to persist durable
-    // facts before closing. Unlike rotation, no handoff is needed: resume restores
-    // the conversational context directly.
     if (slot.type === 'conversation') {
       try {
         await collectAgentMessage(

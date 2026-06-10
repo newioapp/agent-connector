@@ -185,7 +185,7 @@ describe('AcpSessionFactory create vs resume', () => {
     (factory as unknown as { connection: unknown }).connection = conn;
   }
 
-  it('createSession calls newSession and uses the new correlationId', async () => {
+  it('createSession calls newSession and marks the session not resumed', async () => {
     const factory = createFactory();
     const newSession = vi.fn().mockResolvedValue({ sessionId: 'corr-new' });
     withConnection(factory, { newSession });
@@ -194,9 +194,10 @@ describe('AcpSessionFactory create vs resume', () => {
 
     expect(newSession).toHaveBeenCalledTimes(1);
     expect(session.correlationId).toBe('corr-new');
+    expect(session.resumed).toBe(false);
   });
 
-  it('resumeSession calls loadSession with the stored correlationId and keeps it', async () => {
+  it('resumeSession calls loadSession with the stored correlationId and marks the session resumed', async () => {
     const factory = createFactory();
     const loadSession = vi.fn().mockResolvedValue({});
     withConnection(factory, { loadSession });
@@ -206,6 +207,7 @@ describe('AcpSessionFactory create vs resume', () => {
     expect(loadSession).toHaveBeenCalledTimes(1);
     expect(loadSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'corr-old', cwd: '/tmp' }));
     expect(session.correlationId).toBe('corr-old');
+    expect(session.resumed).toBe(true);
   });
 
   it('resumeSession rejects when loadSession fails (caller falls back to create)', async () => {

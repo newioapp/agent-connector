@@ -26,6 +26,9 @@ export interface AgentSession {
   /** Whether this session can be disposed (e.g., via idle cleanup). */
   readonly disposable: boolean;
 
+  /** True if resumed via `session/load` rather than freshly created. */
+  readonly resumed: boolean;
+
   /** Currently being processed conversation, can be undefined if processing a background task from a cron schedule or a contact event. */
   readonly currentConversationId?: string;
 

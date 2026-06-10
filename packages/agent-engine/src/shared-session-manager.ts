@@ -25,7 +25,6 @@ import {
   NewioAppForSession,
   SessionManager,
   SessionType,
-  LaunchedSession,
   DEFAULT_SESSION_IDLE_TIMEOUT_MS,
 } from './types';
 
@@ -60,7 +59,7 @@ export class SharedSessionManager implements SessionManager {
       sessionType: SessionType,
       externalReferenceId: string,
       resume: boolean,
-    ) => Promise<LaunchedSession>,
+    ) => Promise<AgentSession>,
     private readonly endSession: (correlationId: string) => Promise<void>,
     private readonly promptManager: PromptManager,
     private readonly app: NewioAppForSession,
@@ -246,7 +245,7 @@ export class SharedSessionManager implements SessionManager {
    * session already holds its instruction + memory, so context injection is skipped.
    */
   private async launchSession(opts: { resume?: boolean; handoffNote?: string } = {}): Promise<AgentSession> {
-    const { session, resumed } = await this.newSession(SESSION_TYPE, SHARED_SESSION_ID, opts.resume ?? true);
+    const session = await this.newSession(SESSION_TYPE, SHARED_SESSION_ID, opts.resume ?? true);
 
     // Wire status listener
     session.onStatus((status, conversationId) => {
@@ -275,11 +274,9 @@ export class SharedSessionManager implements SessionManager {
     // prompt, which must run with the configured model/mode already in effect.
     await this.applyPersistedSessionConfig(session);
 
-    // A resumed session already carries its Newio instruction, memory, and prior
-    // turns — re-injecting would duplicate context. Only fresh sessions need it.
-    // `resumed` is the ACTUAL outcome (a requested resume can fall back to a fresh
-    // session), so a fallback still gets context.
-    if (resumed) {
+    // A resumed session already holds its instruction + memory + prior turns;
+    // only fresh sessions need context injected.
+    if (session.resumed) {
       log.info(`${this.logTag} Resumed shared session — skipping context injection`);
     } else {
       await this.provideContext(session, opts.handoffNote);
@@ -355,9 +352,8 @@ export class SharedSessionManager implements SessionManager {
     this.injectedConversationIds.clear();
     this.injectedUserIds.clear();
 
-    // Launch a FRESH session (resume disabled — rotation's whole point is a new
-    // context window) and assign to slot. The new correlationId overwrites the
-    // stored mapping via the create path.
+    // Rotation needs a fresh context window, so disable resume; the create path
+    // overwrites the stored mapping with the new correlationId.
     try {
       const newSession = await this.enqueueLaunch({ resume: false, handoffNote });
       slot.session = newSession;

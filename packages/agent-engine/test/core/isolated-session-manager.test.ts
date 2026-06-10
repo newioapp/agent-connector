@@ -9,12 +9,13 @@ import type { IncomingMessage, ContactEvent, CronTriggerEvent } from '../../src/
 // Helpers
 // ---------------------------------------------------------------------------
 
-function createMockSession(correlationId = 'session-1'): AgentSession {
+function createMockSession(correlationId = 'session-1', resumed = false): AgentSession {
   return {
     correlationId,
     type: 'conversation',
     externalReferenceId: 'conv-1',
     promptFormatterVersion: '1.0.0',
+    resumed,
     currentConversationId: undefined,
     prompt: vi.fn(async function* () {
       yield { type: 'agent_message_chunk' as const, text: '' };
@@ -125,7 +126,7 @@ describe('IsolatedSessionManager', () => {
   beforeEach(() => {
     eventProcessor = createMockEventProcessor();
     mockSession = createMockSession();
-    newSessionFn = vi.fn().mockResolvedValue({ session: mockSession, resumed: false });
+    newSessionFn = vi.fn().mockResolvedValue(mockSession);
     endSessionFn = vi.fn().mockResolvedValue(undefined);
     const promptManager = createMockPromptManager();
     const app = createMockApp();
@@ -197,8 +198,8 @@ describe('IsolatedSessionManager', () => {
     });
 
     it('skips context injection when the launched session was resumed', async () => {
-      const resumedSession = createMockSession('resumed-1');
-      newSessionFn.mockResolvedValueOnce({ session: resumedSession, resumed: true });
+      const resumedSession = createMockSession('resumed-1', true);
+      newSessionFn.mockResolvedValueOnce(resumedSession);
 
       await manager.getDmSession('conv-resumed');
 
@@ -208,10 +209,9 @@ describe('IsolatedSessionManager', () => {
     });
 
     it('still injects context when a requested resume fell back to a fresh session', async () => {
-      // newSessionFn reports resumed=false (the agent-instance fell back to create),
-      // so the manager must provide context even though resume was requested.
-      const freshSession = createMockSession('fresh-1');
-      newSessionFn.mockResolvedValueOnce({ session: freshSession, resumed: false });
+      // A fresh fallback session reports resumed=false, so context must be provided.
+      const freshSession = createMockSession('fresh-1', false);
+      newSessionFn.mockResolvedValueOnce(freshSession);
 
       await manager.getDmSession('conv-fallback');
 

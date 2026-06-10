@@ -28,7 +28,6 @@ import type {
   NewioAppForSession,
   SessionType,
   CreateSessionInput,
-  LaunchedSession,
 } from './types';
 import type { AgentInfo, AgentErrorCode, PermissionRequestOption } from './types';
 import { InvalidEnvironmentError } from './errors.js';
@@ -363,11 +362,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
     return this.app.loadSessionMemory(conversationId, participantIds);
   }
 
-  private async launchSession(
-    type: SessionType,
-    externalReferenceId: string,
-    resume: boolean,
-  ): Promise<LaunchedSession> {
+  private async launchSession(type: SessionType, externalReferenceId: string, resume: boolean): Promise<AgentSession> {
     if (this.abortController.signal.aborted) {
       throw new Error('Agent is stopping — session launch aborted');
     }
@@ -375,27 +370,18 @@ export abstract class BaseAgentInstance implements AgentInstance {
   }
 
   /**
-   * Run a single ACP session operation (`produce`) with its own MCP bridge
-   * rendezvous, then wire the conversation-id getter once the bridge connects.
-   *
-   * The waiter is scoped to ONE ACP operation: each call arms a fresh waiter and
-   * clears it in `finally`. This matters for the resume→create fallback — a
-   * failed `loadSession` that connected its bridge consumes (and then discards)
-   * its own waiter, so the subsequent `newSession` arms a clean waiter and its
-   * bridge binds unambiguously, rather than the create's bridge arriving after a
-   * resume-scoped waiter was already cleared.
+   * Run a single ACP session op (`produce`) with its own MCP bridge rendezvous,
+   * then wire the conversation-id getter once the bridge connects. The waiter is
+   * scoped to ONE op and cleared in `finally`, so a failed resume's bridge can't
+   * be mistaken for the create-fallback's bridge.
    */
   private async launchWithMcpWiring(
     type: SessionType,
     externalReferenceId: string,
     produce: () => Promise<AgentSession>,
   ): Promise<AgentSession> {
-    // Arrange the rendezvous BEFORE the ACP op so we capture the MCP bridge
-    // connection regardless of when it arrives: during the op (kiro/claude
-    // connect their MCP servers before responding) or after it returns (codex-acp
-    // connects lazily). Because the session manager serializes launches, exactly
-    // one waiter is outstanding, so the connection that arrives unambiguously
-    // belongs to this op.
+    // Arm the rendezvous BEFORE the op so we capture the MCP bridge connection
+    // whether it arrives during the op (kiro/claude) or after it returns (codex-acp).
     let resolveMcp!: (server: NewioMcpServerInterface) => void;
     const mcpServerPromise = new Promise<NewioMcpServerInterface>((resolve) => {
       resolveMcp = resolve;
@@ -405,10 +391,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
     try {
       const session = await produce();
 
-      // Wait for the MCP bridge to connect, then wire the conversation-id getter.
-      // The getter reads the session's live `currentConversationId`, which is set
-      // per-prompt — so conversation-scoped tools (e.g. upload_attachment) resolve
-      // the active conversation no matter which session owns the connection.
+      // The getter reads the session's live `currentConversationId` (set per-prompt),
+      // so conversation-scoped tools resolve the active conversation.
       const mcpServer = await this.awaitMcpConnection(mcpServerPromise, type, externalReferenceId);
       if (mcpServer) {
         mcpServer.setCurrentConversationIdGetter(() => session.currentConversationId);
@@ -417,9 +401,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
       return session;
     } finally {
-      // Stop accepting a connection for this op. A connection that arrives after
-      // this point (e.g. past the timeout, or from a failed resume) hits the
-      // no-waiter branch in onConnection and is logged rather than mis-bound.
       this.pendingMcpWiring = undefined;
     }
   }
@@ -455,10 +436,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
   }
 
   /**
-   * Build the CreateSessionInput shared by the create and resume paths.
-   * `promptFormatterVersion` is passed in (not read from the default) so that the
-   * version and its matching `skipToken` come from the SAME formatter — a resume
-   * uses the persisted version, a create uses the current default.
+   * Build the CreateSessionInput for both paths. `promptFormatterVersion` is
+   * passed in so the version and its `skipToken` come from the same formatter —
+   * resume uses the persisted version, create uses the default.
    */
   private buildSessionInput(
     type: SessionType,
@@ -503,31 +483,27 @@ export abstract class BaseAgentInstance implements AgentInstance {
   /**
    * Resume the prior session for this key (via `session/load`) when `resume` is
    * set and a mapping exists; otherwise — or if resume fails — create a fresh
-   * session. The fresh-session correlationId is persisted so the next event can
-   * resume it. Returns the actual resume outcome so the caller can decide whether
-   * context injection is needed.
+   * session whose correlationId is persisted for next time. The returned
+   * session's `resumed` flag tells the caller whether context injection is needed.
    */
   private async createOrResumeSession(
     type: SessionType,
     externalReferenceId: string,
     resume: boolean,
-  ): Promise<LaunchedSession> {
+  ): Promise<AgentSession> {
     const key = sessionStoreKey(type, externalReferenceId);
     const stored = resume ? this._sessionStore?.get(key) : undefined;
 
     if (stored) {
       try {
-        // A prompt-formatter version we can no longer satisfy means the prior
-        // session's instruction is stale — treat as non-resumable.
+        // A formatter version we can no longer satisfy means a stale instruction.
         this.promptManager.assertPromptFormatterVersion(stored.promptFormatterVersion);
-        // Build input with the PERSISTED version so promptFormatterVersion and
-        // skipToken come from the same formatter the session was created with.
         const resumeInput = this.buildSessionInput(type, externalReferenceId, stored.promptFormatterVersion);
         const session = await this.launchWithMcpWiring(type, externalReferenceId, () =>
           this.sessionFactory.resumeSession({ ...resumeInput, correlationId: stored.correlationId }),
         );
         log.info(`${this.logTag} Resumed session ${type}:${externalReferenceId} → ${stored.correlationId}`);
-        return { session, resumed: true };
+        return session;
       } catch (err: unknown) {
         log.warn(
           `${this.logTag} Failed to resume session ${type}:${externalReferenceId} (${stored.correlationId}) — falling back to new session`,
@@ -536,18 +512,12 @@ export abstract class BaseAgentInstance implements AgentInstance {
       }
     }
 
-    // Fresh session — built with the current default formatter version.
     const createInput = this.buildSessionInput(type, externalReferenceId, this.promptManager.defaultVersion);
-    try {
-      const session = await this.launchWithMcpWiring(type, externalReferenceId, () =>
-        this.sessionFactory.createSession(createInput),
-      );
-      this._sessionStore?.set(key, session.correlationId, createInput.promptFormatterVersion);
-      return { session, resumed: false };
-    } catch (err) {
-      log.debug(`${this.logTag} Session creation failed for ${type}:${externalReferenceId}`);
-      throw err;
-    }
+    const session = await this.launchWithMcpWiring(type, externalReferenceId, () =>
+      this.sessionFactory.createSession(createInput),
+    );
+    this._sessionStore?.set(key, session.correlationId, createInput.promptFormatterVersion);
+    return session;
   }
 
   private wireEventHandlers(app: NewioAppForAgent, sessionManager: SessionManager) {

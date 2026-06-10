@@ -259,7 +259,7 @@ describe('AgentInstanceImpl — MCP bridge wiring rendezvous', () => {
     ];
   }
 
-  function callLaunch(instance: AgentInstanceImpl, type: string, ref: string): Promise<{ session: unknown }> {
+  function callLaunch(instance: AgentInstanceImpl, type: string, ref: string): Promise<unknown> {
     const fn = (instance as unknown as Record<string, Function>)['launchSession']!;
     // resume=false → no store lookup; exercises the fresh-create MCP wiring path.
     return fn.call(instance, type, ref, false);
@@ -278,7 +278,7 @@ describe('AgentInstanceImpl — MCP bridge wiring rendezvous', () => {
 
     const result = await callLaunch(instance, 'conversation', 'conv-1');
 
-    expect(result.session).toBe(session);
+    expect(result).toBe(session);
     expect(mcpServer.setCurrentConversationIdGetter).toHaveBeenCalledTimes(1);
     const getter = mcpServer.setCurrentConversationIdGetter.mock.calls[0]![0] as () => string | undefined;
     expect(getter()).toBe('conv-1');
@@ -300,7 +300,7 @@ describe('AgentInstanceImpl — MCP bridge wiring rendezvous', () => {
 
     const result = await launchPromise;
 
-    expect(result.session).toBe(session);
+    expect(result).toBe(session);
     expect(mcpServer.setCurrentConversationIdGetter).toHaveBeenCalledTimes(1);
     const getter = mcpServer.setCurrentConversationIdGetter.mock.calls[0]![0] as () => string | undefined;
     expect(getter()).toBe('conv-2');
@@ -319,7 +319,7 @@ describe('AgentInstanceImpl — MCP bridge wiring rendezvous', () => {
       await vi.advanceTimersByTimeAsync(10_000);
       const result = await launchPromise;
 
-      expect(result.session).toBe(session);
+      expect(result).toBe(session);
       // Waiter cleared so a late connection hits the no-waiter branch instead of
       // mis-binding to a subsequent launch.
       expect(getWiring(instance)).toBeUndefined();

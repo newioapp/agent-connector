@@ -404,17 +404,6 @@ export interface ResumeSessionInput extends CreateSessionInput {
   readonly correlationId: string;
 }
 
-/**
- * Outcome of a session launch. `resumed` reflects whether the session was
- * actually resumed (`session/load`) vs freshly created — NOT merely whether
- * resume was requested, since a requested resume can fall back to a fresh
- * session. The session manager uses it to decide whether to inject context.
- */
-export interface LaunchedSession {
-  readonly session: AgentSession;
-  readonly resumed: boolean;
-}
-
 export interface SessionFactory {
   init(): Promise<void>;
 
