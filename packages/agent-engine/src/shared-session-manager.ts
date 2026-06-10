@@ -55,7 +55,11 @@ export class SharedSessionManager implements SessionManager {
   constructor(
     private readonly logTag: string,
     private readonly eventProcessor: SessionEventProcessor,
-    private readonly newSession: (sessionType: SessionType, externalReferenceId: string) => Promise<AgentSession>,
+    private readonly newSession: (
+      sessionType: SessionType,
+      externalReferenceId: string,
+      resume: boolean,
+    ) => Promise<AgentSession>,
     private readonly endSession: (correlationId: string) => Promise<void>,
     private readonly promptManager: PromptManager,
     private readonly app: NewioAppForSession,
@@ -224,8 +228,8 @@ export class SharedSessionManager implements SessionManager {
    * so the connection that arrives unambiguously belongs to the launch that
    * triggered it — even for agents that connect after `newSession` returns.
    */
-  private enqueueLaunch(handoffNote?: string): Promise<AgentSession> {
-    const launch = this.launchQueue.then(() => this.launchSession(handoffNote));
+  private enqueueLaunch(opts: { resume?: boolean; handoffNote?: string } = {}): Promise<AgentSession> {
+    const launch = this.launchQueue.then(() => this.launchSession(opts));
     this.launchQueue = launch.then(
       () => {},
       (err: unknown) => {
@@ -235,9 +239,13 @@ export class SharedSessionManager implements SessionManager {
     return launch;
   }
 
-  /** Launch a session — always creates a fresh session, wire MCP and status hooks. */
-  private async launchSession(handoffNote?: string): Promise<AgentSession> {
-    const session = await this.newSession(SESSION_TYPE, SHARED_SESSION_ID);
+  /**
+   * Launch the shared session — resumes the prior session when `opts.resume` is
+   * set (default), else creates fresh. Wires MCP and status hooks. A resumed
+   * session already holds its instruction + memory, so context injection is skipped.
+   */
+  private async launchSession(opts: { resume?: boolean; handoffNote?: string } = {}): Promise<AgentSession> {
+    const session = await this.newSession(SESSION_TYPE, SHARED_SESSION_ID, opts.resume ?? true);
 
     // Wire status listener
     session.onStatus((status, conversationId) => {
@@ -266,7 +274,13 @@ export class SharedSessionManager implements SessionManager {
     // prompt, which must run with the configured model/mode already in effect.
     await this.applyPersistedSessionConfig(session);
 
-    await this.provideContext(session, handoffNote);
+    // A resumed session already carries its Newio instruction, memory, and prior
+    // turns — re-injecting would duplicate context. Only fresh sessions need it.
+    if (session.resumed) {
+      log.info(`${this.logTag} Resumed shared session — skipping context injection`);
+    } else {
+      await this.provideContext(session, opts.handoffNote);
+    }
 
     return session;
   }
@@ -338,9 +352,11 @@ export class SharedSessionManager implements SessionManager {
     this.injectedConversationIds.clear();
     this.injectedUserIds.clear();
 
-    // Launch new session (serialized through launch queue) and assign to slot
+    // Launch a FRESH session (resume disabled — rotation's whole point is a new
+    // context window) and assign to slot. The new correlationId overwrites the
+    // stored mapping via the create path.
     try {
-      const newSession = await this.enqueueLaunch(handoffNote);
+      const newSession = await this.enqueueLaunch({ resume: false, handoffNote });
       slot.session = newSession;
       log.info(`${this.logTag} Rotated shared session: → ${newSession.correlationId}`);
     } catch (err: unknown) {
@@ -546,20 +562,14 @@ export class SharedSessionManager implements SessionManager {
       return;
     }
 
+    // Persist durable facts before closing. No handoff is needed: resume restores
+    // the conversational context directly via the retained correlationId mapping.
     try {
-      const fullOutput = await collectAgentMessage(
-        session.prompt(this.promptManager.buildSessionEndPrompt(session.promptFormatterVersion)),
+      await collectAgentMessage(
+        session.prompt(this.promptManager.buildMemoryUpdatePrompt(session.promptFormatterVersion)),
       );
-
-      const handoff = fullOutput
-        ? this.promptManager.extractHandoff(session.promptFormatterVersion, fullOutput)
-        : undefined;
-      if (handoff) {
-        await this.app.putHandoffNote(SHARED_SESSION_ID, handoff);
-        log.info(`${this.logTag} Captured handoff shared session (${handoff.length} chars)`);
-      }
     } catch (err: unknown) {
-      log.warn(`${this.logTag} Session-end prompt failed for shared session`, err);
+      log.warn(`${this.logTag} Memory-update prompt failed for shared session`, err);
     }
 
     slot.queue.close();

@@ -398,12 +398,24 @@ export interface CreateSessionInput {
   readonly reportContextWindow: (contextWindow: ContextWindow) => Promise<void>;
 }
 
+/** Input for resuming an existing session — a create input plus the prior correlationId. */
+export interface ResumeSessionInput extends CreateSessionInput {
+  /** Agent-platform session id (ACP sessionId) to load. */
+  readonly correlationId: string;
+}
+
 export interface SessionFactory {
   init(): Promise<void>;
 
   getAgentInfo(): AgentInfo | undefined;
 
   createSession(input: CreateSessionInput): Promise<AgentSession>;
+
+  /**
+   * Resume a previously-created session via the agent's `session/load`. Rejects
+   * if the agent no longer has the session; callers fall back to `createSession`.
+   */
+  resumeSession(input: ResumeSessionInput): Promise<AgentSession>;
 
   destroySession(correlationId: string): Promise<void>;
 

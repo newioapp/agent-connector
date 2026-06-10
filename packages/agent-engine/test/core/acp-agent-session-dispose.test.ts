@@ -18,6 +18,7 @@ function createSession(connection: ClientSideConnection, disposable: boolean): A
     connection,
     sessionResponse,
     disposable,
+    resumed: false,
     skipToken: '_skip',
     updateConfig: vi.fn().mockResolvedValue(undefined),
     reportContextWindow: vi.fn().mockResolvedValue(undefined),

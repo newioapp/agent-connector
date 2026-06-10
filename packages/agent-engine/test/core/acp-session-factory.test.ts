@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { EventEmitter } from 'events';
 import { AcpSessionFactory } from '../../src/acp-session-factory';
-import type { AgentConfig } from '../../src/types';
+import type { AgentConfig, ResumeSessionInput } from '../../src/types';
 
 /**
  * White-box tests for the shutdown-safety guards in `destroySession` and
@@ -159,6 +159,65 @@ describe('AcpSessionFactory.destroySession', () => {
     await factory.destroySession('sess-1');
 
     expect(internals(factory).acpSessions.has('sess-1')).toBe(false);
+  });
+});
+
+describe('AcpSessionFactory create vs resume', () => {
+  function baseInput(): Omit<ResumeSessionInput, 'correlationId'> {
+    return {
+      type: 'conversation',
+      externalReferenceId: 'conv-a',
+      promptFormatterVersion: '1.0.0',
+      mcpSocketPath: '/tmp/mcp.sock',
+      mcpBridgeCommand: 'node',
+      mcpBridgeArgsPrefix: ['bridge.js'],
+      skipToken: '_skip',
+      updateConfig: vi.fn().mockResolvedValue(undefined),
+      reportContextWindow: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  /** Inject a fake ACP connection exposing newSession/loadSession. */
+  function withConnection(
+    factory: AcpSessionFactory,
+    conn: { newSession?: ReturnType<typeof vi.fn>; loadSession?: ReturnType<typeof vi.fn> },
+  ): void {
+    (factory as unknown as { connection: unknown }).connection = conn;
+  }
+
+  it('createSession calls newSession and marks the session not resumed', async () => {
+    const factory = createFactory();
+    const newSession = vi.fn().mockResolvedValue({ sessionId: 'corr-new' });
+    withConnection(factory, { newSession });
+
+    const session = await factory.createSession(baseInput());
+
+    expect(newSession).toHaveBeenCalledTimes(1);
+    expect(session.correlationId).toBe('corr-new');
+    expect(session.resumed).toBe(false);
+  });
+
+  it('resumeSession calls loadSession with the stored correlationId and marks the session resumed', async () => {
+    const factory = createFactory();
+    const loadSession = vi.fn().mockResolvedValue({});
+    withConnection(factory, { loadSession });
+
+    const session = await factory.resumeSession({ ...baseInput(), correlationId: 'corr-old' });
+
+    expect(loadSession).toHaveBeenCalledTimes(1);
+    expect(loadSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'corr-old', cwd: '/tmp' }));
+    expect(session.correlationId).toBe('corr-old');
+    expect(session.resumed).toBe(true);
+  });
+
+  it('resumeSession rejects when loadSession fails (caller falls back to create)', async () => {
+    const factory = createFactory();
+    const loadSession = vi.fn().mockRejectedValue(new Error('session not found'));
+    withConnection(factory, { loadSession });
+
+    await expect(factory.resumeSession({ ...baseInput(), correlationId: 'corr-old' })).rejects.toThrow(
+      'session not found',
+    );
   });
 });
 

@@ -3,6 +3,9 @@ export type { EngineConfig } from './engine-config.js';
 export type { CronStore, CronJobRow, CronStoreFactory } from './cron-store.js';
 export { isSafeAgentId, assertSafeAgentId } from './agent-id.js';
 export { JsonCronStore } from './json-cron-store.js';
+export type { SessionStore, StoredSession } from './session-store.js';
+export { sessionStoreKey } from './session-store.js';
+export { JsonSessionStore } from './json-session-store.js';
 export type { AgentConfigManager, AgentTokens } from './agent-config-manager.js';
 export type {
   AgentConfig,

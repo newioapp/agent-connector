@@ -27,11 +27,15 @@ import type {
   SessionFactory,
   NewioAppForSession,
   SessionType,
+  CreateSessionInput,
 } from './types';
 import type { AgentInfo, AgentErrorCode, PermissionRequestOption } from './types';
 import { InvalidEnvironmentError } from './errors.js';
 import type { AgentInstance, AgentInstanceListener } from './agent-instance';
 import type { CronStore } from './cron-store';
+import type { SessionStore } from './session-store';
+import { sessionStoreKey } from './session-store';
+import { JsonSessionStore } from './json-session-store.js';
 import type { EngineConfig } from './engine-config';
 import { PromptManager } from './prompt-manager';
 import { getLogger } from '@newio/agent-sdk';
@@ -81,6 +85,12 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private _ownerDmConversationId?: string;
   private _sessionFactory?: SessionFactory;
   private _sessionManager?: SessionManager;
+  /**
+   * Maps `sessionType/externalReferenceId` → the correlationId of the session
+   * that last served it, so the next event can resume (`session/load`) instead
+   * of creating fresh. Persisted to disk; survives idle teardown and restarts.
+   */
+  private _sessionStore?: SessionStore;
   /** Socket path for the MCP UDS server. Set after auth in start(). */
   private _mcpSocketPath?: string;
 
@@ -152,6 +162,12 @@ export abstract class BaseAgentInstance implements AgentInstance {
       await app.init();
 
       this._promptManager = await this.createPromptManager();
+
+      // Open the per-agent session store (mirrors the cron store location) so
+      // launches can resume the prior ACP session instead of always creating new.
+      this._sessionStore = new JsonSessionStore(
+        join(this.engineConfig.dataDir, 'agents', this.config.id, 'sessions.json'),
+      );
 
       this.udsServer = startUdsServer({
         socketPath: mcpSocketPath,
@@ -237,7 +253,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         this._sessionManager = new SharedSessionManager(
           `[${app.identity.username}]`,
           eventProcessor,
-          (sessionType, externalReferenceId) => this.launchSession(sessionType, externalReferenceId),
+          (sessionType, externalReferenceId, resume) => this.launchSession(sessionType, externalReferenceId, resume),
           (correlationId) => this.sessionFactory.destroySession(correlationId),
           this._promptManager,
           this.getNewioAppForSession(),
@@ -247,7 +263,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         this._sessionManager = new IsolatedSessionManager(
           `[${app.identity.username}]`,
           eventProcessor,
-          (sessionType, externalReferenceId) => this.launchSession(sessionType, externalReferenceId),
+          (sessionType, externalReferenceId, resume) => this.launchSession(sessionType, externalReferenceId, resume),
           (correlationId) => this.sessionFactory.destroySession(correlationId),
           this._promptManager,
           this.getNewioAppForSession(),
@@ -346,7 +362,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
     return this.app.loadSessionMemory(conversationId, participantIds);
   }
 
-  private async launchSession(type: SessionType, externalReferenceId: string): Promise<AgentSession> {
+  private async launchSession(type: SessionType, externalReferenceId: string, resume: boolean): Promise<AgentSession> {
     if (this.abortController.signal.aborted) {
       throw new Error('Agent is stopping — session launch aborted');
     }
@@ -364,7 +380,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
     this.pendingMcpWiring = { promise: mcpServerPromise, resolve: resolveMcp };
 
     try {
-      const session = await this.createSessionWithErrorHandling(type, externalReferenceId);
+      const session = await this.createOrResumeSession(type, externalReferenceId, resume);
 
       // Wait for the MCP bridge to connect, then wire the conversation-id getter.
       // The getter reads the session's live `currentConversationId`, which is set
@@ -415,41 +431,81 @@ export abstract class BaseAgentInstance implements AgentInstance {
     }
   }
 
-  private async createSessionWithErrorHandling(type: SessionType, externalReferenceId: string): Promise<AgentSession> {
+  /** Build the CreateSessionInput shared by the create and resume paths. */
+  private buildSessionInput(type: SessionType, externalReferenceId: string): CreateSessionInput {
     const ownerId = this.app.identity.ownerId;
     if (!ownerId) {
       throw new Error('Cannot create session: ownerId is not set');
     }
-    try {
-      const session = await this.sessionFactory.createSession({
-        type,
-        externalReferenceId,
-        promptFormatterVersion: this.promptManager.defaultVersion,
-        mcpSocketPath: this.mcpSocketPath,
-        mcpBridgeCommand: this.engineConfig.mcpBridgeCommand,
-        mcpBridgeArgsPrefix: this.engineConfig.mcpBridgeArgsPrefix,
-        skipToken: this.promptManager.skipToken(this.promptManager.defaultVersion),
-        updateConfig: async (config) => {
-          await this.app.updateAgentMemberConfig(externalReferenceId, {
+    return {
+      type,
+      externalReferenceId,
+      promptFormatterVersion: this.promptManager.defaultVersion,
+      mcpSocketPath: this.mcpSocketPath,
+      mcpBridgeCommand: this.engineConfig.mcpBridgeCommand,
+      mcpBridgeArgsPrefix: this.engineConfig.mcpBridgeArgsPrefix,
+      skipToken: this.promptManager.skipToken(this.promptManager.defaultVersion),
+      updateConfig: async (config) => {
+        await this.app.updateAgentMemberConfig(externalReferenceId, {
+          acpModel: config.acpModel,
+          acpMode: config.acpMode,
+        });
+        // In shared mode, also persist to the owner DM as the canonical config source
+        if (
+          this.config.sessionMode === 'shared' &&
+          this._ownerDmConversationId &&
+          externalReferenceId !== this._ownerDmConversationId
+        ) {
+          await this.app.updateAgentMemberConfig(this._ownerDmConversationId, {
             acpModel: config.acpModel,
             acpMode: config.acpMode,
           });
-          // In shared mode, also persist to the owner DM as the canonical config source
-          if (
-            this.config.sessionMode === 'shared' &&
-            this._ownerDmConversationId &&
-            externalReferenceId !== this._ownerDmConversationId
-          ) {
-            await this.app.updateAgentMemberConfig(this._ownerDmConversationId, {
-              acpModel: config.acpModel,
-              acpMode: config.acpMode,
-            });
-          }
-        },
-        reportContextWindow: async (context) => {
-          await this.app.sendContextWindowUpdate(ownerId, type, externalReferenceId, context.size, context.used);
-        },
-      });
+        }
+      },
+      reportContextWindow: async (context) => {
+        await this.app.sendContextWindowUpdate(ownerId, type, externalReferenceId, context.size, context.used);
+      },
+    };
+  }
+
+  /**
+   * Resume the prior session for this key (via `session/load`) when `resume` is
+   * set and a mapping exists; otherwise — or if resume fails — create a fresh
+   * session. The fresh-session correlationId is persisted so the next event can
+   * resume it.
+   */
+  private async createOrResumeSession(
+    type: SessionType,
+    externalReferenceId: string,
+    resume: boolean,
+  ): Promise<AgentSession> {
+    const input = this.buildSessionInput(type, externalReferenceId);
+    const key = sessionStoreKey(type, externalReferenceId);
+    const stored = resume ? this._sessionStore?.get(key) : undefined;
+
+    if (stored) {
+      try {
+        // A prompt-formatter version we can no longer satisfy means the prior
+        // session's instruction is stale — treat as non-resumable.
+        this.promptManager.assertPromptFormatterVersion(stored.promptFormatterVersion);
+        const session = await this.sessionFactory.resumeSession({
+          ...input,
+          promptFormatterVersion: stored.promptFormatterVersion,
+          correlationId: stored.correlationId,
+        });
+        log.info(`${this.logTag} Resumed session ${type}:${externalReferenceId} → ${stored.correlationId}`);
+        return session;
+      } catch (err: unknown) {
+        log.warn(
+          `${this.logTag} Failed to resume session ${type}:${externalReferenceId} (${stored.correlationId}) — falling back to new session`,
+          err,
+        );
+      }
+    }
+
+    try {
+      const session = await this.sessionFactory.createSession(input);
+      this._sessionStore?.set(key, session.correlationId, input.promptFormatterVersion);
       return session;
     } catch (err) {
       // The waiter is cleared by launchSession's `finally`. If the MCP bridge
@@ -609,6 +665,11 @@ export abstract class BaseAgentInstance implements AgentInstance {
     if (this._app) {
       this._app.dispose();
       this._app = undefined;
+    }
+
+    if (this._sessionStore) {
+      this._sessionStore.close();
+      this._sessionStore = undefined;
     }
   }
 

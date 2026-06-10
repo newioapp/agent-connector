@@ -50,6 +50,8 @@ export interface AcpAgentSessionInit {
   readonly connection: ClientSideConnection;
   readonly sessionResponse: NewSessionResponse | LoadSessionResponse;
   readonly disposable: boolean;
+  /** True when built from a `session/load` (resume) rather than `session/new`. */
+  readonly resumed: boolean;
   readonly username?: string;
   /** The token the agent uses to indicate "no reply needed". */
   readonly skipToken: string;
@@ -70,6 +72,8 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
 
   readonly disposable: boolean;
 
+  readonly resumed: boolean;
+
   private readonly connection: ClientSideConnection;
   private readonly configHandler: AcpSessionConfigHandler;
   private readonly contextWindowHandler: AcpSessionContextWindowHandler;
@@ -87,6 +91,7 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
     this.promptFormatterVersion = init.promptFormatterVersion;
     this.correlationId = init.correlationId;
     this.disposable = init.disposable;
+    this.resumed = init.resumed;
     this.connection = init.connection;
     this.logTag = init.username ? `[${init.username}]` : '';
     this.skipToken = init.skipToken;

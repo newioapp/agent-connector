@@ -15,6 +15,7 @@ function createMockSession(correlationId = 'session-1'): AgentSession {
     type: 'conversation',
     externalReferenceId: 'conv-1',
     promptFormatterVersion: '1.0.0',
+    resumed: false,
     currentConversationId: undefined,
     prompt: vi.fn(async function* () {
       yield { type: 'agent_message_chunk' as const, text: '' };
@@ -143,21 +144,21 @@ describe('IsolatedSessionManager', () => {
       manager.routeInboundEvent({ type: 'message', msg });
 
       // Session should be created for conv-a
-      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', 'conv-a'));
+      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', 'conv-a', true));
     });
 
     it('routes contact events to the contact slot', async () => {
       const event = makeContactEvent();
       manager.routeInboundEvent({ type: 'contact', event });
 
-      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('contact', '__contact__'));
+      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('contact', '__contact__', true));
     });
 
     it('routes cron events to cron slots', async () => {
       const event = makeCronEvent();
       manager.routeInboundEvent({ type: 'cron', event });
 
-      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('cron', 'cron-1'));
+      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('cron', 'cron-1', true));
     });
 
     it('routes multiple messages to the same conversation slot', async () => {
@@ -175,8 +176,8 @@ describe('IsolatedSessionManager', () => {
       manager.routeInboundEvent({ type: 'message', msg: makeMessage('conv-b') });
 
       await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledTimes(2));
-      expect(newSessionFn).toHaveBeenCalledWith('conversation', 'conv-a');
-      expect(newSessionFn).toHaveBeenCalledWith('conversation', 'conv-b');
+      expect(newSessionFn).toHaveBeenCalledWith('conversation', 'conv-a', true);
+      expect(newSessionFn).toHaveBeenCalledWith('conversation', 'conv-b', true);
     });
 
     it('routes initiate_conversation events', async () => {
@@ -186,7 +187,62 @@ describe('IsolatedSessionManager', () => {
         context: 'Please message Alice about the meeting',
       });
 
-      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', 'conv-new'));
+      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', 'conv-new', true));
+    });
+  });
+
+  describe('resume', () => {
+    it('requests resume (resume=true) for a normal launch', async () => {
+      await manager.getDmSession('conv-r');
+      expect(newSessionFn).toHaveBeenCalledWith('conversation', 'conv-r', true);
+    });
+
+    it('skips context injection when the launched session was resumed', async () => {
+      const resumedSession = createMockSession('resumed-1');
+      (resumedSession as { resumed: boolean }).resumed = true;
+      newSessionFn.mockResolvedValueOnce(resumedSession);
+
+      await manager.getDmSession('conv-resumed');
+
+      // provideContext would issue the instruction prompt on a fresh session;
+      // a resumed session already holds it, so prompt must not be called at launch.
+      expect(resumedSession.prompt).not.toHaveBeenCalled();
+    });
+
+    it('injects context for a fresh (non-resumed) session', async () => {
+      await manager.getDmSession('conv-fresh');
+      // Fresh session receives the Newio instruction via provideContext.
+      expect(mockSession.prompt).toHaveBeenCalled();
+    });
+  });
+
+  describe('idle cleanup', () => {
+    it('runs the memory-update prompt (not session-end) and writes no handoff', async () => {
+      const promptManager = createMockPromptManager();
+      const app = createMockApp();
+      const localManager = new IsolatedSessionManager(
+        '[test]',
+        eventProcessor,
+        newSessionFn,
+        endSessionFn,
+        promptManager,
+        app,
+      );
+      await localManager.getDmSession('conv-idle');
+
+      // Backdate the slot so it counts as idle, then run the private sweep.
+      const slots = (localManager as unknown as { conversationSlots: Map<string, { lastActivityAt: number }> })
+        .conversationSlots;
+      const slot = slots.get('conv-idle');
+      if (slot) {
+        slot.lastActivityAt = 0;
+      }
+      await (localManager as unknown as { cleanupIdleSessions: () => Promise<void> }).cleanupIdleSessions();
+
+      expect(promptManager.buildMemoryUpdatePrompt).toHaveBeenCalled();
+      expect(promptManager.buildSessionEndPrompt).not.toHaveBeenCalled();
+      expect(app.putHandoffNote).not.toHaveBeenCalled();
+      expect(endSessionFn).toHaveBeenCalledWith('session-1');
     });
   });
 
@@ -194,7 +250,7 @@ describe('IsolatedSessionManager', () => {
     it('creates and returns a session for a DM conversation', async () => {
       const session = await manager.getDmSession('dm-conv');
 
-      expect(newSessionFn).toHaveBeenCalledWith('conversation', 'dm-conv');
+      expect(newSessionFn).toHaveBeenCalledWith('conversation', 'dm-conv', true);
       expect(session).toBe(mockSession);
     });
 
@@ -214,7 +270,7 @@ describe('IsolatedSessionManager', () => {
       });
 
       expect(result.success).toBe(true);
-      expect(newSessionFn).toHaveBeenCalledWith('conversation', 'conv-x');
+      expect(newSessionFn).toHaveBeenCalledWith('conversation', 'conv-x', true);
     });
 
     it('rejects non-conversation session types', async () => {
