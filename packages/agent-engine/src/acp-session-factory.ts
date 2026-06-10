@@ -326,9 +326,19 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
   async destroySession(correlationId: string): Promise<void> {
     const session = this.acpSessions.get(correlationId);
     this.acpSessions.delete(correlationId);
-    if (session && session.disposable) {
-      await session.dispose();
+    if (!session || !session.disposable) {
+      return;
     }
+    // A foreground Ctrl-C delivers SIGINT to the whole process group, so the ACP
+    // child can already be dead by the time we tear sessions down. Issuing the
+    // graceful session/close RPC against a dead process blocks forever waiting
+    // for a response that never arrives — skip it when the child is gone.
+    const child = this.childProcess;
+    if (!child || child.exitCode !== null || child.signalCode !== null) {
+      log.debug(`${this.logTag} ACP process already exited — skipping session/close for ${correlationId}`);
+      return;
+    }
+    await session.dispose();
   }
 
   // ---------------------------------------------------------------------------

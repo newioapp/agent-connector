@@ -53,6 +53,34 @@ export function resolveCommand(
   return { command: overrideCommand, args: overrideArgs };
 }
 
+/**
+ * Race a promise against a timeout. Resolves with the promise's value, or
+ * rejects with a `TimeoutError` once `ms` elapses if it hasn't settled. The
+ * timer is always cleared so it never keeps the event loop alive. Used to bound
+ * best-effort ACP RPCs (e.g. session/close during shutdown) so a dead or
+ * unresponsive child process can't wedge teardown forever.
+ */
+export class TimeoutError extends Error {
+  constructor(label: string, ms: number) {
+    super(`Timed out after ${ms}ms: ${label}`);
+    this.name = 'TimeoutError';
+  }
+}
+
+export async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new TimeoutError(label, ms)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
 /** Extract a human-readable message from an unknown error (handles Error instances and plain objects). */
 export function extractErrorMessage(err: unknown): string {
   if (typeof err === 'object' && err !== null) {

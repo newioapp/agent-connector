@@ -30,9 +30,16 @@ import type {
   ModeOption,
   SessionConfigUpdate,
 } from '@newio/agent-sdk';
-import { extractErrorMessage } from './utils';
+import { extractErrorMessage, withTimeout } from './utils';
 
 const log = getLogger('acp-agent-session');
+
+/**
+ * Upper bound on the best-effort `session/close` RPC during dispose. If the ACP
+ * child is alive but unresponsive, this keeps teardown from blocking forever.
+ * (When the child has already exited, the factory skips dispose entirely.)
+ */
+const CLOSE_SESSION_TIMEOUT_MS = 3000;
 
 export interface AcpAgentSessionInit {
   readonly type: SessionType;
@@ -223,7 +230,11 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
     }
     this.stream?.finish();
     try {
-      await this.connection.unstable_closeSession({ sessionId: this.correlationId });
+      await withTimeout(
+        this.connection.unstable_closeSession({ sessionId: this.correlationId }),
+        CLOSE_SESSION_TIMEOUT_MS,
+        'session/close',
+      );
     } catch (err: unknown) {
       log.debug(`${this.logTag} [${this.correlationId}] closeSession failed (best-effort)`, err);
     }
