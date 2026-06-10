@@ -268,7 +268,12 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
     }
     child.kill('SIGTERM');
 
-    // Wait for graceful exit, then force kill.
+    // Wait for graceful exit, then force kill. Capture the timer so the exit
+    // branch winning the race clears it — otherwise a clean stop leaves a live
+    // 5s handle that keeps the event loop alive (masked by process.exit in the
+    // daemon path, but stalls embedded AgentRuntimeManager.stop() and leaks an
+    // open handle in tests).
+    let graceTimer: ReturnType<typeof setTimeout> | undefined;
     const exited = await Promise.race([
       new Promise<boolean>((resolve) => {
         child.once('exit', () => resolve(true));
@@ -276,8 +281,13 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
           resolve(true);
         }
       }),
-      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), GRACEFUL_EXIT_TIMEOUT_MS)),
+      new Promise<boolean>((resolve) => {
+        graceTimer = setTimeout(() => resolve(false), GRACEFUL_EXIT_TIMEOUT_MS);
+      }),
     ]);
+    if (graceTimer) {
+      clearTimeout(graceTimer);
+    }
 
     if (!exited) {
       log.warn(

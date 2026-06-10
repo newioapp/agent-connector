@@ -179,6 +179,9 @@ function makeChild(opts: { exitCode?: number | null; signalCode?: string | null 
 }
 
 describe('AcpSessionFactory.killProcess', () => {
+  // Mirrors GRACEFUL_EXIT_TIMEOUT_MS in acp-session-factory.ts.
+  const GRACE_TIMEOUT_MS = 5000;
+
   function killProcess(factory: AcpSessionFactory): Promise<void> {
     return (factory as unknown as { killProcess: () => Promise<void> }).killProcess();
   }
@@ -215,6 +218,32 @@ describe('AcpSessionFactory.killProcess', () => {
     expect(child.stdin.end).toHaveBeenCalledTimes(1);
     expect(child.kill).toHaveBeenCalledWith('SIGTERM');
     expect(child.kill).not.toHaveBeenCalledWith('SIGKILL');
+  });
+
+  it('clears the grace timer when the child exits, leaving no live handle', async () => {
+    vi.useFakeTimers();
+    try {
+      const factory = createFactory();
+      const child = makeChild({ exitCode: null, signalCode: null });
+      child.stdin.destroyed = false;
+      const f = internals(factory);
+      f.childProcess = child;
+      f.childExited = false;
+
+      const done = killProcess(factory);
+      f.childExited = true;
+      child.exitCode = 0;
+      child.emit('exit', 0, 'SIGTERM');
+      await done;
+
+      // The 5s grace timer must be cleared once the exit branch wins — no stray
+      // handle keeping the event loop alive, and no late SIGKILL when time passes.
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(GRACE_TIMEOUT_MS);
+      expect(child.kill).not.toHaveBeenCalledWith('SIGKILL');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('escalates to SIGKILL when a live child ignores SIGTERM past the timeout', async () => {
