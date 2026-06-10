@@ -258,6 +258,18 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
       return;
     }
 
+    // Arm the exit waiter BEFORE signalling, so a fast exit can't slip between
+    // the kill and the listener attach. (Safe today — there's no await between
+    // them — but this keeps the ordering mechanically correct against future
+    // edits. The synchronous hasChildExited check covers an exit that already
+    // happened before this point.)
+    const exitedPromise = new Promise<boolean>((resolve) => {
+      child.once('exit', () => resolve(true));
+      if (this.hasChildExited(child)) {
+        resolve(true);
+      }
+    });
+
     // Ask the child to shut down. Close stdin (the ACP agent sees EOF on its
     // client connection) AND send SIGTERM — closing stdin alone isn't enough:
     // some ACP agents don't exit on EOF and would otherwise sit until the
@@ -275,12 +287,7 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
     // open handle in tests).
     let graceTimer: ReturnType<typeof setTimeout> | undefined;
     const exited = await Promise.race([
-      new Promise<boolean>((resolve) => {
-        child.once('exit', () => resolve(true));
-        if (this.hasChildExited(child)) {
-          resolve(true);
-        }
-      }),
+      exitedPromise,
       new Promise<boolean>((resolve) => {
         graceTimer = setTimeout(() => resolve(false), GRACEFUL_EXIT_TIMEOUT_MS);
       }),
