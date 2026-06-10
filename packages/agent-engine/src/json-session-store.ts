@@ -29,6 +29,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+/** Narrow an unknown to a string[]; non-arrays and non-string entries are dropped. */
+function asStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return value.filter((v): v is string => typeof v === 'string');
+}
+
 /** Validate and narrow a single parsed entry; returns undefined if malformed. */
 function parseStoredSession(value: unknown): StoredSession | undefined {
   if (!isRecord(value)) {
@@ -38,7 +46,14 @@ function parseStoredSession(value: unknown): StoredSession | undefined {
   if (typeof correlationId !== 'string' || typeof promptFormatterVersion !== 'string') {
     return undefined;
   }
-  return { correlationId, promptFormatterVersion };
+  const injectedConversationIds = asStringArray(value.injectedConversationIds);
+  const injectedUserIds = asStringArray(value.injectedUserIds);
+  return {
+    correlationId,
+    promptFormatterVersion,
+    ...(injectedConversationIds ? { injectedConversationIds } : {}),
+    ...(injectedUserIds ? { injectedUserIds } : {}),
+  };
 }
 
 export class JsonSessionStore implements SessionStore {
@@ -91,7 +106,22 @@ export class JsonSessionStore implements SessionStore {
   }
 
   set(key: string, correlationId: string, promptFormatterVersion: string): void {
+    // A fresh mapping resets injection state — a new session has injected nothing.
     this.sessions.set(key, { correlationId, promptFormatterVersion });
+    this.persist();
+  }
+
+  setInjectionState(key: string, conversationIds: readonly string[], userIds: readonly string[]): void {
+    const existing = this.sessions.get(key);
+    if (!existing) {
+      return;
+    }
+    this.sessions.set(key, {
+      correlationId: existing.correlationId,
+      promptFormatterVersion: existing.promptFormatterVersion,
+      injectedConversationIds: [...conversationIds],
+      injectedUserIds: [...userIds],
+    });
     this.persist();
   }
 

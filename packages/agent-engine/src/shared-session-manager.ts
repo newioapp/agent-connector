@@ -166,10 +166,12 @@ export class SharedSessionManager implements SessionManager {
   private async injectConversationContextIfNeeded(conversationId: string, session: AgentSession): Promise<void> {
     const agentId = this.app.agentUserId;
     const sections: string[] = [];
+    let changed = false;
 
     // Per-conversation memory
     if (!this.injectedConversationIds.has(conversationId)) {
       this.injectedConversationIds.add(conversationId);
+      changed = true;
       try {
         const data = await this.app.getMemoryScope('conversation', conversationId);
         const parts: string[] = [];
@@ -194,6 +196,7 @@ export class SharedSessionManager implements SessionManager {
         continue;
       }
       this.injectedUserIds.add(userId);
+      changed = true;
       try {
         const data = await this.app.getMemoryScope('user', userId);
         const parts: string[] = [];
@@ -219,6 +222,12 @@ export class SharedSessionManager implements SessionManager {
       log.debug(
         `${this.logTag} Injected memory context for conversation ${conversationId} (${sections.length} sections)`,
       );
+    }
+
+    // Persist the (possibly grown) injection sets so a resumed session after a
+    // restart doesn't re-inject scopes it already holds.
+    if (changed) {
+      this.app.persistSharedInjectionState([...this.injectedConversationIds], [...this.injectedUserIds]);
     }
   }
 
@@ -275,8 +284,12 @@ export class SharedSessionManager implements SessionManager {
     await this.applyPersistedSessionConfig(session);
 
     // A resumed session already holds its instruction + memory + prior turns;
-    // only fresh sessions need context injected.
+    // only fresh sessions need context injected. On resume, hydrate the injected
+    // sets from the persisted state so we don't re-inject scopes after a restart.
     if (session.resumed) {
+      const state = this.app.loadSharedInjectionState();
+      state.conversationIds.forEach((id) => this.injectedConversationIds.add(id));
+      state.userIds.forEach((id) => this.injectedUserIds.add(id));
       log.info(`${this.logTag} Resumed shared session — skipping context injection`);
     } else {
       await this.provideContext(session, opts.handoffNote);

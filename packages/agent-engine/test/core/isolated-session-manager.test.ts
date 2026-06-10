@@ -61,6 +61,8 @@ function createMockApp(): NewioAppForSession {
     getConversationMemberIds: vi.fn().mockResolvedValue([]),
     getMemberInfo: vi.fn().mockResolvedValue(undefined),
     agentUserId: 'agent-1',
+    loadSharedInjectionState: vi.fn().mockReturnValue({ conversationIds: [], userIds: [] }),
+    persistSharedInjectionState: vi.fn(),
   };
 }
 

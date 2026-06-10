@@ -19,14 +19,24 @@ export interface StoredSession {
    * (fresh session created) if this is no longer compatible.
    */
   readonly promptFormatterVersion: string;
+  /**
+   * Shared-session memory injection state — the conversation/user scopes whose
+   * memory has already been injected into this (shared) session. Persisted so a
+   * resumed shared session doesn't re-inject after a connector restart. Absent
+   * for isolated sessions.
+   */
+  readonly injectedConversationIds?: readonly string[];
+  readonly injectedUserIds?: readonly string[];
 }
 
 /** Storage interface for session correlationId persistence. */
 export interface SessionStore {
   /** Look up the stored session for a key, or undefined if none. */
   get(key: string): StoredSession | undefined;
-  /** Persist (or overwrite) the session mapping for a key. */
+  /** Persist (or overwrite) the session mapping for a key. Resets injection state. */
   set(key: string, correlationId: string, promptFormatterVersion: string): void;
+  /** Update the shared-injection state on an existing entry (no-op if absent). */
+  setInjectionState(key: string, conversationIds: readonly string[], userIds: readonly string[]): void;
   /** Remove the mapping for a key. */
   delete(key: string): void;
   /** Close the store and release resources. */

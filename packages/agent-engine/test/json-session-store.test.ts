@@ -53,6 +53,40 @@ describe('JsonSessionStore', () => {
     expect(s.get(sessionStoreKey('cron', 'x'))?.correlationId).toBe('c2');
   });
 
+  it('persists shared-injection state and survives reload', () => {
+    const p = path();
+    const k = sessionStoreKey('conversation', '__shared__');
+    const s = new JsonSessionStore(p);
+    s.set(k, 'corr-1', '1.0.0');
+    s.setInjectionState(k, ['conv-a', 'conv-b'], ['user-1']);
+
+    expect(s.get(k)?.injectedConversationIds).toEqual(['conv-a', 'conv-b']);
+    expect(s.get(k)?.injectedUserIds).toEqual(['user-1']);
+
+    const reloaded = new JsonSessionStore(p);
+    expect(reloaded.get(k)?.injectedConversationIds).toEqual(['conv-a', 'conv-b']);
+    expect(reloaded.get(k)?.injectedUserIds).toEqual(['user-1']);
+  });
+
+  it('resets injection state when the mapping is overwritten (fresh session)', () => {
+    const p = path();
+    const k = sessionStoreKey('conversation', '__shared__');
+    const s = new JsonSessionStore(p);
+    s.set(k, 'corr-1', '1.0.0');
+    s.setInjectionState(k, ['conv-a'], ['user-1']);
+    // A new session (rotation/recreate) overwrites the mapping and clears injection.
+    s.set(k, 'corr-2', '1.0.0');
+    expect(s.get(k)?.injectedConversationIds).toBeUndefined();
+    expect(s.get(k)?.injectedUserIds).toBeUndefined();
+  });
+
+  it('setInjectionState is a no-op when no mapping exists', () => {
+    const p = path();
+    const s = new JsonSessionStore(p);
+    s.setInjectionState(sessionStoreKey('conversation', 'missing'), ['x'], ['y']);
+    expect(s.get(sessionStoreKey('conversation', 'missing'))).toBeUndefined();
+  });
+
   it('survives a corrupt file by starting empty', () => {
     const p = path();
     writeFileSync(p, '{ not json');

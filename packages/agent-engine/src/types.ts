@@ -360,6 +360,12 @@ export interface SessionEventProcessor {
   processEvent(event: AgentEvent, session: AgentSession): Promise<void>;
 }
 
+/** The conversation/user scopes already memory-injected into the shared session. */
+export interface SharedInjectionState {
+  readonly conversationIds: readonly string[];
+  readonly userIds: readonly string[];
+}
+
 export interface NewioAppForSession {
   handlePermissionRequest(
     title: string,
@@ -382,6 +388,10 @@ export interface NewioAppForSession {
   ): Promise<{ username?: string; displayName?: string } | undefined>;
   /** Get the agent's own userId (for filtering self from member lists). */
   agentUserId: string;
+  /** Load the shared session's persisted injection state (for hydration on resume). */
+  loadSharedInjectionState(): SharedInjectionState;
+  /** Persist the shared session's injection state (after injecting new scopes). */
+  persistSharedInjectionState(conversationIds: readonly string[], userIds: readonly string[]): void;
 }
 
 export interface CreateSessionInput {

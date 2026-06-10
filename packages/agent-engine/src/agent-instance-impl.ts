@@ -10,7 +10,7 @@
  * Each session processes its own event queue concurrently.
  * Subclasses implement session creation and greeting logic.
  */
-import { ApprovalTimeoutError, ConnectionRejectedError, NotFoundApiError } from '@newio/agent-sdk';
+import { ApprovalTimeoutError, ConnectionRejectedError, NotFoundApiError, SHARED_SESSION_ID } from '@newio/agent-sdk';
 import { NewioApp } from './app/index.js';
 import type { ActionOption, ActionRequest } from '@newio/agent-sdk';
 import { NewioMcpServer, startUdsServer } from './mcp/index.js';
@@ -28,6 +28,7 @@ import type {
   NewioAppForSession,
   SessionType,
   CreateSessionInput,
+  SharedInjectionState,
 } from './types';
 import type { AgentInfo, AgentErrorCode, PermissionRequestOption } from './types';
 import { InvalidEnvironmentError } from './errors.js';
@@ -59,8 +60,21 @@ const log = getLogger('agent-instance-impl');
  */
 const MCP_CONNECT_TIMEOUT_MS = 10_000;
 
+/**
+ * After a failed `loadSession`, wait this long before arming the fallback
+ * create's MCP waiter. The MCP socket path is shared, so a bridge spawned by the
+ * rejected `loadSession` could connect late; during this drain `pendingMcpWiring`
+ * is undefined, so that stale bridge hits the no-waiter path instead of stealing
+ * the fallback create's waiter. Best-effort (the fallback path is already rare).
+ */
+const RESUME_FALLBACK_MCP_DRAIN_MS = 250;
+
 function isErrnoException(err: unknown): err is NodeJS.ErrnoException {
   return err instanceof Error && 'code' in err;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** Rendezvous between a session launch and the MCP bridge connection it triggers. */
@@ -343,7 +357,27 @@ export abstract class BaseAgentInstance implements AgentInstance {
       getConversationMemberIds: (conversationId) => this.app.getConversationMemberIds(conversationId),
       getMemberInfo: (conversationId, userId) => this.app.getMemberInfo(conversationId, userId),
       agentUserId: this.app.identity.userId,
+      loadSharedInjectionState: () => this.loadSharedInjectionState(),
+      persistSharedInjectionState: (conversationIds, userIds) =>
+        this.persistSharedInjectionState(conversationIds, userIds),
     };
+  }
+
+  /** Store key for the single shared session (shared mode only). */
+  private get sharedSessionKey(): string {
+    return sessionStoreKey('conversation', SHARED_SESSION_ID);
+  }
+
+  private loadSharedInjectionState(): SharedInjectionState {
+    const stored = this._sessionStore?.get(this.sharedSessionKey);
+    return {
+      conversationIds: stored?.injectedConversationIds ?? [],
+      userIds: stored?.injectedUserIds ?? [],
+    };
+  }
+
+  private persistSharedInjectionState(conversationIds: readonly string[], userIds: readonly string[]): void {
+    this._sessionStore?.setInjectionState(this.sharedSessionKey, conversationIds, userIds);
   }
 
   private async loadMemoryForSession(conversationId?: string) {
@@ -494,6 +528,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
     const key = sessionStoreKey(type, externalReferenceId);
     const stored = resume ? this._sessionStore?.get(key) : undefined;
 
+    let resumeFailed = false;
     if (stored) {
       try {
         // A formatter version we can no longer satisfy means a stale instruction.
@@ -509,7 +544,14 @@ export abstract class BaseAgentInstance implements AgentInstance {
           `${this.logTag} Failed to resume session ${type}:${externalReferenceId} (${stored.correlationId}) — falling back to new session`,
           err,
         );
+        resumeFailed = true;
       }
+    }
+
+    if (resumeFailed) {
+      // Let any stale MCP bridge from the rejected loadSession land on the
+      // no-waiter path before we arm the fallback create's waiter.
+      await delay(RESUME_FALLBACK_MCP_DRAIN_MS);
     }
 
     const createInput = this.buildSessionInput(type, externalReferenceId, this.promptManager.defaultVersion);

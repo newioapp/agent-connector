@@ -10,13 +10,13 @@ import { SHARED_SESSION_ID } from '@newio/agent-sdk';
 // Helpers
 // ---------------------------------------------------------------------------
 
-function createMockSession(correlationId = 'session-1'): AgentSession {
+function createMockSession(correlationId = 'session-1', resumed = false): AgentSession {
   return {
     correlationId,
     type: 'conversation',
     externalReferenceId: SHARED_SESSION_ID,
     promptFormatterVersion: '1.0.0',
-    resumed: false,
+    resumed,
     currentConversationId: undefined as string | undefined,
     prompt: vi.fn(async function* () {
       yield { type: 'agent_message_chunk' as const, text: '' };
@@ -62,6 +62,8 @@ function createMockApp(): NewioAppForSession {
     getConversationMemberIds: vi.fn().mockResolvedValue([]),
     getMemberInfo: vi.fn().mockResolvedValue(undefined),
     agentUserId: 'agent-1',
+    loadSharedInjectionState: vi.fn().mockReturnValue({ conversationIds: [], userIds: [] }),
+    persistSharedInjectionState: vi.fn(),
   };
 }
 
@@ -173,6 +175,30 @@ describe('SharedSessionManager', () => {
       manager.routeInboundEvent({ type: 'cron', event: makeCronEvent() });
 
       await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', SHARED_SESSION_ID, true));
+    });
+  });
+
+  describe('shared injection state', () => {
+    it('persists the injected scopes after injecting a new conversation', async () => {
+      (app.getConversationMemberIds as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+      manager.routeInboundEvent({ type: 'message', msg: makeMessage('conv-new') });
+
+      await vi.waitFor(() => expect(app.persistSharedInjectionState).toHaveBeenCalledWith(['conv-new'], []));
+    });
+
+    it('hydrates injected sets from persisted state on resume and skips re-injection', async () => {
+      // Persisted state says conv-x was already injected; the resumed session holds it.
+      (app.loadSharedInjectionState as ReturnType<typeof vi.fn>).mockReturnValue({
+        conversationIds: ['conv-x'],
+        userIds: [],
+      });
+      newSessionFn.mockResolvedValue(createMockSession('resumed-1', true));
+
+      manager.routeInboundEvent({ type: 'message', msg: makeMessage('conv-x') });
+
+      await vi.waitFor(() => expect(app.loadSharedInjectionState).toHaveBeenCalled());
+      // conv-x was hydrated, so its memory is never re-fetched/injected.
+      expect(app.getMemoryScope).not.toHaveBeenCalledWith('conversation', 'conv-x');
     });
   });
 
