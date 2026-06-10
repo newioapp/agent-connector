@@ -301,9 +301,29 @@ describe('PromptFormatterImpl', () => {
 
     it('appends custom instructions', () => {
       const pf = mockApp();
-      const result = pf.buildNewioInstruction('Always respond in French.');
+      const result = pf.buildNewioInstruction(undefined, 'Always respond in French.');
       expect(result.prompt).toContain('Always respond in French.');
       expect(result.prompt).toContain('<custom_instructions>');
+    });
+
+    describe('chat-shared mode', () => {
+      function chatSharedFormatter(): PromptFormatterImpl {
+        return new PromptFormatterImpl(defaultIdentity, defaultOwner, 'chat-shared');
+      }
+
+      it('renders the chat-role lifecycle (defaults to chat) mentioning share_context', () => {
+        const result = chatSharedFormatter().buildNewioInstruction();
+        expect(result.prompt).toContain('mode="chat-shared" role="chat"');
+        expect(result.prompt).toContain('shared conversational session');
+        expect(result.prompt).toContain('share_context');
+      });
+
+      it('renders the focused-role lifecycle for work/cron sessions', () => {
+        const result = chatSharedFormatter().buildNewioInstruction('focused');
+        expect(result.prompt).toContain('mode="chat-shared" role="focused"');
+        expect(result.prompt).toContain('dedicated session for a single work session or cron job');
+        expect(result.prompt).toContain('share_context');
+      });
     });
 
     it('includes XML structure with identity and relationships', () => {

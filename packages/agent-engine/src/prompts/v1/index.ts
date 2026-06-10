@@ -1,6 +1,7 @@
-export { instructionPrompt, type InstructionProps, type SessionMode } from './instruction.js';
+export { instructionPrompt, type InstructionProps, type SessionMode, type SessionPromptRole } from './instruction.js';
 export { instructionIsolated } from './instruction-isolated.js';
 export { instructionShared } from './instruction-shared.js';
+export { instructionChatShared } from './instruction-chat-shared.js';
 export { greetingPrompt } from './greeting.js';
 export { memoryRules } from './memory-rules.js';
 export { memoryUpdatePrompt } from './memory-update.js';

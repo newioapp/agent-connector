@@ -7,7 +7,7 @@
  */
 import type { LoadSessionMemoryResponse } from '@newio/agent-sdk';
 import type { IncomingMessage, ContactEvent, CronTriggerEvent } from './app/index.js';
-import type { Instruction, PromptFormatter } from './prompt-formatter';
+import type { Instruction, PromptFormatter, SessionPromptRole } from './prompt-formatter';
 
 export class UnsupportedPromptFormatterVersion extends Error {
   constructor(version: string) {
@@ -46,8 +46,8 @@ export class PromptManager {
     return this.defaultFormatter.version;
   }
 
-  buildNewioInstruction(promptVersion: string, customInstructions?: string): Instruction {
-    return this.findCompatiblePromptFormatter(promptVersion).buildNewioInstruction(customInstructions);
+  buildNewioInstruction(promptVersion: string, role?: SessionPromptRole, customInstructions?: string): Instruction {
+    return this.findCompatiblePromptFormatter(promptVersion).buildNewioInstruction(role, customInstructions);
   }
 
   buildGreetingPrompt(promptVersion: string): string {

@@ -43,7 +43,33 @@ export function registerMessagingTools(
     );
   }
 
-  if (sessionMode === 'shared') {
+  if (sessionMode === 'chat-shared') {
+    server.registerTool(
+      'share_context',
+      {
+        description:
+          "Share context with another of your own sessions, identified by its conversationId. Use this to hand off relevant context to a DIFFERENT conversation's session — most commonly to brief a work session you just created (call create_work_session first) on why it exists, the goal, and any details it needs. The target session is another instance of YOU — same agent, same owner, same memory — running in its own context window. This is fire-and-forget — you will NOT receive a response, and it does NOT send a user-visible message by itself. Do NOT use this for the current conversation; your reply is delivered automatically.",
+        inputSchema: {
+          conversationId: z.string().describe('Conversation ID of the target session to share context with'),
+          context: z
+            .string()
+            .describe(
+              'The context to hand to the target session — what it should know and why. The target already knows who you are and who your owner is; focus on the task, goal, who requested it, and any details it needs to act.',
+            ),
+        },
+      },
+      ({ conversationId, context }) => {
+        onToolCall?.('share_context', { conversationId, context });
+        if (getCurrentConversationId() === conversationId) {
+          return text("Can't share context with the current conversation — your reply is delivered automatically.");
+        }
+        initiateConversation(conversationId, context);
+        return text('Context shared with the target session.');
+      },
+    );
+  }
+
+  if (sessionMode === 'shared' || sessionMode === 'chat-shared') {
     server.registerTool(
       'send_message',
       {

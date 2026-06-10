@@ -7,7 +7,7 @@
  */
 import type { LoadSessionMemoryResponse } from '@newio/agent-sdk';
 import type { IncomingMessage, ContactEvent, CronTriggerEvent } from './app/index.js';
-import type { SessionMode } from './prompts/v1/index.js';
+import type { SessionMode, SessionPromptRole } from './prompts/v1/index.js';
 import {
   instructionPrompt,
   greetingPrompt,
@@ -17,7 +17,7 @@ import {
   memoryContextPrompt,
 } from './prompts/v1/index.js';
 
-export type { SessionMode } from './prompts/v1/index.js';
+export type { SessionMode, SessionPromptRole } from './prompts/v1/index.js';
 
 export interface Instruction {
   readonly prompt: string;
@@ -44,7 +44,7 @@ export interface PromptFormatter {
   isSkip(text: string): boolean;
   /** Extract the handoff note from session-end output, or undefined if not found. */
   extractHandoff(text: string): string | undefined;
-  buildNewioInstruction(customInstructions?: string): Instruction;
+  buildNewioInstruction(role?: SessionPromptRole, customInstructions?: string): Instruction;
   buildGreetingPrompt(): string;
   formatMessagePrompt(messages: readonly IncomingMessage[]): string;
   formatContactPrompt(events: readonly ContactEvent[]): string;
@@ -80,7 +80,7 @@ export class PromptFormatterImpl implements PromptFormatter {
     return match?.[1]?.trim() || undefined;
   }
 
-  buildNewioInstruction(customInstructions?: string): Instruction {
+  buildNewioInstruction(role?: SessionPromptRole, customInstructions?: string): Instruction {
     const prompt = instructionPrompt({
       username: this.identity.username,
       displayName: this.identity.displayName,
@@ -88,6 +88,7 @@ export class PromptFormatterImpl implements PromptFormatter {
       ownerUsername: this.owner.username,
       skipToken: this.skipToken,
       sessionMode: this.sessionMode,
+      sessionRole: role,
       customInstructions,
     });
     return { prompt, version: this.version };

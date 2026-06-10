@@ -926,7 +926,7 @@ export interface ReportAgentInfoRequest {
   readonly agentProtocol: string;
   readonly agentVendor: string;
   readonly agentVendorVersion?: string;
-  readonly sessionMode?: 'isolated' | 'shared';
+  readonly sessionMode?: 'isolated' | 'shared' | 'chat-shared';
   readonly host?: ReportAgentHostInfo;
 }
 

@@ -103,8 +103,8 @@ describe('PromptManager', () => {
       const v1 = mockFormatter('1.0.0');
       const v2 = mockFormatter('2.0.0');
       const pm = new PromptManager([v1, v2], v2);
-      const result = pm.buildNewioInstruction('1.0.0', 'custom');
-      expect(v1.buildNewioInstruction).toHaveBeenCalledWith('custom');
+      const result = pm.buildNewioInstruction('1.0.0', undefined, 'custom');
+      expect(v1.buildNewioInstruction).toHaveBeenCalledWith(undefined, 'custom');
       expect(v2.buildNewioInstruction).not.toHaveBeenCalled();
       expect(result.version).toBe('1.0.0');
     });
@@ -114,7 +114,7 @@ describe('PromptManager', () => {
       const v2 = mockFormatter('2.0.0');
       const pm = new PromptManager([v1, v2], v1);
       pm.buildNewioInstruction('2.0.0');
-      expect(v2.buildNewioInstruction).toHaveBeenCalledWith(undefined);
+      expect(v2.buildNewioInstruction).toHaveBeenCalledWith(undefined, undefined);
       expect(v1.buildNewioInstruction).not.toHaveBeenCalled();
     });
 

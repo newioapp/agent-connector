@@ -24,7 +24,7 @@ import { resolveConfig, getDaemonPaths, stageSuffix, type Stage } from '../paths
 import { printApprovalUrl } from './qr.js';
 
 const AGENT_TYPES: readonly AgentType[] = ['claude-code', 'kiro-cli', 'codex', 'cursor', 'gemini', 'custom'];
-const SESSION_MODES: readonly SessionMode[] = ['isolated', 'shared'];
+const SESSION_MODES: readonly SessionMode[] = ['isolated', 'shared', 'chat-shared'];
 
 /** Runtime statuses at which `agent start` is done waiting. */
 const TERMINAL_STATUSES = new Set(['running', 'error', 'stopped']);

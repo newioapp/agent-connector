@@ -3,8 +3,18 @@
  */
 import { instructionIsolated } from './instruction-isolated.js';
 import { instructionShared } from './instruction-shared.js';
+import { instructionChatShared } from './instruction-chat-shared.js';
 
-export type SessionMode = 'isolated' | 'shared';
+export type SessionMode = 'isolated' | 'shared' | 'chat-shared';
+
+/**
+ * The orchestration role of a session, used (in chat-shared mode) to select which session-lifecycle
+ * instruction the session receives:
+ * - 'chat': the shared session handling DMs, group chats, and contact events.
+ * - 'focused': a dedicated session for a single work session or cron job.
+ * Ignored by 'isolated' and 'shared' modes.
+ */
+export type SessionPromptRole = 'chat' | 'focused';
 
 export interface InstructionProps {
   readonly username: string;
@@ -13,13 +23,21 @@ export interface InstructionProps {
   readonly ownerUsername: string;
   readonly skipToken: string;
   readonly sessionMode: SessionMode;
+  /** Orchestration role — only consulted in chat-shared mode. Defaults to 'chat'. */
+  readonly sessionRole?: SessionPromptRole;
   readonly customInstructions?: string;
 }
 
 export function instructionPrompt(props: InstructionProps): string {
-  const { username, displayName, ownerDisplayName, ownerUsername, sessionMode, customInstructions } = props;
+  const { username, displayName, ownerDisplayName, ownerUsername, sessionMode, sessionRole, customInstructions } =
+    props;
   const nameClause = displayName ? ` Your display name is "${displayName}".` : '';
-  const modeSection = sessionMode === 'shared' ? instructionShared() : instructionIsolated();
+  const modeSection =
+    sessionMode === 'chat-shared'
+      ? instructionChatShared(sessionRole ?? 'chat')
+      : sessionMode === 'shared'
+        ? instructionShared()
+        : instructionIsolated();
 
   const sections = [
     identity(username, nameClause, ownerDisplayName, ownerUsername),

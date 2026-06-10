@@ -29,7 +29,7 @@ export type {
   AgentErrorCode,
   SessionMode,
 } from './types.js';
-export { DEFAULT_SESSION_IDLE_TIMEOUT_MS } from './types.js';
+export { DEFAULT_SESSION_IDLE_TIMEOUT_MS, resolveSessionMode } from './types.js';
 export { captureEnv, asEnvSyncMode, ENV_SYNC_MODES, DEFAULT_ENV_SYNC_MODE } from './env-capture.js';
 export type { EnvSyncMode } from './env-capture.js';
 export { InvalidEnvironmentError } from './errors.js';
@@ -67,6 +67,7 @@ export type {
   Instruction,
   PromptFormatterIdentity,
   PromptFormatterOwner,
+  SessionPromptRole,
 } from './prompt-formatter.js';
 
 // MCP server

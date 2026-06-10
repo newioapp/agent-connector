@@ -166,4 +166,4 @@ export interface NewioAppForMcp {
   updateMemorySummary(text: string, opts?: { username?: string; conversationId?: string }): Promise<void>;
 }
 
-export type SessionMode = 'isolated' | 'shared';
+export type SessionMode = 'isolated' | 'shared' | 'chat-shared';
