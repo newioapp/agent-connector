@@ -90,158 +90,173 @@ export async function runDaemon(): Promise<void> {
     }
   });
 
-  // Login-shell env resolution depends on $HOME; fail loudly if a service unit
-  // launched us without it rather than silently producing empty agent envs.
-  if (typeof process.env['HOME'] !== 'string' || process.env['HOME'].length === 0) {
-    throw new Error('HOME is not set — the daemon cannot resolve agent shell environments.');
-  }
-
-  const { stage, apiBaseUrl, wsUrl } = resolveConfig();
-
-  const { dataDir, socketPath, pidPath, downloadsDir } = getDaemonPaths(stage);
-  if (!existsSync(dataDir)) {
-    mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-  }
-
-  // ACP agents launch the MCP bridge by re-invoking this same CLI as
-  // `<self> mcp-bridge <socket>` — no reliance on `newio` being on the agent
-  // subprocess PATH, and no resolving the unpublished agent-engine bridge
-  // subpath. SEA-aware: the bundled binary runs itself; the `node script.js`
-  // form runs `node <cli.js> mcp-bridge`.
-  const { execPath, entryArgs } = resolveSelfExec();
-  const mcpBridgeCommand = execPath;
-  const mcpBridgeArgsPrefix = [...entryArgs, 'mcp-bridge'];
-
-  // Refuse to start if another daemon already owns this stage's socket —
-  // otherwise we'd unlink a live socket and become a second writer of dataDir.
-  if (await isSocketAlive(socketPath)) {
-    throw new Error(`A daemon is already running for stage ${stage} (socket ${socketPath}).`);
-  }
-  if (existsSync(socketPath)) {
-    try {
-      unlinkSync(socketPath);
-    } catch {
-      /* ignore stale socket */
+  // Startup runs through `server.listen()`. Wrap it so an async failure before
+  // steady state (missing HOME, socket conflict, path/config errors, listen
+  // errors) is logged through the daemon logger — and flushed to the rotating
+  // file — before it propagates. Without this they'd reject up to Commander's
+  // top-level `.catch()` and print to a stderr that launchd no longer captures.
+  // The `uncaughtException` handler above only covers throws outside this chain.
+  try {
+    // Login-shell env resolution depends on $HOME; fail loudly if a service unit
+    // launched us without it rather than silently producing empty agent envs.
+    if (typeof process.env['HOME'] !== 'string' || process.env['HOME'].length === 0) {
+      throw new Error('HOME is not set — the daemon cannot resolve agent shell environments.');
     }
-  }
-  writeFileSync(pidPath, String(process.pid), 'utf8');
 
-  const engineConfig: EngineConfig = {
-    apiBaseUrl,
-    wsUrl,
-    stage,
-    appDisplayName: 'Newio Connector Daemon',
-    appVersion: version,
-    dataDir,
-    downloadsDir,
-    mcpBridgeCommand,
-    mcpBridgeArgsPrefix,
-    // As a SEA, the bridge is the self-contained binary re-invoking itself — no
-    // system `node` needed, so agents can skip the node preflight. The
-    // `node dist/cli.js` (npm) form still relies on a real `node`, so keep it.
-    mcpBridgeIsSelfContained: isSeaBinary(),
-  };
+    const { stage, apiBaseUrl, wsUrl } = resolveConfig();
 
-  const agentConfigManager = new FileAgentConfigManager(dataDir);
-  // One cron store per agent, scoped to its directory (agents/<id>/cron.json).
-  // Validate before joining — agentId can originate from untrusted RPC params.
-  const cronStoreFactory = (agentId: string): JsonCronStore => {
-    assertSafeAgentId(agentId);
-    return new JsonCronStore(join(dataDir, 'agents', agentId, 'cron.json'));
-  };
+    const { dataDir, socketPath, pidPath, downloadsDir } = getDaemonPaths(stage);
+    if (!existsSync(dataDir)) {
+      mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+    }
 
-  // Runtime manager is recreated on reload; handler holds a mutable reference.
-  const makeListener = (): StatusListener => ({
-    onStatusChanged(agentId, status, error, errorCode) {
-      server.notify('agent.statusChanged', { agentId, status, error, errorCode });
-    },
-    onApprovalUrl(agentId, approvalUrl) {
-      server.notify('agent.approvalUrl', { agentId, approvalUrl });
-    },
-    onPollAttempt(agentId) {
-      server.notify('agent.pollAttempt', { agentId });
-    },
-    onConfigUpdated(agentId) {
-      const config = agentConfigManager.get(agentId);
-      if (config) {
-        server.notify('agent.configUpdated', { agentId, config });
+    // ACP agents launch the MCP bridge by re-invoking this same CLI as
+    // `<self> mcp-bridge <socket>` — no reliance on `newio` being on the agent
+    // subprocess PATH, and no resolving the unpublished agent-engine bridge
+    // subpath. SEA-aware: the bundled binary runs itself; the `node script.js`
+    // form runs `node <cli.js> mcp-bridge`.
+    const { execPath, entryArgs } = resolveSelfExec();
+    const mcpBridgeCommand = execPath;
+    const mcpBridgeArgsPrefix = [...entryArgs, 'mcp-bridge'];
+
+    // Refuse to start if another daemon already owns this stage's socket —
+    // otherwise we'd unlink a live socket and become a second writer of dataDir.
+    if (await isSocketAlive(socketPath)) {
+      throw new Error(`A daemon is already running for stage ${stage} (socket ${socketPath}).`);
+    }
+    if (existsSync(socketPath)) {
+      try {
+        unlinkSync(socketPath);
+      } catch {
+        /* ignore stale socket */
       }
-    },
-    onAgentInfo(agentId, info) {
-      server.notify('agent.acpInfo', { agentId, info });
-    },
-  });
+    }
+    writeFileSync(pidPath, String(process.pid), 'utf8');
 
-  const handler = new DaemonHandler({
-    agentConfigManager,
-    agentRuntimeManager: new AgentRuntimeManager(agentConfigManager, cronStoreFactory, makeListener(), engineConfig),
-    version,
-    stage,
-    apiBaseUrl,
-    onReload: async () => {
-      log.info('Reloading...');
-      // Capture which agents were running so we can restart them.
-      const running = agentConfigManager
-        .list()
-        .filter((c) => {
-          const { status } = handler.deps.agentRuntimeManager.getStatus(c.id);
-          return status !== 'stopped' && status !== 'error';
-        })
-        .map((c) => c.id);
+    const engineConfig: EngineConfig = {
+      apiBaseUrl,
+      wsUrl,
+      stage,
+      appDisplayName: 'Newio Connector Daemon',
+      appVersion: version,
+      dataDir,
+      downloadsDir,
+      mcpBridgeCommand,
+      mcpBridgeArgsPrefix,
+      // As a SEA, the bridge is the self-contained binary re-invoking itself — no
+      // system `node` needed, so agents can skip the node preflight. The
+      // `node dist/cli.js` (npm) form still relies on a real `node`, so keep it.
+      mcpBridgeIsSelfContained: isSeaBinary(),
+    };
 
+    const agentConfigManager = new FileAgentConfigManager(dataDir);
+    // One cron store per agent, scoped to its directory (agents/<id>/cron.json).
+    // Validate before joining — agentId can originate from untrusted RPC params.
+    const cronStoreFactory = (agentId: string): JsonCronStore => {
+      assertSafeAgentId(agentId);
+      return new JsonCronStore(join(dataDir, 'agents', agentId, 'cron.json'));
+    };
+
+    // Runtime manager is recreated on reload; handler holds a mutable reference.
+    const makeListener = (): StatusListener => ({
+      onStatusChanged(agentId, status, error, errorCode) {
+        server.notify('agent.statusChanged', { agentId, status, error, errorCode });
+      },
+      onApprovalUrl(agentId, approvalUrl) {
+        server.notify('agent.approvalUrl', { agentId, approvalUrl });
+      },
+      onPollAttempt(agentId) {
+        server.notify('agent.pollAttempt', { agentId });
+      },
+      onConfigUpdated(agentId) {
+        const config = agentConfigManager.get(agentId);
+        if (config) {
+          server.notify('agent.configUpdated', { agentId, config });
+        }
+      },
+      onAgentInfo(agentId, info) {
+        server.notify('agent.acpInfo', { agentId, info });
+      },
+    });
+
+    const handler = new DaemonHandler({
+      agentConfigManager,
+      agentRuntimeManager: new AgentRuntimeManager(agentConfigManager, cronStoreFactory, makeListener(), engineConfig),
+      version,
+      stage,
+      apiBaseUrl,
+      onReload: async () => {
+        log.info('Reloading...');
+        // Capture which agents were running so we can restart them.
+        const running = agentConfigManager
+          .list()
+          .filter((c) => {
+            const { status } = handler.deps.agentRuntimeManager.getStatus(c.id);
+            return status !== 'stopped' && status !== 'error';
+          })
+          .map((c) => c.id);
+
+        await handler.deps.agentRuntimeManager.stopAll();
+
+        handler.deps.agentRuntimeManager = new AgentRuntimeManager(
+          agentConfigManager,
+          cronStoreFactory,
+          makeListener(),
+          engineConfig,
+        );
+
+        for (const id of running) {
+          try {
+            handler.deps.agentRuntimeManager.start(id);
+          } catch (e) {
+            log.warn(`Failed to restart agent ${id} after reload`, e);
+          }
+        }
+        log.info('Reload complete');
+      },
+      onStop: async () => {
+        log.info('Stop requested');
+        await shutdown();
+      },
+    });
+
+    const server = new DaemonServer(handler);
+    await server.listen(socketPath);
+    log.info(`newio daemon ${version} started (pid ${process.pid}, stage ${stage})`);
+
+    let shuttingDown = false;
+    async function shutdown(): Promise<void> {
+      if (shuttingDown) {
+        return;
+      }
+      shuttingDown = true;
+      log.info('Shutting down...');
+      // stopAll() closes each agent's cron store as it stops.
       await handler.deps.agentRuntimeManager.stopAll();
-
-      handler.deps.agentRuntimeManager = new AgentRuntimeManager(
-        agentConfigManager,
-        cronStoreFactory,
-        makeListener(),
-        engineConfig,
-      );
-
-      for (const id of running) {
+      await server.close();
+      for (const path of [socketPath, pidPath]) {
         try {
-          handler.deps.agentRuntimeManager.start(id);
-        } catch (e) {
-          log.warn(`Failed to restart agent ${id} after reload`, e);
+          unlinkSync(path);
+        } catch {
+          /* ignore */
         }
       }
-      log.info('Reload complete');
-    },
-    onStop: async () => {
-      log.info('Stop requested');
-      await shutdown();
-    },
-  });
-
-  const server = new DaemonServer(handler);
-  await server.listen(socketPath);
-  log.info(`newio daemon ${version} started (pid ${process.pid}, stage ${stage})`);
-
-  let shuttingDown = false;
-  async function shutdown(): Promise<void> {
-    if (shuttingDown) {
-      return;
-    }
-    shuttingDown = true;
-    log.info('Shutting down...');
-    // stopAll() closes each agent's cron store as it stops.
-    await handler.deps.agentRuntimeManager.stopAll();
-    await server.close();
-    for (const path of [socketPath, pidPath]) {
-      try {
-        unlinkSync(path);
-      } catch {
-        /* ignore */
+      log.info('Shutdown complete');
+      // Flush the rotating log file before exiting so the final lines aren't lost.
+      if (fileLog) {
+        await fileLog.close();
       }
+      process.exit(0);
     }
-    log.info('Shutdown complete');
-    // Flush the rotating log file before exiting so the final lines aren't lost.
+
+    process.on('SIGINT', () => void shutdown());
+    process.on('SIGTERM', () => void shutdown());
+  } catch (err) {
+    // Startup failed before the daemon reached steady state.
+    log.error('Daemon failed to start', err);
     if (fileLog) {
       await fileLog.close();
     }
-    process.exit(0);
+    throw err;
   }
-
-  process.on('SIGINT', () => void shutdown());
-  process.on('SIGTERM', () => void shutdown());
 }
