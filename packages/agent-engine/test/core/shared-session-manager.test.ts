@@ -16,7 +16,6 @@ function createMockSession(correlationId = 'session-1'): AgentSession {
     type: 'conversation',
     externalReferenceId: SHARED_SESSION_ID,
     promptFormatterVersion: '1.0.0',
-    resumed: false,
     currentConversationId: undefined as string | undefined,
     prompt: vi.fn(async function* () {
       yield { type: 'agent_message_chunk' as const, text: '' };
@@ -128,7 +127,7 @@ describe('SharedSessionManager', () => {
   beforeEach(() => {
     eventProcessor = createMockEventProcessor();
     mockSession = createMockSession();
-    newSessionFn = vi.fn().mockResolvedValue(mockSession);
+    newSessionFn = vi.fn().mockResolvedValue({ session: mockSession, resumed: false });
     endSessionFn = vi.fn().mockResolvedValue(undefined);
     const promptManager = createMockPromptManager();
     app = createMockApp();

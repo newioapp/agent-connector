@@ -26,13 +26,6 @@ export interface AgentSession {
   /** Whether this session can be disposed (e.g., via idle cleanup). */
   readonly disposable: boolean;
 
-  /**
-   * True if this session was resumed (via `session/load`) rather than freshly
-   * created. Resumed sessions already hold their prior context, so the session
-   * manager skips re-injecting the Newio instruction + memory.
-   */
-  readonly resumed: boolean;
-
   /** Currently being processed conversation, can be undefined if processing a background task from a cron schedule or a contact event. */
   readonly currentConversationId?: string;
 

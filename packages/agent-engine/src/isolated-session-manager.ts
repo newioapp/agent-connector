@@ -22,6 +22,7 @@ import {
   NewioAppForSession,
   SessionManager,
   SessionType,
+  LaunchedSession,
   DEFAULT_SESSION_IDLE_TIMEOUT_MS,
 } from './types';
 import { collectAgentMessage } from './utils';
@@ -67,7 +68,7 @@ export class IsolatedSessionManager implements SessionManager {
       sessionType: SessionType,
       externalReferenceId: string,
       resume: boolean,
-    ) => Promise<AgentSession>,
+    ) => Promise<LaunchedSession>,
     private readonly endSession: (correlationId: string) => Promise<void>,
     private readonly promptManager: PromptManager,
     private readonly app: NewioAppForSession,
@@ -249,7 +250,7 @@ export class IsolatedSessionManager implements SessionManager {
     externalReferenceId: string,
     opts: { resume?: boolean; handoffNote?: string } = {},
   ): Promise<AgentSession> {
-    const session = await this.newSession(type, externalReferenceId, opts.resume ?? true);
+    const { session, resumed } = await this.newSession(type, externalReferenceId, opts.resume ?? true);
 
     // Wire status listener
     session.onStatus((status, conversationId) => {
@@ -282,7 +283,9 @@ export class IsolatedSessionManager implements SessionManager {
 
     // A resumed session already carries its Newio instruction, memory, and prior
     // turns — re-injecting would duplicate context. Only fresh sessions need it.
-    if (session.resumed) {
+    // `resumed` is the ACTUAL outcome (a requested resume can fall back to a fresh
+    // session), so a fallback still gets context.
+    if (resumed) {
       log.info(`${this.logTag} Resumed session ${type}/${externalReferenceId} — skipping context injection`);
     } else {
       await this.provideContext(session, opts.handoffNote);

@@ -15,7 +15,6 @@ function createMockSession(correlationId = 'session-1'): AgentSession {
     type: 'conversation',
     externalReferenceId: 'conv-1',
     promptFormatterVersion: '1.0.0',
-    resumed: false,
     currentConversationId: undefined,
     prompt: vi.fn(async function* () {
       yield { type: 'agent_message_chunk' as const, text: '' };
@@ -126,7 +125,7 @@ describe('IsolatedSessionManager', () => {
   beforeEach(() => {
     eventProcessor = createMockEventProcessor();
     mockSession = createMockSession();
-    newSessionFn = vi.fn().mockResolvedValue(mockSession);
+    newSessionFn = vi.fn().mockResolvedValue({ session: mockSession, resumed: false });
     endSessionFn = vi.fn().mockResolvedValue(undefined);
     const promptManager = createMockPromptManager();
     const app = createMockApp();
@@ -199,14 +198,24 @@ describe('IsolatedSessionManager', () => {
 
     it('skips context injection when the launched session was resumed', async () => {
       const resumedSession = createMockSession('resumed-1');
-      (resumedSession as { resumed: boolean }).resumed = true;
-      newSessionFn.mockResolvedValueOnce(resumedSession);
+      newSessionFn.mockResolvedValueOnce({ session: resumedSession, resumed: true });
 
       await manager.getDmSession('conv-resumed');
 
       // provideContext would issue the instruction prompt on a fresh session;
       // a resumed session already holds it, so prompt must not be called at launch.
       expect(resumedSession.prompt).not.toHaveBeenCalled();
+    });
+
+    it('still injects context when a requested resume fell back to a fresh session', async () => {
+      // newSessionFn reports resumed=false (the agent-instance fell back to create),
+      // so the manager must provide context even though resume was requested.
+      const freshSession = createMockSession('fresh-1');
+      newSessionFn.mockResolvedValueOnce({ session: freshSession, resumed: false });
+
+      await manager.getDmSession('conv-fallback');
+
+      expect(freshSession.prompt).toHaveBeenCalled();
     });
 
     it('injects context for a fresh (non-resumed) session', async () => {
