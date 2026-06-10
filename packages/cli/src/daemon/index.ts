@@ -52,7 +52,10 @@ function isSocketAlive(socketPath: string): Promise<boolean> {
  */
 export async function runDaemon(): Promise<void> {
   setLogHandler((level, name, message, args) => {
-    const prefix = `[${name}]`;
+    // Foreground `daemon run` writes to the terminal / service-manager journal,
+    // so prefix each line with an ISO timestamp to make logs sortable and to
+    // give shutdown/lifecycle events a wall-clock reference.
+    const prefix = `${new Date().toISOString()} [${name}]`;
     if (level === 'error') {
       console.error(prefix, message, ...args);
     } else if (level === 'warn') {
