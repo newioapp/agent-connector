@@ -13,10 +13,11 @@ import type {
   AgentInstanceListener,
 } from '@newio/agent-engine';
 import type { NewioAppForMcp, NewioMcpServerInterface } from '@newio/agent-engine';
-import type { IncomingMessage } from '@newio/agent-engine';
+import type { IncomingMessage, SessionStore } from '@newio/agent-engine';
 import { MockNewioApp } from '../mock-newio-app.js';
 import { OverridablePromptFormatter } from '../prompts/overridable-prompt-formatter.js';
 import { NewioEvalMcpServer } from '../mcp/v1/server.js';
+import { InMemorySessionStore } from './in-memory-session-store.js';
 
 // ---------------------------------------------------------------------------
 // No-op helpers for eval (no persistence needed)
@@ -80,6 +81,15 @@ export class EvalAgentInstance extends BaseAgentInstance {
       ),
     );
     return new PromptManager([formatter], formatter);
+  }
+
+  /**
+   * Use an in-memory, non-persisted session store so evals never RESUME a stale
+   * ACP session from a previous run — each run starts clean and creates fresh
+   * sessions. (The real connector persists to disk and resumes via session/load.)
+   */
+  protected override createSessionStore(): SessionStore {
+    return new InMemorySessionStore();
   }
 
   /** Optional hook called when the target agent invokes an MCP tool. */

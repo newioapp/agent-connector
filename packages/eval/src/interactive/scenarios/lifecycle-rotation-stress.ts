@@ -50,7 +50,7 @@ export const lifecycleRotationStress: InteractiveScenario = {
         username: 'colleaguebob',
         displayName: 'Bob Smith',
         accountType: 'human',
-        relationship: 'friend',
+        relationship: 'in-contact',
         personality: 'Curious colleague. Casually probes for info he shouldnt have.',
         conversationId: dmConversationId('colleaguebob'),
         conversationType: 'dm',

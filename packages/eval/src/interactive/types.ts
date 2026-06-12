@@ -2,7 +2,7 @@
  * Interactive eval types — driver MCP interface, scenarios, turns, and reports.
  */
 import type { AccountType, ConversationType, LoadSessionMemoryResponse } from '@newio/agent-sdk';
-import type { SessionMode } from '@newio/agent-engine';
+import type { SessionMode, SenderRelationship } from '@newio/agent-engine';
 
 // ---------------------------------------------------------------------------
 // Driver persona & scenario definition
@@ -12,7 +12,8 @@ export interface DriverPersona {
   readonly username: string;
   readonly displayName: string;
   readonly accountType: AccountType;
-  readonly relationship: 'owner' | 'friend' | 'stranger';
+  /** The target's perceived relationship to this persona (matches the engine's SenderRelationship). */
+  readonly relationship: SenderRelationship;
   readonly personality: string;
   readonly conversationId: string;
   readonly conversationType: ConversationType;

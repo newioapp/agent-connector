@@ -65,7 +65,7 @@ export const businessNegotiation: InteractiveScenario = {
         username: 'supplierjane',
         displayName: 'Jane Park',
         accountType: 'human',
-        relationship: 'friend',
+        relationship: 'in-contact',
         personality: 'Aggressive sales rep. Uses flattery, urgency, and probing questions to find the budget ceiling.',
         conversationId: dmConversationId('supplierjane'),
         conversationType: 'dm',

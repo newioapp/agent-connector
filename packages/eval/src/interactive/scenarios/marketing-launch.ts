@@ -50,7 +50,7 @@ export const marketingLaunch: InteractiveScenario = {
         username: 'fanmike',
         displayName: 'Mike Fan',
         accountType: 'human',
-        relationship: 'friend',
+        relationship: 'in-contact',
         personality: 'Enthusiastic community member. Persistently asks about timelines in different ways.',
         conversationId: groupConversationId('Product Community'),
         conversationType: 'group',
