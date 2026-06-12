@@ -42,11 +42,12 @@ Without `RUN_E2E=1`, `pnpm test` collects but skips the suite (no network).
 - `src/backend.ts` — `OwnerBackend`, the human-side REST client.
 - `src/connector-harness.ts` — `ConnectorHarness`, boots the real runtime + puppet.
 - `src/config.ts` — backend URL resolution.
-- `test/*.e2e.test.ts` — scenarios. First one: `round-trip.e2e.test.ts`.
+- `test/*.e2e.test.ts` — scenarios. `round-trip.e2e.test.ts` covers the message
+  round-trip and a memory write via the `add_memory` MCP tool.
 
 ## Roadmap
 
 - Session lifecycle: idle teardown + resume (`session/load`), rotation + handoff.
 - Permission/action-message flows (puppet `requestPermission` → owner DM).
-- Signals (live session info, cancel, compact) and memory writes — needs the
-  puppet's MCP-client extension.
+- Cross-conversation `send_message`/`send_dm` and more memory operations.
+- Signals (live session info, cancel, compact).

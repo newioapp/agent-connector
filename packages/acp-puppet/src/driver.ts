@@ -25,6 +25,13 @@ export interface PuppetPrompt {
   readonly text: string;
 }
 
+/** The outcome of a `tool` action the puppet executed, reported back for assertions. */
+export interface PuppetToolResult {
+  readonly name: string;
+  readonly isError: boolean;
+  readonly text: string;
+}
+
 /**
  * What a prompt handler may return:
  * - `string` → a single `message` action ending the turn,
@@ -63,8 +70,13 @@ function normalize(result: PromptHandlerResult, id: number): TurnInstruction {
 
 export class PuppetDriver {
   private readonly recorded: PuppetPrompt[] = [];
+  private readonly recordedToolResults: PuppetToolResult[] = [];
   private readonly promptWaiters: { predicate: (p: PuppetPrompt) => boolean; resolve: (p: PuppetPrompt) => void }[] =
     [];
+  private readonly toolWaiters: {
+    predicate: (r: PuppetToolResult) => boolean;
+    resolve: (r: PuppetToolResult) => void;
+  }[] = [];
   private handler?: PromptHandler;
 
   private constructor(
@@ -104,6 +116,11 @@ export class PuppetDriver {
     return this.recorded;
   }
 
+  /** Every `tool` action result the puppet has reported, in order. */
+  get toolResults(): readonly PuppetToolResult[] {
+    return this.recordedToolResults;
+  }
+
   /** Register the handler that answers each prompt turn. Replaces any previous handler. */
   onPrompt(handler: PromptHandler): void {
     this.handler = handler;
@@ -131,6 +148,33 @@ export class PuppetDriver {
     });
   }
 
+  /**
+   * Resolve once a tool result matching `predicate` arrives. Tool results are
+   * reported over the control socket independently of the ACP prompt response,
+   * so they may land slightly after `prompt()` resolves — await this rather than
+   * reading {@link toolResults} immediately.
+   */
+  waitForToolResult(predicate: (r: PuppetToolResult) => boolean, timeoutMs = 30_000): Promise<PuppetToolResult> {
+    const existing = this.recordedToolResults.find(predicate);
+    if (existing) {
+      return Promise.resolve(existing);
+    }
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const idx = this.toolWaiters.findIndex((w) => w.resolve === wrapped);
+        if (idx >= 0) {
+          this.toolWaiters.splice(idx, 1);
+        }
+        reject(new Error(`Timed out waiting for a matching tool result after ${timeoutMs}ms`));
+      }, timeoutMs);
+      const wrapped = (r: PuppetToolResult): void => {
+        clearTimeout(timer);
+        resolve(r);
+      };
+      this.toolWaiters.push({ predicate, resolve: wrapped });
+    });
+  }
+
   async stop(): Promise<void> {
     await new Promise<void>((resolve) => {
       this.server.close(() => resolve());
@@ -153,8 +197,26 @@ export class PuppetDriver {
       return;
     }
     const message: Record<string, unknown> = { ...value };
+    if (message.t === 'tool_result') {
+      if (typeof message.name === 'string' && typeof message.text === 'string') {
+        const result: PuppetToolResult = {
+          name: message.name,
+          isError: message.isError === true,
+          text: message.text,
+        };
+        this.recordedToolResults.push(result);
+        for (let i = this.toolWaiters.length - 1; i >= 0; i--) {
+          const waiter = this.toolWaiters[i];
+          if (waiter && waiter.predicate(result)) {
+            this.toolWaiters.splice(i, 1);
+            waiter.resolve(result);
+          }
+        }
+      }
+      return;
+    }
     if (message.t !== 'prompt') {
-      return; // lifecycle events (hello/session_*/cancelled) are not acted on yet
+      return; // other lifecycle events (hello/session_*/cancelled) are not acted on yet
     }
     if (typeof message.id !== 'number' || typeof message.sessionId !== 'string' || typeof message.text !== 'string') {
       return;

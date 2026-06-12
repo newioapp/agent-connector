@@ -167,6 +167,37 @@ export class OwnerBackend {
     });
   }
 
+  /** Read an agent's memory facts for a scope (default: global). Owner-authorized. */
+  async getMemoryFacts(token: string, agentId: string, scope = 'global', scopeId?: string): Promise<readonly string[]> {
+    const query = scopeId ? `?scope=${scope}&scopeId=${encodeURIComponent(scopeId)}` : `?scope=${scope}`;
+    const body = asRecord(await this.request(`/agents/${agentId}/memory${query}`, token));
+    const data = asRecord(body.data ?? {});
+    const facts = Array.isArray(data.facts) ? data.facts : [];
+    return facts.map((f) => str(asRecord(f), 'text'));
+  }
+
+  /** Poll `getMemoryFacts` until a fact matching `predicate` appears, or time out. */
+  async waitForMemoryFact(
+    token: string,
+    agentId: string,
+    predicate: (text: string) => boolean,
+    scope = 'global',
+    timeoutMs = 30_000,
+    intervalMs = 1_000,
+  ): Promise<string> {
+    const deadline = Date.now() + timeoutMs;
+    let last: readonly string[] = [];
+    while (Date.now() < deadline) {
+      last = await this.getMemoryFacts(token, agentId, scope);
+      const match = last.find(predicate);
+      if (match) {
+        return match;
+      }
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+    throw new Error(`Timed out waiting for a matching memory fact. Last seen: ${JSON.stringify(last)}`);
+  }
+
   /** Poll `listMessages` until a message matching `predicate` appears, or time out. */
   async waitForMessage(
     token: string,

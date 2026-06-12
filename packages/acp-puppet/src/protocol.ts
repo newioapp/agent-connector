@@ -16,7 +16,13 @@ export type TurnAction =
   /** Emit an `agent_message_chunk` — the connector auto-delivers it to the current conversation. */
   | { readonly kind: 'message'; readonly text: string }
   /** Emit an `agent_thought_chunk` — surfaced to the owner only when "show thoughts" is on. */
-  | { readonly kind: 'thought'; readonly text: string };
+  | { readonly kind: 'thought'; readonly text: string }
+  /**
+   * Call a Newio MCP tool (e.g. `send_message`, `send_dm`, `add_memory`) over the
+   * connector-provided MCP server. The tool result is reported back to the driver
+   * via a `tool_result` event. Use this to drive cross-conversation and memory flows.
+   */
+  | { readonly kind: 'tool'; readonly name: string; readonly args?: Readonly<Record<string, unknown>> };
 
 /** How a prompt turn concludes. Mirrors the ACP `StopReason` values the puppet uses. */
 export type PuppetStopReason = 'end_turn' | 'cancelled' | 'refusal';
@@ -41,12 +47,22 @@ export interface PromptEvent {
   readonly text: string;
 }
 
+/** Puppet → Driver: the outcome of a `tool` action, correlated to its prompt turn by `id`. */
+export interface ToolResultEvent {
+  readonly t: 'tool_result';
+  readonly id: number;
+  readonly name: string;
+  readonly isError: boolean;
+  readonly text: string;
+}
+
 /** Puppet → Driver: lifecycle notifications (no response expected). */
 export type PuppetLifecycleEvent =
   | { readonly t: 'hello'; readonly pid: number }
   | { readonly t: 'session_new'; readonly sessionId: string }
   | { readonly t: 'session_load'; readonly sessionId: string }
-  | { readonly t: 'cancelled'; readonly sessionId: string };
+  | { readonly t: 'cancelled'; readonly sessionId: string }
+  | ToolResultEvent;
 
 /** Any message the puppet sends to the driver. */
 export type PuppetMessage = PromptEvent | PuppetLifecycleEvent;

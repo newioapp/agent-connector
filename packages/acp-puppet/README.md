@@ -26,12 +26,16 @@ but does precisely — and only — what the test scripts.
 - Replies are emitted as `agent_message_chunk` updates. The connector
   auto-delivers those to the current conversation, so the basic message
   round-trip needs **no MCP** at all.
-- On session create/load the puppet spawns the Newio MCP bridge the connector
-  asked for (without speaking MCP over it) purely so the connector's per-launch
-  MCP-wiring wait resolves immediately instead of timing out.
+- On session create/load the puppet connects to the Newio MCP server(s) the
+  connector provides (via `@modelcontextprotocol/sdk` over the bridge's stdio),
+  so it can **call tools** (`send_message`, `send_dm`, `add_memory`, …). This
+  also makes the connector's per-launch MCP-wiring wait resolve immediately.
+- The puppet advertises `session/close` and implements `unstable_closeSession`,
+  so the connector exercises its session-dispose path (rotation / idle teardown).
 - Behaviour is decided live by a `PuppetDriver` inside the test, over a Unix
   **control socket** the connector passes via `PUPPET_CONTROL_SOCKET`. Each
-  prompt turn, the puppet asks the driver what to do and blocks until told.
+  prompt turn, the puppet asks the driver what to do and blocks until told. A
+  turn action may be a `message`, a `thought`, or a `tool` call.
 
 ```
         ACP (stdio)                         control channel (UDS)
@@ -59,9 +63,10 @@ await driver.stop();
 ## Status
 
 Implemented: message round-trip (text replies + thoughts), live control channel,
-MCP-bridge spawn to avoid wiring timeouts, graceful fallback when no driver is
+**MCP client** with `tool` actions (call any Newio MCP tool, result reported back
+to the driver), `session/close` support, graceful fallback when no driver is
 attached.
 
-Not yet: acting as a real MCP **client** (so the puppet can call
-`send_message` / `send_dm` / memory tools to drive cross-conversation and
-memory flows). That's the next extension for richer platform scenarios.
+Not yet: scriptable `tool_call`/`usage`/context-window updates (to drive the
+connector's tool-call rendering and context-pressure rotation) — added when the
+session-rotation scenarios land.

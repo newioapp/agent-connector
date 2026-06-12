@@ -20,6 +20,8 @@ export interface PuppetControl {
   onSessionLoad(sessionId: string): void;
   /** Resolve what the puppet should do for this prompt turn. */
   resolveTurn(sessionId: string, text: string): Promise<TurnInstruction>;
+  /** Report the outcome of a `tool` action back to the driver, keyed by the turn `id`. */
+  reportToolResult(turnId: number, name: string, isError: boolean, text: string): void;
   onCancel(sessionId: string): void;
   close(): void;
 }
@@ -42,6 +44,7 @@ export class DefaultControl implements PuppetControl {
   onSessionNew(): void {}
   onSessionLoad(): void {}
   onCancel(): void {}
+  reportToolResult(): void {}
   close(): void {}
 
   resolveTurn(): Promise<TurnInstruction> {
@@ -133,6 +136,10 @@ export class SocketControl implements PuppetControl {
 
   onCancel(sessionId: string): void {
     this.send({ t: 'cancelled', sessionId });
+  }
+
+  reportToolResult(turnId: number, name: string, isError: boolean, text: string): void {
+    this.send({ t: 'tool_result', id: turnId, name, isError, text });
   }
 
   resolveTurn(sessionId: string, text: string): Promise<TurnInstruction> {

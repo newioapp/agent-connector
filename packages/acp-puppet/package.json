@@ -32,7 +32,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "^0.17.1"
+    "@agentclientprotocol/sdk": "^0.17.1",
+    "@modelcontextprotocol/sdk": "^1.29.0"
   },
   "devDependencies": {
     "@types/node": "^22.19.15",

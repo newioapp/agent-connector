@@ -3,8 +3,8 @@
  * connector's role) to the PuppetAgent over linked in-memory streams, and drive
  * behavior through a SocketControl connected to a real PuppetDriver over a Unix
  * socket. This exercises the full ACP + control-channel chain deterministically
- * without spawning a process — process spawning is covered by the connector-layer
- * harness.
+ * without spawning a process — process spawning and the real MCP stdio path are
+ * covered by the connector-layer e2e harness.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { PassThrough } from 'node:stream';
@@ -19,11 +19,9 @@ import {
   type RequestPermissionResponse,
 } from '@agentclientprotocol/sdk';
 import { PuppetAgent } from '../src/agent.js';
-import { SocketControl } from '../src/control.js';
+import { SocketControl, type PuppetControl } from '../src/control.js';
 import { PuppetDriver } from '../src/driver.js';
-
-// Don't spawn the MCP bridge in these in-process tests.
-process.env.PUPPET_SPAWN_MCP_BRIDGE = '0';
+import type { McpConnection, McpConnector } from '../src/mcp-connector.js';
 
 /** Minimal ACP client that collects the agent's streamed message/thought text. */
 class CollectingClient implements Client {
@@ -45,6 +43,38 @@ class CollectingClient implements Client {
   }
 }
 
+/** A fake MCP connector that records tool calls instead of spawning a subprocess. */
+class FakeMcpConnector implements McpConnector {
+  readonly calls: { name: string; args: Record<string, unknown> }[] = [];
+  closed = 0;
+
+  connect(): Promise<McpConnection> {
+    return Promise.resolve({
+      callTool: (name, args) => {
+        this.calls.push({ name, args });
+        return Promise.resolve({ isError: false, text: `called ${name}` });
+      },
+      close: () => {
+        this.closed += 1;
+        return Promise.resolve();
+      },
+    });
+  }
+}
+
+/** A control that always answers a turn the same way and ignores everything else. */
+function staticControl(turn: Omit<import('../src/protocol.js').TurnInstruction, 't' | 'id'>): PuppetControl {
+  return {
+    connect: () => Promise.resolve(),
+    onSessionNew: () => {},
+    onSessionLoad: () => {},
+    onCancel: () => {},
+    reportToolResult: () => {},
+    close: () => {},
+    resolveTurn: () => Promise.resolve({ t: 'turn', id: 1, ...turn }),
+  };
+}
+
 interface Wired {
   readonly client: ClientSideConnection;
   readonly clientImpl: CollectingClient;
@@ -64,7 +94,7 @@ afterEach(async () => {
 });
 
 /** Link a ClientSideConnection and a PuppetAgent over two in-memory pipes. */
-function wire(control: ConstructorParameters<typeof PuppetAgent>[1]): Wired {
+function wire(control: PuppetControl, mcpConnector?: McpConnector): Wired {
   const c2a = new PassThrough();
   const a2c = new PassThrough();
 
@@ -77,34 +107,30 @@ function wire(control: ConstructorParameters<typeof PuppetAgent>[1]): Wired {
   let agent!: PuppetAgent;
   // eslint-disable-next-line no-new
   new AgentSideConnection((conn) => {
-    agent = new PuppetAgent(conn, control);
+    agent = new PuppetAgent(conn, control, mcpConnector);
     return agent;
   }, agentStream);
 
   return { client, clientImpl, agent };
 }
 
-async function initAndCreateSession(client: ClientSideConnection): Promise<string> {
+async function initAndCreateSession(
+  client: ClientSideConnection,
+  mcpServers: Parameters<ClientSideConnection['newSession']>[0]['mcpServers'] = [],
+): Promise<string> {
   const init = await client.initialize({
     protocolVersion: 1,
     clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
   });
   expect(init.agentCapabilities?.loadSession).toBe(true);
-  const session = await client.newSession({ cwd: process.cwd(), mcpServers: [] });
+  expect(init.agentCapabilities?.sessionCapabilities?.close).toBeDefined();
+  const session = await client.newSession({ cwd: process.cwd(), mcpServers });
   return session.sessionId;
 }
 
 describe('PuppetAgent', () => {
-  it('advertises loadSession and streams a scripted reply that the connector would auto-send', async () => {
-    const { client, clientImpl } = wire({
-      connect: () => Promise.resolve(),
-      onSessionNew: () => {},
-      onSessionLoad: () => {},
-      onCancel: () => {},
-      close: () => {},
-      resolveTurn: (_sessionId, _text) =>
-        Promise.resolve({ t: 'turn', id: 1, actions: [{ kind: 'message', text: 'pong' }], stopReason: 'end_turn' }),
-    });
+  it('advertises loadSession/close and streams a scripted reply', async () => {
+    const { client, clientImpl } = wire(staticControl({ actions: [{ kind: 'message', text: 'pong' }] }));
 
     const sessionId = await initAndCreateSession(client);
     const result = await client.prompt({ sessionId, prompt: [{ type: 'text', text: 'ping' }] });
@@ -114,23 +140,14 @@ describe('PuppetAgent', () => {
   });
 
   it('emits thoughts and messages in order', async () => {
-    const { client, clientImpl } = wire({
-      connect: () => Promise.resolve(),
-      onSessionNew: () => {},
-      onSessionLoad: () => {},
-      onCancel: () => {},
-      close: () => {},
-      resolveTurn: () =>
-        Promise.resolve({
-          t: 'turn',
-          id: 1,
-          actions: [
-            { kind: 'thought', text: 'thinking…' },
-            { kind: 'message', text: 'answer' },
-          ],
-          stopReason: 'end_turn',
-        }),
-    });
+    const { client, clientImpl } = wire(
+      staticControl({
+        actions: [
+          { kind: 'thought', text: 'thinking…' },
+          { kind: 'message', text: 'answer' },
+        ],
+      }),
+    );
 
     const sessionId = await initAndCreateSession(client);
     await client.prompt({ sessionId, prompt: [{ type: 'text', text: 'q' }] });
@@ -158,23 +175,47 @@ describe('PuppetAgent', () => {
     expect(driver.prompts[0]?.text).toBe('please MARKER now');
   });
 
-  it('falls back to a default reply when no driver answers the turn', async () => {
-    // A SocketControl pointed at a closed/away driver still resolves the turn so
-    // the puppet never wedges — exercised here via the DefaultControl path.
-    const { client, clientImpl } = wire(
-      // Reuse SocketControl's fallback semantics via DefaultControl-like inline control.
-      {
-        connect: () => Promise.resolve(),
-        onSessionNew: () => {},
-        onSessionLoad: () => {},
-        onCancel: () => {},
-        close: () => {},
-        resolveTurn: () => Promise.resolve({ t: 'turn', id: 1, actions: [{ kind: 'message', text: 'ok' }] }),
-      },
-    );
-    const sessionId = await initAndCreateSession(client);
-    const result = await client.prompt({ sessionId, prompt: [{ type: 'text', text: 'x' }] });
+  it('calls an MCP tool for a `tool` action and reports the result to the driver', async () => {
+    const driver = await PuppetDriver.start();
+    drivers.push(driver);
+    driver.onPrompt(() => [
+      { kind: 'tool', name: 'add_memory', args: { text: 'a fact' } },
+      { kind: 'message', text: 'noted' },
+    ]);
+
+    const control = new SocketControl(driver.socketPath);
+    controls.push(control);
+    await control.connect();
+
+    const fake = new FakeMcpConnector();
+    const { client, clientImpl } = wire(control, fake);
+
+    // newSession WITH a server so the puppet connects via the fake connector.
+    const sessionId = await initAndCreateSession(client, [{ name: 'newio', command: 'noop', args: [], env: [] }]);
+    await client.prompt({ sessionId, prompt: [{ type: 'text', text: 'go' }] });
+
+    expect(fake.calls).toEqual([{ name: 'add_memory', args: { text: 'a fact' } }]);
+    expect(clientImpl.messages).toBe('noted');
+    // The tool result is reported over the control socket, so await it.
+    const reported = await driver.waitForToolResult((r) => r.name === 'add_memory', 5_000);
+    expect(reported).toEqual({ name: 'add_memory', isError: false, text: 'called add_memory' });
+  });
+
+  it('reports an error for a tool action when no MCP server is connected', async () => {
+    const { client } = wire(staticControl({ actions: [{ kind: 'tool', name: 'send_dm', args: {} }] }));
+    const sessionId = await initAndCreateSession(client); // no mcpServers
+    const result = await client.prompt({ sessionId, prompt: [{ type: 'text', text: 'go' }] });
     expect(result.stopReason).toBe('end_turn');
-    expect(clientImpl.messages).toBe('ok');
+    // No throw; the puppet surfaces the missing-connection as a (best-effort) error result.
+  });
+
+  it('closes the session MCP connection on session/close', async () => {
+    const fake = new FakeMcpConnector();
+    const { client } = wire(staticControl({ actions: [{ kind: 'message', text: 'ok' }] }), fake);
+    const sessionId = await initAndCreateSession(client, [{ name: 'newio', command: 'noop', args: [], env: [] }]);
+    await client.prompt({ sessionId, prompt: [{ type: 'text', text: 'go' }] });
+
+    await client.unstable_closeSession({ sessionId });
+    expect(fake.closed).toBe(1);
   });
 });

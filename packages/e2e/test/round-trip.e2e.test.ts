@@ -29,14 +29,27 @@ describe.runIf(run)('connector round-trip', () => {
   let harness: ConnectorHarness;
 
   const REPLY = `puppet-reply-${Date.now().toString(36)}`;
+  const MEMORY_FACT = `The owner's favourite test token is ${Date.now().toString(36)}.`;
 
   beforeAll(async () => {
     owner = await backend.createOwner();
     agent = await backend.createApprovedAgent(owner);
 
     driver = await PuppetDriver.start();
-    // Greeting prompts get a benign reply; the marked ping gets the asserted reply.
-    driver.onPrompt(({ text }) => (text.includes('PING_MARKER') ? REPLY : 'hello from puppet'));
+    driver.onPrompt(({ text }) => {
+      // MEMORY_MARKER → write a global memory fact via the add_memory MCP tool, then reply.
+      if (text.includes('MEMORY_MARKER')) {
+        return [
+          { kind: 'tool', name: 'add_memory', args: { text: MEMORY_FACT } },
+          { kind: 'message', text: 'noted' },
+        ];
+      }
+      // PING_MARKER → the asserted reply. Greeting and anything else → a benign reply.
+      if (text.includes('PING_MARKER')) {
+        return REPLY;
+      }
+      return 'hello from puppet';
+    });
 
     harness = await ConnectorHarness.start({
       apiBaseUrl: urls.apiBaseUrl,
@@ -71,5 +84,22 @@ describe.runIf(run)('connector round-trip', () => {
     // And the puppet actually saw the owner's marked prompt.
     const sawPing = driver.prompts.some((p) => p.text.includes('PING_MARKER'));
     expect(sawPing).toBe(true);
+  });
+
+  it('writes agent memory via the add_memory MCP tool', async () => {
+    const conversations = await backend.listConversations(owner.accessToken);
+    const dm = conversations.find((c) => c.type === 'dm');
+    expect(dm, 'expected an owner↔agent DM to exist after greeting').toBeDefined();
+    const conversationId = dm!.conversationId;
+
+    await backend.sendMessage(owner.accessToken, conversationId, 'MEMORY_MARKER please remember this');
+
+    // The puppet's tool call succeeded (reported back over the control channel)…
+    const toolResult = await driver.waitForToolResult((r) => r.name === 'add_memory');
+    expect(toolResult.isError).toBe(false);
+
+    // …and the fact is durably stored, readable by the owner via the backend.
+    const fact = await backend.waitForMemoryFact(owner.accessToken, agent.agentId, (t) => t === MEMORY_FACT);
+    expect(fact).toBe(MEMORY_FACT);
   });
 });
