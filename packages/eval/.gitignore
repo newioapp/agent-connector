@@ -1,2 +1,7 @@
 results/
 .env
+.env.agent
+
+# Keep the example templates tracked (the repo-root .gitignore ignores .env.*)
+!.env.example
+!.env.agent.example

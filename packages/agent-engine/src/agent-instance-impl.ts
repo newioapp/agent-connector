@@ -139,6 +139,17 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   abstract createMcpServer(app: NewioAppForMcp): NewioMcpServerInterface;
 
+  /**
+   * Open the per-agent session store used to RESUME a prior ACP session instead
+   * of always creating a fresh one. Override to substitute storage — e.g. an
+   * in-memory, non-persisted store for evals, which should start each run clean
+   * and never resume a stale session from a previous run. Default: a JSON file
+   * beside the cron store.
+   */
+  protected createSessionStore(): SessionStore {
+    return new JsonSessionStore(join(this.engineConfig.dataDir, 'agents', this.config.id, 'sessions.json'));
+  }
+
   getAgentInfo(): AgentInfo | undefined {
     return this._sessionFactory?.getAgentInfo();
   }
@@ -181,9 +192,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
       // Open the per-agent session store (mirrors the cron store location) so
       // launches can resume the prior ACP session instead of always creating new.
-      this._sessionStore = new JsonSessionStore(
-        join(this.engineConfig.dataDir, 'agents', this.config.id, 'sessions.json'),
-      );
+      this._sessionStore = this.createSessionStore();
 
       this.udsServer = startUdsServer({
         socketPath: mcpSocketPath,
