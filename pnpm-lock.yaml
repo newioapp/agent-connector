@@ -319,6 +319,9 @@ importers:
       '@newio/agent-engine':
         specifier: workspace:*
         version: link:../agent-engine
+      '@newio/cli':
+        specifier: workspace:*
+        version: link:../cli
     devDependencies:
       '@types/node':
         specifier: ^22.19.15

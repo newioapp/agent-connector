@@ -10,5 +10,7 @@ export { OwnerBackend } from './backend.js';
 export type { OwnerTokens, AgentCredentials, ConversationSummary, MessageSummary } from './backend.js';
 export { ConnectorHarness } from './connector-harness.js';
 export type { ConnectorHarnessOptions } from './connector-harness.js';
+export { DaemonHarness } from './daemon-harness.js';
+export type { DaemonHarnessOptions } from './daemon-harness.js';
 export { resolveBackendUrls } from './config.js';
 export type { BackendUrls } from './config.js';

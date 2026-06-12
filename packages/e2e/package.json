@@ -25,7 +25,8 @@
   },
   "dependencies": {
     "@newio/acp-puppet": "workspace:*",
-    "@newio/agent-engine": "workspace:*"
+    "@newio/agent-engine": "workspace:*",
+    "@newio/cli": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.19.15",

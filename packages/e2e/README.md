@@ -10,18 +10,27 @@ flows the desktop UI can't easily observe (sessions, resume/rotation, signals,
 memory writes) plus the core message round-trip. UI-level golden paths live in
 the Conduit desktop e2e suite (Playwright + Electron), wired to the same puppet.
 
-## What it does
+## Two harness layers
 
-`ConnectorHarness` boots the production code path — `AgentRuntimeManager` +
-`AgentInstanceImpl`, the same wiring the daemon uses — minus the
-launchd/systemd shell:
+Both run the **human** side via `OwnerBackend` (a thin REST client that creates an
+owner and registers + approves an agent for its tokens) and script the **agent**
+with a `PuppetDriver` over the control socket. They differ in how the **connector**
+runs:
 
-1. `OwnerBackend` (a thin REST client for the **human** side) creates an owner
-   and registers + approves an agent, yielding the agent's own tokens.
-2. The harness seeds a `FileAgentConfigManager` (temp dir) with a `custom` agent
-   pointing at the puppet binary plus those tokens — so no browser approval is
-   needed — and starts the runtime.
-3. A `PuppetDriver` scripts the agent's behaviour live over the control socket.
+- **`ConnectorHarness` — embedded (fast workhorse).** Boots `AgentRuntimeManager` +
+  `AgentInstanceImpl` (the same runtime the daemon uses) **in-process**, with a
+  `FileAgentConfigManager` seeded in a temp dir. Fast and fully isolated; use for
+  the bulk of platform scenarios. Skips the CLI/daemon/RPC plumbing and hand-rolls
+  its own `EngineConfig`.
+- **`DaemonHarness` — full shipped stack (high fidelity).** Spawns the real
+  `newio` daemon (`node dist/cli.js daemon run`) and drives it over its RPC socket.
+  Covers the CLI entry, daemon process, `runDaemon`'s own `EngineConfig` (bridge
+  command via `resolveSelfExec`), the RPC transport, and on-disk config — the parts
+  the embedded harness skips. Isolated via `NEWIO_HOME` pointed at a temp dir.
+  Also the basis for the CLI integ tests. Requires the cli + puppet builds.
+
+Both seed the same way: a `custom` agent pointing at the puppet binary plus
+pre-obtained tokens, so the browser-approval flow is skipped.
 
 ## Running
 
@@ -40,13 +49,15 @@ Without `RUN_E2E=1`, `pnpm test` collects but skips the suite (no network).
 ## Layout
 
 - `src/backend.ts` — `OwnerBackend`, the human-side REST client.
-- `src/connector-harness.ts` — `ConnectorHarness`, boots the real runtime + puppet.
+- `src/connector-harness.ts` — `ConnectorHarness` (embedded runtime + puppet).
+- `src/daemon-harness.ts` — `DaemonHarness` (real daemon subprocess + puppet).
 - `src/config.ts` — backend URL resolution.
-- `test/*.e2e.test.ts` — scenarios. `round-trip.e2e.test.ts` covers the message
-  round-trip and a memory write via the `add_memory` MCP tool.
+- `test/round-trip.e2e.test.ts` — embedded: message round-trip + `add_memory` MCP tool.
+- `test/daemon-round-trip.e2e.test.ts` — full stack: same round-trip via the real daemon.
 
 ## Roadmap
 
+- CLI integ tests (`agent add/start/stop`, `agent env`, RPC) on top of `DaemonHarness`.
 - Session lifecycle: idle teardown + resume (`session/load`), rotation + handoff.
 - Permission/action-message flows (puppet `requestPermission` → owner DM).
 - Cross-conversation `send_message`/`send_dm` and more memory operations.
