@@ -212,7 +212,7 @@ describe('ChatSharedSessionManager', () => {
   describe('share_context routing', () => {
     it('routes share_context for a DM/group target to the chat session', async () => {
       (app.getConversationInfo as ReturnType<typeof vi.fn>).mockResolvedValue({ type: 'group' });
-      manager.routeInboundEvent({ type: 'initiate_conversation', conversationId: 'conv-group', context: 'ctx' });
+      manager.routeInboundEvent({ type: 'share_context', conversationId: 'conv-group', context: 'ctx' });
       await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', SHARED_SESSION_ID, true));
       // It did NOT create a per-conversation slot for the group.
       expect(newSessionFn).not.toHaveBeenCalledWith('conversation', 'conv-group', true);
@@ -220,7 +220,7 @@ describe('ChatSharedSessionManager', () => {
 
     it('routes share_context for a work-session target to that work session', async () => {
       (app.getConversationInfo as ReturnType<typeof vi.fn>).mockResolvedValue({ type: 'temp_group' });
-      manager.routeInboundEvent({ type: 'initiate_conversation', conversationId: 'work-9', context: 'ctx' });
+      manager.routeInboundEvent({ type: 'share_context', conversationId: 'work-9', context: 'ctx' });
       await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', 'work-9', true));
     });
   });

@@ -23,6 +23,8 @@ import type { SessionMode } from '../types.js';
 export interface NewioMcpServerOptions {
   readonly app: NewioAppForMcp;
   readonly initiateConversation: (convId: string, context: string) => void;
+  /** Hand context to another of the agent's sessions (share_context tool). The target absorbs it. */
+  readonly shareContext: (convId: string, context: string) => void;
   readonly sessionMode: SessionMode;
   /** Optional hook called before each tool invocation. */
   readonly onToolCall?: ToolCallHook;
@@ -48,7 +50,7 @@ export class NewioMcpServer implements NewioMcpServerInterface {
       version: '0.1.0',
     });
 
-    const { app, initiateConversation, sessionMode, onToolCall } = opts;
+    const { app, initiateConversation, shareContext, sessionMode, onToolCall } = opts;
 
     this.getCurrentConversationId = () => undefined;
     registerContactsTools(this.server, app, onToolCall);
@@ -58,6 +60,7 @@ export class NewioMcpServer implements NewioMcpServerInterface {
       this.server,
       app,
       initiateConversation,
+      shareContext,
       () => this.getCurrentConversationId(),
       sessionMode,
       onToolCall,

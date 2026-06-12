@@ -69,7 +69,8 @@ function mockApp(
 
 async function createConnectedClient(app: NewioApp, sessionMode: SessionMode = 'isolated'): Promise<Client> {
   const initiateConversation = vi.fn();
-  const server = new NewioMcpServer({ app, initiateConversation, sessionMode });
+  const shareContext = vi.fn();
+  const server = new NewioMcpServer({ app, initiateConversation, shareContext, sessionMode });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
   const client = new Client({ name: 'test-client', version: '1.0.0' });
@@ -167,10 +168,11 @@ describe('MCP Server', () => {
     expect(names).not.toContain('create_dm');
   });
 
-  it('share_context delegates to the agent instance (chat-shared mode)', async () => {
+  it('share_context delegates to the agent instance via the shareContext callback (chat-shared mode)', async () => {
     const app = mockApp();
     const initiateConversation = vi.fn();
-    const server = new NewioMcpServer({ app, initiateConversation, sessionMode: 'chat-shared' });
+    const shareContext = vi.fn();
+    const server = new NewioMcpServer({ app, initiateConversation, shareContext, sessionMode: 'chat-shared' });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     const client = new Client({ name: 'test', version: '1.0.0' });
@@ -180,7 +182,9 @@ describe('MCP Server', () => {
       name: 'share_context',
       arguments: { conversationId: 'work-1', context: 'kick off the migration' },
     });
-    expect(initiateConversation).toHaveBeenCalledWith('work-1', 'kick off the migration');
+    // share_context uses its own callback (absorb-only), NOT initiate_conversation (which auto-sends).
+    expect(shareContext).toHaveBeenCalledWith('work-1', 'kick off the migration');
+    expect(initiateConversation).not.toHaveBeenCalled();
   });
 
   it('list_conversations returns all conversations', async () => {
@@ -243,7 +247,7 @@ describe('MCP Server', () => {
   it('initiate_conversation delegates to agent instance', async () => {
     const app = mockApp();
     const initiateConversation = vi.fn();
-    const server = new NewioMcpServer({ app, initiateConversation, sessionMode: 'isolated' });
+    const server = new NewioMcpServer({ app, initiateConversation, shareContext: vi.fn(), sessionMode: 'isolated' });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     const client = new Client({ name: 'test-client', version: '1.0.0' });
@@ -288,7 +292,7 @@ describe('MCP Server', () => {
   it('upload_attachment_to_current_conversation sends attachment-only message', async () => {
     const app = mockApp();
     const initiateConversation = vi.fn();
-    const server = new NewioMcpServer({ app, initiateConversation, sessionMode: 'isolated' });
+    const server = new NewioMcpServer({ app, initiateConversation, shareContext: vi.fn(), sessionMode: 'isolated' });
     server.setCurrentConversationIdGetter(() => 'conv-1');
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
@@ -549,7 +553,13 @@ describe('onToolCall hook', () => {
     onToolCall: (toolName: string, args: Readonly<Record<string, unknown>>) => void,
   ): Promise<Client> {
     const initiateConversation = vi.fn();
-    const server = new NewioMcpServer({ app, initiateConversation, sessionMode: 'shared', onToolCall });
+    const server = new NewioMcpServer({
+      app,
+      initiateConversation,
+      shareContext: vi.fn(),
+      sessionMode: 'shared',
+      onToolCall,
+    });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     const client = new Client({ name: 'test-client', version: '1.0.0' });

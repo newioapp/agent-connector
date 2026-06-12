@@ -13,6 +13,7 @@ export function registerMessagingTools(
   server: McpServer,
   app: NewioAppForMcp,
   initiateConversation: (convId: string, context: string) => void,
+  shareContext: (convId: string, context: string) => void,
   getCurrentConversationId: IdGetter,
   sessionMode: SessionMode,
   onToolCall?: ToolCallHook,
@@ -63,7 +64,7 @@ export function registerMessagingTools(
         if (getCurrentConversationId() === conversationId) {
           return text("Can't share context with the current conversation — your reply is delivered automatically.");
         }
-        initiateConversation(conversationId, context);
+        shareContext(conversationId, context);
         return text('Context shared with the target session.');
       },
     );

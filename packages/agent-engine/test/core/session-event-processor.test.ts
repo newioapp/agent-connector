@@ -28,6 +28,7 @@ function createMockPromptManager(): PromptManager {
     buildSessionEndPrompt: vi.fn().mockReturnValue('session end'),
     buildMemoryUpdatePrompt: vi.fn().mockReturnValue('memory update'),
     buildInitiateConversationPrompt: vi.fn().mockReturnValue('initiate'),
+    buildShareContextPrompt: vi.fn().mockReturnValue('share context'),
     formatMemoryContext: vi.fn().mockReturnValue('memory context'),
     formatMessagePrompt: vi.fn().mockReturnValue('message prompt'),
     formatContactPrompt: vi.fn().mockReturnValue('contact prompt'),
@@ -176,6 +177,27 @@ describe('SessionEventProcessorImpl', () => {
       );
 
       // Cron responses are discarded
+      expect(app.sendMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('processEvent — share_context', () => {
+    it('absorbs shared context without sending a message', async () => {
+      const app = createMockApp();
+      const promptManager = createMockPromptManager();
+      const processor = new SessionEventProcessorImpl('[test]', app, promptManager);
+      const session = createMockSession('Got it, will keep that in mind.');
+
+      await processor.processEvent(
+        { type: 'share_context', conversationId: 'conv-1', context: 'owner wants the migration done by Friday' },
+        session,
+      );
+
+      // share_context injects the context but the agent's text reply is NOT sent anywhere.
+      expect(promptManager.buildShareContextPrompt).toHaveBeenCalledWith(
+        '1.0.0',
+        'owner wants the migration done by Friday',
+      );
       expect(app.sendMessage).not.toHaveBeenCalled();
     });
   });

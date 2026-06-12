@@ -4,15 +4,16 @@
  * A standalone {@link SessionManager} (deliberately NOT composed from the shared/isolated managers,
  * so those can be deprecated independently). It runs three kinds of sessions:
  *
- * - `chatSlot`          — ONE singleton session for all DMs, group chats, and contact events
- *                         (prompt role 'chat'). Carries context across those conversations and
- *                         injects per-conversation/per-user memory incrementally on first encounter.
- * - `conversationSlots` — one session per work session (temp_group) conversation (prompt role
- *                         'focused'), isolated from the chat session.
- * - `cronSlots`         — one session per cron job (prompt role 'focused').
+ * - `chatSlot`           — ONE singleton session for all DMs, group chats, and contact events
+ *                          (prompt role 'chat'). Carries context across those conversations and
+ *                          injects per-conversation/per-user memory incrementally on first encounter.
+ * - `workSessionSlots`   — one session per work session (temp_group) conversation (prompt role
+ *                          'focused'), isolated from the chat session.
+ * - `cronSlots`          — one session per cron job (prompt role 'focused').
  *
- * `share_context` (surfaced to the agent as the MCP tool of that name) flows in as an
- * `initiate_conversation` inbound event and is routed to the target conversation's session.
+ * The `share_context` MCP tool flows in as a `share_context` inbound event and is routed to the
+ * target conversation's session, which ABSORBS the context (its text output is not sent — that's
+ * what distinguishes it from isolated mode's `initiate_conversation`).
  */
 import {
   CancelSessionRequest,
@@ -65,7 +66,7 @@ export class ChatSharedSessionManager implements SessionManager {
   /** The single chat session handling DMs, group chats, and contact events. */
   private chatSlot: SessionSlot | undefined;
   /** conversationId → slot for work-session (temp_group) conversations. */
-  private readonly conversationSlots = new Map<string, SessionSlot>();
+  private readonly workSessionSlots = new Map<string, SessionSlot>();
   /** cronId → slot for cron job sessions. */
   private readonly cronSlots = new Map<string, SessionSlot>();
 
@@ -104,7 +105,7 @@ export class ChatSharedSessionManager implements SessionManager {
       case 'message': {
         const slot =
           event.msg.conversationType === 'temp_group'
-            ? this.getOrCreateConversationSlot(event.msg.conversationId)
+            ? this.getOrCreateWorkSessionSlot(event.msg.conversationId)
             : this.getOrCreateChatSlot();
         slot.queue.enqueueMessage(event.msg);
         break;
@@ -117,11 +118,10 @@ export class ChatSharedSessionManager implements SessionManager {
         this.getOrCreateCronSlot(event.event.cronId).queue.enqueueCron(event.event);
         break;
       }
-      case 'initiate_conversation': {
-        // share_context — the target is a conversationId only, so resolve its type, then route.
-        // TODO(share_context): `share_context` is the generic same-agent cross-session context
-        // channel; replace isolated mode's `initiate_conversation` tool with it and rename the
-        // internal InboundEvent/AgentEvent `initiate_conversation` plumbing to `share_context`.
+      case 'share_context': {
+        // The target is a conversationId only, so resolve its type, then route the absorb-only event.
+        // TODO(share_context): isolated mode's `initiate_conversation` is a more specialized form of
+        // the same idea (it auto-sends); consider unifying the two tools behind share_context later.
         void this.routeShareContext(event.conversationId, event.context);
         break;
       }
@@ -136,9 +136,8 @@ export class ChatSharedSessionManager implements SessionManager {
         return;
       }
       const slot =
-        info.type === 'temp_group' ? this.getOrCreateConversationSlot(conversationId) : this.getOrCreateChatSlot();
-      // TODO(share_context): rename EventQueue.enqueueInitiatingConversation → enqueueSharingContext.
-      slot.queue.enqueueInitiatingConversation(conversationId, context);
+        info.type === 'temp_group' ? this.getOrCreateWorkSessionSlot(conversationId) : this.getOrCreateChatSlot();
+      slot.queue.enqueueShareContext(conversationId, context);
     } catch (err: unknown) {
       log.error(`${this.logTag} share_context routing failed for ${conversationId}`, err);
     }
@@ -158,14 +157,14 @@ export class ChatSharedSessionManager implements SessionManager {
     return slot;
   }
 
-  private getOrCreateConversationSlot(conversationId: string): SessionSlot {
-    const existing = this.conversationSlots.get(conversationId);
+  private getOrCreateWorkSessionSlot(conversationId: string): SessionSlot {
+    const existing = this.workSessionSlots.get(conversationId);
     if (existing) {
       existing.lastActivityAt = Date.now();
       return existing;
     }
     const slot = this.createSlot('conversation', conversationId, 'focused');
-    this.conversationSlots.set(conversationId, slot);
+    this.workSessionSlots.set(conversationId, slot);
     return slot;
   }
 
@@ -190,8 +189,8 @@ export class ChatSharedSessionManager implements SessionManager {
     }
     // conversation: a known work-session slot wins; otherwise it's the chat slot
     // (covers SHARED_SESSION_ID and any dm/group conversationId).
-    if (externalReferenceId !== SHARED_SESSION_ID && this.conversationSlots.has(externalReferenceId)) {
-      return this.conversationSlots.get(externalReferenceId);
+    if (externalReferenceId !== SHARED_SESSION_ID && this.workSessionSlots.has(externalReferenceId)) {
+      return this.workSessionSlots.get(externalReferenceId);
     }
     return this.chatSlot;
   }
@@ -206,7 +205,7 @@ export class ChatSharedSessionManager implements SessionManager {
       this.cronSlots.delete(slot.externalReferenceId);
       return;
     }
-    this.conversationSlots.delete(slot.externalReferenceId);
+    this.workSessionSlots.delete(slot.externalReferenceId);
   }
 
   /** Create a new session slot — shared logic for all slot types. */
@@ -529,11 +528,19 @@ export class ChatSharedSessionManager implements SessionManager {
     if (request.sessionType !== 'conversation') {
       return { success: false, error: 'Can only start conversation session ondemand' };
     }
-    const slot =
-      request.externalReferenceId === SHARED_SESSION_ID
-        ? this.getOrCreateChatSlot()
-        : this.getOrCreateConversationSlot(request.externalReferenceId);
+    let slot: SessionSlot;
     try {
+      if (request.externalReferenceId === SHARED_SESSION_ID) {
+        slot = this.getOrCreateChatSlot();
+      } else {
+        // A real conversationId: only work sessions (temp_group) get their own slot; DMs and group
+        // chats are served by the chat slot.
+        const info = await this.app.getConversationInfo(request.externalReferenceId);
+        slot =
+          info.type === 'temp_group'
+            ? this.getOrCreateWorkSessionSlot(request.externalReferenceId)
+            : this.getOrCreateChatSlot();
+      }
       await slot.sessionPromise;
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : 'Session launch failed' };
@@ -677,7 +684,7 @@ export class ChatSharedSessionManager implements SessionManager {
         await this.stopSession(this.chatSlot);
       }
 
-      for (const [conversationId, slot] of this.conversationSlots) {
+      for (const [conversationId, slot] of this.workSessionSlots) {
         if (now - slot.lastActivityAt > timeout && slot.session && !slot.inFlight) {
           log.info(`${this.logTag} Idle session cleanup: work session ${conversationId}`);
           await this.stopSession(slot);
@@ -742,14 +749,14 @@ export class ChatSharedSessionManager implements SessionManager {
       this.chatSlot = undefined;
     }
 
-    for (const [id, slot] of this.conversationSlots) {
+    for (const [id, slot] of this.workSessionSlots) {
       log.debug(`${this.logTag} Disposing work-session slot: ${id}`);
       slot.queue.close();
       if (slot.session) {
         await this.endSession(slot.session.correlationId);
       }
     }
-    this.conversationSlots.clear();
+    this.workSessionSlots.clear();
 
     for (const [id, slot] of this.cronSlots) {
       log.debug(`${this.logTag} Disposing cron slot: ${id}`);

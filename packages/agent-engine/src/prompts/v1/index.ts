@@ -7,4 +7,5 @@ export { memoryRules } from './memory-rules.js';
 export { memoryUpdatePrompt } from './memory-update.js';
 export { sessionEndPrompt } from './session-end.js';
 export { initiateConversationPrompt, type InitiateConversationProps } from './initiate-conversation.js';
+export { shareContextPrompt, type ShareContextProps } from './share-context.js';
 export { memoryContextPrompt, type MemoryContextProps } from './memory-context.js';

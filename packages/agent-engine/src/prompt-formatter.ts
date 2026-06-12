@@ -14,6 +14,7 @@ import {
   memoryUpdatePrompt,
   sessionEndPrompt,
   initiateConversationPrompt,
+  shareContextPrompt,
   memoryContextPrompt,
 } from './prompts/v1/index.js';
 
@@ -57,6 +58,8 @@ export interface PromptFormatter {
   buildSessionEndPrompt(): string;
   /** Build the prompt for a delegated conversation initiation from another session. */
   buildInitiateConversationPrompt(context: string): string;
+  /** Build the prompt for context shared in from another session (absorbed, not sent). */
+  buildShareContextPrompt(context: string): string;
 }
 
 export class PromptFormatterImpl implements PromptFormatter {
@@ -157,6 +160,10 @@ export class PromptFormatterImpl implements PromptFormatter {
 
   buildInitiateConversationPrompt(context: string): string {
     return initiateConversationPrompt({ context, skipToken: this.skipToken });
+  }
+
+  buildShareContextPrompt(context: string): string {
+    return shareContextPrompt({ context });
   }
 
   // ---------------------------------------------------------------------------

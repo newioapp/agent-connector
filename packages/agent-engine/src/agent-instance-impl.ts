@@ -512,9 +512,12 @@ export abstract class BaseAgentInstance implements AgentInstance {
           acpModel: config.acpModel,
           acpMode: config.acpMode,
         });
-        // In shared mode, also persist to the owner DM as the canonical config source
+        // The shared singleton (shared mode) and the chat slot (chat-shared mode) both read their
+        // config from the owner DM, so mirror writes back there to keep it canonical. Both are
+        // identified by SHARED_SESSION_ID; chat-shared work/cron slots use their own key and are
+        // excluded. (Isolated mode never uses SHARED_SESSION_ID, so it never mirrors.)
         if (
-          this.config.sessionMode === 'shared' &&
+          externalReferenceId === SHARED_SESSION_ID &&
           this._ownerDmConversationId &&
           externalReferenceId !== this._ownerDmConversationId
         ) {
@@ -945,6 +948,12 @@ export class AgentInstanceImpl extends BaseAgentInstance {
       initiateConversation: (convId, context) => {
         if (!this.abortController.signal.aborted) {
           this.inbound.push({ type: 'initiate_conversation', conversationId: convId, context: context });
+          this.drainInbound();
+        }
+      },
+      shareContext: (convId, context) => {
+        if (!this.abortController.signal.aborted) {
+          this.inbound.push({ type: 'share_context', conversationId: convId, context: context });
           this.drainInbound();
         }
       },

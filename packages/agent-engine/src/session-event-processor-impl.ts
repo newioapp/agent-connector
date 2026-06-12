@@ -57,6 +57,9 @@ export class SessionEventProcessorImpl implements SessionEventProcessor {
       case 'initiate_conversation':
         await this.processConversationInitiation(session, event.conversationId, event.context);
         break;
+      case 'share_context':
+        await this.processSharedContext(session, event.conversationId, event.context);
+        break;
     }
   }
 
@@ -190,6 +193,21 @@ export class SessionEventProcessorImpl implements SessionEventProcessor {
       log.info(`${this.logTag} Delegated message sent to ${conversationId}`);
     } catch (err: unknown) {
       log.error(`${this.logTag} Conversation initiation failed for ${conversationId}`, err);
+    }
+  }
+
+  /**
+   * Inject context shared from another of the agent's sessions. Unlike conversation initiation, the
+   * session ABSORBS the context — its text output is discarded (not sent). The agent may still call
+   * send_dm/send_message tools during processing if it explicitly decides to message someone.
+   */
+  private async processSharedContext(session: AgentSession, conversationId: string, context: string) {
+    try {
+      const promptText = this.promptManager.buildShareContextPrompt(session.promptFormatterVersion, context);
+      await collectAgentMessage(session.prompt(promptText, conversationId));
+      log.debug(`${this.logTag} Absorbed shared context for ${conversationId}`);
+    } catch (err: unknown) {
+      log.error(`${this.logTag} Share-context processing failed for ${conversationId}`, err);
     }
   }
 }

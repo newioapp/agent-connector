@@ -340,7 +340,8 @@ export type InboundEvent =
   | { readonly type: 'message'; readonly msg: IncomingMessage }
   | { readonly type: 'contact'; readonly event: ContactEvent }
   | { readonly type: 'cron'; readonly event: CronTriggerEvent }
-  | { readonly type: 'initiate_conversation'; readonly conversationId: string; readonly context: string };
+  | { readonly type: 'initiate_conversation'; readonly conversationId: string; readonly context: string }
+  | { readonly type: 'share_context'; readonly conversationId: string; readonly context: string };
 
 export interface ApplySessionConfigUpdateRequest {
   readonly sessionType: SessionType;

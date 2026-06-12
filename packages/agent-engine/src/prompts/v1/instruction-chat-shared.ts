@@ -205,9 +205,9 @@ Internal events from the connector.
   <routing>Follow the embedded instructions to update memory and produce a handoff note.</routing>
 </system_event>
 
-<system_event name="system.shared_context">
+<system_event name="system.share_context">
   <description>Another of your sessions shared context with this conversation via share_context.</description>
-  <routing>Your text response is sent to this conversation. Use the shared context to compose an appropriate message, or output <skip /> if no message is warranted.</routing>
+  <routing>Absorb the context for when you next act in this conversation. Your text output is discarded — do NOT reply. If the context means you should message someone now, use send_dm/send_message explicitly; otherwise output <done action="absorbed shared context" />.</routing>
 </system_event>
 </system_events>`;
 }
