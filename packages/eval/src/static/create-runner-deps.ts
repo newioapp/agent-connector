@@ -11,16 +11,15 @@ import { readFileSync } from 'fs';
 import { parse as parseDotenv } from 'dotenv';
 import { AcpSessionFactory, startUdsServer } from '@newio/agent-engine';
 import { getLogger } from '@newio/agent-sdk';
+import { PromptFormatterImpl } from '@newio/agent-engine';
 import { NewioEvalMcpServer } from '../mcp/v1/server.js';
-import { EvalPromptFormatter } from '../prompts/v1/prompt-formatter.js';
+import { OverridablePromptFormatter } from '../prompts/overridable-prompt-formatter.js';
 import { MockBackend } from '../mock-backend.js';
 import { MockNewioApp } from '../mock-newio-app.js';
 import { ToolInterceptor } from './tool-interceptor.js';
 import { buildScenarioData } from './build-scenario-data.js';
 import { TraceCollector } from './trace.js';
-import type { AgentConfig, PromptFormatter } from '@newio/agent-engine';
-import type { ToolCallHook } from '../mcp/v1/types.js';
-import type { NewioAppForMcp } from '../mcp/v1/types.js';
+import type { AgentConfig, PromptFormatter, ToolCallHook, NewioAppForMcp } from '@newio/agent-engine';
 import type { Server } from 'net';
 import type { EvalConfig, EvalScenario } from '../types.js';
 import type { AgentSession } from '@newio/agent-engine';
@@ -75,6 +74,9 @@ export async function createScenarioRunnerDeps(
   const mcpServer = new NewioEvalMcpServer({
     app: mockApp as unknown as NewioAppForMcp,
     initiateConversation: () => {},
+    // Static harness drives a single bare session (no session manager), so
+    // cross-session delegation is a no-op here — same as initiateConversation.
+    shareContext: () => {},
     sessionMode: effectiveSessionMode,
     onToolCall,
   });
@@ -110,10 +112,12 @@ export async function createScenarioRunnerDeps(
   const mcpBridgeArgsPrefix = [mcpBridgePath];
 
   // Build prompt formatter
-  const promptFormatter = new EvalPromptFormatter(
-    { username: mockApp.identity.username, displayName: mockApp.identity.displayName ?? mockApp.identity.username },
-    mockApp.getOwnerInfo(),
-    effectiveSessionMode,
+  const promptFormatter = new OverridablePromptFormatter(
+    new PromptFormatterImpl(
+      { username: mockApp.identity.username, displayName: mockApp.identity.displayName ?? mockApp.identity.username },
+      mockApp.getOwnerInfo(),
+      effectiveSessionMode,
+    ),
   );
 
   const sessionFactory = new AcpSessionFactory(agentConfig, 'Newio Connector Eval', '0.1.0', '[eval]');

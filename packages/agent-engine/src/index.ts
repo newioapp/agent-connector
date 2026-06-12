@@ -79,6 +79,7 @@ export type {
   NewioMcpServerOptions,
   NewioAppForMcp,
   McpContactSummary,
+  McpMemoryData,
   NewioMcpServerInterface,
 } from './mcp/index.js';
 

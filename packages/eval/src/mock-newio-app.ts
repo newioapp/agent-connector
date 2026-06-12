@@ -44,7 +44,7 @@ import type {
   SessionType,
   CronJobRow,
 } from '@newio/agent-engine';
-import type { NewioAppForMcp, McpContactSummary, McpMemoryData } from './mcp/v1/types.js';
+import type { NewioAppForMcp, McpContactSummary, McpMemoryData } from '@newio/agent-engine';
 import type { MockBackend, BackendEvent, BackendMemoryScope, BackendSignal } from './mock-backend.js';
 
 // ---------------------------------------------------------------------------
