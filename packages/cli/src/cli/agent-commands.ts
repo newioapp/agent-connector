@@ -24,13 +24,19 @@ import { resolveConfig, getDaemonPaths, stageSuffix, type Stage } from '../paths
 import { printApprovalUrl } from './qr.js';
 
 const AGENT_TYPES: readonly AgentType[] = ['claude-code', 'kiro-cli', 'codex', 'cursor', 'gemini', 'custom'];
-const SESSION_MODES: readonly SessionMode[] = ['isolated', 'shared'];
+const SESSION_MODES: readonly SessionMode[] = ['isolated', 'shared', 'chat-shared'];
 
 /** Runtime statuses at which `agent start` is done waiting. */
 const TERMINAL_STATUSES = new Set(['running', 'error', 'stopped']);
 
 export const AGENT_TYPE_CHOICES: readonly string[] = AGENT_TYPES;
 export const SESSION_MODE_CHOICES: readonly string[] = SESSION_MODES;
+
+/** Help text for the `--session-mode` option, describing what each mode does. */
+export const SESSION_MODE_DESCRIPTION =
+  'session mode — isolated: one session per conversation; shared: a single session for all events; ' +
+  'chat-shared: DMs, group chats, and contact events share one session, while each work session and ' +
+  'cron job gets its own';
 
 function asAgentType(value: string): AgentType {
   const match = AGENT_TYPES.find((t) => t === value);

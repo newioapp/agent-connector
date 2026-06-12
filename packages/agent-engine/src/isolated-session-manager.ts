@@ -14,7 +14,7 @@ import {
   UpdateMemoryResponse,
 } from '@newio/agent-sdk';
 import { AgentSession } from './agent-session';
-import { EventQueue } from './event-queue';
+import { AgentEvent, EventQueue } from './event-queue';
 import {
   ApplySessionConfigUpdateRequest,
   SessionEventProcessor,
@@ -36,15 +36,7 @@ interface SessionSlot {
   readonly sessionPromise: Promise<AgentSession>;
   lastActivityAt: number;
   /** Non-null while the session loop is processing any event. */
-  inFlight:
-    | 'messages'
-    | 'contact'
-    | 'cron'
-    | 'initiate_conversation'
-    | 'compact_session'
-    | 'rotate_session'
-    | 'update_memory'
-    | null;
+  inFlight: AgentEvent['type'] | null;
 }
 
 const log = getLogger('isolated-session-manager');

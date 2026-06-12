@@ -10,6 +10,7 @@ import {
   memoryUpdatePrompt,
   sessionEndPrompt,
   initiateConversationPrompt,
+  shareContextPrompt,
   memoryContextPrompt,
 } from './index.js';
 
@@ -112,6 +113,10 @@ export class EvalPromptFormatter implements PromptFormatter {
 
   buildInitiateConversationPrompt(context: string): string {
     return initiateConversationPrompt({ context, skipToken: this.skipToken });
+  }
+
+  buildShareContextPrompt(context: string): string {
+    return shareContextPrompt({ context });
   }
 
   // ---------------------------------------------------------------------------

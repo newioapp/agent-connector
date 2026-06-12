@@ -30,6 +30,8 @@ import type {
   CreateSessionInput,
   SharedInjectionState,
 } from './types';
+import { resolveSessionMode } from './types';
+import { ChatSharedSessionManager } from './chat-shared-session-manager.js';
 import type { AgentInfo, AgentErrorCode, PermissionRequestOption } from './types';
 import { InvalidEnvironmentError } from './errors.js';
 import type { AgentInstance, AgentInstanceListener } from './agent-instance';
@@ -261,10 +263,23 @@ export abstract class BaseAgentInstance implements AgentInstance {
         this._promptManager,
       );
 
-      if (this.config.sessionMode === 'shared') {
+      const sessionMode = resolveSessionMode(this.config.sessionMode);
+      if (sessionMode === 'shared') {
         const ownerDmConversationId = await app.getOrCreateOwnerDmConversationId();
         this._ownerDmConversationId = ownerDmConversationId;
         this._sessionManager = new SharedSessionManager(
+          `[${app.identity.username}]`,
+          eventProcessor,
+          (sessionType, externalReferenceId, resume) => this.launchSession(sessionType, externalReferenceId, resume),
+          (correlationId) => this.sessionFactory.destroySession(correlationId),
+          this._promptManager,
+          this.getNewioAppForSession(),
+          ownerDmConversationId,
+        );
+      } else if (sessionMode === 'chat-shared') {
+        const ownerDmConversationId = await app.getOrCreateOwnerDmConversationId();
+        this._ownerDmConversationId = ownerDmConversationId;
+        this._sessionManager = new ChatSharedSessionManager(
           `[${app.identity.username}]`,
           eventProcessor,
           (sessionType, externalReferenceId, resume) => this.launchSession(sessionType, externalReferenceId, resume),
@@ -350,6 +365,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         this.handlePermissionRequest(title, options, conversationId),
       setStatus: (status, conversationId) => this.app.setStatus(status, conversationId),
       getConversationControls: (convId) => this.app.getConversationControls(convId),
+      getConversationInfo: (convId) => this.app.getConversationInfo(convId),
       loadMemoryForSession: (conversationId) => this.loadMemoryForSession(conversationId),
       getHandoffNote: (conversationId) => this.app.getHandoffNote(conversationId),
       putHandoffNote: (conversationId: string, note: string) => this.app.putHandoffNote(conversationId, note),
@@ -496,9 +512,12 @@ export abstract class BaseAgentInstance implements AgentInstance {
           acpModel: config.acpModel,
           acpMode: config.acpMode,
         });
-        // In shared mode, also persist to the owner DM as the canonical config source
+        // The shared singleton (shared mode) and the chat slot (chat-shared mode) both read their
+        // config from the owner DM, so mirror writes back there to keep it canonical. Both are
+        // identified by SHARED_SESSION_ID; chat-shared work/cron slots use their own key and are
+        // excluded. (Isolated mode never uses SHARED_SESSION_ID, so it never mirrors.)
         if (
-          this.config.sessionMode === 'shared' &&
+          externalReferenceId === SHARED_SESSION_ID &&
           this._ownerDmConversationId &&
           externalReferenceId !== this._ownerDmConversationId
         ) {
@@ -794,7 +813,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
         agentProtocol: agentInfo.protocol,
         agentVendor: agentInfo.agentName ?? this.config.type,
         agentVendorVersion: agentInfo.agentVersion,
-        sessionMode: this.config.sessionMode === 'shared' ? 'shared' : 'isolated',
+        sessionMode: resolveSessionMode(this.config.sessionMode),
         host: {
           hostname: hostname(),
           workingDirectory: this.config.acp?.cwd,
@@ -918,7 +937,7 @@ export class AgentInstanceImpl extends BaseAgentInstance {
     const defaultPromptFormatter = new PromptFormatterImpl(
       this.app.identity,
       this.app.getOwnerInfo(),
-      this.config.sessionMode === 'shared' ? 'shared' : 'isolated',
+      resolveSessionMode(this.config.sessionMode),
     );
     return new PromptManager([defaultPromptFormatter], defaultPromptFormatter);
   }
@@ -932,7 +951,13 @@ export class AgentInstanceImpl extends BaseAgentInstance {
           this.drainInbound();
         }
       },
-      sessionMode: this.config.sessionMode === 'shared' ? 'shared' : 'isolated',
+      shareContext: (convId, context) => {
+        if (!this.abortController.signal.aborted) {
+          this.inbound.push({ type: 'share_context', conversationId: convId, context: context });
+          this.drainInbound();
+        }
+      },
+      sessionMode: resolveSessionMode(this.config.sessionMode),
     });
   }
 }

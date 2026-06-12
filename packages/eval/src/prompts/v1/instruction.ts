@@ -4,7 +4,7 @@
 import { instructionIsolated } from './instruction-isolated.js';
 import { instructionShared } from './instruction-shared.js';
 
-export type SessionMode = 'isolated' | 'shared';
+export type SessionMode = 'isolated' | 'shared' | 'chat-shared';
 
 export interface InstructionProps {
   readonly username: string;

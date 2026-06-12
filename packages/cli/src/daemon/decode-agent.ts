@@ -12,7 +12,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const AGENT_TYPES: readonly AgentType[] = ['claude-code', 'kiro-cli', 'codex', 'cursor', 'gemini', 'custom'];
-const SESSION_MODES: readonly SessionMode[] = ['isolated', 'shared'];
+const SESSION_MODES: readonly SessionMode[] = ['isolated', 'shared', 'chat-shared'];
 
 function str(obj: Record<string, unknown>, key: string): string | undefined {
   const value = obj[key];

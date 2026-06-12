@@ -926,7 +926,9 @@ export interface ReportAgentInfoRequest {
   readonly agentProtocol: string;
   readonly agentVendor: string;
   readonly agentVendorVersion?: string;
-  readonly sessionMode?: 'isolated' | 'shared';
+  // Free-form string: the backend stores this as opaque metadata and does not branch on it, so new
+  // connector session modes don't require a backend change.
+  readonly sessionMode?: string;
   readonly host?: ReportAgentHostInfo;
 }
 

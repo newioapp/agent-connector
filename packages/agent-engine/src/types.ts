@@ -125,7 +125,11 @@ export interface AgentConfig {
   /** Newio identity — set after first registration, synced on every start. */
   readonly newio?: NewioIdentity;
 
-  /** Session mode: 'isolated' (one session per conversation) or 'shared' (single session for all events). Default: 'isolated'. */
+  /**
+   * Session mode: 'isolated' (one session per conversation), 'shared' (single session for all
+   * events), or 'chat-shared' (DM/group/contact share one session; work sessions + cron get their
+   * own). Default: 'isolated'.
+   */
   readonly sessionMode?: SessionMode;
 
   /** Idle timeout for sessions in ms. Sessions with no activity are stopped. Default: 1 hour. */
@@ -231,13 +235,21 @@ export type PermissionHandler = (
 ) => Promise<string>;
 
 /**
- * Session mode controls which messaging tools are available:
+ * Session mode controls how runtime sessions are partitioned and which messaging tools are available:
  * - 'isolated': One session per conversation. Uses `initiate_conversation` for cross-conversation
  *   delegation. `send_dm` and `dm_owner` are blocked.
  * - 'shared': Single session serves all conversations. Uses `send_dm` and `dm_owner` directly.
  *   `initiate_conversation` is not available.
+ * - 'chat-shared': DMs, group chats, and contact events share ONE session (like 'shared'); each
+ *   work session (temp_group) and each cron job gets its OWN session (like 'isolated'). Uses
+ *   `send_dm`/`send_message` plus `share_context` for cross-session context hand-off.
  */
-export type SessionMode = 'isolated' | 'shared';
+export type SessionMode = 'isolated' | 'shared' | 'chat-shared';
+
+/** Resolve a possibly-undefined config session mode to a concrete mode (defaults to 'isolated'). */
+export function resolveSessionMode(mode: SessionMode | undefined): SessionMode {
+  return mode ?? 'isolated';
+}
 
 export interface NewioAppForAgent {
   readonly identity: AgentIdentity;
@@ -328,7 +340,8 @@ export type InboundEvent =
   | { readonly type: 'message'; readonly msg: IncomingMessage }
   | { readonly type: 'contact'; readonly event: ContactEvent }
   | { readonly type: 'cron'; readonly event: CronTriggerEvent }
-  | { readonly type: 'initiate_conversation'; readonly conversationId: string; readonly context: string };
+  | { readonly type: 'initiate_conversation'; readonly conversationId: string; readonly context: string }
+  | { readonly type: 'share_context'; readonly conversationId: string; readonly context: string };
 
 export interface ApplySessionConfigUpdateRequest {
   readonly sessionType: SessionType;
@@ -377,6 +390,8 @@ export interface NewioAppForSession {
   putHandoffNote(conversationId: string, note: string): Promise<void>;
   getConversationControls(conversationId: string): Promise<ConversationControls | undefined>;
   setStatus(status: ActivityStatus, conversationId?: string): void;
+  /** Get conversation type and name (used to route share_context by target conversation type). */
+  getConversationInfo(conversationId: string): Promise<{ type: string; name?: string }>;
   /** Get memory scope data for a conversation or user (for incremental injection in shared mode). */
   getMemoryScope(scope: string, scopeId: string): Promise<MemoryScopeData>;
   /** Get member user IDs for a conversation (for incremental injection in shared mode). */

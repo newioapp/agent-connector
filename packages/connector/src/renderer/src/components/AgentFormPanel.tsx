@@ -54,6 +54,12 @@ const SESSION_MODE_OPTIONS: readonly { value: SessionMode; label: string; descri
     description:
       'Single session across all conversations. Best for agents that carry context between conversations, e.g. manager role.',
   },
+  {
+    value: 'chat-shared',
+    label: 'Chat-shared',
+    description:
+      'DMs, group chats, and contact events share one session; each work session and cron job gets its own. Balances continuous chat context with focused task execution.',
+  },
 ];
 
 export function AgentFormPanel({

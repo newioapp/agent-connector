@@ -117,7 +117,9 @@ agentCmd
     '--exec <command>',
     'ACP executable to spawn, optionally with args (required for --type custom; for built-in types it overrides the binary and any extra args are appended to the default invocation), e.g. --exec "/opt/bin/codex-acp" or --exec "node wrapper.js"',
   )
-  .addOption(new Option('--session-mode <mode>', 'session mode').choices([...agent.SESSION_MODE_CHOICES]))
+  .addOption(
+    new Option('--session-mode <mode>', agent.SESSION_MODE_DESCRIPTION).choices([...agent.SESSION_MODE_CHOICES]),
+  )
   // The agent subprocess runs with exactly the environment synced here — PATH (to
   // find node + the agent binary), USER (Claude Code keys its Keychain credential
   // by it), API keys, etc. Captured from this CLI's own environment.
@@ -166,7 +168,9 @@ agentCmd
   .option('--cwd <dir>', 'working directory')
   .option('--exec <command>', 'ACP executable to spawn, optionally with args (overrides the default binary)')
   .option('--username <username>', 'Newio username')
-  .addOption(new Option('--session-mode <mode>', 'session mode').choices([...agent.SESSION_MODE_CHOICES]))
+  .addOption(
+    new Option('--session-mode <mode>', agent.SESSION_MODE_DESCRIPTION).choices([...agent.SESSION_MODE_CHOICES]),
+  )
   .action((query: string, _options: unknown, cmd: Command) =>
     agent.agentUpdate(stage, query, cmd.opts<UpdateOptions>()),
   );
