@@ -4,7 +4,7 @@
  * Uses MockNewioApp (backed by MockBackend) instead of the real Newio SDK.
  * Runs a real ACP process for the agent, with eval-specific prompt formatting.
  */
-import { BaseAgentInstance, PromptManager } from '@newio/agent-engine';
+import { BaseAgentInstance, PromptManager, PromptFormatterImpl } from '@newio/agent-engine';
 import type {
   AgentConfig,
   NewioAppForAgent,
@@ -15,7 +15,7 @@ import type {
 import type { NewioAppForMcp, NewioMcpServerInterface } from '@newio/agent-engine';
 import type { IncomingMessage } from '@newio/agent-engine';
 import { MockNewioApp } from '../mock-newio-app.js';
-import { EvalPromptFormatter } from '../prompts/v1/prompt-formatter.js';
+import { OverridablePromptFormatter } from '../prompts/overridable-prompt-formatter.js';
 import { NewioEvalMcpServer } from '../mcp/v1/server.js';
 
 // ---------------------------------------------------------------------------
@@ -72,10 +72,12 @@ export class EvalAgentInstance extends BaseAgentInstance {
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async createPromptManager(): Promise<PromptManager> {
-    const formatter = new EvalPromptFormatter(
-      { username: this.mockApp.identity.username, displayName: this.mockApp.identity.displayName },
-      this.mockApp.getOwnerInfo(),
-      this.sessionMode,
+    const formatter = new OverridablePromptFormatter(
+      new PromptFormatterImpl(
+        { username: this.mockApp.identity.username, displayName: this.mockApp.identity.displayName },
+        this.mockApp.getOwnerInfo(),
+        this.sessionMode,
+      ),
     );
     return new PromptManager([formatter], formatter);
   }
@@ -89,6 +91,12 @@ export class EvalAgentInstance extends BaseAgentInstance {
       initiateConversation: (convId, context) => {
         if (!this.abortController.signal.aborted) {
           this.inbound.push({ type: 'initiate_conversation', conversationId: convId, context });
+          this.drainInbound();
+        }
+      },
+      shareContext: (convId, context) => {
+        if (!this.abortController.signal.aborted) {
+          this.inbound.push({ type: 'share_context', conversationId: convId, context });
           this.drainInbound();
         }
       },

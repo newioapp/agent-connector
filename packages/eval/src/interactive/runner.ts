@@ -30,7 +30,7 @@ export interface InteractiveEvalConfig {
   readonly targetModel: string;
   readonly driverAgentType: string;
   readonly driverModel: string;
-  readonly sessionMode: 'isolated' | 'shared';
+  readonly sessionMode: SessionMode;
   readonly promptVersion: string;
   readonly acp: {
     readonly cwd: string;

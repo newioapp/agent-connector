@@ -15,6 +15,7 @@ import { allInteractiveScenarios } from './scenarios/index.js';
 import { runInteractiveScenario } from './runner.js';
 import { saveBattleReport } from './report.js';
 import type { InteractiveEvalConfig } from './runner.js';
+import type { SessionMode } from '@newio/agent-engine';
 
 const resultsDir = join(fileURLToPath(import.meta.url), '../../../results');
 
@@ -25,7 +26,7 @@ program
   .option('--target-model <model>', 'Target model', 'claude-sonnet-4.6')
   .option('--driver-type <type>', 'Driver agent type', 'kiro-cli')
   .option('--driver-model <model>', 'Driver model', 'claude-opus-4.6')
-  .option('--session-mode <mode>', 'Session mode (isolated, shared)', 'isolated')
+  .option('--session-mode <mode>', 'Session mode (isolated, shared, chat-shared, both)', 'isolated')
   .option('--scenario <id>', 'Run a single scenario by ID')
   .option('--category <cat>', 'Filter by category (business, technical, social, red_team)')
   .option('--runs <n>', 'Number of runs per scenario', '1')
@@ -70,8 +71,9 @@ async function main(): Promise<void> {
   }
 
   const runs = parseInt(opts.runs, 10);
-  const sessionModes: Array<'isolated' | 'shared'> =
-    opts.sessionMode === 'both' ? ['isolated', 'shared'] : [opts.sessionMode as 'isolated' | 'shared'];
+  // 'both' stays isolated+shared for backward compatibility; chat-shared must be selected explicitly.
+  const sessionModes: SessionMode[] =
+    opts.sessionMode === 'both' ? ['isolated', 'shared'] : [opts.sessionMode as SessionMode];
 
   console.log(
     `\n⚔️  Interactive Eval — ${scenarios.length} scenario(s) × ${runs} run(s) × ${sessionModes.length} mode(s)\n`,

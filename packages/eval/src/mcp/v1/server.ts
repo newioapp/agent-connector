@@ -1,80 +1,55 @@
 /**
- * NewioEvalMcpServer — MCP server for eval scenarios.
+ * NewioEvalMcpServer — the eval's MCP experimentation shell.
  *
- * Wraps a {@link NewioApp} instance and exposes developer-friendly MCP tools
- * with username-based lookups instead of UUIDs. Transport-agnostic — callers
- * provide the transport (stdio, socket, etc.).
+ * By default it delegates to the real {@link NewioMcpServer} from
+ * `@newio/agent-engine`, so an eval exposes exactly the toolset (and tool
+ * descriptions) that ship — no fork, no drift.
  *
- * Supports a mutable `sessionId` that is injected after construction, allowing
- * conversation-creation tools to inherit the agent's current session context.
+ * Experiment seam (grow when needed): to give the agent a different toolset or
+ * tool descriptions for an A/B — e.g. comparing `initiate_conversation` vs.
+ * `share_context` — replace the delegation below with a registration that
+ * suppresses / overrides / adds tools, by running the real tool registration
+ * against a `registerTool`-intercepting proxy of `McpServer` here, rather than
+ * copying tool bodies. See OverridablePromptFormatter for the prompt-side analog.
  */
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import { registerContactsTools } from './tools/contacts.js';
-import { registerConversationsTools } from './tools/conversations.js';
-import { registerCronTools } from './tools/cron.js';
-import { registerMessagingTools } from './tools/messaging.js';
-import { registerUsersTools } from './tools/users.js';
-import { registerMediaTools } from './tools/media.js';
-import { registerMemoryTools } from './tools/memory.js';
-import type { IdGetter, NewioAppForMcp, SessionMode, ToolCallHook } from './types.js';
-import type { NewioMcpServerInterface } from '@newio/agent-engine';
+import { NewioMcpServer } from '@newio/agent-engine';
+import type {
+  NewioAppForMcp,
+  NewioMcpServerInterface,
+  SessionMode,
+  ToolCallHook,
+  Transport,
+} from '@newio/agent-engine';
 
 export interface NewioEvalMcpServerOptions {
   readonly app: NewioAppForMcp;
+  /** Delegate a task to another conversation's session (isolated mode). */
   readonly initiateConversation: (convId: string, context: string) => void;
+  /** Hand context to another of the agent's sessions (chat-shared mode). The target absorbs it. */
+  readonly shareContext: (convId: string, context: string) => void;
   readonly sessionMode: SessionMode;
   /** Optional hook called before each tool invocation. */
   readonly onToolCall?: ToolCallHook;
 }
 
-/**
- * MCP server that exposes Newio tools to agent sessions.
- *
- * @example
- * ```ts
- * const mcpServer = new NewioEvalMcpServer({ app, agent, sessionMode: 'isolated' });
- * await mcpServer.connect(transport);
- * ```
- */
-
 export class NewioEvalMcpServer implements NewioMcpServerInterface {
-  private readonly server: McpServer;
-  private getCurrentConversationId: IdGetter;
+  private readonly inner: NewioMcpServer;
 
   constructor(opts: NewioEvalMcpServerOptions) {
-    this.server = new McpServer({
-      name: 'newio-mcp-server',
-      version: '0.1.0',
+    this.inner = new NewioMcpServer({
+      app: opts.app,
+      initiateConversation: opts.initiateConversation,
+      shareContext: opts.shareContext,
+      sessionMode: opts.sessionMode,
+      onToolCall: opts.onToolCall,
     });
-
-    const { app, initiateConversation, sessionMode, onToolCall } = opts;
-
-    this.getCurrentConversationId = () => undefined;
-    registerContactsTools(this.server, app, onToolCall);
-    registerConversationsTools(this.server, app, sessionMode, onToolCall);
-    registerCronTools(this.server, app, onToolCall);
-    registerMessagingTools(
-      this.server,
-      app,
-      initiateConversation,
-      () => this.getCurrentConversationId(),
-      sessionMode,
-      onToolCall,
-    );
-    registerUsersTools(this.server, app, onToolCall);
-    registerMediaTools(this.server, app, () => this.getCurrentConversationId(), onToolCall);
-    registerMemoryTools(this.server, app, onToolCall);
   }
 
-  setCurrentConversationIdGetter(idGetter: IdGetter): void {
-    this.getCurrentConversationId = idGetter;
+  setCurrentConversationIdGetter(idGetter: () => string | undefined): void {
+    this.inner.setCurrentConversationIdGetter(idGetter);
   }
 
-  /** Connect to a transport. */
   connect(transport: Transport): Promise<void> {
-    return this.server.connect(transport);
+    return this.inner.connect(transport);
   }
 }
-
-export type { Transport };
