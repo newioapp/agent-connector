@@ -11,6 +11,34 @@
  * suppresses / overrides / adds tools, by running the real tool registration
  * against a `registerTool`-intercepting proxy of `McpServer` here, rather than
  * copying tool bodies. See OverridablePromptFormatter for the prompt-side analog.
+ *
+ * @example Override / suppress inner tools for an experiment
+ * ```ts
+ * // In the constructor, swap `new NewioMcpServer(...)` for a registration you
+ * // control: run the engine's real tool registration against a proxy of
+ * // McpServer that intercepts registerTool, so every production tool stays
+ * // except the ones you deliberately drop or tweak (plus any extras you add).
+ * import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+ * import { registerNewioMcpTools } from '@newio/agent-engine'; // expose this fn when needed
+ *
+ * const server = new McpServer({ name: 'newio-mcp-server', version: '0.1.0' });
+ * const suppress = new Set(['initiate_conversation']);                  // hide a tool
+ * const overrides: Record<string, { description?: string }> = {
+ *   share_context: { description: ALT_SHARE_CONTEXT_DESCRIPTION },      // A/B a description
+ * };
+ * const proxy = new Proxy(server, {
+ *   get(target, prop, recv) {
+ *     if (prop !== 'registerTool') return Reflect.get(target, prop, recv);
+ *     return (name: string, def: Record<string, unknown>, handler: unknown) => {
+ *       if (suppress.has(name)) return;                                 // never registered
+ *       const merged = overrides[name] ? { ...def, ...overrides[name] } : def;
+ *       return target.registerTool(name, merged, handler);
+ *     };
+ *   },
+ * });
+ * registerNewioMcpTools(proxy, { app, initiateConversation, shareContext, sessionMode, onToolCall });
+ * // server.registerTool('my_experimental_tool', ...) to add extras, then keep `server` as `this.inner`'s transport target.
+ * ```
  */
 import { NewioMcpServer } from '@newio/agent-engine';
 import type {

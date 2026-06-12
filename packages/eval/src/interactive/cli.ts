@@ -128,6 +128,16 @@ async function main(): Promise<void> {
     }
   }
 
+  // Nothing ran — the selected scenario(s) were all filtered out by a session-mode
+  // mismatch. Fail loudly so a silent filter isn't mistaken for a passing run.
+  if (totalRuns === 0) {
+    console.error(
+      `\n❌ No scenario/mode pairs executed: the selected scenario(s) don't run under --session-mode "${opts.sessionMode}".`,
+    );
+    console.error(`   Pass the scenario's own mode, e.g. --session-mode chat-shared, or --session-mode both.\n`);
+    process.exit(1);
+  }
+
   console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
   console.log(`  Results: ${totalPassed}/${totalRuns} passed`);
   console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
