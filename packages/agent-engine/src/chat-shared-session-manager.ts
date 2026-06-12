@@ -119,27 +119,29 @@ export class ChatSharedSessionManager implements SessionManager {
       }
       case 'initiate_conversation': {
         // share_context — the target is a conversationId only, so resolve its type, then route.
-        this.routeShareContext(event.conversationId, event.context);
+        // TODO(share_context): `share_context` is the generic same-agent cross-session context
+        // channel; replace isolated mode's `initiate_conversation` tool with it and rename the
+        // internal InboundEvent/AgentEvent `initiate_conversation` plumbing to `share_context`.
+        void this.routeShareContext(event.conversationId, event.context);
         break;
       }
     }
   }
 
   /** Resolve the target conversation's type, then enqueue the shared context onto the right session. */
-  private routeShareContext(conversationId: string, context: string): void {
-    void this.app
-      .getConversationInfo(conversationId)
-      .then((info) => {
-        if (this.terminated) {
-          return;
-        }
-        const slot =
-          info.type === 'temp_group' ? this.getOrCreateConversationSlot(conversationId) : this.getOrCreateChatSlot();
-        slot.queue.enqueueInitiatingConversation(conversationId, context);
-      })
-      .catch((err: unknown) => {
-        log.error(`${this.logTag} share_context routing failed for ${conversationId}`, err);
-      });
+  private async routeShareContext(conversationId: string, context: string): Promise<void> {
+    try {
+      const info = await this.app.getConversationInfo(conversationId);
+      if (this.terminated) {
+        return;
+      }
+      const slot =
+        info.type === 'temp_group' ? this.getOrCreateConversationSlot(conversationId) : this.getOrCreateChatSlot();
+      // TODO(share_context): rename EventQueue.enqueueInitiatingConversation → enqueueSharingContext.
+      slot.queue.enqueueInitiatingConversation(conversationId, context);
+    } catch (err: unknown) {
+      log.error(`${this.logTag} share_context routing failed for ${conversationId}`, err);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -250,9 +252,12 @@ export class ChatSharedSessionManager implements SessionManager {
       slot.lastActivityAt = Date.now();
       slot.inFlight = event.type;
       try {
-        // The chat session serves many conversations, so inject per-conversation/per-user
-        // memory the first time we see each one. Focused slots load their conversation's
-        // memory once at launch and need no incremental injection.
+        // Incremental injection (and its injectedConversationIds/injectedUserIds bookkeeping +
+        // shared-injection-state persistence) is the CHAT session's mechanism for carrying memory
+        // across the many conversations it serves. Focused slots load their single conversation's
+        // memory once at launch (like isolated mode), so they must NOT run injection — sharing the
+        // injected-* sets would let a work session mark a user as "injected" and make the chat
+        // session later skip injecting that same user's memory.
         if (slot.role === 'chat' && event.type === 'messages') {
           await this.injectConversationContextIfNeeded(event.conversationId, session);
         }

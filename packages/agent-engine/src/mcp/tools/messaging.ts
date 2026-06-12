@@ -48,7 +48,7 @@ export function registerMessagingTools(
       'share_context',
       {
         description:
-          "Share context with another of your own sessions, identified by its conversationId. Use this to hand off relevant context to a DIFFERENT conversation's session — most commonly to brief a work session you just created (call create_work_session first) on why it exists, the goal, and any details it needs. The target session is another instance of YOU — same agent, same owner, same memory — running in its own context window. This is fire-and-forget — you will NOT receive a response, and it does NOT send a user-visible message by itself. Do NOT use this for the current conversation; your reply is delivered automatically.",
+          'Share context with another of your own sessions, identified by its conversationId. Works in either direction: from your chat session to a work session you just created (call create_work_session first) to brief it on why it exists and the goal, OR from a work session back to your main chat conversation (e.g. to report progress or a result for your owner). The target session is another instance of YOU — same agent, same owner, same memory — running in its own context window. This is fire-and-forget — you will NOT receive a response, and it does NOT send a user-visible message by itself. Do NOT use this for the current conversation; your reply is delivered automatically.',
         inputSchema: {
           conversationId: z.string().describe('Conversation ID of the target session to share context with'),
           context: z

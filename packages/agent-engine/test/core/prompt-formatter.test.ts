@@ -324,6 +324,24 @@ describe('PromptFormatterImpl', () => {
         expect(result.prompt).toContain('dedicated session for a single work session or cron job');
         expect(result.prompt).toContain('share_context');
       });
+
+      it('chat role includes contact events but not cron events', () => {
+        const result = chatSharedFormatter().buildNewioInstruction('chat');
+        expect(result.prompt).toContain('contact.batch');
+        expect(result.prompt).not.toContain('cron.triggered');
+      });
+
+      it('focused role includes cron events but not contact events', () => {
+        const result = chatSharedFormatter().buildNewioInstruction('focused');
+        expect(result.prompt).toContain('cron.triggered');
+        expect(result.prompt).not.toContain('contact.batch');
+      });
+
+      it('uses shared-style messaging tools (no initiate_conversation)', () => {
+        const result = chatSharedFormatter().buildNewioInstruction('chat');
+        expect(result.prompt).toContain('send_dm');
+        expect(result.prompt).not.toContain('initiate_conversation');
+      });
     });
 
     it('includes XML structure with identity and relationships', () => {
