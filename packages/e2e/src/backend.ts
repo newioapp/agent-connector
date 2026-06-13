@@ -137,6 +137,26 @@ export class OwnerBackend {
     };
   }
 
+  /**
+   * Approve a pending agent the CLI registered (the `create-account` flow),
+   * assigning it `username`. The owner becomes the agent's owner.
+   */
+  async approvePendingAgent(
+    owner: OwnerTokens,
+    approvalId: string,
+    approvalToken: string,
+    username: string,
+  ): Promise<void> {
+    await this.request(
+      `/approvals/${approvalId}/approve?token=${encodeURIComponent(approvalToken)}`,
+      owner.accessToken,
+      {
+        method: 'POST',
+        body: JSON.stringify({ username }),
+      },
+    );
+  }
+
   async listConversations(token: string): Promise<readonly ConversationSummary[]> {
     const body = asRecord(await this.request('/conversations', token));
     const conversations = Array.isArray(body.conversations) ? body.conversations : [];
