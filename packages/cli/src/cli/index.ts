@@ -176,7 +176,14 @@ agentCmd
   .description('Update agent config')
   .option('--name <name>', 'display name')
   .option('--cwd <dir>', 'working directory')
-  .option('--exec <command>', 'ACP executable to spawn, optionally with args (overrides the default binary)')
+  .option('--exec <command>', 'ACP executable to spawn, optionally with args (legacy; prefer --command/--arg)')
+  .option('--command <path>', 'ACP executable path — path-safe (replaces the prior launch config; combine with --arg)')
+  .option(
+    '--arg <value>',
+    'argument for --command; repeat for multiple args',
+    (value: string, previous: string[]) => [...previous, value],
+    [] as string[],
+  )
   .option('--username <username>', 'Newio username')
   .addOption(
     new Option('--session-mode <mode>', agent.SESSION_MODE_DESCRIPTION).choices([...agent.SESSION_MODE_CHOICES]),
