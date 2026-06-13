@@ -1,26 +1,32 @@
 /**
- * DaemonHarness — boots the connector exactly as it ships: the real `newio`
- * daemon process (`node dist/cli.js daemon run`), driven over its JSON-RPC socket,
- * wired to a deterministic puppet.
+ * DaemonHarness — boots the connector exactly as it ships and configures it the
+ * way a user does: the real `newio` daemon process (`node dist/cli.js daemon run`)
+ * driven by the real CLI subcommands (`agent add` / `agent env set` /
+ * `agent start`), wired to a deterministic puppet.
  *
  * Where {@link ConnectorHarness} embeds the agent runtime in-process (fast, but
  * skips the CLI/daemon/RPC plumbing and hand-rolls its own EngineConfig), this
- * runs the full shipped stack: the CLI entry, the daemon process, `runDaemon`'s
- * own EngineConfig (bridge command via `resolveSelfExec`, stage-suffixed dirs),
- * the RPC transport, and on-disk config persistence. Use it for the highest-
- * fidelity platform checks and as the basis for CLI integ tests.
+ * runs the full shipped stack: the CLI entry + commands, the daemon process,
+ * `runDaemon`'s own EngineConfig (bridge command via `resolveSelfExec`,
+ * stage-suffixed dirs), the RPC transport, and on-disk config — all defined
+ * through the CLI rather than JavaScript.
+ *
+ * The one thing the CLI can't do is inject credentials (tokens only ever come
+ * from the approval flow). To keep the test deterministic we write the agent's
+ * `.credentials.json` directly — the single byte of state the connector's own
+ * approval-poll would otherwise have written. Tokens come from `OwnerBackend`
+ * (the human side legitimately registers + approves the agent).
  *
  * Isolation: the daemon's data dir is normally `~/.newio-<stage>/connector`. We
  * point `NEWIO_HOME` at a temp dir so the test gets its own sandbox and never
  * collides with a developer's running daemon. Requires the cli + puppet builds.
  */
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { createRequire } from 'node:module';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { FileAgentConfigManager } from '@newio/agent-engine';
-import { DaemonClient, DaemonConnector, getDaemonPaths } from '@newio/cli';
+import { getDaemonPaths } from '@newio/cli';
 import type { PuppetDriver } from '@newio/acp-puppet';
 import type { AgentCredentials } from './backend.js';
 
@@ -31,6 +37,12 @@ export interface DaemonHarnessOptions {
   readonly driver: PuppetDriver;
   /** How long to wait for the agent to reach `running` (greeting round-trip completes). */
   readonly startTimeoutMs?: number;
+}
+
+interface CliResult {
+  readonly code: number;
+  readonly stdout: string;
+  readonly stderr: string;
 }
 
 const STAGE = 'dev';
@@ -53,8 +65,8 @@ function resolveCliEntry(): string {
 
 export class DaemonHarness {
   private constructor(
-    private readonly connector: DaemonConnector,
-    private readonly child: ChildProcess,
+    private readonly daemon: ChildProcess,
+    private readonly env: NodeJS.ProcessEnv,
     private readonly home: string,
     private readonly prevHome: string | undefined,
     readonly agentConfigId: string,
@@ -63,134 +75,165 @@ export class DaemonHarness {
   static async start(options: DaemonHarnessOptions): Promise<DaemonHarness> {
     const home = mkdtempSync(join(tmpdir(), 'newio-e2e-home-'));
     const prevHome = process.env.NEWIO_HOME;
-    // Make our own getDaemonPaths() match the daemon subprocess's data dir/socket.
+    // Make our own getDaemonPaths() match the daemon subprocess's data dir.
     process.env.NEWIO_HOME = home;
     const paths = getDaemonPaths(STAGE);
 
-    // Seed the agent config + tokens on disk (same as the daemon's own config
-    // manager would write), so `agent.start` skips the browser-approval flow.
-    const configManager = new FileAgentConfigManager(paths.dataDir);
-    const config = configManager.add({
-      type: 'custom',
-      newioUsername: options.agent.username,
-      sessionMode: 'isolated',
-      acp: { executablePath: options.driver.executablePath, cwd: paths.dataDir },
-      envVars: {
-        PUPPET_CONTROL_SOCKET: options.driver.socketPath,
-        ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
-      },
-    });
-    configManager.setNewioIdentity(config.id, { agentId: options.agent.agentId, username: options.agent.username });
-    configManager.setTokens(config.id, {
-      accessToken: options.agent.accessToken,
-      refreshToken: options.agent.refreshToken,
-    });
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      NEWIO_HOME: home,
+      NEWIO_STAGE: STAGE,
+      NEWIO_API_URL: options.apiBaseUrl,
+      NEWIO_WS_URL: options.wsUrl,
+    };
 
-    // Spawn the real daemon process.
-    const child = spawn(process.execPath, [resolveCliEntry(), 'daemon', 'run'], {
-      env: {
-        ...process.env,
-        NEWIO_HOME: home,
-        NEWIO_STAGE: STAGE,
-        NEWIO_API_URL: options.apiBaseUrl,
-        NEWIO_WS_URL: options.wsUrl,
-      },
+    const daemon = spawn(process.execPath, [resolveCliEntry(), 'daemon', 'run'], {
+      env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let daemonLog = '';
     const capture = (chunk: Buffer): void => {
       daemonLog += chunk.toString();
     };
-    child.stdout.on('data', capture);
-    child.stderr.on('data', capture);
+    daemon.stdout.on('data', capture);
+    daemon.stderr.on('data', capture);
 
-    const connector = new DaemonConnector(new DaemonClient());
     try {
-      await connectWithRetry(connector, paths.socketPath, 20_000);
-      await connector.startAgent(config.id);
-      await waitForRunning(connector, config.id, options.startTimeoutMs ?? 90_000);
+      await waitForDaemonReady(env, 20_000);
+
+      // Define the agent through the CLI (no JS config code).
+      const added = await runCli(
+        [
+          'agent',
+          'add',
+          '--type',
+          'custom',
+          '--username',
+          options.agent.username,
+          '--exec',
+          options.driver.executablePath,
+        ],
+        env,
+      );
+      if (added.code !== 0) {
+        throw new Error(`\`agent add\` failed (exit ${added.code}): ${added.stderr || added.stdout}`);
+      }
+      const agentId = parseAddedAgentId(added.stdout);
+
+      // Token seam: write the credentials the approval-poll would have persisted.
+      const credsPath = join(paths.dataDir, 'agents', agentId, '.credentials.json');
+      writeFileSync(
+        credsPath,
+        JSON.stringify({ accessToken: options.agent.accessToken, refreshToken: options.agent.refreshToken }),
+        { mode: 0o600 },
+      );
+
+      // Point the puppet at the driver's control socket (merges with the env
+      // `agent add` captured, so PATH etc. survive).
+      const envSet = await runCli(
+        ['agent', 'env', 'set', agentId, `PUPPET_CONTROL_SOCKET=${options.driver.socketPath}`],
+        env,
+      );
+      if (envSet.code !== 0) {
+        throw new Error(`\`agent env set\` failed (exit ${envSet.code}): ${envSet.stderr || envSet.stdout}`);
+      }
+
+      // Start it — blocks until a terminal status (running/error/stopped).
+      const started = await runCli(['agent', 'start', agentId], env, options.startTimeoutMs ?? 90_000);
+      const reachedRunning = started.stdout
+        .split('\n')
+        .map((line) => line.trim())
+        .includes('running');
+      if (!reachedRunning) {
+        throw new Error(`agent did not reach running:\n${started.stdout}\n${started.stderr}`);
+      }
+
+      return new DaemonHarness(daemon, env, home, prevHome, agentId);
     } catch (err: unknown) {
-      await teardown(connector, child, home, prevHome);
+      await teardown(daemon, env, home, prevHome);
       const detail = daemonLog.trim();
       throw new Error(
         `DaemonHarness failed to start: ${String(err)}${detail ? `\n--- daemon log ---\n${detail}` : ''}`,
       );
     }
-
-    return new DaemonHarness(connector, child, home, prevHome, config.id);
   }
 
   async stop(): Promise<void> {
-    try {
-      await Promise.race([this.connector.stopAgent(this.agentConfigId), sleep(5_000)]);
-    } catch {
-      /* best-effort */
-    }
-    await teardown(this.connector, this.child, this.home, this.prevHome);
+    await teardown(this.daemon, this.env, this.home, this.prevHome);
   }
 }
 
-/** Connect to the daemon socket, retrying until it is accepting connections. */
-async function connectWithRetry(connector: DaemonConnector, socketPath: string, timeoutMs: number): Promise<void> {
+/** Parse the agent id out of `agent add`'s "Added agent <id> for @username." line. */
+function parseAddedAgentId(stdout: string): string {
+  const match = /Added agent (\S+) for/.exec(stdout);
+  if (!match?.[1]) {
+    throw new Error(`could not parse agent id from \`agent add\` output: ${stdout}`);
+  }
+  return match[1];
+}
+
+/** Run a `newio` CLI subcommand against the sandboxed daemon; resolves with its result. */
+function runCli(args: readonly string[], env: NodeJS.ProcessEnv, timeoutMs = 30_000): Promise<CliResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [resolveCliEntry(), ...args], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (c: Buffer) => {
+      stdout += c.toString();
+    });
+    child.stderr.on('data', (c: Buffer) => {
+      stderr += c.toString();
+    });
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error(`CLI command timed out after ${timeoutMs}ms: ${args.join(' ')}`));
+    }, timeoutMs);
+    child.once('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.once('close', (code) => {
+      clearTimeout(timer);
+      resolve({ code: code ?? -1, stdout, stderr });
+    });
+  });
+}
+
+/** Poll `agent list` until the daemon is accepting connections. */
+async function waitForDaemonReady(env: NodeJS.ProcessEnv, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
-  let lastErr: unknown;
+  let last: CliResult | undefined;
   while (Date.now() < deadline) {
-    try {
-      await connector.connect(socketPath);
-      return;
-    } catch (err: unknown) {
-      lastErr = err;
-      await sleep(250);
-    }
-  }
-  throw new Error(`daemon socket not ready after ${timeoutMs}ms: ${String(lastErr)}`);
-}
-
-/** Poll `agent.list` until the agent is running, or it errors / times out. */
-async function waitForRunning(connector: DaemonConnector, agentId: string, timeoutMs: number): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const agents = await connector.listAgents();
-    const agent = agents.find((a) => a.id === agentId);
-    if (agent?.runtimeStatus === 'running') {
+    last = await runCli(['agent', 'list'], env, 10_000).catch((err: unknown) => ({
+      code: -1,
+      stdout: '',
+      stderr: String(err),
+    }));
+    if (last.code === 0) {
       return;
     }
-    if (agent?.runtimeStatus === 'error') {
-      throw new Error(`agent entered error state: ${agent.error ?? 'unknown'}`);
-    }
-    if (agent?.runtimeStatus === 'awaiting_approval') {
-      throw new Error('agent awaiting approval — seeded tokens were not accepted');
-    }
-    await sleep(1_000);
+    await sleep(300);
   }
-  throw new Error(`agent did not reach running within ${timeoutMs}ms`);
+  throw new Error(`daemon not ready after ${timeoutMs}ms: ${last?.stderr ?? ''}`);
 }
 
-/** Stop the daemon, kill the process if needed, remove the sandbox, restore env. */
+/** Stop the daemon gracefully, kill it if needed, remove the sandbox, restore env. */
 async function teardown(
-  connector: DaemonConnector,
-  child: ChildProcess,
+  daemon: ChildProcess,
+  env: NodeJS.ProcessEnv,
   home: string,
   prevHome: string | undefined,
 ): Promise<void> {
-  // daemon.stop is a graceful shutdown RPC with no client-side timeout — bound it
-  // so an unresponsive daemon can't hang teardown; the SIGTERM/SIGKILL below is
-  // the backstop that actually guarantees the process dies.
-  try {
-    await Promise.race([connector.stop(), sleep(5_000)]);
-  } catch {
-    /* best-effort */
-  }
-  connector.disconnect();
+  // Graceful shutdown via the CLI, bounded so an unresponsive daemon can't hang
+  // teardown; the SIGTERM/SIGKILL below is the backstop that guarantees exit.
+  await runCli(['daemon', 'stop'], env, 5_000).catch(() => undefined);
 
-  // Read the exit getters via a helper so the linter doesn't (wrongly) narrow
-  // them to a stale value across the await — they can change when the child exits.
-  if (isProcessAlive(child)) {
-    const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
-    child.kill('SIGTERM');
+  if (isProcessAlive(daemon)) {
+    const exited = new Promise<void>((resolve) => daemon.once('exit', () => resolve()));
+    daemon.kill('SIGTERM');
     await Promise.race([exited, sleep(5_000)]);
-    if (isProcessAlive(child)) {
-      child.kill('SIGKILL');
+    if (isProcessAlive(daemon)) {
+      daemon.kill('SIGKILL');
     }
   }
 

@@ -23,14 +23,19 @@ runs:
   the bulk of platform scenarios. Skips the CLI/daemon/RPC plumbing and hand-rolls
   its own `EngineConfig`.
 - **`DaemonHarness` — full shipped stack (high fidelity).** Spawns the real
-  `newio` daemon (`node dist/cli.js daemon run`) and drives it over its RPC socket.
-  Covers the CLI entry, daemon process, `runDaemon`'s own `EngineConfig` (bridge
-  command via `resolveSelfExec`), the RPC transport, and on-disk config — the parts
-  the embedded harness skips. Isolated via `NEWIO_HOME` pointed at a temp dir.
-  Also the basis for the CLI integ tests. Requires the cli + puppet builds.
+  `newio` daemon (`node dist/cli.js daemon run`) and configures it the way a user
+  does — through the real CLI subcommands (`agent add` → `agent env set` →
+  `agent start`). Covers the CLI entry + commands, the daemon process,
+  `runDaemon`'s own `EngineConfig` (bridge command via `resolveSelfExec`), the RPC
+  transport, and on-disk config — the parts the embedded harness skips. Isolated
+  via `NEWIO_HOME` pointed at a temp dir. Requires the cli + puppet builds.
 
-Both seed the same way: a `custom` agent pointing at the puppet binary plus
-pre-obtained tokens, so the browser-approval flow is skipped.
+The embedded harness seeds config via `FileAgentConfigManager` + injected tokens.
+The daemon harness defines the agent purely through the CLI; the only non-CLI
+state is a one-line `.credentials.json` write (the CLI has no set-tokens command —
+tokens only come from the approval flow), which stands in for the connector's own
+approval-poll. Both get the agent's tokens from `OwnerBackend` (the human side,
+which legitimately registers + approves the agent).
 
 ## Running
 
