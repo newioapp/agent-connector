@@ -41,7 +41,7 @@ function isProcessAlive(child: ChildProcess): boolean {
 }
 
 /** Resolve this workspace's built `newio` CLI entry (`dist/cli.js`). */
-function resolveCliEntry(): string {
+export function newioCliEntry(): string {
   const require = createRequire(import.meta.url);
   // The package main resolves to dist/index.cjs; the bin sits beside it.
   return join(dirname(require.resolve('@newio/cli')), 'cli.js');
@@ -73,7 +73,7 @@ export class DaemonSandbox {
       ...(options.wsUrl ? { NEWIO_WS_URL: options.wsUrl } : {}),
     };
 
-    const daemon = spawn(process.execPath, [resolveCliEntry(), 'daemon', 'run'], {
+    const daemon = spawn(process.execPath, [newioCliEntry(), 'daemon', 'run'], {
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -104,7 +104,7 @@ export class DaemonSandbox {
   /** Run a `newio` CLI subcommand against this sandbox's daemon. */
   runCli(args: readonly string[], timeoutMs = 30_000): Promise<CliResult> {
     return new Promise((resolve, reject) => {
-      const child = spawn(process.execPath, [resolveCliEntry(), ...args], {
+      const child = spawn(process.execPath, [newioCliEntry(), ...args], {
         env: this.env,
         stdio: ['ignore', 'pipe', 'pipe'],
       });

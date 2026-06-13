@@ -19,7 +19,7 @@
  */
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DaemonSandbox } from './daemon-sandbox.js';
+import { DaemonSandbox, type CliResult } from './daemon-sandbox.js';
 import type { PuppetDriver } from '@newio/acp-puppet';
 import type { AgentCredentials } from './backend.js';
 
@@ -85,6 +85,11 @@ export class DaemonHarness {
         `DaemonHarness failed to start: ${String(err)}${detail ? `\n--- daemon log ---\n${detail}` : ''}`,
       );
     }
+  }
+
+  /** Run a `newio` CLI command against this harness's running daemon (for lifecycle tests). */
+  runCli(args: readonly string[], timeoutMs?: number): Promise<CliResult> {
+    return this.sandbox.runCli(args, timeoutMs);
   }
 
   async stop(): Promise<void> {
