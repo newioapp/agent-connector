@@ -7,6 +7,6 @@ import { defineConfig, configDefaults } from 'vitest/config';
 // which builds those prerequisites first.
 export default defineConfig({
   test: {
-    exclude: [...configDefaults.exclude, '**/*.e2e.test.ts'],
+    exclude: [...configDefaults.exclude, '**/*.e2e.test.ts', '**/*.cli.test.ts'],
   },
 });
