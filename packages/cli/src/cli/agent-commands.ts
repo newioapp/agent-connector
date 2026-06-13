@@ -214,7 +214,12 @@ export interface AddOptions {
   readonly type: string;
   readonly username: string;
   readonly cwd?: string;
+  /** Legacy whitespace-split invocation, superseded by `command` + `arg`. */
   readonly exec?: string;
+  /** Path-safe executable path (takes precedence over `exec`). */
+  readonly command?: string;
+  /** Args for `command` (commander collects repeated --arg into an array). */
+  readonly arg?: readonly string[];
   readonly sessionMode?: string;
   readonly envSync?: string;
 }
@@ -240,16 +245,26 @@ export async function agentAdd(stage: Stage, opts: AddOptions): Promise<void> {
   // Capture from the CLI's own environment up front (client-side); the daemon's
   // service environment is sparse and must not be the source.
   const type = asAgentType(opts.type);
-  if (type === 'custom' && !opts.exec) {
-    throw new Error('A custom agent requires --exec "<command> [args…]" (the ACP executable to spawn).');
+  const hasCommand = typeof opts.command === 'string' && opts.command.length > 0;
+  const hasExec = typeof opts.exec === 'string' && opts.exec.length > 0;
+  if (type === 'custom' && !hasCommand && !hasExec) {
+    throw new Error(
+      'A custom agent requires --command <path> [--arg <value>…] (or the legacy --exec "<command> [args…]").',
+    );
   }
+  // Prefer the path-safe command + args; fall back to the legacy --exec string.
+  const launch: Pick<AcpConfig, 'command' | 'args' | 'executablePath'> = hasCommand
+    ? { command: opts.command, args: opts.arg ?? [] }
+    : hasExec
+      ? { executablePath: opts.exec }
+      : {};
   const mode = opts.envSync ? asEnvSyncMode(opts.envSync) : DEFAULT_ENV_SYNC_MODE;
   const envVars = captureEnv(mode);
   const config = await withDaemon(stage, async (c) => {
     const input: AddAgentInput = {
       type,
       newioUsername: opts.username,
-      acp: { cwd: opts.cwd ?? process.cwd(), ...(opts.exec ? { executablePath: opts.exec } : {}) },
+      acp: { cwd: opts.cwd ?? process.cwd(), ...launch },
       envVars,
       ...(opts.sessionMode ? { sessionMode: asSessionMode(opts.sessionMode) } : {}),
     };

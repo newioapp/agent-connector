@@ -21,7 +21,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "test:coverage": "vitest run --passWithNoTests --coverage",
-    "test:e2e": "RUN_E2E=1 vitest run"
+    "test:e2e": "pnpm --filter \"@newio/e2e...\" run build && RUN_E2E=1 vitest run --config vitest.e2e.config.ts"
   },
   "dependencies": {
     "@newio/acp-puppet": "workspace:*",

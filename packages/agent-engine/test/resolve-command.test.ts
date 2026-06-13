@@ -92,4 +92,43 @@ describe('resolveCommand', () => {
       expect(resolveCommand('custom', config)).toEqual({ command: 'my-agent', args: ['acp'] });
     });
   });
+
+  describe('structured command + args (path-safe)', () => {
+    it('custom: uses command + args verbatim, preserving spaces in paths/args', () => {
+      const config: AcpConfig = {
+        cwd,
+        command: '/Users/Jane Doe/bin/node',
+        args: ['/Users/Jane Doe/puppet/bin.js', '--flag with space'],
+      };
+      expect(resolveCommand('custom', config)).toEqual({
+        command: '/Users/Jane Doe/bin/node',
+        args: ['/Users/Jane Doe/puppet/bin.js', '--flag with space'],
+      });
+    });
+
+    it('custom: command with no args yields an empty arg list', () => {
+      expect(resolveCommand('custom', { cwd, command: '/opt/bin/agent' })).toEqual({
+        command: '/opt/bin/agent',
+        args: [],
+      });
+    });
+
+    it('built-in: command overrides the binary, args follow the default ACP args', () => {
+      const config: AcpConfig = { cwd, command: '/opt/homebrew/bin/gemini', args: ['--yolo'] };
+      expect(resolveCommand('gemini', config)).toEqual({
+        command: '/opt/homebrew/bin/gemini',
+        args: ['--acp', '--yolo'],
+      });
+    });
+
+    it('command takes precedence over a legacy executablePath', () => {
+      const config: AcpConfig = { cwd, command: '/real/node', args: ['/real/bin.js'], executablePath: 'ignored me' };
+      expect(resolveCommand('custom', config)).toEqual({ command: '/real/node', args: ['/real/bin.js'] });
+    });
+
+    it('falls back to executablePath when command is an empty string', () => {
+      const config: AcpConfig = { cwd, command: '', executablePath: 'my-agent acp' };
+      expect(resolveCommand('custom', config)).toEqual({ command: 'my-agent', args: ['acp'] });
+    });
+  });
 });

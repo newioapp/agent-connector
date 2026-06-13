@@ -51,9 +51,9 @@ import { PuppetDriver } from '@newio/acp-puppet';
 const driver = await PuppetDriver.start();
 driver.onPrompt(({ text }) => (text.includes('PING') ? 'pong' : 'hello'));
 
-// Configure the connector's `custom` agent with:
-//   executablePath: driver.executablePath          // `<node> <dist/bin.js>`
-//   envVars:        { PUPPET_CONTROL_SOCKET: driver.socketPath }
+// Configure the connector's `custom` agent with the path-safe launch spec:
+//   acp:     { command: driver.command, args: [...driver.args] }  // node + dist/bin.js
+//   envVars: { PUPPET_CONTROL_SOCKET: driver.socketPath }
 
 // A handler may return a string (one message), a TurnAction[] (ordered
 // messages/thoughts), or a full TurnInstruction (stopReason, delays).

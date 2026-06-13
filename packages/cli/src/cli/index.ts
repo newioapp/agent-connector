@@ -115,7 +115,17 @@ agentCmd
   .option('--cwd <dir>', 'working directory for the agent process')
   .option(
     '--exec <command>',
-    'ACP executable to spawn, optionally with args (required for --type custom; for built-in types it overrides the binary and any extra args are appended to the default invocation), e.g. --exec "/opt/bin/codex-acp" or --exec "node wrapper.js"',
+    'ACP executable to spawn, optionally with args (legacy; whitespace-split — prefer --command/--arg for paths with spaces). For --type custom it is the full invocation; for built-in types it overrides the binary and extra args are appended, e.g. --exec "/opt/bin/codex-acp" or --exec "node wrapper.js"',
+  )
+  .option(
+    '--command <path>',
+    'ACP executable path — path-safe alternative to --exec (takes precedence). Combine with --arg.',
+  )
+  .option(
+    '--arg <value>',
+    'argument for --command; repeat for multiple args, e.g. --command node --arg /path/to/agent.js',
+    (value: string, previous: string[]) => [...previous, value],
+    [] as string[],
   )
   .addOption(
     new Option('--session-mode <mode>', agent.SESSION_MODE_DESCRIPTION).choices([...agent.SESSION_MODE_CHOICES]),

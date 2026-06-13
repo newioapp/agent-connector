@@ -15,14 +15,21 @@ export function resolveCommand(
   type: AgentType,
   config: AcpConfig,
 ): { readonly command: string; readonly args: readonly string[] } {
-  // The configured executable is split on whitespace for ALL types — the first
-  // token is the binary, the rest are extra args. This lets an override be a
-  // bare path ("/opt/bin/gemini") or a wrapped command ("node wrapper.js"). For
-  // built-in types the type's required ACP args come first and these extra args
-  // follow; for custom the split IS the full invocation.
-  const override = config.executablePath?.trim().split(/\s+/).filter(Boolean) ?? [];
-  const overrideCommand = override[0];
-  const overrideArgs = override.slice(1);
+  // Prefer the path-safe `command` + `args`. Fall back to the legacy
+  // `executablePath`, which is split on whitespace (first token = binary, rest =
+  // extra args) and so can't represent a path/arg containing spaces. For built-in
+  // types the type's required ACP args come first and the override args follow;
+  // for custom the override IS the full invocation.
+  let overrideCommand: string | undefined;
+  let overrideArgs: readonly string[];
+  if (config.command !== undefined && config.command.length > 0) {
+    overrideCommand = config.command;
+    overrideArgs = config.args ?? [];
+  } else {
+    const override = config.executablePath?.trim().split(/\s+/).filter(Boolean) ?? [];
+    overrideCommand = override[0];
+    overrideArgs = override.slice(1);
+  }
 
   if (type === 'kiro-cli') {
     const command = overrideCommand ?? 'kiro-cli';

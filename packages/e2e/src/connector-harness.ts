@@ -50,7 +50,8 @@ export class ConnectorHarness {
       newioUsername: options.agent.username,
       sessionMode: options.sessionMode ?? 'isolated',
       acp: {
-        executablePath: options.driver.executablePath,
+        command: options.driver.command,
+        args: [...options.driver.args],
         cwd: dataDir,
       },
       // Mirror what env-sync would capture in real use: the puppet needs the

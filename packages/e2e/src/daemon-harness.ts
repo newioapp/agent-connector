@@ -101,7 +101,8 @@ export class DaemonHarness {
     try {
       await waitForDaemonReady(env, 20_000);
 
-      // Define the agent through the CLI (no JS config code).
+      // Define the agent through the CLI (no JS config code). Use the path-safe
+      // --command/--arg form so a runtime/bin path with spaces still works.
       const added = await runCli(
         [
           'agent',
@@ -110,8 +111,9 @@ export class DaemonHarness {
           'custom',
           '--username',
           options.agent.username,
-          '--exec',
-          options.driver.executablePath,
+          '--command',
+          options.driver.command,
+          ...options.driver.args.flatMap((arg) => ['--arg', arg]),
         ],
         env,
       );

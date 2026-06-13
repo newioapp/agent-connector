@@ -83,7 +83,7 @@ export class PuppetDriver {
     private readonly server: Server,
     readonly socketPath: string,
     private readonly binPath: string,
-    private readonly command: string,
+    private readonly launchCommand: string,
     private readonly defaultReply: string,
   ) {}
 
@@ -106,9 +106,25 @@ export class PuppetDriver {
     });
   }
 
-  /** The `executablePath` to put in the connector's `custom` agent config (`<command> <binPath>`). */
+  /**
+   * Path-safe launch spec for the connector's `custom` agent config:
+   * `acp: { command: driver.command, args: [...driver.args] }`. Prefer this over
+   * {@link executablePath}, which can't represent a path containing spaces.
+   */
+  get command(): string {
+    return this.launchCommand;
+  }
+
+  get args(): readonly string[] {
+    return [this.binPath];
+  }
+
+  /**
+   * @deprecated Use {@link command} + {@link args}. Joins with a space, so it
+   * breaks if the runtime path or bin path contains spaces.
+   */
   get executablePath(): string {
-    return `${this.command} ${this.binPath}`;
+    return `${this.launchCommand} ${this.binPath}`;
   }
 
   /** Every prompt the driver has answered so far, in order. */

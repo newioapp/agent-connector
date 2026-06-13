@@ -52,6 +52,22 @@ function sessionMode(value: string | undefined): SessionMode | undefined {
   return match;
 }
 
+function stringArray(obj: Record<string, unknown>, key: string): string[] | undefined {
+  const value = obj[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value)) {
+    throw RpcError.invalidParams(`Expected ${key} to be an array.`);
+  }
+  return value.map((item, i) => {
+    if (typeof item !== 'string') {
+      throw RpcError.invalidParams(`Expected ${key}[${i}] to be a string.`);
+    }
+    return item;
+  });
+}
+
 function stringRecord(obj: Record<string, unknown>, key: string): Record<string, string> | undefined {
   const value = obj[key];
   if (value === undefined) {
@@ -80,6 +96,8 @@ function acpConfig(obj: Record<string, unknown>): AcpConfig | undefined {
   }
   const cwd = requireStr(acp, 'cwd');
   const executablePath = str(acp, 'executablePath');
+  const command = str(acp, 'command');
+  const args = stringArray(acp, 'args');
   const trust = acp['kiroCliTrustAllTools'];
   if (trust !== undefined && typeof trust !== 'boolean') {
     throw RpcError.invalidParams('Expected acp.kiroCliTrustAllTools to be a boolean.');
@@ -87,6 +105,8 @@ function acpConfig(obj: Record<string, unknown>): AcpConfig | undefined {
   return {
     cwd,
     ...(executablePath !== undefined ? { executablePath } : {}),
+    ...(command !== undefined ? { command } : {}),
+    ...(args !== undefined ? { args } : {}),
     ...(trust !== undefined ? { kiroCliTrustAllTools: trust } : {}),
   };
 }
