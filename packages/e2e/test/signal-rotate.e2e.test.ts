@@ -77,13 +77,18 @@ describe.runIf(run)('rotate_session signal (isolated mode)', () => {
     );
     const before = promptSessionId(driver, 'ROTATE_PING_1');
 
-    // 2. Owner forces a rotation of that conversation's session.
+    // 2. Owner forces a rotation of that conversation's session. `POST /signals`
+    // only confirms delivery, not that the connector has processed the signal —
+    // so wait for the rotation to manifest as a freshly opened session (the only
+    // pre-rotation `new` event is `before`) before sending the next message.
+    // Otherwise it could race ahead and land on the old session.
     await backend.sendSignal(owner.accessToken, agent.agentId, 'rotate_session', {
       sessionType: 'conversation',
       externalReferenceId: conversationId,
     });
+    const rotated = await driver.waitForSessionEvent((e) => e.kind === 'new' && e.sessionId !== before);
 
-    // 3. The next message is served by a DIFFERENT session (fresh context window).
+    // 3. The next message is served by that fresh session, not the old one.
     await backend.sendMessage(owner.accessToken, conversationId, 'ROTATE_PING_2 second');
     const reply2 = await backend.waitForMessage(
       owner.accessToken,
@@ -93,11 +98,8 @@ describe.runIf(run)('rotate_session signal (isolated mode)', () => {
     expect(reply2.text).toBe(REPLY_2);
 
     const after = promptSessionId(driver, 'ROTATE_PING_2');
-    expect(after, 'post-rotation message should run on a different session').not.toBe(before);
-
-    // 4. Rotation disables resume — the replacement session was opened fresh.
-    const opened = driver.sessionEvents.find((e) => e.sessionId === after);
-    expect(opened?.kind, 'rotated session must be new, not resumed').toBe('new');
+    expect(after, 'post-rotation message should run on the fresh rotated session').toBe(rotated.sessionId);
+    expect(after, 'rotated session must differ from the pre-rotation one').not.toBe(before);
   });
 
   /** The sessionId the puppet saw for the prompt containing `marker`. */

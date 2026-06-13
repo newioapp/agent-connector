@@ -69,18 +69,15 @@ describe.runIf(run)('session resume across connector restart (isolated mode)', (
   it('resumes the conversation session via session/load after a restart', async () => {
     const conversationId = await ownerDmId();
 
-    // 1. Establish the conversation session and persist its correlationId.
+    // 1. Establish the conversation session and persist its correlationId. Pin
+    // the session id from the prompt the puppet actually answered.
     await backend.sendMessage(owner.accessToken, conversationId, 'RESUME_PING_1 first');
     await backend.waitForMessage(
       owner.accessToken,
       conversationId,
       (m) => m.senderId === agent.agentId && m.text === REPLY_1,
     );
-
-    // The session that handled msg #1 was opened with session/new.
-    const created = await driver.waitForSessionEvent((e) => e.kind === 'new');
-    const newSessionIds = driver.sessionEvents.filter((e) => e.kind === 'new').map((e) => e.sessionId);
-    expect(newSessionIds).toContain(created.sessionId);
+    const before = promptSessionId('RESUME_PING_1');
 
     // 2. Restart the agent process — the in-memory session is gone, but the
     // on-disk mapping survives.
@@ -88,21 +85,34 @@ describe.runIf(run)('session resume across connector restart (isolated mode)', (
     const statuses = restarted.stdout.split('\n').map((line) => line.trim());
     expect(statuses, `restart did not reach running:\n${restarted.stdout}`).toContain('running');
 
-    // 3. Next event for the conversation resumes the prior session via session/load.
+    // 3. The next message must be served by the SAME session id — only possible
+    // via session/load, since a fresh session would get a new id. We assert on
+    // the session that handled THIS message (not a bare `load` event), because
+    // the restart's startup greeting may have already resumed the session before
+    // this point, so an early `load` event proves nothing about RESUME_PING_2.
     await backend.sendMessage(owner.accessToken, conversationId, 'RESUME_PING_2 second');
-
-    const loaded = await driver.waitForSessionEvent((e) => e.kind === 'load');
-    // The resumed session is the very one created before the restart.
-    expect(newSessionIds).toContain(loaded.sessionId);
-
-    // 4. And the round-trip still works through the resumed session.
     const reply2 = await backend.waitForMessage(
       owner.accessToken,
       conversationId,
       (m) => m.senderId === agent.agentId && m.text === REPLY_2,
     );
     expect(reply2.text).toBe(REPLY_2);
+
+    const after = promptSessionId('RESUME_PING_2');
+    expect(after, 'second message should run on the resumed (same) session').toBe(before);
+
+    // And that session was brought back via session/load after the restart — a
+    // fresh process can only hold this id by loading it.
+    const wasLoaded = driver.sessionEvents.some((e) => e.kind === 'load' && e.sessionId === before);
+    expect(wasLoaded, 'resumed session should have been loaded after the restart').toBe(true);
   });
+
+  /** The sessionId the puppet saw for the prompt containing `marker`. */
+  function promptSessionId(marker: string): string {
+    const prompt = driver.prompts.find((p) => p.text.includes(marker));
+    expect(prompt, `expected a recorded prompt containing "${marker}"`).toBeDefined();
+    return prompt!.sessionId;
+  }
 
   /** The owner↔agent DM, created by the agent's startup greeting. */
   async function ownerDmId(): Promise<string> {
