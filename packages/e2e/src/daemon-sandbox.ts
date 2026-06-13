@@ -3,10 +3,10 @@
  * in an isolated `NEWIO_HOME` temp dir, plus a `runCli()` helper that drives it
  * with real CLI subcommands.
  *
- * This is the shared substrate for both the platform e2e (`DaemonHarness`, which
- * adds a puppet agent) and the CLI integ tests (which drive `agent`/`env`/`daemon`
- * commands directly). Backend URLs are optional — the config/daemon/env command
- * surface works with no backend at all; only `agent start` needs one.
+ * This is the shared substrate for both the platform e2e ({@link startPuppetAgent},
+ * which adds puppet agents) and the CLI integ tests (which drive `agent`/`env`/
+ * `daemon` commands directly). Backend URLs are optional — the config/daemon/env
+ * command surface works with no backend at all; only `agent start` needs one.
  *
  * Requires the cli build (`dist/cli.js`).
  */

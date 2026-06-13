@@ -45,24 +45,62 @@ describe('CLI integ (hermetic — no backend)', () => {
     return id as string;
   }
 
-  it('add → list shows the agent → info reports not running → remove', async () => {
-    const username = uniqueName('cliadd');
-    const id = await addCustom(username);
+  it('add many → list → remove two → list → add one → list → remove all', async () => {
+    // Add three agents.
+    const a = { name: uniqueName('cliadd'), id: '' };
+    const b = { name: uniqueName('cliadd'), id: '' };
+    const c = { name: uniqueName('cliadd'), id: '' };
+    a.id = await addCustom(a.name);
+    b.id = await addCustom(b.name);
+    c.id = await addCustom(c.name);
 
-    const list = await box.cli(['agent', 'list']);
-    expect(list.stdout).toContain(username);
+    // List shows all three.
+    const list1 = await box.cli(['agent', 'list']);
+    expect(list1.stdout).toContain(a.name);
+    expect(list1.stdout).toContain(b.name);
+    expect(list1.stdout).toContain(c.name);
 
-    const info = await box.cli(['agent', 'info', id]);
+    // None are running yet.
+    const info = await box.cli(['agent', 'info', a.id]);
     expect(info.stdout).toMatch(/No runtime info/);
 
-    await box.cli(['agent', 'remove', id]);
-    const after = await box.cli(['agent', 'list']);
-    expect(after.stdout).not.toContain(username);
+    // Remove two (a and c), keep b.
+    await box.cli(['agent', 'remove', a.id]);
+    await box.cli(['agent', 'remove', c.id]);
+
+    const list2 = await box.cli(['agent', 'list']);
+    expect(list2.stdout).not.toContain(a.name);
+    expect(list2.stdout).not.toContain(c.name);
+    expect(list2.stdout).toContain(b.name);
+
+    // Add one more.
+    const d = { name: uniqueName('cliadd'), id: '' };
+    d.id = await addCustom(d.name);
+
+    const list3 = await box.cli(['agent', 'list']);
+    expect(list3.stdout).toContain(b.name);
+    expect(list3.stdout).toContain(d.name);
+    expect(list3.stdout).not.toContain(a.name);
+    expect(list3.stdout).not.toContain(c.name);
+
+    // Remove the rest.
+    await box.cli(['agent', 'remove', b.id]);
+    await box.cli(['agent', 'remove', d.id]);
+
+    const list4 = await box.cli(['agent', 'list']);
+    expect(list4.stdout).not.toContain(b.name);
+    expect(list4.stdout).not.toContain(d.name);
   });
 
   it('env set → list shows the vars → unset removes them', async () => {
     const username = uniqueName('clienv');
     const id = await addCustom(username);
+
+    // `agent add` syncs an allowlist of shell vars (HOME/PATH/USER/…), so the env
+    // isn't empty — but the keys we're about to set must not be present yet.
+    const before = await box.cli(['agent', 'env', 'list', id]);
+    expect(before.stdout).not.toContain('FOO=bar');
+    expect(before.stdout).not.toContain('BAZ=qux');
 
     await box.cli(['agent', 'env', 'set', id, 'FOO=bar', 'BAZ=qux']);
     const listed = await box.cli(['agent', 'env', 'list', id]);
@@ -81,11 +119,19 @@ describe('CLI integ (hermetic — no backend)', () => {
     const username = uniqueName('cliupd');
     const id = await addCustom(username);
 
+    const readAcp = (): Record<string, unknown> | undefined => {
+      const config: unknown = JSON.parse(readFileSync(join(box.dataDir, 'agents', id, 'config.json'), 'utf8'));
+      return (config as { acp?: Record<string, unknown> }).acp;
+    };
+
+    // With no --cwd on `add`, the agent's cwd defaults to the cwd of the process
+    // that ran the CLI — which, since runCli() spawns without a cwd override, is
+    // this test runner's own working directory.
+    expect(readAcp()).toEqual({ cwd: process.cwd(), command: '/bin/echo', args: ['hi'] });
+
     await box.cli(['agent', 'update', id, '--cwd', '/new/dir']);
 
-    const config: unknown = JSON.parse(readFileSync(join(box.dataDir, 'agents', id, 'config.json'), 'utf8'));
-    const acp = (config as { acp?: Record<string, unknown> }).acp;
-    expect(acp).toEqual({ cwd: '/new/dir', command: '/bin/echo', args: ['hi'] });
+    expect(readAcp()).toEqual({ cwd: '/new/dir', command: '/bin/echo', args: ['hi'] });
 
     await box.cli(['agent', 'remove', id]);
   });

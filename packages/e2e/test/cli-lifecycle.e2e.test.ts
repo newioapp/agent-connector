@@ -4,23 +4,21 @@
  * `create-account` register → owner-approves → poll handshake.
  *
  * The config/daemon/env command surface is covered hermetically in
- * agent-commands.cli.test.ts; these need the dev backend, so they live in the
- * RUN_E2E-gated e2e tier. Run with `pnpm --filter @newio/e2e test:e2e`.
+ * agent-commands.cli.test.ts; these need the dev backend, so they run only via
+ * the e2e config. Run with `pnpm --filter @newio/e2e test:e2e` — requires
+ * NEWIO_API_URL / NEWIO_WS_URL (see packages/e2e/.env.example).
  *
  * Note: `resolveBackendUrls()` is called inside `beforeAll`/`it` (never at module
- * or describe-body scope) — `describe.runIf(false)` still runs the describe
- * callback during collection, so resolving there would throw without a .env even
- * when the suite should skip. `beforeAll`/`it` bodies only run on execution.
+ * or describe-body scope), which run only on execution — so a missing .env surfaces
+ * as a failing test rather than a collection-time error for the whole file.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
 import { PuppetDriver } from '@newio/acp-puppet';
-import { DaemonHarness } from '../src/daemon-harness.js';
-import { newioCliEntry } from '../src/daemon-sandbox.js';
+import { startPuppetAgent } from '../src/puppet-agent.js';
+import { DaemonSandbox, newioCliEntry } from '../src/daemon-sandbox.js';
 import { OwnerBackend, type AgentCredentials } from '../src/backend.js';
 import { resolveBackendUrls } from '../src/config.js';
-
-const run = process.env.RUN_E2E === '1';
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -39,10 +37,11 @@ async function waitFor<T>(produce: () => T | undefined, timeoutMs: number): Prom
   throw new Error(`timed out after ${timeoutMs}ms`);
 }
 
-describe.runIf(run)('agent lifecycle via the CLI (stop / restart)', () => {
+describe('agent lifecycle via the CLI (stop / restart)', () => {
   let agent: AgentCredentials;
   let driver: PuppetDriver;
-  let harness: DaemonHarness;
+  let sandbox: DaemonSandbox;
+  let agentConfigId: string;
 
   beforeAll(async () => {
     const urls = resolveBackendUrls();
@@ -51,35 +50,36 @@ describe.runIf(run)('agent lifecycle via the CLI (stop / restart)', () => {
     agent = await backend.createApprovedAgent(owner);
     driver = await PuppetDriver.start();
     driver.onPrompt(() => 'ok');
-    harness = await DaemonHarness.start({ apiBaseUrl: urls.apiBaseUrl, wsUrl: urls.wsUrl, agent, driver });
+    sandbox = await DaemonSandbox.start({ apiBaseUrl: urls.apiBaseUrl, wsUrl: urls.wsUrl });
+    agentConfigId = await startPuppetAgent(sandbox, { agent, driver });
   });
 
   afterAll(async () => {
-    await harness?.stop();
+    await sandbox?.stop();
     await driver?.stop();
   });
 
   it('stop leaves the agent stopped; restart brings it back to running', async () => {
-    const id = harness.agentConfigId;
+    const id = agentConfigId;
 
-    const stopped = await harness.runCli(['agent', 'stop', id]);
+    const stopped = await sandbox.runCli(['agent', 'stop', id]);
     expect(stopped.code).toBe(0);
 
     // Target this agent's specific row (by username) — not a bare /stopped/ match
     // that any stopped agent could satisfy once the fixture grows.
-    const list = await harness.runCli(['agent', 'list']);
+    const list = await sandbox.runCli(['agent', 'list']);
     const row = list.stdout.split('\n').find((line) => line.includes(agent.username));
     expect(row, `agent @${agent.username} not found in:\n${list.stdout}`).toBeDefined();
     expect(row).toMatch(/stopped/i);
 
     // `agent restart` stops then streams status until terminal — expect running.
-    const restarted = await harness.runCli(['agent', 'restart', id], 90_000);
+    const restarted = await sandbox.runCli(['agent', 'restart', id], 90_000);
     const statuses = restarted.stdout.split('\n').map((line) => line.trim());
     expect(statuses).toContain('running');
   });
 });
 
-describe.runIf(run)('agent create-account (register → owner approves → poll)', () => {
+describe('agent create-account (register → owner approves → poll)', () => {
   it('completes the approval handshake and reports the account created', async () => {
     const urls = resolveBackendUrls();
     const backend = new OwnerBackend(urls.apiBaseUrl);

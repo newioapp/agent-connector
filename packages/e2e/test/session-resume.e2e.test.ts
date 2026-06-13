@@ -20,22 +20,24 @@
  *      reply still round-trips.
  *
  * The puppet reconnects to the same long-lived PuppetDriver socket after the
- * restart, so its `session/load` is observable. Gated behind RUN_E2E=1.
+ * restart, so its `session/load` is observable. Run with:
+ * `pnpm --filter @newio/e2e test:e2e` — requires NEWIO_API_URL / NEWIO_WS_URL
+ * (see packages/e2e/.env.example).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PuppetDriver } from '@newio/acp-puppet';
-import { DaemonHarness } from '../src/daemon-harness.js';
+import { DaemonSandbox } from '../src/daemon-sandbox.js';
+import { startPuppetAgent } from '../src/puppet-agent.js';
 import { OwnerBackend, type AgentCredentials, type OwnerTokens } from '../src/backend.js';
 import { resolveBackendUrls } from '../src/config.js';
 
-const run = process.env.RUN_E2E === '1';
-
-describe.runIf(run)('session resume across connector restart (isolated mode)', () => {
+describe('session resume across connector restart (isolated mode)', () => {
   let backend: OwnerBackend;
   let owner: OwnerTokens & { readonly username: string };
   let agent: AgentCredentials;
   let driver: PuppetDriver;
-  let harness: DaemonHarness;
+  let sandbox: DaemonSandbox;
+  let agentConfigId: string;
 
   const suffix = Date.now().toString(36);
   const REPLY_1 = `resume-reply-1-${suffix}`;
@@ -58,11 +60,12 @@ describe.runIf(run)('session resume across connector restart (isolated mode)', (
       return 'hello from puppet';
     });
 
-    harness = await DaemonHarness.start({ apiBaseUrl: urls.apiBaseUrl, wsUrl: urls.wsUrl, agent, driver });
+    sandbox = await DaemonSandbox.start({ apiBaseUrl: urls.apiBaseUrl, wsUrl: urls.wsUrl });
+    agentConfigId = await startPuppetAgent(sandbox, { agent, driver });
   });
 
   afterAll(async () => {
-    await harness?.stop();
+    await sandbox?.stop();
     await driver?.stop();
   });
 
@@ -81,7 +84,7 @@ describe.runIf(run)('session resume across connector restart (isolated mode)', (
 
     // 2. Restart the agent process — the in-memory session is gone, but the
     // on-disk mapping survives.
-    const restarted = await harness.runCli(['agent', 'restart', harness.agentConfigId], 90_000);
+    const restarted = await sandbox.runCli(['agent', 'restart', agentConfigId], 90_000);
     const statuses = restarted.stdout.split('\n').map((line) => line.trim());
     expect(statuses, `restart did not reach running:\n${restarted.stdout}`).toContain('running');
 
