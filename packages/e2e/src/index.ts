@@ -12,5 +12,7 @@ export { ConnectorHarness } from './connector-harness.js';
 export type { ConnectorHarnessOptions } from './connector-harness.js';
 export { DaemonHarness } from './daemon-harness.js';
 export type { DaemonHarnessOptions } from './daemon-harness.js';
+export { DaemonSandbox } from './daemon-sandbox.js';
+export type { DaemonSandboxOptions, CliResult } from './daemon-sandbox.js';
 export { resolveBackendUrls } from './config.js';
 export type { BackendUrls } from './config.js';
