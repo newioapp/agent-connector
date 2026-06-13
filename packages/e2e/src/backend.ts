@@ -32,6 +32,21 @@ export interface MessageSummary {
   readonly text: string;
 }
 
+export interface ActionOptionSummary {
+  readonly optionId: string;
+  readonly label: string;
+}
+
+/** An interactive ActionRequest (e.g. a permission prompt) carried on a message. */
+export interface ActionRequestSummary {
+  readonly messageId: string;
+  readonly senderId: string;
+  readonly requestId: string;
+  readonly type: string;
+  readonly title: string;
+  readonly options: readonly ActionOptionSummary[];
+}
+
 function str(obj: Record<string, unknown>, key: string): string {
   const value = obj[key];
   if (typeof value !== 'string') {
@@ -173,6 +188,29 @@ export class OwnerBackend {
     });
   }
 
+  /**
+   * Create a Work Session (temp_group) owned by `owner` containing `agentId`.
+   * Returns the new conversation's id. Agents in a temp_group default to
+   * `canSend=false`, so call {@link setAgentCanSend} to let the agent post.
+   */
+  async createWorkSession(owner: OwnerTokens, agentId: string, name = 'E2E Work Session'): Promise<string> {
+    const body = asRecord(
+      await this.request('/conversations', owner.accessToken, {
+        method: 'POST',
+        body: JSON.stringify({ type: 'temp_group', name, memberIds: [agentId] }),
+      }),
+    );
+    return str(body, 'conversationId');
+  }
+
+  /** Toggle an agent member's send permission in a group/work-session (owner only). */
+  async setAgentCanSend(owner: OwnerTokens, conversationId: string, agentId: string, canSend: boolean): Promise<void> {
+    await this.request(`/conversations/${conversationId}/members/${agentId}/can-send`, owner.accessToken, {
+      method: 'PUT',
+      body: JSON.stringify({ canSend }),
+    });
+  }
+
   async listMessages(token: string, conversationId: string, limit = 50): Promise<readonly MessageSummary[]> {
     const body = asRecord(await this.request(`/conversations/${conversationId}/messages?limit=${limit}`, token));
     const messages = Array.isArray(body.messages) ? body.messages : [];
@@ -184,6 +222,87 @@ export class OwnerBackend {
         senderId: str(obj, 'senderId'),
         text: typeof content.text === 'string' ? content.text : '',
       };
+    });
+  }
+
+  /** List the ActionRequests (messages carrying `content.action`) visible to `token`. */
+  async listActionRequests(
+    token: string,
+    conversationId: string,
+    limit = 50,
+  ): Promise<readonly ActionRequestSummary[]> {
+    const body = asRecord(await this.request(`/conversations/${conversationId}/messages?limit=${limit}`, token));
+    const messages = Array.isArray(body.messages) ? body.messages : [];
+    const requests: ActionRequestSummary[] = [];
+    for (const m of messages) {
+      const obj = asRecord(m);
+      const content = asRecord(obj.content ?? {});
+      if (typeof content.action !== 'object' || content.action === null) {
+        continue;
+      }
+      const action = asRecord(content.action);
+      const options = Array.isArray(action.options) ? action.options : [];
+      requests.push({
+        messageId: str(obj, 'messageId'),
+        senderId: str(obj, 'senderId'),
+        requestId: str(action, 'requestId'),
+        type: str(action, 'type'),
+        title: typeof action.title === 'string' ? action.title : '',
+        options: options.map((o) => {
+          const opt = asRecord(o);
+          return { optionId: str(opt, 'optionId'), label: typeof opt.label === 'string' ? opt.label : '' };
+        }),
+      });
+    }
+    return requests;
+  }
+
+  /** Poll until an ActionRequest matching `predicate` appears, or time out. */
+  async waitForActionRequest(
+    token: string,
+    conversationId: string,
+    predicate: (a: ActionRequestSummary) => boolean,
+    timeoutMs = 30_000,
+    intervalMs = 1_000,
+  ): Promise<ActionRequestSummary> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const match = (await this.listActionRequests(token, conversationId)).find(predicate);
+      if (match) {
+        return match;
+      }
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+    throw new Error('Timed out waiting for a matching action request');
+  }
+
+  /**
+   * Send a signal (`POST /signals`) from the owner to one of its agents. Used to
+   * drive owner-triggered session lifecycle (e.g. `rotate_session`, `update_memory`).
+   * The target agent must be online or the backend returns 409.
+   */
+  async sendSignal(
+    token: string,
+    targetUserId: string,
+    type: string,
+    payload: Readonly<Record<string, unknown>>,
+  ): Promise<void> {
+    await this.request('/signals', token, {
+      method: 'POST',
+      body: JSON.stringify({ targetUserId, requestId: unique('sig-'), intent: 'request', type, payload }),
+    });
+  }
+
+  /** Answer an ActionRequest by posting a response-only message (`content.response`). */
+  async sendActionResponse(
+    token: string,
+    conversationId: string,
+    requestId: string,
+    selectedOptionId: string,
+  ): Promise<void> {
+    await this.request(`/conversations/${conversationId}/messages`, token, {
+      method: 'POST',
+      body: JSON.stringify({ content: { response: { requestId, selectedOptionId } } }),
     });
   }
 

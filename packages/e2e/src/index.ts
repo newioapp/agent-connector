@@ -7,7 +7,14 @@
  * (human ↔ backend ↔ connector ↔ agent) without a real LLM agent.
  */
 export { OwnerBackend } from './backend.js';
-export type { OwnerTokens, AgentCredentials, ConversationSummary, MessageSummary } from './backend.js';
+export type {
+  OwnerTokens,
+  AgentCredentials,
+  ConversationSummary,
+  MessageSummary,
+  ActionRequestSummary,
+  ActionOptionSummary,
+} from './backend.js';
 export { ConnectorHarness } from './connector-harness.js';
 export type { ConnectorHarnessOptions } from './connector-harness.js';
 export { DaemonHarness } from './daemon-harness.js';

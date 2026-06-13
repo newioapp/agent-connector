@@ -33,6 +33,23 @@ export interface PuppetToolResult {
 }
 
 /**
+ * A session-lifecycle event the puppet reported: `new` for `session/new`, `load`
+ * for `session/load` (i.e. a resume). Lets tests assert resume-vs-fresh — e.g.
+ * after an idle teardown or a connector restart the next event should `load` the
+ * persisted session rather than open a `new` one.
+ */
+export interface PuppetSessionEvent {
+  readonly kind: 'new' | 'load';
+  readonly sessionId: string;
+}
+
+/** How the owner answered a `permission` action, reported back for assertions. */
+export interface PuppetPermissionResult {
+  readonly outcome: 'selected' | 'cancelled';
+  readonly optionId?: string;
+}
+
+/**
  * What a prompt handler may return:
  * - `string` → a single `message` action ending the turn,
  * - `TurnAction[]` → those actions in order,
@@ -71,11 +88,21 @@ function normalize(result: PromptHandlerResult, id: number): TurnInstruction {
 export class PuppetDriver {
   private readonly recorded: PuppetPrompt[] = [];
   private readonly recordedToolResults: PuppetToolResult[] = [];
+  private readonly recordedSessionEvents: PuppetSessionEvent[] = [];
+  private readonly recordedPermissionResults: PuppetPermissionResult[] = [];
   private readonly promptWaiters: { predicate: (p: PuppetPrompt) => boolean; resolve: (p: PuppetPrompt) => void }[] =
     [];
   private readonly toolWaiters: {
     predicate: (r: PuppetToolResult) => boolean;
     resolve: (r: PuppetToolResult) => void;
+  }[] = [];
+  private readonly sessionWaiters: {
+    predicate: (e: PuppetSessionEvent) => boolean;
+    resolve: (e: PuppetSessionEvent) => void;
+  }[] = [];
+  private readonly permissionWaiters: {
+    predicate: (r: PuppetPermissionResult) => boolean;
+    resolve: (r: PuppetPermissionResult) => void;
   }[] = [];
   private handler?: PromptHandler;
 
@@ -137,6 +164,16 @@ export class PuppetDriver {
     return this.recordedToolResults;
   }
 
+  /** Every session-lifecycle event (`new`/`load`) the puppet has reported, in order. */
+  get sessionEvents(): readonly PuppetSessionEvent[] {
+    return this.recordedSessionEvents;
+  }
+
+  /** Every `permission` action outcome the puppet has reported, in order. */
+  get permissionResults(): readonly PuppetPermissionResult[] {
+    return this.recordedPermissionResults;
+  }
+
   /** Register the handler that answers each prompt turn. Replaces any previous handler. */
   onPrompt(handler: PromptHandler): void {
     this.handler = handler;
@@ -191,6 +228,62 @@ export class PuppetDriver {
     });
   }
 
+  /**
+   * Resolve once a session event matching `predicate` arrives (checks
+   * already-recorded events first). Use to assert a resume, e.g.
+   * `waitForSessionEvent((e) => e.kind === 'load')`.
+   */
+  waitForSessionEvent(predicate: (e: PuppetSessionEvent) => boolean, timeoutMs = 30_000): Promise<PuppetSessionEvent> {
+    const existing = this.recordedSessionEvents.find(predicate);
+    if (existing) {
+      return Promise.resolve(existing);
+    }
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const idx = this.sessionWaiters.findIndex((w) => w.resolve === wrapped);
+        if (idx >= 0) {
+          this.sessionWaiters.splice(idx, 1);
+        }
+        reject(new Error(`Timed out waiting for a matching session event after ${timeoutMs}ms`));
+      }, timeoutMs);
+      const wrapped = (e: PuppetSessionEvent): void => {
+        clearTimeout(timer);
+        resolve(e);
+      };
+      this.sessionWaiters.push({ predicate, resolve: wrapped });
+    });
+  }
+
+  /**
+   * Resolve once a `permission` action outcome matching `predicate` arrives
+   * (checks already-recorded results first). The result is reported over the
+   * control socket after the owner answers, so await this rather than reading
+   * {@link permissionResults} immediately.
+   */
+  waitForPermissionResult(
+    predicate: (r: PuppetPermissionResult) => boolean,
+    timeoutMs = 30_000,
+  ): Promise<PuppetPermissionResult> {
+    const existing = this.recordedPermissionResults.find(predicate);
+    if (existing) {
+      return Promise.resolve(existing);
+    }
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const idx = this.permissionWaiters.findIndex((w) => w.resolve === wrapped);
+        if (idx >= 0) {
+          this.permissionWaiters.splice(idx, 1);
+        }
+        reject(new Error(`Timed out waiting for a matching permission result after ${timeoutMs}ms`));
+      }, timeoutMs);
+      const wrapped = (r: PuppetPermissionResult): void => {
+        clearTimeout(timer);
+        resolve(r);
+      };
+      this.permissionWaiters.push({ predicate, resolve: wrapped });
+    });
+  }
+
   async stop(): Promise<void> {
     await new Promise<void>((resolve) => {
       this.server.close(() => resolve());
@@ -231,8 +324,42 @@ export class PuppetDriver {
       }
       return;
     }
+    if (message.t === 'permission_result') {
+      if (message.outcome === 'selected' || message.outcome === 'cancelled') {
+        const result: PuppetPermissionResult = {
+          outcome: message.outcome,
+          optionId: typeof message.optionId === 'string' ? message.optionId : undefined,
+        };
+        this.recordedPermissionResults.push(result);
+        for (let i = this.permissionWaiters.length - 1; i >= 0; i--) {
+          const waiter = this.permissionWaiters[i];
+          if (waiter && waiter.predicate(result)) {
+            this.permissionWaiters.splice(i, 1);
+            waiter.resolve(result);
+          }
+        }
+      }
+      return;
+    }
+    if (message.t === 'session_new' || message.t === 'session_load') {
+      if (typeof message.sessionId === 'string') {
+        const event: PuppetSessionEvent = {
+          kind: message.t === 'session_new' ? 'new' : 'load',
+          sessionId: message.sessionId,
+        };
+        this.recordedSessionEvents.push(event);
+        for (let i = this.sessionWaiters.length - 1; i >= 0; i--) {
+          const waiter = this.sessionWaiters[i];
+          if (waiter && waiter.predicate(event)) {
+            this.sessionWaiters.splice(i, 1);
+            waiter.resolve(event);
+          }
+        }
+      }
+      return;
+    }
     if (message.t !== 'prompt') {
-      return; // other lifecycle events (hello/session_*/cancelled) are not acted on yet
+      return; // remaining lifecycle events (hello/cancelled) are not acted on yet
     }
     if (typeof message.id !== 'number' || typeof message.sessionId !== 'string' || typeof message.text !== 'string') {
       return;

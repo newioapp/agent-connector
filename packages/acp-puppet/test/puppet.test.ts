@@ -27,6 +27,11 @@ import type { McpConnection, McpConnector } from '../src/mcp-connector.js';
 class CollectingClient implements Client {
   messages = '';
   thoughts = '';
+  readonly permissionRequests: RequestPermissionRequest[] = [];
+  /** How this fake "owner/connector" answers a permission request. Default: cancelled. */
+  permissionResponder: (params: RequestPermissionRequest) => RequestPermissionResponse = () => ({
+    outcome: { outcome: 'cancelled' },
+  });
 
   sessionUpdate(params: SessionNotification): Promise<void> {
     const update = params.update;
@@ -38,8 +43,9 @@ class CollectingClient implements Client {
     return Promise.resolve();
   }
 
-  requestPermission(_params: RequestPermissionRequest): Promise<RequestPermissionResponse> {
-    return Promise.resolve({ outcome: { outcome: 'cancelled' } });
+  requestPermission(params: RequestPermissionRequest): Promise<RequestPermissionResponse> {
+    this.permissionRequests.push(params);
+    return Promise.resolve(this.permissionResponder(params));
   }
 }
 
@@ -70,6 +76,7 @@ function staticControl(turn: Omit<import('../src/protocol.js').TurnInstruction, 
     onSessionLoad: () => {},
     onCancel: () => {},
     reportToolResult: () => {},
+    reportPermissionResult: () => {},
     close: () => {},
     resolveTurn: () => Promise.resolve({ t: 'turn', id: 1, ...turn }),
   };
@@ -207,6 +214,66 @@ describe('PuppetAgent', () => {
     const result = await client.prompt({ sessionId, prompt: [{ type: 'text', text: 'go' }] });
     expect(result.stopReason).toBe('end_turn');
     // No throw; the puppet surfaces the missing-connection as a (best-effort) error result.
+  });
+
+  it('surfaces session new/load lifecycle events to the driver', async () => {
+    const driver = await PuppetDriver.start();
+    drivers.push(driver);
+    driver.onPrompt(() => 'ok');
+
+    const control = new SocketControl(driver.socketPath);
+    controls.push(control);
+    await control.connect();
+
+    const { client } = wire(control);
+
+    // session/new → a `new` event carrying the created session id.
+    const sessionId = await initAndCreateSession(client);
+    const created = await driver.waitForSessionEvent((e) => e.kind === 'new', 5_000);
+    expect(created.sessionId).toBe(sessionId);
+
+    // session/load (resume) → a `load` event for the same id.
+    await client.loadSession({ sessionId, cwd: process.cwd(), mcpServers: [] });
+    const loaded = await driver.waitForSessionEvent((e) => e.kind === 'load', 5_000);
+    expect(loaded.sessionId).toBe(sessionId);
+
+    expect(driver.sessionEvents.map((e) => e.kind)).toEqual(['new', 'load']);
+  });
+
+  it('issues a permission request and reports the owner-selected option to the driver', async () => {
+    const driver = await PuppetDriver.start();
+    drivers.push(driver);
+    driver.onPrompt(() => ({
+      actions: [
+        {
+          kind: 'permission',
+          title: 'Run the build?',
+          options: [
+            { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
+            { optionId: 'deny', name: 'Deny', kind: 'reject_once' },
+          ],
+        },
+      ],
+    }));
+
+    const control = new SocketControl(driver.socketPath);
+    controls.push(control);
+    await control.connect();
+
+    const { client, clientImpl } = wire(control);
+    clientImpl.permissionResponder = () => ({ outcome: { outcome: 'selected', optionId: 'allow' } });
+
+    const sessionId = await initAndCreateSession(client);
+    await client.prompt({ sessionId, prompt: [{ type: 'text', text: 'go' }] });
+
+    // The connector saw a permission request carrying our title + options.
+    expect(clientImpl.permissionRequests).toHaveLength(1);
+    expect(clientImpl.permissionRequests[0]?.toolCall.title).toBe('Run the build?');
+    expect(clientImpl.permissionRequests[0]?.options.map((o) => o.optionId)).toEqual(['allow', 'deny']);
+
+    // And the puppet reported the owner's choice back over the control channel.
+    const result = await driver.waitForPermissionResult(() => true, 5_000);
+    expect(result).toEqual({ outcome: 'selected', optionId: 'allow' });
   });
 
   it('closes the session MCP connection on session/close', async () => {
