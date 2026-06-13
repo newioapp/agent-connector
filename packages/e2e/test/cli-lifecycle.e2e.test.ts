@@ -6,18 +6,21 @@
  * The config/daemon/env command surface is covered hermetically in
  * agent-commands.cli.test.ts; these need the dev backend, so they live in the
  * RUN_E2E-gated e2e tier. Run with `pnpm --filter @newio/e2e test:e2e`.
+ *
+ * Note: `resolveBackendUrls()` is called inside `beforeAll`/`it` (never at module
+ * or describe-body scope) — `describe.runIf(false)` still runs the describe
+ * callback during collection, so resolving there would throw without a .env even
+ * when the suite should skip. `beforeAll`/`it` bodies only run on execution.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
 import { PuppetDriver } from '@newio/acp-puppet';
 import { DaemonHarness } from '../src/daemon-harness.js';
 import { newioCliEntry } from '../src/daemon-sandbox.js';
-import { OwnerBackend, type AgentCredentials, type OwnerTokens } from '../src/backend.js';
+import { OwnerBackend, type AgentCredentials } from '../src/backend.js';
 import { resolveBackendUrls } from '../src/config.js';
 
 const run = process.env.RUN_E2E === '1';
-const urls = resolveBackendUrls();
-const backend = new OwnerBackend(urls.apiBaseUrl);
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -37,13 +40,14 @@ async function waitFor<T>(produce: () => T | undefined, timeoutMs: number): Prom
 }
 
 describe.runIf(run)('agent lifecycle via the CLI (stop / restart)', () => {
-  let owner: OwnerTokens & { readonly username: string };
   let agent: AgentCredentials;
   let driver: PuppetDriver;
   let harness: DaemonHarness;
 
   beforeAll(async () => {
-    owner = await backend.createOwner();
+    const urls = resolveBackendUrls();
+    const backend = new OwnerBackend(urls.apiBaseUrl);
+    const owner = await backend.createOwner();
     agent = await backend.createApprovedAgent(owner);
     driver = await PuppetDriver.start();
     driver.onPrompt(() => 'ok');
@@ -61,8 +65,12 @@ describe.runIf(run)('agent lifecycle via the CLI (stop / restart)', () => {
     const stopped = await harness.runCli(['agent', 'stop', id]);
     expect(stopped.code).toBe(0);
 
+    // Target this agent's specific row (by username) — not a bare /stopped/ match
+    // that any stopped agent could satisfy once the fixture grows.
     const list = await harness.runCli(['agent', 'list']);
-    expect(list.stdout).toMatch(/stopped/i);
+    const row = list.stdout.split('\n').find((line) => line.includes(agent.username));
+    expect(row, `agent @${agent.username} not found in:\n${list.stdout}`).toBeDefined();
+    expect(row).toMatch(/stopped/i);
 
     // `agent restart` stops then streams status until terminal — expect running.
     const restarted = await harness.runCli(['agent', 'restart', id], 90_000);
@@ -73,6 +81,8 @@ describe.runIf(run)('agent lifecycle via the CLI (stop / restart)', () => {
 
 describe.runIf(run)('agent create-account (register → owner approves → poll)', () => {
   it('completes the approval handshake and reports the account created', async () => {
+    const urls = resolveBackendUrls();
+    const backend = new OwnerBackend(urls.apiBaseUrl);
     const owner = await backend.createOwner();
     const username = `cliacct_${Date.now().toString(36)}`;
 
