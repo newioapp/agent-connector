@@ -1,30 +1,28 @@
 /**
- * Cross-conversation messaging e2e (shared session mode).
+ * Cross-conversation messaging over the real daemon (shared session mode).
  *
- * In `shared` mode the agent runs a single session that serves every event, and
- * reaches OTHER conversations with the `send_dm` / `send_message` MCP tools (the
- * current conversation's reply is auto-delivered, so those tools are only for
- * elsewhere). This proves both route end to end through the real connector:
+ * The full-stack counterpart to `cross-conversation.e2e.test.ts`: same `send_dm` /
+ * `send_message` routing in `shared` mode, but the connector runs as the real
+ * `newio` daemon process configured through the CLI (`agent add --session-mode
+ * shared`) rather than the embedded runtime — proving the shared-mode tool routing
+ * survives the CLI/daemon/RPC plumbing the embedded harness skips.
  *
  *   1. `send_dm` — owner tells the puppet (in the owner DM) to DM a sibling agent;
  *      the message lands in a brand-new agent↔agent DM.
  *   2. `send_message` — owner tells the puppet to post into a Work Session it
  *      belongs to; the message lands in that group, visible to the owner.
  *
- * The puppet keys off a marker in the owner's message and pulls the concrete
- * target (sibling username / work-session id) from the enclosing test scope, so
- * there's no brittle parsing of the wrapped prompt text.
- *
  * Run with: `pnpm --filter @newio/e2e test:e2e` — requires NEWIO_API_URL /
  * NEWIO_WS_URL (see packages/e2e/.env.example).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PuppetDriver } from '@newio/acp-puppet';
-import { ConnectorHarness } from '../src/connector-harness.js';
+import { DaemonSandbox } from '../src/daemon-sandbox.js';
+import { startPuppetAgent } from '../src/puppet-agent.js';
 import { OwnerBackend, type AgentCredentials, type OwnerTokens } from '../src/backend.js';
 import { resolveBackendUrls } from '../src/config.js';
 
-describe('cross-conversation messaging (shared mode)', () => {
+describe('daemon cross-conversation messaging (shared mode)', () => {
   const urls = resolveBackendUrls();
   const backend = new OwnerBackend(urls.apiBaseUrl);
 
@@ -32,11 +30,11 @@ describe('cross-conversation messaging (shared mode)', () => {
   let agent: AgentCredentials;
   let sibling: AgentCredentials;
   let driver: PuppetDriver;
-  let harness: ConnectorHarness;
+  let sandbox: DaemonSandbox;
 
   const suffix = Date.now().toString(36);
-  const DM_TEXT = `cross-dm-${suffix}`;
-  const GROUP_TEXT = `cross-group-${suffix}`;
+  const DM_TEXT = `daemon-cross-dm-${suffix}`;
+  const GROUP_TEXT = `daemon-cross-group-${suffix}`;
 
   // Filled in before the relevant action so the puppet handler can close over them.
   let siblingUsername = '';
@@ -44,10 +42,10 @@ describe('cross-conversation messaging (shared mode)', () => {
 
   beforeAll(async () => {
     owner = await backend.createOwner();
-    agent = await backend.createApprovedAgent(owner, 'E2E Sender');
+    agent = await backend.createApprovedAgent(owner, 'E2E Daemon Sender');
     // A second agent under the same owner — auto-friended sibling, reachable by
     // the default `owner_and_owner_agents` DM allowlist.
-    sibling = await backend.createApprovedAgent(owner, 'E2E Sibling');
+    sibling = await backend.createApprovedAgent(owner, 'E2E Daemon Sibling');
     siblingUsername = sibling.username;
 
     driver = await PuppetDriver.start();
@@ -67,18 +65,12 @@ describe('cross-conversation messaging (shared mode)', () => {
       return 'hello from puppet';
     });
 
-    harness = await ConnectorHarness.start({
-      apiBaseUrl: urls.apiBaseUrl,
-      wsUrl: urls.wsUrl,
-      stage: urls.stage,
-      agent,
-      driver,
-      sessionMode: 'shared',
-    });
+    sandbox = await DaemonSandbox.start({ apiBaseUrl: urls.apiBaseUrl, wsUrl: urls.wsUrl });
+    await startPuppetAgent(sandbox, { agent, driver, sessionMode: 'shared' });
   });
 
   afterAll(async () => {
-    await harness?.stop();
+    await sandbox?.stop();
     await driver?.stop();
   });
 
@@ -109,7 +101,7 @@ describe('cross-conversation messaging (shared mode)', () => {
   });
 
   it('delivers a send_message into a Work Session the agent belongs to', async () => {
-    workSessionId = await backend.createWorkSession(owner, agent.agentId, 'E2E Cross Group');
+    workSessionId = await backend.createWorkSession(owner, agent.agentId, 'E2E Daemon Cross Group');
     await backend.setAgentCanSend(owner, workSessionId, agent.agentId, true);
 
     const conversationId = await ownerDm();

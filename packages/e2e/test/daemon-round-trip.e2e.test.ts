@@ -5,25 +5,25 @@
  * daemon, `runDaemon` EngineConfig, and RPC transport that the embedded harness
  * skips.
  *
- * Gated behind RUN_E2E=1; needs the cli + puppet builds and the live dev backend.
- * Run with: `pnpm --filter @newio/e2e test:e2e`.
+ * Needs the cli + puppet builds and the live dev backend. Run with:
+ * `pnpm --filter @newio/e2e test:e2e` — requires NEWIO_API_URL / NEWIO_WS_URL
+ * (see packages/e2e/.env.example).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PuppetDriver } from '@newio/acp-puppet';
-import { DaemonHarness } from '../src/daemon-harness.js';
+import { DaemonSandbox } from '../src/daemon-sandbox.js';
+import { startPuppetAgent } from '../src/puppet-agent.js';
 import { OwnerBackend, type AgentCredentials, type OwnerTokens } from '../src/backend.js';
 import { resolveBackendUrls } from '../src/config.js';
 
-const run = process.env.RUN_E2E === '1';
-
-describe.runIf(run)('daemon round-trip (real CLI/daemon process)', () => {
+describe('daemon round-trip (real CLI/daemon process)', () => {
   const urls = resolveBackendUrls();
   const backend = new OwnerBackend(urls.apiBaseUrl);
 
   let owner: OwnerTokens & { readonly username: string };
   let agent: AgentCredentials;
   let driver: PuppetDriver;
-  let harness: DaemonHarness;
+  let sandbox: DaemonSandbox;
 
   const REPLY = `daemon-reply-${Date.now().toString(36)}`;
 
@@ -34,16 +34,12 @@ describe.runIf(run)('daemon round-trip (real CLI/daemon process)', () => {
     driver = await PuppetDriver.start();
     driver.onPrompt(({ text }) => (text.includes('PING_MARKER') ? REPLY : 'hello from puppet'));
 
-    harness = await DaemonHarness.start({
-      apiBaseUrl: urls.apiBaseUrl,
-      wsUrl: urls.wsUrl,
-      agent,
-      driver,
-    });
+    sandbox = await DaemonSandbox.start({ apiBaseUrl: urls.apiBaseUrl, wsUrl: urls.wsUrl });
+    await startPuppetAgent(sandbox, { agent, driver });
   });
 
   afterAll(async () => {
-    await harness?.stop();
+    await sandbox?.stop();
     await driver?.stop();
   });
 

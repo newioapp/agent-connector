@@ -17,8 +17,8 @@ export type {
 } from './backend.js';
 export { ConnectorHarness } from './connector-harness.js';
 export type { ConnectorHarnessOptions } from './connector-harness.js';
-export { DaemonHarness } from './daemon-harness.js';
-export type { DaemonHarnessOptions } from './daemon-harness.js';
+export { addPuppetAgent, startAddedAgent, startPuppetAgent } from './puppet-agent.js';
+export type { AddPuppetAgentOptions, StartAddedAgentOptions, PuppetAgentOptions } from './puppet-agent.js';
 export { DaemonSandbox } from './daemon-sandbox.js';
 export type { DaemonSandboxOptions, CliResult } from './daemon-sandbox.js';
 export { resolveBackendUrls } from './config.js';

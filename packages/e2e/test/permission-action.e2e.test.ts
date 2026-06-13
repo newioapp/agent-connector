@@ -12,7 +12,8 @@
  *
  * The puppet issues the request via a `permission` turn action and reports the
  * resolved outcome back over the control channel, which is what we assert on.
- * Gated behind RUN_E2E=1.
+ * Run with: `pnpm --filter @newio/e2e test:e2e` — requires NEWIO_API_URL /
+ * NEWIO_WS_URL (see packages/e2e/.env.example).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PuppetDriver } from '@newio/acp-puppet';
@@ -20,9 +21,7 @@ import { ConnectorHarness } from '../src/connector-harness.js';
 import { OwnerBackend, type AgentCredentials, type OwnerTokens } from '../src/backend.js';
 import { resolveBackendUrls } from '../src/config.js';
 
-const run = process.env.RUN_E2E === '1';
-
-describe.runIf(run)('permission / action-message flow', () => {
+describe('permission / action-message flow', () => {
   const urls = resolveBackendUrls();
   const backend = new OwnerBackend(urls.apiBaseUrl);
 

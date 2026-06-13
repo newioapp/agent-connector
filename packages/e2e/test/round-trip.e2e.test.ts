@@ -8,8 +8,9 @@
  *   4. The puppet (driven by the test) replies; the connector auto-delivers it.
  *   5. Assert the reply lands back in the conversation, from the agent.
  *
- * Gated behind RUN_E2E=1 because it talks to the live dev backend and spawns a
- * subprocess. Run with: `pnpm --filter @newio/e2e test:e2e`.
+ * Talks to the live dev backend and spawns a subprocess, so it runs only via the
+ * dedicated config. Run with: `pnpm --filter @newio/e2e test:e2e` — requires
+ * NEWIO_API_URL / NEWIO_WS_URL (see packages/e2e/.env.example).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PuppetDriver } from '@newio/acp-puppet';
@@ -17,9 +18,7 @@ import { ConnectorHarness } from '../src/connector-harness.js';
 import { OwnerBackend, type AgentCredentials, type OwnerTokens } from '../src/backend.js';
 import { resolveBackendUrls } from '../src/config.js';
 
-const run = process.env.RUN_E2E === '1';
-
-describe.runIf(run)('connector round-trip', () => {
+describe('connector round-trip', () => {
   const urls = resolveBackendUrls();
   const backend = new OwnerBackend(urls.apiBaseUrl);
 

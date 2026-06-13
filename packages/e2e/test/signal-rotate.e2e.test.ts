@@ -11,7 +11,8 @@
  *
  * Each prompt the puppet answers carries its `sessionId`, so comparing the
  * pre- and post-rotation prompt sessions is a direct check of the rotation.
- * Gated behind RUN_E2E=1.
+ * Run with: `pnpm --filter @newio/e2e test:e2e` — requires NEWIO_API_URL /
+ * NEWIO_WS_URL (see packages/e2e/.env.example).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PuppetDriver } from '@newio/acp-puppet';
@@ -19,9 +20,7 @@ import { ConnectorHarness } from '../src/connector-harness.js';
 import { OwnerBackend, type AgentCredentials, type OwnerTokens } from '../src/backend.js';
 import { resolveBackendUrls } from '../src/config.js';
 
-const run = process.env.RUN_E2E === '1';
-
-describe.runIf(run)('rotate_session signal (isolated mode)', () => {
+describe('rotate_session signal (isolated mode)', () => {
   const urls = resolveBackendUrls();
   const backend = new OwnerBackend(urls.apiBaseUrl);
 
