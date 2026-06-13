@@ -259,6 +259,10 @@ export function ConfigTab({
 
         {config.acp && (
           <>
+            {config.acp.command && <Field label="Command" value={config.acp.command} />}
+            {config.acp.args && config.acp.args.length > 0 && (
+              <Field label="Arguments" value={config.acp.args.join(' ')} />
+            )}
             {config.acp.executablePath && <Field label="Executable Path" value={config.acp.executablePath} />}
             {config.type === 'kiro-cli' && (
               <Field label="Trust All Tools" value={config.acp.kiroCliTrustAllTools !== false ? 'Yes' : 'No'} />

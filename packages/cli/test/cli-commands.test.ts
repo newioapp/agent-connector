@@ -64,8 +64,10 @@ describe('remediationHint', () => {
 });
 
 describe('agentAdd', () => {
-  it('rejects a custom agent with no --exec before touching the daemon', async () => {
-    await expect(agentAdd('prod', { type: 'custom', username: 'bob' })).rejects.toThrow('custom agent requires --exec');
+  it('rejects a custom agent with neither --command nor --exec before touching the daemon', async () => {
+    await expect(agentAdd('prod', { type: 'custom', username: 'bob' })).rejects.toThrow(
+      'A custom agent requires --command',
+    );
   });
 });
 

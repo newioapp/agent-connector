@@ -89,10 +89,23 @@ export interface DaemonPaths {
   readonly updateCachePath: string;
 }
 
+/**
+ * Base directory under which the per-stage data dirs live. Defaults to the user's
+ * home, but `NEWIO_HOME` overrides it — an internal-testing knob (like
+ * `NEWIO_STAGE`/`NEWIO_API_URL`) that fully sandboxes a stage's data dir, socket,
+ * and downloads. End users never set it; e2e tests use it to run a real daemon in
+ * an isolated temp dir without colliding with a developer's running daemon.
+ */
+function dataHome(): string {
+  const override = process.env['NEWIO_HOME'];
+  return override && override.length > 0 ? override : homedir();
+}
+
 /** Resolve the per-stage data directory and well-known file paths. */
 export function getDaemonPaths(stage: Stage): DaemonPaths {
+  const base = dataHome();
   const home = stage === 'prod' ? '.newio' : `.newio-${stage}`;
-  const dataDir = join(homedir(), home, 'connector');
+  const dataDir = join(base, home, 'connector');
   return {
     dataDir,
     socketPath: join(dataDir, 'daemon.sock'),
@@ -100,10 +113,10 @@ export function getDaemonPaths(stage: Stage): DaemonPaths {
     logPath: join(dataDir, 'daemon.log'),
     // Sibling of `home`, not nested under it: `.newio-downloads` (prod),
     // `.newio-dev-downloads`, `.newio-integ-downloads`.
-    downloadsDir: join(homedir(), `${home}-downloads`),
+    downloadsDir: join(base, `${home}-downloads`),
     // Beside the data dir (not under connector/, which the daemon owns) so a
     // `daemon uninstall` doesn't wipe the update cadence: `~/.newio/update-check.json`.
-    updateCachePath: join(homedir(), home, 'update-check.json'),
+    updateCachePath: join(base, home, 'update-check.json'),
   };
 }
 

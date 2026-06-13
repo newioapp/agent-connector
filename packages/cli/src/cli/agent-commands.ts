@@ -214,7 +214,12 @@ export interface AddOptions {
   readonly type: string;
   readonly username: string;
   readonly cwd?: string;
+  /** Legacy whitespace-split invocation, superseded by `command` + `arg`. */
   readonly exec?: string;
+  /** Path-safe executable path (takes precedence over `exec`). */
+  readonly command?: string;
+  /** Args for `command` (commander collects repeated --arg into an array). */
+  readonly arg?: readonly string[];
   readonly sessionMode?: string;
   readonly envSync?: string;
 }
@@ -226,7 +231,12 @@ export interface CreateAccountOptions {
 export interface UpdateOptions {
   readonly name?: string;
   readonly cwd?: string;
+  /** Legacy whitespace-split invocation, superseded by `command` + `arg`. */
   readonly exec?: string;
+  /** Path-safe executable path (replaces the prior launch config). */
+  readonly command?: string;
+  /** Args for `command` (commander collects repeated --arg into an array). */
+  readonly arg?: readonly string[];
   readonly username?: string;
   readonly sessionMode?: string;
 }
@@ -240,16 +250,26 @@ export async function agentAdd(stage: Stage, opts: AddOptions): Promise<void> {
   // Capture from the CLI's own environment up front (client-side); the daemon's
   // service environment is sparse and must not be the source.
   const type = asAgentType(opts.type);
-  if (type === 'custom' && !opts.exec) {
-    throw new Error('A custom agent requires --exec "<command> [args…]" (the ACP executable to spawn).');
+  const hasCommand = typeof opts.command === 'string' && opts.command.length > 0;
+  const hasExec = typeof opts.exec === 'string' && opts.exec.length > 0;
+  if (type === 'custom' && !hasCommand && !hasExec) {
+    throw new Error(
+      'A custom agent requires --command <path> [--arg <value>…] (or the legacy --exec "<command> [args…]").',
+    );
   }
+  // Prefer the path-safe command + args; fall back to the legacy --exec string.
+  const launch: Pick<AcpConfig, 'command' | 'args' | 'executablePath'> = hasCommand
+    ? { command: opts.command, args: opts.arg ?? [] }
+    : hasExec
+      ? { executablePath: opts.exec }
+      : {};
   const mode = opts.envSync ? asEnvSyncMode(opts.envSync) : DEFAULT_ENV_SYNC_MODE;
   const envVars = captureEnv(mode);
   const config = await withDaemon(stage, async (c) => {
     const input: AddAgentInput = {
       type,
       newioUsername: opts.username,
-      acp: { cwd: opts.cwd ?? process.cwd(), ...(opts.exec ? { executablePath: opts.exec } : {}) },
+      acp: { cwd: opts.cwd ?? process.cwd(), ...launch },
       envVars,
       ...(opts.sessionMode ? { sessionMode: asSessionMode(opts.sessionMode) } : {}),
     };
@@ -302,24 +322,56 @@ export async function agentInfo(stage: Stage, query: string): Promise<void> {
   console.log(info ? JSON.stringify(info, null, 2) : 'No runtime info (agent not running).');
 }
 
+/** Whether the update opts carry a new launch override (--command/--arg or --exec). */
+export function hasLaunchOverride(opts: Pick<UpdateOptions, 'command' | 'exec'>): boolean {
+  return (
+    (typeof opts.command === 'string' && opts.command.length > 0) ||
+    (typeof opts.exec === 'string' && opts.exec.length > 0)
+  );
+}
+
+/**
+ * Build the replacement `acp` for an update. The config manager replaces `acp`
+ * wholesale, so this preserves the launch fields the user didn't change: a new
+ * --command/--arg or --exec replaces the prior launch config; otherwise the
+ * existing command/args/executablePath are carried forward intact.
+ */
+export function mergeAcpUpdate(
+  opts: Pick<UpdateOptions, 'cwd' | 'exec' | 'command' | 'arg'>,
+  existing: AcpConfig | undefined,
+): AcpConfig {
+  const cwd = opts.cwd ?? existing?.cwd ?? process.cwd();
+  const newCommand = typeof opts.command === 'string' && opts.command.length > 0;
+  const newExec = typeof opts.exec === 'string' && opts.exec.length > 0;
+  let launch: Pick<AcpConfig, 'command' | 'args' | 'executablePath'>;
+  if (newCommand) {
+    launch = { command: opts.command, args: opts.arg ?? [] };
+  } else if (newExec) {
+    launch = { executablePath: opts.exec };
+  } else {
+    launch = {
+      ...(existing?.command !== undefined ? { command: existing.command } : {}),
+      ...(existing?.args !== undefined ? { args: existing.args } : {}),
+      ...(existing?.executablePath !== undefined ? { executablePath: existing.executablePath } : {}),
+    };
+  }
+  return {
+    cwd,
+    ...launch,
+    ...(existing?.kiroCliTrustAllTools !== undefined ? { kiroCliTrustAllTools: existing.kiroCliTrustAllTools } : {}),
+  };
+}
+
 export async function agentUpdate(stage: Stage, query: string, opts: UpdateOptions): Promise<void> {
   await withDaemon(stage, async (c) => {
     const agentId = await resolveAgentId(c, query);
     // `acp` is replaced wholesale by the config manager, so merge with the
-    // existing config to avoid wiping the field the user didn't pass.
+    // existing config to avoid wiping the fields the user didn't pass.
     let acp: AcpConfig | undefined;
-    if (opts.cwd !== undefined || opts.exec !== undefined) {
+    if (opts.cwd !== undefined || hasLaunchOverride(opts)) {
       const agents = await c.listAgents();
       const existing = agents.find((a) => a.id === agentId)?.config.acp;
-      const cwd = opts.cwd ?? existing?.cwd ?? process.cwd();
-      const executablePath = opts.exec ?? existing?.executablePath;
-      acp = {
-        cwd,
-        ...(executablePath !== undefined ? { executablePath } : {}),
-        ...(existing?.kiroCliTrustAllTools !== undefined
-          ? { kiroCliTrustAllTools: existing.kiroCliTrustAllTools }
-          : {}),
-      };
+      acp = mergeAcpUpdate(opts, existing);
     }
     const updates: UpdateAgentInput = {
       ...(opts.name !== undefined ? { displayName: opts.name } : {}),

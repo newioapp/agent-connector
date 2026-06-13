@@ -75,7 +75,21 @@ export type AgentRuntimeStatus =
   | 'error';
 
 export interface AcpConfig {
+  /**
+   * Legacy launch override, superseded by `command` + `args`. When `command` is
+   * set this is ignored; otherwise it is split on whitespace (first token =
+   * binary, rest = args), which can't represent a path or arg that itself
+   * contains spaces. Prefer `command` + `args` for new callers.
+   */
   readonly executablePath?: string;
+  /** Path-safe launch override: the binary to spawn. Takes precedence over `executablePath`. */
+  readonly command?: string;
+  /**
+   * Arguments for `command`. For built-in types these follow the type's required
+   * ACP args (e.g. kiro-cli's `acp --trust-all-tools`); for `custom` they are the
+   * full argument list. Each element is passed verbatim — spaces are safe.
+   */
+  readonly args?: readonly string[];
   readonly cwd: string;
   /** When true, passes --trust-all-tools to the ACP agent (kiro-cli only — skips permission prompts). Default: true. */
   readonly kiroCliTrustAllTools?: boolean;

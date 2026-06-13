@@ -77,6 +77,32 @@ describe('getDaemonPaths', () => {
   });
 });
 
+describe('getDaemonPaths with NEWIO_HOME', () => {
+  const original = process.env['NEWIO_HOME'];
+
+  afterEach(() => {
+    if (original === undefined) {
+      delete process.env['NEWIO_HOME'];
+    } else {
+      process.env['NEWIO_HOME'] = original;
+    }
+  });
+
+  it('roots all daemon paths under NEWIO_HOME when set (test/sandbox isolation)', () => {
+    process.env['NEWIO_HOME'] = '/tmp/sandbox';
+    const paths = getDaemonPaths('dev');
+    expect(paths.dataDir).toBe(join('/tmp/sandbox', '.newio-dev', 'connector'));
+    expect(paths.socketPath).toBe(join('/tmp/sandbox', '.newio-dev', 'connector', 'daemon.sock'));
+    expect(paths.downloadsDir).toBe(join('/tmp/sandbox', '.newio-dev-downloads'));
+    expect(paths.updateCachePath).toBe(join('/tmp/sandbox', '.newio-dev', 'update-check.json'));
+  });
+
+  it('falls back to the home directory when NEWIO_HOME is empty', () => {
+    process.env['NEWIO_HOME'] = '';
+    expect(getDaemonPaths('prod').dataDir).toBe(join(homedir(), '.newio', 'connector'));
+  });
+});
+
 describe('resolveConfig', () => {
   const original = { ...process.env };
 

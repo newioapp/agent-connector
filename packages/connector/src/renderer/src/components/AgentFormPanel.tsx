@@ -99,8 +99,10 @@ export function AgentFormPanel({
     }
   }, [editAgent]);
 
-  const canSubmit =
-    newioUsername.trim().length > 0 && cwd.trim().length > 0 && (type !== 'custom' || executablePath.trim().length > 0);
+  // A custom agent needs a launch override: the executablePath field, OR a
+  // structured command set via the CLI that this form preserves but doesn't edit.
+  const hasLaunch = executablePath.trim().length > 0 || editAgent?.acp?.command !== undefined;
+  const canSubmit = newioUsername.trim().length > 0 && cwd.trim().length > 0 && (type !== 'custom' || hasLaunch);
 
   async function handleSubmit(): Promise<void> {
     if (!canSubmit || submitting) {
@@ -108,10 +110,19 @@ export function AgentFormPanel({
     }
     setSubmitting(true);
     try {
+      const execTrimmed = executablePath.trim();
       const acpConfig = {
         cwd: cwd.trim(),
         ...(type === 'kiro-cli' ? { kiroCliTrustAllTools: trustAllTools } : {}),
-        ...(executablePath.trim() ? { executablePath: executablePath.trim() } : {}),
+        // An entered executable path is a legacy override. Otherwise preserve a
+        // structured command/args set via the CLI — this form doesn't edit them,
+        // and acp is replaced wholesale, so they'd be lost without this.
+        ...(execTrimmed
+          ? { executablePath: execTrimmed }
+          : {
+              ...(editAgent?.acp?.command !== undefined ? { command: editAgent.acp.command } : {}),
+              ...(editAgent?.acp?.args !== undefined ? { args: editAgent.acp.args } : {}),
+            }),
       };
 
       if (isEdit) {
