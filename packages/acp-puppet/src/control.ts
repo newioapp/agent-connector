@@ -22,6 +22,8 @@ export interface PuppetControl {
   resolveTurn(sessionId: string, text: string): Promise<TurnInstruction>;
   /** Report the outcome of a `tool` action back to the driver, keyed by the turn `id`. */
   reportToolResult(turnId: number, name: string, isError: boolean, text: string): void;
+  /** Report how the owner answered a `permission` action back to the driver, keyed by the turn `id`. */
+  reportPermissionResult(turnId: number, sessionId: string, outcome: 'selected' | 'cancelled', optionId?: string): void;
   onCancel(sessionId: string): void;
   close(): void;
 }
@@ -45,6 +47,7 @@ export class DefaultControl implements PuppetControl {
   onSessionLoad(): void {}
   onCancel(): void {}
   reportToolResult(): void {}
+  reportPermissionResult(): void {}
   close(): void {}
 
   resolveTurn(): Promise<TurnInstruction> {
@@ -140,6 +143,15 @@ export class SocketControl implements PuppetControl {
 
   reportToolResult(turnId: number, name: string, isError: boolean, text: string): void {
     this.send({ t: 'tool_result', id: turnId, name, isError, text });
+  }
+
+  reportPermissionResult(
+    turnId: number,
+    sessionId: string,
+    outcome: 'selected' | 'cancelled',
+    optionId?: string,
+  ): void {
+    this.send({ t: 'permission_result', id: turnId, sessionId, outcome, optionId });
   }
 
   resolveTurn(sessionId: string, text: string): Promise<TurnInstruction> {

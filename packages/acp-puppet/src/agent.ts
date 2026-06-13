@@ -20,6 +20,7 @@ import { randomUUID } from 'node:crypto';
 import { PROTOCOL_VERSION } from '@agentclientprotocol/sdk';
 import type * as acp from '@agentclientprotocol/sdk';
 import type { PuppetControl } from './control.js';
+import type { PermissionTurnOption } from './protocol.js';
 import { StdioMcpConnector, type McpConnection, type McpConnector, type McpToolResult } from './mcp-connector.js';
 
 interface PuppetSession {
@@ -115,6 +116,9 @@ export class PuppetAgent implements acp.Agent {
       if (action.kind === 'tool') {
         const result = await this.callTool(session, action.name, action.args ?? {});
         this.control.reportToolResult(turn.id, action.name, result.isError, result.text);
+      } else if (action.kind === 'permission') {
+        const { outcome, optionId } = await this.requestPermission(params.sessionId, action.title, action.options);
+        this.control.reportPermissionResult(turn.id, params.sessionId, outcome, optionId);
       } else {
         await this.conn.sessionUpdate({
           sessionId: params.sessionId,
@@ -151,6 +155,32 @@ export class PuppetAgent implements acp.Agent {
       void this.closeSessionMcp(sessionId);
     }
     this.sessions.clear();
+  }
+
+  /**
+   * Issue an ACP `session/request_permission` and normalize the response. The
+   * connector blocks this call until the owner answers the resulting ActionRequest.
+   * Never throws — a rejected/failed request is reported as `cancelled`.
+   */
+  private async requestPermission(
+    sessionId: string,
+    title: string,
+    options: readonly PermissionTurnOption[],
+  ): Promise<{ outcome: 'selected' | 'cancelled'; optionId?: string }> {
+    try {
+      const response = await this.conn.requestPermission({
+        sessionId,
+        toolCall: { toolCallId: `puppet-permission-${randomUUID()}`, title },
+        options: options.map((o) => ({ optionId: o.optionId, name: o.name, kind: o.kind })),
+      });
+      const outcome = response.outcome;
+      if (outcome.outcome === 'selected') {
+        return { outcome: 'selected', optionId: outcome.optionId };
+      }
+      return { outcome: 'cancelled' };
+    } catch {
+      return { outcome: 'cancelled' };
+    }
   }
 
   /** Call an MCP tool over the session's first connection; never throws. */

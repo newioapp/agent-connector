@@ -11,6 +11,16 @@
  * what makes puppet behavior deterministic and live-scriptable from a test.
  */
 
+/** The four ACP permission-option kinds. The connector maps each option to an action button. */
+export type PermissionTurnOptionKind = 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
+
+/** One option offered in a {@link TurnAction} `permission` request. */
+export interface PermissionTurnOption {
+  readonly optionId: string;
+  readonly name: string;
+  readonly kind: PermissionTurnOptionKind;
+}
+
 /** A single thing the puppet should do during one prompt turn, in order. */
 export type TurnAction =
   /** Emit an `agent_message_chunk` — the connector auto-delivers it to the current conversation. */
@@ -22,7 +32,14 @@ export type TurnAction =
    * connector-provided MCP server. The tool result is reported back to the driver
    * via a `tool_result` event. Use this to drive cross-conversation and memory flows.
    */
-  | { readonly kind: 'tool'; readonly name: string; readonly args?: Readonly<Record<string, unknown>> };
+  | { readonly kind: 'tool'; readonly name: string; readonly args?: Readonly<Record<string, unknown>> }
+  /**
+   * Issue an ACP `session/request_permission`. The connector turns it into an
+   * interactive ActionRequest message to the owner and blocks the turn until the
+   * owner answers; the chosen option is reported back via a `permission_result`
+   * event. Use this to drive the permission / action-message flow.
+   */
+  | { readonly kind: 'permission'; readonly title: string; readonly options: readonly PermissionTurnOption[] };
 
 /** How a prompt turn concludes. Mirrors the ACP `StopReason` values the puppet uses. */
 export type PuppetStopReason = 'end_turn' | 'cancelled' | 'refusal';
@@ -56,13 +73,25 @@ export interface ToolResultEvent {
   readonly text: string;
 }
 
+/** Puppet → Driver: how the owner answered a `permission` action, correlated to its turn by `id`. */
+export interface PermissionResultEvent {
+  readonly t: 'permission_result';
+  readonly id: number;
+  readonly sessionId: string;
+  /** `selected` when the owner picked an option; `cancelled` otherwise (timeout/decline). */
+  readonly outcome: 'selected' | 'cancelled';
+  /** The chosen `optionId`, present only when `outcome` is `selected`. */
+  readonly optionId?: string;
+}
+
 /** Puppet → Driver: lifecycle notifications (no response expected). */
 export type PuppetLifecycleEvent =
   | { readonly t: 'hello'; readonly pid: number }
   | { readonly t: 'session_new'; readonly sessionId: string }
   | { readonly t: 'session_load'; readonly sessionId: string }
   | { readonly t: 'cancelled'; readonly sessionId: string }
-  | ToolResultEvent;
+  | ToolResultEvent
+  | PermissionResultEvent;
 
 /** Any message the puppet sends to the driver. */
 export type PuppetMessage = PromptEvent | PuppetLifecycleEvent;

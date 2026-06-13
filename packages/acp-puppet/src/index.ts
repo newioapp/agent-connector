@@ -7,7 +7,15 @@
  * `custom` agent; it is not imported, only launched.
  */
 export { PuppetDriver } from './driver.js';
-export type { PuppetPrompt, PromptHandler, PromptHandlerResult, PuppetDriverOptions } from './driver.js';
+export type {
+  PuppetPrompt,
+  PuppetToolResult,
+  PuppetSessionEvent,
+  PuppetPermissionResult,
+  PromptHandler,
+  PromptHandlerResult,
+  PuppetDriverOptions,
+} from './driver.js';
 export { PuppetAgent } from './agent.js';
 export { DefaultControl, SocketControl } from './control.js';
 export type { PuppetControl } from './control.js';
@@ -15,7 +23,11 @@ export type {
   TurnAction,
   TurnInstruction,
   PuppetStopReason,
+  PermissionTurnOption,
+  PermissionTurnOptionKind,
   PromptEvent,
+  ToolResultEvent,
+  PermissionResultEvent,
   PuppetLifecycleEvent,
   PuppetMessage,
   DriverMessage,
