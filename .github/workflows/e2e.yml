@@ -17,7 +17,13 @@ name: E2E (reusable)
 # Callers invoke this with `secrets: inherit` so the DEV_* repo secrets reach it.
 
 on:
+  # Called as a gate by the CLI release workflows (secrets: inherit passes the
+  # DEV_* backend secrets through).
   workflow_call:
+  # Also runnable on demand from the Actions tab / `gh workflow run e2e.yml`, to
+  # smoke the live platform e2e against the dev backend without cutting a release.
+  # On a manual run the DEV_* repo secrets are available directly (no inherit).
+  workflow_dispatch:
 
 permissions:
   contents: read
