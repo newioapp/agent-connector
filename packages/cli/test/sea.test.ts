@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, symlinkSync, realpathSync, chmodSync } from 'fs';
 import { join, delimiter } from 'path';
 import { tmpdir } from 'os';
-import { resolveLauncherPath, cliCommandName } from '../src/sea';
+import { resolveLauncherPath, cliCommandName, cliSubcommand } from '../src/sea';
 
 describe('cliCommandName', () => {
   it('returns a recognizable newio* command basename', () => {
@@ -15,6 +15,20 @@ describe('cliCommandName', () => {
     expect(cliCommandName('node')).toBe('newio');
     expect(cliCommandName('/usr/bin/node')).toBe('newio');
     expect(cliCommandName('')).toBe('newio');
+  });
+});
+
+describe('cliSubcommand', () => {
+  // The test runner is not a SEA, so the subcommand is at argv[2] (the
+  // `node script.js <subcommand>` layout). The SEA path (argv[1]) is exercised
+  // implicitly by isSeaBinary() and shares the single offset expression.
+  it('reads the subcommand from the node-script argv layout', () => {
+    expect(cliSubcommand(['/usr/bin/node', '/path/cli.js', 'mcp-bridge', '/tmp/x.sock'])).toBe('mcp-bridge');
+    expect(cliSubcommand(['/usr/bin/node', '/path/cli.js', 'update'])).toBe('update');
+  });
+
+  it('returns undefined when no subcommand is present', () => {
+    expect(cliSubcommand(['/usr/bin/node', '/path/cli.js'])).toBeUndefined();
   });
 });
 

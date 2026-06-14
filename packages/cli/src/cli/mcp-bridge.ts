@@ -26,9 +26,18 @@ import { createInterface } from 'readline';
 export function runMcpBridge(socketPath: string): void {
   const socket = connect(socketPath);
   let connected = false;
+  // Lines the agent sends before the (async) socket connect resolves. An MCP
+  // client writes its `initialize` request the moment the bridge starts, which
+  // can race ahead of the 'connect' event — buffer those and flush on connect so
+  // the first request is never silently dropped (which would hang the agent).
+  const pending: string[] = [];
 
   socket.on('connect', () => {
     connected = true;
+    for (const line of pending) {
+      socket.write(line + '\n');
+    }
+    pending.length = 0;
     process.stderr.write(`[newio-mcp-bridge] Connected to ${socketPath}\n`);
   });
 
@@ -47,6 +56,8 @@ export function runMcpBridge(socketPath: string): void {
   rl.on('line', (line) => {
     if (connected) {
       socket.write(line + '\n');
+    } else {
+      pending.push(line);
     }
   });
   rl.on('close', () => {

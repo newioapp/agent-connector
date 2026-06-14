@@ -17,7 +17,7 @@
  * journald's built-in rotation on the systemd side.
  */
 import { execFileSync } from 'child_process';
-import { existsSync, mkdirSync, writeFileSync, unlinkSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync, unlinkSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { getLogger } from '@newio/agent-sdk';
@@ -129,6 +129,13 @@ export class LaunchdServiceManager implements ServiceManager {
     this.tryBootout();
     this.launchctl(['bootstrap', this.domainTarget, this.plist]);
     log.info(`Bootstrapped ${this.label}`);
+    // `daemon start` means start now; `--no-enable` only suppresses boot/login
+    // persistence (RunAtLoad=false). With RunAtLoad off, bootstrap loads the
+    // plist but doesn't launch it, so kickstart it explicitly — matching the
+    // systemd path, which always `start`s on install regardless of enable.
+    if (!opts.enable) {
+      this.start();
+    }
   }
 
   private tryBootout(): void {
@@ -174,16 +181,31 @@ export class LaunchdServiceManager implements ServiceManager {
     if (!this.isInstalled()) {
       return { state: 'not-installed' };
     }
+    // `enabled` means start-on-login/boot, which for launchd is RunAtLoad — read
+    // it from the plist we wrote rather than inferring it from "is loaded" (a
+    // `--no-enable` service is loaded and can be running, yet RunAtLoad=false).
+    const enabled = this.runAtLoad();
     try {
       const out = this.launchctl(['list', this.label]);
       const match = /"PID"\s*=\s*(\d+)/.exec(out);
       if (match) {
-        return { state: 'running', pid: Number(match[1]), enabled: true };
+        return { state: 'running', pid: Number(match[1]), enabled };
       }
-      return { state: 'stopped', enabled: true };
+      return { state: 'stopped', enabled };
     } catch {
-      // Plist on disk but not loaded into launchd.
-      return { state: 'stopped', enabled: false };
+      // Plist on disk but not currently loaded into launchd. It's still
+      // start-on-login: a LaunchAgent in ~/Library/LaunchAgents auto-loads at
+      // the next login, so `enabled` follows RunAtLoad, not the live load state.
+      return { state: 'stopped', enabled };
+    }
+  }
+
+  /** Whether the installed plist has RunAtLoad set (start-on-login/boot). */
+  private runAtLoad(): boolean {
+    try {
+      return /<key>RunAtLoad<\/key>\s*<true\s*\/>/.test(readFileSync(this.plist, 'utf8'));
+    } catch {
+      return false;
     }
   }
 

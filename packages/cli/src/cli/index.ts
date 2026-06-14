@@ -12,6 +12,7 @@
  */
 import { Command, Option } from 'commander';
 import { resolveConfig, getDaemonPaths } from '../paths.js';
+import { cliSubcommand } from '../sea.js';
 import { version } from '../../package.json';
 import * as daemon from './daemon-commands.js';
 import * as agent from './agent-commands.js';
@@ -29,7 +30,11 @@ const updateContext: UpdateContext = {
   cdnBaseUrl,
   currentVersion: version,
   cachePath: getDaemonPaths(stage).updateCachePath,
-  argv0: process.argv[1] ?? process.argv0,
+  // The launcher name, for stage-correct command hints (`newio` vs `newio-dev`).
+  // Must be argv0 (the binary/launcher), NOT argv[1] — under a SEA argv[1] is the
+  // first subcommand, which would drop the stage suffix. cliCommandName() maps a
+  // non-`newio*` value (e.g. `node` when run from source) back to `newio`.
+  argv0: process.argv0,
 };
 
 const program = new Command();
@@ -264,7 +269,8 @@ program
 // `mcp-bridge` is an internal stdio relay — its stdout is the MCP transport, so
 // it must never emit an update notice. Everything else gets the passive,
 // once-per-day reminder after the command completes (TTY-gated inside).
-const isInternalBridge = process.argv[2] === 'mcp-bridge';
+// SEA-aware subcommand lookup: the bridge is argv[1] in a SEA, argv[2] otherwise.
+const isInternalBridge = cliSubcommand() === 'mcp-bridge';
 
 program
   .parseAsync(process.argv)
