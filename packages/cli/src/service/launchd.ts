@@ -193,8 +193,10 @@ export class LaunchdServiceManager implements ServiceManager {
       }
       return { state: 'stopped', enabled };
     } catch {
-      // Plist on disk but not loaded into launchd.
-      return { state: 'stopped', enabled: false };
+      // Plist on disk but not currently loaded into launchd. It's still
+      // start-on-login: a LaunchAgent in ~/Library/LaunchAgents auto-loads at
+      // the next login, so `enabled` follows RunAtLoad, not the live load state.
+      return { state: 'stopped', enabled };
     }
   }
 
