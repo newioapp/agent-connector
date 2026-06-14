@@ -10,39 +10,13 @@ permissions:
   id-token: write
 
 jobs:
-  # Gate the release on the live platform e2e suite (human ↔ backend ↔ connector
-  # ↔ puppet agent), exercising the real daemon/CLI/RPC stack against the shared
-  # dev backend before anything is published. The agent is a deterministic
-  # @newio/acp-puppet (no LLM), so the only external inputs are the dev backend
-  # URLs — reused from the existing DEV_API_BASE_URL / DEV_WS_BASE_URL repo
-  # secrets (the same ones connector-release.yml bakes into the dev build),
-  # mapped onto the canonical NEWIO_API_URL/NEWIO_WS_URL env vars the suite reads.
-  # Auth is the dev backend's open /auth/test-login, so no token/LLM/AWS secret
-  # is needed here (AWS creds are only for the binary-upload workflow).
+  # Gate the release on the shared platform e2e suite (real daemon/CLI ↔ dev
+  # backend ↔ deterministic puppet agent) before publishing. Reusable workflow
+  # so the binaries release uses the exact same gate; `secrets: inherit` passes
+  # the DEV_* backend secrets through. See .github/workflows/e2e.yml.
   e2e:
-    name: E2E (live dev backend)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: pnpm/action-setup@v5
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      # `test:e2e` builds @newio/e2e and its workspace deps (agent-sdk →
-      # agent-engine → cli → puppet) first, then runs the *.e2e.test.ts specs
-      # serially (each spawns the real `newio` daemon against the dev backend).
-      - name: Run platform e2e
-        run: pnpm --filter @newio/e2e run test:e2e
-        env:
-          NEWIO_API_URL: ${{ secrets.DEV_API_BASE_URL }}
-          NEWIO_WS_URL: ${{ secrets.DEV_WS_BASE_URL }}
+    uses: ./.github/workflows/e2e.yml
+    secrets: inherit
 
   release:
     name: Build, Test, Publish

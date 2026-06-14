@@ -1,0 +1,49 @@
+name: E2E (reusable)
+
+# Reusable platform e2e gate shared by the CLI release workflows
+# (release-cli.yml → npm publish, release-cli-binaries.yml → SEA binaries).
+# Runs the @newio/e2e *.e2e.test.ts specs — human ↔ backend ↔ connector ↔
+# deterministic @newio/acp-puppet agent — exercising the real daemon/CLI/RPC
+# stack end-to-end before anything is published.
+#
+# The harness is pinned to the shared DEV backend regardless of the release
+# stage (config.ts returns stage 'dev'; DaemonSandbox spawns the daemon with
+# NEWIO_STAGE=dev), so this always uses the DEV_API_BASE_URL / DEV_WS_BASE_URL
+# secrets — the same ones connector-release.yml bakes into the dev build —
+# mapped onto the canonical NEWIO_API_URL / NEWIO_WS_URL env vars the suite
+# reads. The agent is deterministic (no LLM) and auth is the dev backend's open
+# /auth/test-login, so no token/LLM/AWS secret is needed here.
+#
+# Callers invoke this with `secrets: inherit` so the DEV_* repo secrets reach it.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: E2E (live dev backend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # `test:e2e` builds @newio/e2e and its workspace deps (agent-sdk →
+      # agent-engine → cli → puppet) first, then runs the *.e2e.test.ts specs
+      # serially (each spawns the real `newio` daemon against the dev backend).
+      - name: Run platform e2e
+        run: pnpm --filter @newio/e2e run test:e2e
+        env:
+          NEWIO_API_URL: ${{ secrets.DEV_API_BASE_URL }}
+          NEWIO_WS_URL: ${{ secrets.DEV_WS_BASE_URL }}
