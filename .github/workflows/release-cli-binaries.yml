@@ -53,8 +53,16 @@ jobs:
           echo "stage=$STAGE" >> "$GITHUB_OUTPUT"
           echo "binname=$BINNAME" >> "$GITHUB_OUTPUT"
 
+  # Gate every binary release (dev/integ/prod) on the platform e2e suite before
+  # the expensive SEA builds run. Same reusable gate as release-cli.yml; the
+  # harness is pinned to the dev backend, so it validates the CLI code E2E
+  # regardless of which stage is being shipped. See .github/workflows/e2e.yml.
+  e2e:
+    uses: ./.github/workflows/e2e.yml
+    secrets: inherit
+
   build-mac:
-    needs: prepare
+    needs: [prepare, e2e]
     # macOS 26 to match the connector release runners.
     runs-on: ${{ matrix.arch == 'x64' && 'macos-26-intel' || 'macos-26' }}
     timeout-minutes: 30
@@ -106,7 +114,7 @@ jobs:
           path: packages/cli/out/*
 
   build-linux:
-    needs: prepare
+    needs: [prepare, e2e]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
