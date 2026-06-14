@@ -14,11 +14,9 @@ jobs:
   # ↔ puppet agent), exercising the real daemon/CLI/RPC stack against the shared
   # dev backend before anything is published. The agent is a deterministic
   # @newio/acp-puppet (no LLM), so the only external inputs are the dev backend
-  # URLs below — set them as repo secrets (named for their purpose so they can't
-  # collide with any other use of a NEWIO_API_URL; the suite still reads the
-  # canonical NEWIO_API_URL/NEWIO_WS_URL env vars, mapped from the secrets below):
-  #   NEWIO_E2E_API_URL  e.g. https://api.<dev-host>.newio.app
-  #   NEWIO_E2E_WS_URL   e.g. wss://ws.<dev-host>.newio.app
+  # URLs — reused from the existing DEV_API_BASE_URL / DEV_WS_BASE_URL repo
+  # secrets (the same ones connector-release.yml bakes into the dev build),
+  # mapped onto the canonical NEWIO_API_URL/NEWIO_WS_URL env vars the suite reads.
   # Auth is the dev backend's open /auth/test-login, so no token/LLM/AWS secret
   # is needed here (AWS creds are only for the binary-upload workflow).
   e2e:
@@ -43,8 +41,8 @@ jobs:
       - name: Run platform e2e
         run: pnpm --filter @newio/e2e run test:e2e
         env:
-          NEWIO_API_URL: ${{ secrets.NEWIO_E2E_API_URL }}
-          NEWIO_WS_URL: ${{ secrets.NEWIO_E2E_WS_URL }}
+          NEWIO_API_URL: ${{ secrets.DEV_API_BASE_URL }}
+          NEWIO_WS_URL: ${{ secrets.DEV_WS_BASE_URL }}
 
   release:
     name: Build, Test, Publish
