@@ -47,6 +47,18 @@ export function cliCommandName(argv0: string = process.argv0): string {
   return base.startsWith('newio') ? base : 'newio';
 }
 
+/**
+ * The first subcommand token (e.g. `update`, `mcp-bridge`), or undefined if none.
+ *
+ * SEA-aware: a SEA's `process.argv` is `[execPath, ...userArgs]` with NO script
+ * slot, so the subcommand is at index 1; the `node script.js …` form has the
+ * script at index 1, pushing the subcommand to index 2. Mirrors the offset logic
+ * in {@link resolveSelfExec}, which is why the two must agree on SEA detection.
+ */
+export function cliSubcommand(argv: readonly string[] = process.argv): string | undefined {
+  return argv[isSeaBinary() ? 1 : 2];
+}
+
 export interface SelfExec {
   /** Executable to spawn to re-invoke this CLI. */
   readonly execPath: string;

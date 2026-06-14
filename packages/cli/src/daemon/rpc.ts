@@ -54,7 +54,10 @@ export class Params {
   private readonly params: unknown[];
 
   constructor(params: unknown[]) {
-    this.params = params;
+    // A well-formed request always carries a params array, but the server's
+    // request guard only checks id/method — tolerate a missing/non-array params
+    // so a malformed frame surfaces as a clean InvalidParams, not a raw TypeError.
+    this.params = Array.isArray(params) ? params : [];
   }
 
   /** Required string at position `i`. */
