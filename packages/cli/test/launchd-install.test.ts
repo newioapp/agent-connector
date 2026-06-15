@@ -50,7 +50,15 @@ function launchctlSubcommands(): string[] {
 describe('LaunchdServiceManager.install', () => {
   beforeEach(() => {
     h.execCalls.length = 0;
-    h.execImpl = () => '';
+    // Fresh install: nothing is loaded yet, so `bootout` and `list` fail like the
+    // real launchctl does for an unknown label. (A blanket success would make the
+    // post-bootout "wait until unloaded" poll loop until its timeout.)
+    h.execImpl = (_cmd, args) => {
+      if (args[0] === 'bootout' || args[0] === 'list') {
+        throw new Error('Could not find service');
+      }
+      return '';
+    };
     h.existsImpl = () => true;
     h.readFileImpl = () => '';
   });
@@ -66,6 +74,34 @@ describe('LaunchdServiceManager.install', () => {
     new LaunchdServiceManager('prod').install({ ...baseOpts, enable: true });
     expect(launchctlSubcommands()).toContain('bootstrap');
     expect(launchctlSubcommands()).toContain('kickstart');
+  });
+
+  it('waits for an already-loaded service to fully unload before bootstrapping', () => {
+    // Reinstall over a running daemon: bootout succeeds, but the label lingers in
+    // the domain while the daemon shuts down gracefully. `list` reports it loaded
+    // until it's gone. bootstrap must run only after the label has unloaded —
+    // otherwise launchd returns "5: Input/output error".
+    let listCalls = 0;
+    h.execImpl = (_cmd, args) => {
+      if (args[0] === 'list') {
+        listCalls += 1;
+        if (listCalls < 3) {
+          return ''; // still loaded (tearing down)
+        }
+        throw new Error('Could not find service'); // gone
+      }
+      return ''; // bootout / bootstrap / kickstart all succeed
+    };
+
+    new LaunchdServiceManager('prod').install({ ...baseOpts, enable: true });
+
+    const subs = launchctlSubcommands();
+    // bootstrap happened, and only after the label was polled until unloaded.
+    expect(subs).toContain('bootstrap');
+    expect(listCalls).toBeGreaterThanOrEqual(3);
+    expect(subs.indexOf('bootstrap')).toBeGreaterThan(subs.indexOf('bootout'));
+    const lastListIdx = subs.lastIndexOf('list');
+    expect(subs.indexOf('bootstrap')).toBeGreaterThan(lastListIdx);
   });
 });
 
