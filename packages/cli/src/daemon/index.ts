@@ -90,6 +90,14 @@ export async function runDaemon(): Promise<void> {
     }
   });
 
+  // Surface unhandled promise rejections instead of letting Node escalate them to
+  // an uncaughtException — that would exit the daemon and take every agent down for
+  // one stray rejection. With the session loops now catching per-event errors these
+  // should be rare and indicate a bug; log loudly but keep the daemon running.
+  process.on('unhandledRejection', (reason) => {
+    log.error('Unhandled promise rejection (daemon continues)', reason);
+  });
+
   // Startup runs through `server.listen()`. Wrap it so an async failure before
   // steady state (missing HOME, socket conflict, path/config errors, listen
   // errors) is logged through the daemon logger — and flushed to the rotating

@@ -69,10 +69,13 @@ export class SessionEventProcessorImpl implements SessionEventProcessor {
     messages: readonly IncomingMessage[],
   ): Promise<void> {
     const userText = this.promptManager.formatMessagePrompt(session.promptFormatterVersion, messages);
-    const controls = await this.app.getConversationControls(conversationId);
-    const ownerId = this.app.identity.ownerId;
-    const ownerVisible = ownerId && (await this.app.isConversationMember(conversationId, ownerId));
     try {
+      // These hit the backend (load conversation/members) and can throw on a
+      // transient failure; keep them inside the try so a blip is logged and the
+      // session loop survives rather than tearing down on an unguarded await.
+      const controls = await this.app.getConversationControls(conversationId);
+      const ownerId = this.app.identity.ownerId;
+      const ownerVisible = ownerId && (await this.app.isConversationMember(conversationId, ownerId));
       log.debug(
         `Prompting session ${session.correlationId} for conversation ${conversationId} with ${messages.length} message(s)`,
       );

@@ -261,6 +261,13 @@ export class ChatSharedSessionManager implements SessionManager {
           await this.injectConversationContextIfNeeded(event.conversationId, session);
         }
         await this.eventProcessor.processEvent(event, session);
+      } catch (err: unknown) {
+        // A single event must never tear down the loop — that would silently drop
+        // every subsequent message for this slot until idle cleanup recreates it.
+        log.error(
+          `${this.logTag} Event ${event.type} failed for ${slot.type}:${slot.externalReferenceId}; session loop continues`,
+          err,
+        );
       } finally {
         slot.inFlight = null;
       }

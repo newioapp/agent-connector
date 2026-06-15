@@ -194,6 +194,22 @@ describe('IsolatedSessionManager', () => {
     });
   });
 
+  describe('event-loop resilience', () => {
+    it('keeps the session loop alive after an event handler throws', async () => {
+      const processEvent = eventProcessor.processEvent as ReturnType<typeof vi.fn>;
+      // First event for the slot throws; the loop must catch it and keep consuming.
+      processEvent.mockRejectedValueOnce(new Error('boom'));
+
+      manager.routeInboundEvent({ type: 'message', msg: makeMessage('conv-a') });
+      await vi.waitFor(() => expect(processEvent).toHaveBeenCalledTimes(1));
+
+      // A subsequent message on the SAME slot must still be processed — proving the
+      // loop survived the throw rather than tearing down silently.
+      manager.routeInboundEvent({ type: 'message', msg: makeMessage('conv-a') });
+      await vi.waitFor(() => expect(processEvent).toHaveBeenCalledTimes(2));
+    });
+  });
+
   describe('resume', () => {
     it('requests resume (resume=true) for a normal launch', async () => {
       await manager.getDmSession('conv-r');
