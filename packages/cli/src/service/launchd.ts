@@ -26,6 +26,11 @@ import type { InstallOptions, LogsOptions, ServiceManager, ServiceStatus } from 
 
 const log = getLogger('launchd');
 
+/** Synchronously block the calling thread for `ms` (install runs synchronously). */
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
 /** Reverse-DNS label, namespaced per stage so stages can coexist. */
 export function launchdLabel(stage: Stage): string {
   return stage === 'prod' ? 'app.newio.connectord' : `app.newio.connectord.${stage}`;
@@ -111,7 +116,11 @@ export class LaunchdServiceManager implements ServiceManager {
 
   private launchctl(args: string[]): string {
     log.debug(`launchctl ${args.join(' ')}`);
-    return execFileSync('launchctl', args, { encoding: 'utf8' });
+    // Capture stderr instead of inheriting it, so expected failures — e.g. a
+    // `bootout` of an unloaded label on first install — don't leak
+    // "Boot-out failed: 3: No such process" to the user's console. The text is
+    // still attached to the thrown error for callers that surface it.
+    return execFileSync('launchctl', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   }
 
   isInstalled(): boolean {
@@ -129,20 +138,56 @@ export class LaunchdServiceManager implements ServiceManager {
     this.tryBootout();
     this.launchctl(['bootstrap', this.domainTarget, this.plist]);
     log.info(`Bootstrapped ${this.label}`);
-    // `daemon start` means start now; `--no-enable` only suppresses boot/login
-    // persistence (RunAtLoad=false). With RunAtLoad off, bootstrap loads the
-    // plist but doesn't launch it, so kickstart it explicitly — matching the
-    // systemd path, which always `start`s on install regardless of enable.
-    if (!opts.enable) {
-      this.start();
-    }
+    // `daemon start` means start now. Even with RunAtLoad=true, `bootstrap`
+    // returns before launchd has actually spun the job up, so the status() read
+    // that follows would race and report `stopped`. kickstart starts the job
+    // synchronously (and is a no-op if RunAtLoad already launched it), so always
+    // call it — matching the systemd path, which always `start`s on install.
+    this.start();
   }
 
   private tryBootout(): void {
     try {
       this.launchctl(['bootout', this.serviceTarget]);
     } catch {
-      /* not loaded — fine */
+      /* not loaded — nothing to boot out, and nothing to wait for */
+      return;
+    }
+    // `bootout` is asynchronous: launchctl returns as soon as it has signalled
+    // the job, before launchd finishes tearing it down. Our daemon shuts down
+    // gracefully on SIGTERM (stops every agent, closes the socket), so the label
+    // lingers in the domain for a moment. Re-`bootstrap`ing it during that
+    // window fails with "5: Input/output error", so wait until it's actually
+    // gone first.
+    this.waitUntilUnloaded();
+  }
+
+  /** True while the label is still registered in the launchd domain. */
+  private isLoaded(): boolean {
+    try {
+      this.launchctl(['list', this.label]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Block until a just-booted-out label leaves the domain. Bounded by the
+   * plist's ExitTimeOut (30s) plus headroom; if it somehow never unloads we fall
+   * through and let the following `bootstrap` surface the real error rather than
+   * hang forever.
+   */
+  private waitUntilUnloaded(): void {
+    const deadlineMs = 35_000;
+    const stepMs = 200;
+    const start = Date.now();
+    while (this.isLoaded()) {
+      if (Date.now() - start > deadlineMs) {
+        log.warn(`Service ${this.label} still loaded after ${deadlineMs}ms; proceeding anyway`);
+        return;
+      }
+      sleepSync(stepMs);
     }
   }
 
