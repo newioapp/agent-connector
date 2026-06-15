@@ -119,9 +119,11 @@ describe('AgentRuntimeManager', () => {
       expect(() => manager.start('nonexistent')).toThrow('Agent nonexistent not found');
     });
 
-    it('skips start if agent is already running', () => {
+    it('throws if agent is already running', () => {
       manager.start('agent-1');
-      manager.start('agent-1'); // second call should be no-op
+      // Second call must surface an error rather than silently no-op, so the
+      // CLI doesn't hang waiting for a status notification that never comes.
+      expect(() => manager.start('agent-1')).toThrow('already running');
 
       expect(MockAgentInstanceImpl).toHaveBeenCalledOnce();
     });

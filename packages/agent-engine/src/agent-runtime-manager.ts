@@ -60,7 +60,7 @@ export class AgentRuntimeManager {
   start(agentId: string): void {
     const existing = this.instances.get(agentId);
     if (existing && existing.status !== 'stopped' && existing.status !== 'error') {
-      return;
+      throw new Error(`Agent ${agentId} is already running (status: ${existing.status}).`);
     }
 
     const config = this.configManager.get(agentId);
