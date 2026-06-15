@@ -151,6 +151,10 @@ export class SharedSessionManager implements SessionManager {
           await this.injectConversationContextIfNeeded(event.conversationId, session);
         }
         await this.eventProcessor.processEvent(event, session);
+      } catch (err: unknown) {
+        // A single event must never tear down the loop — that would silently drop
+        // every subsequent message until idle cleanup recreates the session.
+        log.error(`${this.logTag} Event ${event.type} failed; session loop continues`, err);
       } finally {
         slot.inFlight = null;
       }
