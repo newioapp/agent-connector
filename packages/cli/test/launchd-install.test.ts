@@ -62,10 +62,10 @@ describe('LaunchdServiceManager.install', () => {
     expect(launchctlSubcommands()).toContain('kickstart');
   });
 
-  it('does not kickstart when enabled (RunAtLoad launches it on bootstrap)', () => {
+  it('also kickstarts when enabled (bootstrap+RunAtLoad is async; kickstart starts it synchronously so status is accurate)', () => {
     new LaunchdServiceManager('prod').install({ ...baseOpts, enable: true });
     expect(launchctlSubcommands()).toContain('bootstrap');
-    expect(launchctlSubcommands()).not.toContain('kickstart');
+    expect(launchctlSubcommands()).toContain('kickstart');
   });
 });
 

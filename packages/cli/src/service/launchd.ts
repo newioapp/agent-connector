@@ -129,13 +129,12 @@ export class LaunchdServiceManager implements ServiceManager {
     this.tryBootout();
     this.launchctl(['bootstrap', this.domainTarget, this.plist]);
     log.info(`Bootstrapped ${this.label}`);
-    // `daemon start` means start now; `--no-enable` only suppresses boot/login
-    // persistence (RunAtLoad=false). With RunAtLoad off, bootstrap loads the
-    // plist but doesn't launch it, so kickstart it explicitly — matching the
-    // systemd path, which always `start`s on install regardless of enable.
-    if (!opts.enable) {
-      this.start();
-    }
+    // `daemon start` means start now. Even with RunAtLoad=true, `bootstrap`
+    // returns before launchd has actually spun the job up, so the status() read
+    // that follows would race and report `stopped`. kickstart starts the job
+    // synchronously (and is a no-op if RunAtLoad already launched it), so always
+    // call it — matching the systemd path, which always `start`s on install.
+    this.start();
   }
 
   private tryBootout(): void {
