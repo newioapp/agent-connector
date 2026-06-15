@@ -105,7 +105,7 @@ describe('multi-agent fleet via the CLI (add many / start several / list / info 
     expect(stopped.stdout).toMatch(/No runtime info/);
   });
 
-  it('refuses to start a second config for a username already running', async () => {
+  it('refuses to start an already-running agent — same id, or a sibling sharing its username', async () => {
     // Account 0 has one running config plus two stopped configs sharing its username.
     const running = configs.find((c) => c.accountIndex === 0 && c.started)!;
     const sibling = configs.find((c) => c.accountIndex === 0 && !c.started)!;
@@ -114,13 +114,20 @@ describe('multi-agent fleet via the CLI (add many / start several / list / info 
     const before = await sandbox.cli(['agent', 'list']);
     expect(rowFor(before.stdout, running.id)).toMatch(/\brunning\b/i);
 
+    // Starting the *same* config that's already running must fail fast, not hang.
+    // The short timeout is the regression guard: the old code silently no-op'd in
+    // the runtime manager, so the CLI awaited a terminal status that never came and
+    // hung until SIGKILL. It must now error promptly instead.
+    const sameId = await sandbox.runCli(['agent', 'start', running.id], 30_000);
+    expect(sameId.code).not.toBe(0);
+    expect(sameId.stderr + sameId.stdout).toMatch(/already running/i);
+
     // Starting the same-username sibling is rejected by the runtime guard.
     const result = await sandbox.runCli(['agent', 'start', sibling.id], 90_000);
     expect(result.code).not.toBe(0);
     expect(result.stderr + result.stdout).toMatch(/already running with username/i);
 
-    // The guard rejected the newcomer rather than swapping: sibling still stopped,
-    // the original still running.
+    // Neither attempt disturbed the fleet: sibling still stopped, original still running.
     const after = await sandbox.cli(['agent', 'list']);
     expect(rowFor(after.stdout, sibling.id)).toMatch(/\bstopped\b/i);
     expect(rowFor(after.stdout, running.id)).toMatch(/\brunning\b/i);
