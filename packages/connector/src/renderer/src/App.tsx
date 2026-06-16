@@ -117,14 +117,17 @@ export function App(): React.JSX.Element {
       return <SettingsPanel />;
     }
 
+    // Key the form by mode/agent so switching between add and edit (or between two
+    // agents) remounts it with fresh state — otherwise React reuses the instance at
+    // this tree position and one form's command/args would leak into the next.
     if (panelMode.kind === 'add') {
-      return <AgentFormPanel onDone={handleFormClose} />;
+      return <AgentFormPanel key="add" onDone={handleFormClose} />;
     }
 
     if (panelMode.kind === 'edit') {
       const editAgent = agents.find((a) => a.id === panelMode.agentId);
       if (editAgent) {
-        return <AgentFormPanel editAgent={editAgent.config} onDone={handleFormClose} />;
+        return <AgentFormPanel key={editAgent.id} editAgent={editAgent.config} onDone={handleFormClose} />;
       }
     }
 

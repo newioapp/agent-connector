@@ -3,19 +3,13 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { Trash2, ExternalLink, RefreshCw, Pencil, Info, X, Check, Minus } from 'lucide-react';
-import type { AgentStatusInfo, AgentInfo, SessionMode } from '../../../shared/types';
+import type { AgentStatusInfo, AgentInfo } from '../../../shared/types';
 import { useAgentStore } from '../stores/agent-store';
 import { agentTypeLabel } from '../lib/agent-type-label';
 import { Button } from './ui';
 import { AgentTypeHint } from './AgentTypeHint';
 
 const APPROVAL_TIMEOUT_S = 600;
-
-const SESSION_MODE_LABELS: Record<SessionMode, string> = {
-  isolated: 'Isolated',
-  shared: 'Shared',
-  'chat-shared': 'Chat-shared',
-};
 
 function useCountdown(active: boolean): number {
   const [remaining, setRemaining] = useState(APPROVAL_TIMEOUT_S);
@@ -244,7 +238,6 @@ export function ConfigTab({
 
         {showInfo && agentInfo && <AgentInfoModal info={agentInfo} onClose={() => setShowInfo(false)} />}
 
-        <Field label="Session Mode" value={SESSION_MODE_LABELS[config.sessionMode ?? 'isolated']} />
         {config.acp?.cwd && <Field label="Working Directory" value={config.acp.cwd} />}
         {config.newio?.displayName && <Field label="Display Name" value={config.newio.displayName} />}
         <div className="mb-3">
@@ -263,7 +256,6 @@ export function ConfigTab({
             {config.acp.args && config.acp.args.length > 0 && (
               <Field label="Arguments" value={config.acp.args.join(' ')} />
             )}
-            {config.acp.executablePath && <Field label="Executable Path" value={config.acp.executablePath} />}
             {config.type === 'kiro-cli' && (
               <Field label="Trust All Tools" value={config.acp.kiroCliTrustAllTools !== false ? 'Yes' : 'No'} />
             )}

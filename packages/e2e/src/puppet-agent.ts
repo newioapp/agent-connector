@@ -21,7 +21,6 @@
  */
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { SessionMode } from '@newio/agent-engine';
 import type { DaemonSandbox } from './daemon-sandbox.js';
 import type { PuppetDriver } from '@newio/acp-puppet';
 import type { AgentCredentials } from './backend.js';
@@ -30,8 +29,6 @@ export interface AddPuppetAgentOptions {
   /** Newio username the config is attached to (must be an approved account to start). */
   readonly username: string;
   readonly driver: PuppetDriver;
-  /** Passed to `agent add --session-mode`; omit to take the CLI default (isolated). */
-  readonly sessionMode?: SessionMode;
 }
 
 /**
@@ -49,7 +46,6 @@ export async function addPuppetAgent(sandbox: DaemonSandbox, options: AddPuppetA
     'custom',
     '--username',
     options.username,
-    ...(options.sessionMode ? ['--session-mode', options.sessionMode] : []),
     '--command',
     options.driver.command,
     ...options.driver.args.flatMap((arg) => ['--arg', arg]),
@@ -107,8 +103,6 @@ export async function startAddedAgent(
 export interface PuppetAgentOptions {
   readonly agent: AgentCredentials;
   readonly driver: PuppetDriver;
-  /** Passed to `agent add --session-mode`; omit to take the CLI default (isolated). */
-  readonly sessionMode?: SessionMode;
   /** How long to wait for the agent to reach `running` (greeting round-trip completes). */
   readonly startTimeoutMs?: number;
 }
@@ -121,7 +115,6 @@ export async function startPuppetAgent(sandbox: DaemonSandbox, options: PuppetAg
   const agentId = await addPuppetAgent(sandbox, {
     username: options.agent.username,
     driver: options.driver,
-    sessionMode: options.sessionMode,
   });
   await startAddedAgent(sandbox, agentId, {
     agent: options.agent,

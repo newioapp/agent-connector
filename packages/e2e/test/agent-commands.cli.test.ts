@@ -156,6 +156,50 @@ describe('CLI integ (hermetic — no backend)', () => {
     expect(result.stderr + result.stdout).toMatch(/A custom agent requires --command/);
   });
 
+  it('rejects the removed --exec flag (superseded by --command/--arg)', async () => {
+    const result = await box.runCli([
+      'agent',
+      'add',
+      '--type',
+      'custom',
+      '--username',
+      uniqueName('cliexec'),
+      '--exec',
+      '/bin/echo hi',
+    ]);
+    expect(result.code).not.toBe(0);
+    expect(result.stderr + result.stdout).toMatch(/unknown option.*--exec/);
+  });
+
+  it('rejects the removed --session-mode flag', async () => {
+    const result = await box.runCli([
+      'agent',
+      'add',
+      '--type',
+      'custom',
+      '--username',
+      uniqueName('clismode'),
+      '--command',
+      '/bin/echo',
+      '--session-mode',
+      'shared',
+    ]);
+    expect(result.code).not.toBe(0);
+    expect(result.stderr + result.stdout).toMatch(/unknown option.*--session-mode/);
+  });
+
+  it('does not write a sessionMode into the config — the agent takes the chat-shared default', async () => {
+    const username = uniqueName('clidefmode');
+    const id = await addCustom(username);
+
+    const config: unknown = JSON.parse(readFileSync(join(box.dataDir, 'agents', id, 'config.json'), 'utf8'));
+    // The CLI no longer sets a session mode; the engine resolves an absent mode to
+    // chat-shared at runtime, so the persisted config carries no sessionMode field.
+    expect(config).not.toHaveProperty('sessionMode');
+
+    await box.cli(['agent', 'remove', id]);
+  });
+
   it('errors on info for an unknown agent', async () => {
     const result = await box.runCli(['agent', 'info', 'no-such-agent']);
     expect(result.code).not.toBe(0);

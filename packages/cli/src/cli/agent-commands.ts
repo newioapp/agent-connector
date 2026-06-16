@@ -14,7 +14,6 @@ import type {
   AgentErrorCode,
   AgentStatusInfo,
   AgentType,
-  SessionMode,
   UpdateAgentInput,
 } from '@newio/agent-engine';
 import { agentEnvFilePath, captureEnv, asEnvSyncMode, DEFAULT_ENV_SYNC_MODE } from '@newio/agent-engine';
@@ -24,32 +23,16 @@ import { resolveConfig, getDaemonPaths, stageSuffix, type Stage } from '../paths
 import { printApprovalUrl } from './qr.js';
 
 const AGENT_TYPES: readonly AgentType[] = ['claude-code', 'kiro-cli', 'codex', 'cursor', 'gemini', 'custom'];
-const SESSION_MODES: readonly SessionMode[] = ['isolated', 'shared', 'chat-shared'];
 
 /** Runtime statuses at which `agent start` is done waiting. */
 const TERMINAL_STATUSES = new Set(['running', 'error', 'stopped']);
 
 export const AGENT_TYPE_CHOICES: readonly string[] = AGENT_TYPES;
-export const SESSION_MODE_CHOICES: readonly string[] = SESSION_MODES;
-
-/** Help text for the `--session-mode` option, describing what each mode does. */
-export const SESSION_MODE_DESCRIPTION =
-  'session mode — isolated: one session per conversation; shared: a single session for all events; ' +
-  'chat-shared: DMs, group chats, and contact events share one session, while each work session and ' +
-  'cron job gets its own';
 
 function asAgentType(value: string): AgentType {
   const match = AGENT_TYPES.find((t) => t === value);
   if (!match) {
     throw new Error(`Invalid agent type "${value}". Expected one of: ${AGENT_TYPES.join(', ')}`);
-  }
-  return match;
-}
-
-function asSessionMode(value: string): SessionMode {
-  const match = SESSION_MODES.find((m) => m === value);
-  if (!match) {
-    throw new Error(`Invalid session mode "${value}". Expected one of: ${SESSION_MODES.join(', ')}`);
   }
   return match;
 }
@@ -214,13 +197,10 @@ export interface AddOptions {
   readonly type: string;
   readonly username: string;
   readonly cwd?: string;
-  /** Legacy whitespace-split invocation, superseded by `command` + `arg`. */
-  readonly exec?: string;
-  /** Path-safe executable path (takes precedence over `exec`). */
+  /** Executable to spawn (for custom agents, or to override a built-in type's binary). */
   readonly command?: string;
   /** Args for `command` (commander collects repeated --arg into an array). */
   readonly arg?: readonly string[];
-  readonly sessionMode?: string;
   readonly envSync?: string;
 }
 
@@ -231,14 +211,11 @@ export interface CreateAccountOptions {
 export interface UpdateOptions {
   readonly name?: string;
   readonly cwd?: string;
-  /** Legacy whitespace-split invocation, superseded by `command` + `arg`. */
-  readonly exec?: string;
-  /** Path-safe executable path (replaces the prior launch config). */
+  /** Executable to spawn (replaces the prior launch config). */
   readonly command?: string;
   /** Args for `command` (commander collects repeated --arg into an array). */
   readonly arg?: readonly string[];
   readonly username?: string;
-  readonly sessionMode?: string;
 }
 
 export async function agentList(stage: Stage): Promise<void> {
@@ -251,18 +228,10 @@ export async function agentAdd(stage: Stage, opts: AddOptions): Promise<void> {
   // service environment is sparse and must not be the source.
   const type = asAgentType(opts.type);
   const hasCommand = typeof opts.command === 'string' && opts.command.length > 0;
-  const hasExec = typeof opts.exec === 'string' && opts.exec.length > 0;
-  if (type === 'custom' && !hasCommand && !hasExec) {
-    throw new Error(
-      'A custom agent requires --command <path> [--arg <value>…] (or the legacy --exec "<command> [args…]").',
-    );
+  if (type === 'custom' && !hasCommand) {
+    throw new Error('A custom agent requires --command <path> [--arg <value>…].');
   }
-  // Prefer the path-safe command + args; fall back to the legacy --exec string.
-  const launch: Pick<AcpConfig, 'command' | 'args' | 'executablePath'> = hasCommand
-    ? { command: opts.command, args: opts.arg ?? [] }
-    : hasExec
-      ? { executablePath: opts.exec }
-      : {};
+  const launch: Pick<AcpConfig, 'command' | 'args'> = hasCommand ? { command: opts.command, args: opts.arg ?? [] } : {};
   const mode = opts.envSync ? asEnvSyncMode(opts.envSync) : DEFAULT_ENV_SYNC_MODE;
   const envVars = captureEnv(mode);
   const config = await withDaemon(stage, async (c) => {
@@ -271,7 +240,6 @@ export async function agentAdd(stage: Stage, opts: AddOptions): Promise<void> {
       newioUsername: opts.username,
       acp: { cwd: opts.cwd ?? process.cwd(), ...launch },
       envVars,
-      ...(opts.sessionMode ? { sessionMode: asSessionMode(opts.sessionMode) } : {}),
     };
     return c.addAgent(input);
   });
@@ -322,32 +290,26 @@ export async function agentInfo(stage: Stage, query: string): Promise<void> {
   console.log(info ? JSON.stringify(info, null, 2) : 'No runtime info (agent not running).');
 }
 
-/** Whether the update opts carry a new launch override (--command/--arg or --exec). */
-export function hasLaunchOverride(opts: Pick<UpdateOptions, 'command' | 'exec'>): boolean {
-  return (
-    (typeof opts.command === 'string' && opts.command.length > 0) ||
-    (typeof opts.exec === 'string' && opts.exec.length > 0)
-  );
+/** Whether the update opts carry a new launch override (--command/--arg). */
+export function hasLaunchOverride(opts: Pick<UpdateOptions, 'command'>): boolean {
+  return typeof opts.command === 'string' && opts.command.length > 0;
 }
 
 /**
  * Build the replacement `acp` for an update. The config manager replaces `acp`
  * wholesale, so this preserves the launch fields the user didn't change: a new
- * --command/--arg or --exec replaces the prior launch config; otherwise the
- * existing command/args/executablePath are carried forward intact.
+ * --command/--arg replaces the prior launch config; otherwise the existing
+ * command/args (or a legacy executablePath set elsewhere) are carried forward intact.
  */
 export function mergeAcpUpdate(
-  opts: Pick<UpdateOptions, 'cwd' | 'exec' | 'command' | 'arg'>,
+  opts: Pick<UpdateOptions, 'cwd' | 'command' | 'arg'>,
   existing: AcpConfig | undefined,
 ): AcpConfig {
   const cwd = opts.cwd ?? existing?.cwd ?? process.cwd();
   const newCommand = typeof opts.command === 'string' && opts.command.length > 0;
-  const newExec = typeof opts.exec === 'string' && opts.exec.length > 0;
   let launch: Pick<AcpConfig, 'command' | 'args' | 'executablePath'>;
   if (newCommand) {
     launch = { command: opts.command, args: opts.arg ?? [] };
-  } else if (newExec) {
-    launch = { executablePath: opts.exec };
   } else {
     launch = {
       ...(existing?.command !== undefined ? { command: existing.command } : {}),
@@ -376,7 +338,6 @@ export async function agentUpdate(stage: Stage, query: string, opts: UpdateOptio
     const updates: UpdateAgentInput = {
       ...(opts.name !== undefined ? { displayName: opts.name } : {}),
       ...(opts.username !== undefined ? { newioUsername: opts.username } : {}),
-      ...(opts.sessionMode !== undefined ? { sessionMode: asSessionMode(opts.sessionMode) } : {}),
       ...(acp !== undefined ? { acp } : {}),
     };
     await c.updateAgent(agentId, updates);
