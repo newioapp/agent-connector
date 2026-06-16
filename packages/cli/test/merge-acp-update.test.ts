@@ -26,13 +26,6 @@ describe('mergeAcpUpdate', () => {
     });
   });
 
-  it('a new --exec replaces a prior structured command (no leftover command/args)', () => {
-    expect(mergeAcpUpdate({ exec: 'legacy-bin --x' }, structured)).toEqual({
-      cwd: '/old',
-      executablePath: 'legacy-bin --x',
-    });
-  });
-
   it('carries kiroCliTrustAllTools forward', () => {
     const existing: AcpConfig = { cwd: '/old', command: '/c', args: [], kiroCliTrustAllTools: false };
     expect(mergeAcpUpdate({ cwd: '/new' }, existing)).toEqual({
@@ -45,10 +38,9 @@ describe('mergeAcpUpdate', () => {
 });
 
 describe('hasLaunchOverride', () => {
-  it('detects --command and --exec, ignores empty', () => {
+  it('detects --command, ignores empty', () => {
     expect(hasLaunchOverride({ command: '/c' })).toBe(true);
-    expect(hasLaunchOverride({ exec: 'x' })).toBe(true);
     expect(hasLaunchOverride({})).toBe(false);
-    expect(hasLaunchOverride({ command: '', exec: '' })).toBe(false);
+    expect(hasLaunchOverride({ command: '' })).toBe(false);
   });
 });

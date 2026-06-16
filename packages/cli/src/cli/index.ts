@@ -119,21 +119,14 @@ agentCmd
   .requiredOption('--username <username>', 'Newio agent username (run "newio agent create-account" to make one)')
   .option('--cwd <dir>', 'working directory for the agent process')
   .option(
-    '--exec <command>',
-    'ACP executable to spawn, optionally with args (legacy; whitespace-split — prefer --command/--arg for paths with spaces). For --type custom it is the full invocation; for built-in types it overrides the binary and extra args are appended, e.g. --exec "/opt/bin/codex-acp" or --exec "node wrapper.js"',
-  )
-  .option(
     '--command <path>',
-    'ACP executable path — path-safe alternative to --exec (takes precedence). Combine with --arg.',
+    'ACP executable to spawn. For --type custom it is the binary to run; for built-in types it overrides the default binary. Combine with --arg for arguments, e.g. --command node --arg /path/to/agent.js',
   )
   .option(
     '--arg <value>',
     'argument for --command; repeat for multiple args, e.g. --command node --arg /path/to/agent.js',
     (value: string, previous: string[]) => [...previous, value],
     [] as string[],
-  )
-  .addOption(
-    new Option('--session-mode <mode>', agent.SESSION_MODE_DESCRIPTION).choices([...agent.SESSION_MODE_CHOICES]),
   )
   // The agent subprocess runs with exactly the environment synced here — PATH (to
   // find node + the agent binary), USER (Claude Code keys its Keychain credential
@@ -181,8 +174,7 @@ agentCmd
   .description('Update agent config')
   .option('--name <name>', 'display name')
   .option('--cwd <dir>', 'working directory')
-  .option('--exec <command>', 'ACP executable to spawn, optionally with args (legacy; prefer --command/--arg)')
-  .option('--command <path>', 'ACP executable path — path-safe (replaces the prior launch config; combine with --arg)')
+  .option('--command <path>', 'ACP executable to spawn (replaces the prior launch config; combine with --arg)')
   .option(
     '--arg <value>',
     'argument for --command; repeat for multiple args',
@@ -190,9 +182,6 @@ agentCmd
     [] as string[],
   )
   .option('--username <username>', 'Newio username')
-  .addOption(
-    new Option('--session-mode <mode>', agent.SESSION_MODE_DESCRIPTION).choices([...agent.SESSION_MODE_CHOICES]),
-  )
   .action((query: string, _options: unknown, cmd: Command) =>
     agent.agentUpdate(stage, query, cmd.opts<UpdateOptions>()),
   );

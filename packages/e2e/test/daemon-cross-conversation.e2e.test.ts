@@ -1,11 +1,13 @@
 /**
- * Cross-conversation messaging over the real daemon (shared session mode).
+ * Cross-conversation messaging over the real daemon (chat-shared session mode).
  *
- * The full-stack counterpart to `cross-conversation.e2e.test.ts`: same `send_dm` /
- * `send_message` routing in `shared` mode, but the connector runs as the real
- * `newio` daemon process configured through the CLI (`agent add --session-mode
- * shared`) rather than the embedded runtime — proving the shared-mode tool routing
- * survives the CLI/daemon/RPC plumbing the embedded harness skips.
+ * The full-stack counterpart to `cross-conversation.e2e.test.ts`: the same `send_dm`
+ * / `send_message` tools, but the connector runs as the real `newio` daemon process
+ * configured through the CLI rather than the embedded runtime — proving the tool
+ * routing survives the CLI/daemon/RPC plumbing the embedded harness skips. The CLI
+ * no longer exposes a session-mode flag, so the agent takes the default `chat-shared`
+ * mode, which shares one session across DMs/groups/contacts and exposes the same
+ * `send_dm` / `send_message` tools as `shared`.
  *
  *   1. `send_dm` — owner tells the puppet (in the owner DM) to DM a sibling agent;
  *      the message lands in a brand-new agent↔agent DM.
@@ -22,7 +24,7 @@ import { startPuppetAgent } from '../src/puppet-agent.js';
 import { OwnerBackend, type AgentCredentials, type OwnerTokens } from '../src/backend.js';
 import { resolveBackendUrls } from '../src/config.js';
 
-describe('daemon cross-conversation messaging (shared mode)', () => {
+describe('daemon cross-conversation messaging (chat-shared mode)', () => {
   const urls = resolveBackendUrls();
   const backend = new OwnerBackend(urls.apiBaseUrl);
 
@@ -66,7 +68,7 @@ describe('daemon cross-conversation messaging (shared mode)', () => {
     });
 
     sandbox = await DaemonSandbox.start({ apiBaseUrl: urls.apiBaseUrl, wsUrl: urls.wsUrl });
-    await startPuppetAgent(sandbox, { agent, driver, sessionMode: 'shared' });
+    await startPuppetAgent(sandbox, { agent, driver });
   });
 
   afterAll(async () => {

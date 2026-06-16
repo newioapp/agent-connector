@@ -260,9 +260,9 @@ export type PermissionHandler = (
  */
 export type SessionMode = 'isolated' | 'shared' | 'chat-shared';
 
-/** Resolve a possibly-undefined config session mode to a concrete mode (defaults to 'isolated'). */
+/** Resolve a possibly-undefined config session mode to a concrete mode (defaults to 'chat-shared'). */
 export function resolveSessionMode(mode: SessionMode | undefined): SessionMode {
-  return mode ?? 'isolated';
+  return mode ?? 'chat-shared';
 }
 
 export interface NewioAppForAgent {
