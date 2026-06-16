@@ -30,8 +30,10 @@ export type {
   SessionMode,
 } from './types.js';
 export { DEFAULT_SESSION_IDLE_TIMEOUT_MS, resolveSessionMode } from './types.js';
-export { captureEnv, asEnvSyncMode, ENV_SYNC_MODES, DEFAULT_ENV_SYNC_MODE } from './env-capture.js';
+export { captureEnv, captureShellEnv, asEnvSyncMode, ENV_SYNC_MODES, DEFAULT_ENV_SYNC_MODE } from './env-capture.js';
 export type { EnvSyncMode } from './env-capture.js';
+export { getIdentityEnv, resolveSourceEnv, resolveShellEnv, pickLoginShell, listLoginShells } from './shell-env.js';
+export type { ShellEnvDeps } from './shell-env.js';
 export { InvalidEnvironmentError } from './errors.js';
 export type {
   AgentInstance,

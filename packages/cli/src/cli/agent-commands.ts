@@ -16,7 +16,7 @@ import type {
   AgentType,
   UpdateAgentInput,
 } from '@newio/agent-engine';
-import { agentEnvFilePath, captureEnv, asEnvSyncMode, DEFAULT_ENV_SYNC_MODE } from '@newio/agent-engine';
+import { agentEnvFilePath, captureShellEnv, asEnvSyncMode, DEFAULT_ENV_SYNC_MODE } from '@newio/agent-engine';
 import { AuthManager, NewioClient } from '@newio/agent-sdk';
 import { withDaemon, openConnection } from '../client/connect.js';
 import { resolveConfig, getDaemonPaths, stageSuffix, type Stage } from '../paths.js';
@@ -51,8 +51,10 @@ export function parseEnvPairs(pairs: readonly string[]): Record<string, string> 
 }
 
 // Env capture (`basic`/`all`) is shared with the desktop app — see @newio/agent-engine.
-// When invoked from the CLI, `captureEnv` reads this process's own environment, i.e.
-// the interactive shell that ran `newio`.
+// The CLI already runs inside the user's interactive shell, so `process.env` is
+// fully sourced; it captures with `sourceShell: false` (no extra shell spawn) and
+// only overlays authoritative password-DB identity. The desktop, launched from the
+// Dock, sources the login shell instead.
 export { ENV_SYNC_MODES } from '@newio/agent-engine';
 
 /** First line of a (possibly multi-line) error message — for tight table cells. */
@@ -233,7 +235,7 @@ export async function agentAdd(stage: Stage, opts: AddOptions): Promise<void> {
   }
   const launch: Pick<AcpConfig, 'command' | 'args'> = hasCommand ? { command: opts.command, args: opts.arg ?? [] } : {};
   const mode = opts.envSync ? asEnvSyncMode(opts.envSync) : DEFAULT_ENV_SYNC_MODE;
-  const envVars = captureEnv(mode);
+  const envVars = await captureShellEnv(mode, { sourceShell: false });
   const config = await withDaemon(stage, async (c) => {
     const input: AddAgentInput = {
       type,
@@ -394,7 +396,7 @@ export async function envUnset(stage: Stage, query: string, keys: string[]): Pro
 
 export async function envSync(stage: Stage, query: string, modeArg?: string): Promise<void> {
   const mode = modeArg ? asEnvSyncMode(modeArg) : DEFAULT_ENV_SYNC_MODE;
-  const captured = captureEnv(mode);
+  const captured = await captureShellEnv(mode, { sourceShell: false });
   await withDaemon(stage, async (c) => {
     const agentId = await resolveAgentId(c, query);
     // Sync is authoritative: the agent's environment becomes EXACTLY what was
@@ -412,9 +414,9 @@ export async function envSync(stage: Stage, query: string, modeArg?: string): Pr
 }
 
 /** `env print` — dump what a sync mode would capture from the CLI's environment, without touching any agent. */
-export function envPrint(modeArg?: string): void {
+export async function envPrint(modeArg?: string): Promise<void> {
   const mode = modeArg ? asEnvSyncMode(modeArg) : DEFAULT_ENV_SYNC_MODE;
-  const env = captureEnv(mode);
+  const env = await captureShellEnv(mode, { sourceShell: false });
   const keys = Object.keys(env).sort();
   if (keys.length === 0) {
     console.log(`No environment variables resolved (${mode}).`);
