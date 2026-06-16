@@ -32,6 +32,8 @@ export type {
 export { DEFAULT_SESSION_IDLE_TIMEOUT_MS, resolveSessionMode } from './types.js';
 export { captureEnv, asEnvSyncMode, ENV_SYNC_MODES, DEFAULT_ENV_SYNC_MODE } from './env-capture.js';
 export type { EnvSyncMode } from './env-capture.js';
+export { getIdentityEnv } from './identity.js';
+export type { UserIdentity } from './identity.js';
 export { InvalidEnvironmentError } from './errors.js';
 export type {
   AgentInstance,

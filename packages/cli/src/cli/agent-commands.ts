@@ -50,9 +50,11 @@ export function parseEnvPairs(pairs: readonly string[]): Record<string, string> 
   return result;
 }
 
-// Env capture (`basic`/`all`) is shared with the desktop app — see @newio/agent-engine.
-// When invoked from the CLI, `captureEnv` reads this process's own environment, i.e.
-// the interactive shell that ran `newio`.
+// Env capture (`basic`/`all` filter) is shared with the desktop app — see
+// @newio/agent-engine. The CLI always runs inside the user's interactive shell,
+// so `process.env` is already fully sourced; it filters that directly, with no
+// shell spawn. The desktop, launched from the Dock without a sourced env, does
+// the login-shell sourcing itself (packages/connector/src/main/shell-env.ts).
 export { ENV_SYNC_MODES } from '@newio/agent-engine';
 
 /** First line of a (possibly multi-line) error message — for tight table cells. */

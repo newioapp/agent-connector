@@ -5,7 +5,13 @@
  * own environment) — captured client-side by whichever process configures the
  * agent: the CLI's interactive shell, or the desktop app's process. The daemon
  * never sources a login shell; its own service environment is sparse.
+ *
+ * This file owns the `basic`/`all` filter that decides which vars reach the
+ * agent. Login-shell sourcing (needed only by the Dock-launched desktop app)
+ * lives in the connector package; the CLI captures its already-sourced
+ * `process.env` directly and just applies this filter.
  */
+import { getIdentityEnv } from './identity.js';
 
 /** How much of the environment to capture for an agent. */
 export type EnvSyncMode = 'basic' | 'all';
@@ -20,8 +26,13 @@ export const DEFAULT_ENV_SYNC_MODE: EnvSyncMode = 'basic';
 const BASIC_ENV_KEYS: readonly string[] = ['HOME', 'USER', 'LOGNAME', 'PATH', 'SHELL', 'LANG', 'TZ', 'TMPDIR'];
 /** Prefixes kept wholesale by `basic` (locale: `LC_ALL`, `LC_CTYPE`, …). */
 const BASIC_ENV_PREFIXES: readonly string[] = ['LC_'];
-/** Never captured, in either mode: cwd-derived vars — the agent's cwd is set explicitly. */
-const EXCLUDED_ENV_KEYS = new Set(['PWD', 'OLDPWD']);
+/**
+ * Never captured, in either mode: per-process shell bookkeeping that's stale
+ * once handed to the agent. `PWD`/`OLDPWD` are cwd-derived (the agent's cwd is
+ * set explicitly); `_` is the last-exec'd command path; `SHLVL` is the shell
+ * nesting counter (the agent maintains its own).
+ */
+const EXCLUDED_ENV_KEYS = new Set(['PWD', 'OLDPWD', '_', 'SHLVL']);
 
 /**
  * Host-process vars inherited as a fallback for agent spawns, so identity vars
@@ -32,8 +43,18 @@ const EXCLUDED_ENV_KEYS = new Set(['PWD', 'OLDPWD']);
  */
 const INHERITED_ENV_KEYS: readonly string[] = ['HOME', 'USER', 'LOGNAME', 'TMPDIR'];
 
-/** Pick the allowlisted identity vars from `source` (defaults to this process's environment). */
-export function inheritedBaseEnv(source: NodeJS.ProcessEnv = process.env): Record<string, string> {
+/**
+ * Pick the allowlisted identity vars from `source` (defaults to this process's
+ * environment), then overlay authoritative identity from the OS password
+ * database. The overlay matters most at spawn time: the daemon's own
+ * environment is sparse and may omit `USER`/`HOME` entirely, yet Claude Code
+ * keys its Keychain credential by `$USER`. getpwuid always reflects the real
+ * logged-in user, so it wins over whatever `source` did (or didn't) provide.
+ */
+export function inheritedBaseEnv(
+  source: NodeJS.ProcessEnv = process.env,
+  identity: Record<string, string> = getIdentityEnv(),
+): Record<string, string> {
   const result: Record<string, string> = {};
   for (const key of INHERITED_ENV_KEYS) {
     const value = source[key];
@@ -41,7 +62,7 @@ export function inheritedBaseEnv(source: NodeJS.ProcessEnv = process.env): Recor
       result[key] = value;
     }
   }
-  return result;
+  return { ...result, ...identity };
 }
 
 /** Narrow a raw string to an EnvSyncMode, throwing on anything else. */
