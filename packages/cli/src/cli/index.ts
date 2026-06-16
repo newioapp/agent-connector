@@ -51,7 +51,7 @@ const daemonCmd = program.command('daemon').description('Manage the daemon servi
 
 daemonCmd
   .command('run')
-  .description('Run the daemon in the foreground (used by the service unit)')
+  .description('Run the daemon in the foreground')
   .action(async () => {
     const { runDaemon } = await import('../daemon/index.js');
     await runDaemon();
@@ -108,13 +108,19 @@ daemonCmd
 const agentCmd = program.command('agent').description('Manage agents');
 
 agentCmd
+  .command('create-account')
+  .description('Register a new Newio agent account (username chosen at approval)')
+  .requiredOption('--name <name>', 'display name for the new account')
+  .action((_options: unknown, cmd: Command) => agent.agentCreateAccount(cmd.opts<CreateAccountOptions>()));
+
+agentCmd
   .command('list')
   .description('List agents with runtime status')
   .action(() => agent.agentList(stage));
 
 agentCmd
   .command('add')
-  .description('Add a runner config for an existing Newio agent account')
+  .description('Add an agent config')
   .addOption(new Option('--type <type>', 'agent type').choices([...agent.AGENT_TYPE_CHOICES]).makeOptionMandatory())
   .requiredOption('--username <username>', 'Newio agent username (run "newio agent create-account" to make one)')
   .option('--cwd <dir>', 'working directory for the agent process')
@@ -137,12 +143,6 @@ agentCmd
       .default('basic'),
   )
   .action((_options: unknown, cmd: Command) => agent.agentAdd(stage, cmd.opts<AddOptions>()));
-
-agentCmd
-  .command('create-account')
-  .description('Register a new Newio agent account (username chosen at approval)')
-  .requiredOption('--name <name>', 'display name for the new account')
-  .action((_options: unknown, cmd: Command) => agent.agentCreateAccount(cmd.opts<CreateAccountOptions>()));
 
 agentCmd
   .command('remove <agent>')
