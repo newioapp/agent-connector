@@ -1,36 +1,32 @@
 /**
- * Resolve a fully-sourced source environment for agent env capture.
+ * Login-shell environment capture for the desktop app.
  *
- * Two pieces, both ported from acp-inspector:
+ * Lives in the desktop (connector) package — not the shared engine, and not the
+ * CLI — because only the GUI needs it. The CLI always runs inside the user's
+ * interactive shell, so its `process.env` is already fully sourced; it captures
+ * that directly. The desktop app is launched from the Dock by launchd with a
+ * minimal environment: no PATH additions from `.zshrc`/`.zprofile`/nvm/homebrew,
+ * and a possibly-wrong USER/HOME. So here we spawn the user's login shell,
+ * read its environment, overlay authoritative password-DB identity, and apply
+ * the same shared `basic`/`all` filter the CLI uses.
  *
- *  1. Authoritative identity from the OS password database (`getIdentityEnv`).
- *     A GUI app launched from the Dock is started by launchd with a minimal
- *     environment, so USER/LOGNAME/HOME/SHELL can be missing or wrong. Claude
- *     Code keys its login-Keychain credential by `$USER`, so a wrong/absent USER
- *     silently breaks agent auth. The password database (getpwuid) always
- *     reflects the real logged-in user, so we overlay it last.
- *
- *  2. Login-shell sourcing (`resolveShellEnv`). The CLI already runs inside the
- *     user's interactive shell, so its `process.env` is fully sourced. The
- *     desktop app, launched from the Dock, does NOT — it never sees PATH
- *     additions from `.zshrc`/`.zprofile`/nvm/homebrew. Spawning the login
- *     shell and reading its environment recovers them.
- *
- * The filter that decides which captured vars actually reach the agent
- * (`basic`/`all`) still lives in env-capture.ts; this module only produces the
- * richest, most-correct SOURCE environment to feed into that filter.
+ * Runs in the Electron MAIN process (never the daemon, never the renderer).
  */
 import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { basename } from 'node:path';
+import { captureEnv, getIdentityEnv } from '@newio/agent-engine';
+import type { EnvSyncMode, UserIdentity } from '@newio/agent-engine';
 
 /** Shells we know how to invoke with `-ilc`. */
 const SUPPORTED_SHELL_NAMES = new Set(['zsh', 'bash']);
 
 /**
- * Per-process shell bookkeeping variables that must not cross a process
- * boundary — they reflect the sourcing subshell, not the user's environment:
+ * Per-process shell bookkeeping that must not cross a process boundary — it
+ * reflects the sourcing subshell, not the user's environment. (The shared
+ * `captureEnv` filter also drops these, so this is belt-and-suspenders for the
+ * raw sourced env.)
  *   _      — path of the last command the shell exec'd (e.g. /usr/bin/env)
  *   PWD    — the sourcing shell's cwd; would conflict with the agent's real cwd
  *   OLDPWD — previous `cd` target
@@ -53,7 +49,7 @@ const SHELL_SOURCE_TIMEOUT_MS = 10_000;
 /** Injectable system calls, so the sourcing logic is unit-testable without a real shell. */
 export interface ShellEnvDeps {
   /** Reads the OS password database for the current uid. Defaults to os.userInfo. */
-  readonly readUserInfo: () => { username: string; homedir: string; shell: string | null };
+  readonly readUserInfo: () => UserIdentity;
   /** Reads a file synchronously as utf8. Defaults to fs.readFileSync. */
   readonly readFile: (path: string) => string;
   /** Spawns `shell -ilc <command>` and yields its stdout (or an error). */
@@ -61,11 +57,11 @@ export interface ShellEnvDeps {
 }
 
 const defaultDeps: ShellEnvDeps = {
-  readUserInfo: () => userInfo(),
+  readUserInfo: userInfo,
   readFile: (path) => readFileSync(path, 'utf8'),
   runShell: (shell, command, callback) => {
     // Seed the sourcing shell with TERM=dumb so profile scripts don't emit
-    // terminal control sequences; identity is overlaid by the caller.
+    // terminal control sequences; identity is overlaid afterwards.
     execFile(
       shell,
       ['-ilc', command],
@@ -76,35 +72,14 @@ const defaultDeps: ShellEnvDeps = {
   },
 };
 
-/**
- * Authoritative identity environment derived from the OS password database
- * (getpwuid of the process's real uid), NOT from the shell or process.env.
- * Returns an empty object if userInfo() is unavailable (e.g. uid absent from
- * the password database), in which case identity is left untouched.
- */
-export function getIdentityEnv(deps: Partial<ShellEnvDeps> = {}): Record<string, string> {
-  const readUserInfo = deps.readUserInfo ?? defaultDeps.readUserInfo;
-  try {
-    const info = readUserInfo();
-    const identity: Record<string, string> = {
-      USER: info.username,
-      LOGNAME: info.username,
-      HOME: info.homedir,
-    };
-    // pw_shell may be empty on some systems; only set SHELL when present.
-    if (typeof info.shell === 'string' && info.shell.length > 0) {
-      identity.SHELL = info.shell;
-    }
-    return identity;
-  } catch {
-    return {};
-  }
+/** Resolve identity from injected deps, falling back to the OS password database. */
+function identityEnv(deps: Partial<ShellEnvDeps>): Record<string, string> {
+  return getIdentityEnv(deps.readUserInfo ?? defaultDeps.readUserInfo);
 }
 
 /**
- * List login shells installed on the system that we support. Reads `/etc/shells`
- * and keeps shells whose basename is `zsh` or `bash`. Returns `[]` when none are
- * found or the file can't be read (callers fall back to no sourcing).
+ * List supported login shells from `/etc/shells` (basename `zsh`/`bash`).
+ * Returns `[]` when none are found or the file can't be read.
  */
 export function listLoginShells(deps: Partial<ShellEnvDeps> = {}): string[] {
   const readFile = deps.readFile ?? defaultDeps.readFile;
@@ -120,15 +95,18 @@ export function listLoginShells(deps: Partial<ShellEnvDeps> = {}): string[] {
 
 /**
  * Pick the login shell to source. Prefers the user's own `$SHELL` (from the
- * password DB or the fallback env) when it's a supported shell, otherwise the
- * first supported entry in `/etc/shells`. Returns undefined when no supported
- * shell is available — callers then skip sourcing and use the fallback env.
+ * password DB, then the fallback env) when supported, otherwise the first
+ * supported entry in `/etc/shells`. Returns undefined when nothing is available.
  */
 export function pickLoginShell(
   fallbackEnv: NodeJS.ProcessEnv = process.env,
   deps: Partial<ShellEnvDeps> = {},
 ): string | undefined {
-  const preferred = getIdentityEnv(deps).SHELL ?? fallbackEnv['SHELL'];
+  // getIdentityEnv only sets SHELL when the password DB has one; fall back to
+  // the caller's env otherwise. (`in` keeps this undefined-aware regardless of
+  // the package's noUncheckedIndexedAccess setting.)
+  const identity = identityEnv(deps);
+  const preferred = 'SHELL' in identity ? identity['SHELL'] : fallbackEnv['SHELL'];
   if (typeof preferred === 'string' && SUPPORTED_SHELL_NAMES.has(basename(preferred))) {
     return preferred;
   }
@@ -137,13 +115,13 @@ export function pickLoginShell(
 
 /**
  * Source the given login shell and return its environment, with transient
- * shell bookkeeping stripped and password-DB identity overlaid last. On any
- * failure (spawn error, empty output) returns just the authoritative identity,
- * so callers still get a correct USER/LOGNAME/HOME.
+ * bookkeeping stripped and password-DB identity overlaid last. On any failure
+ * (spawn error, empty output) returns just the authoritative identity, so
+ * callers still get a correct USER/LOGNAME/HOME.
  */
 export function resolveShellEnv(shell: string, deps: Partial<ShellEnvDeps> = {}): Promise<Record<string, string>> {
   const runShell = deps.runShell ?? defaultDeps.runShell;
-  const identity = getIdentityEnv(deps);
+  const identity = identityEnv(deps);
   return new Promise((resolve) => {
     // Bracket `env -0` (null-delimited, so values may contain newlines) with a
     // marker, so we can strip any banner a profile script printed to stdout.
@@ -153,8 +131,8 @@ export function resolveShellEnv(shell: string, deps: Partial<ShellEnvDeps> = {})
         resolve({ ...identity });
         return;
       }
-      // Keep only what's between the two markers; profile banners land before
-      // the first marker and are discarded. Fall back to the raw output if the
+      // Keep only what's between the two markers; a profile banner lands before
+      // the first marker and is discarded. Fall back to the raw output if the
       // markers are missing (unexpected — e.g. printf unavailable).
       const first = stdout.indexOf(ENV_DELIMITER);
       const last = stdout.lastIndexOf(ENV_DELIMITER);
@@ -178,23 +156,17 @@ export function resolveShellEnv(shell: string, deps: Partial<ShellEnvDeps> = {})
 }
 
 /**
- * Build the richest, most-correct SOURCE environment to feed into the capture
- * filter. By default sources the user's login shell (recovering PATH/keys a
- * Dock-launched GUI process never sees) and overlays password-DB identity. Set
- * `sourceShell: false` for callers already running inside a sourced shell (the
- * CLI), which then only need the identity overlay — no extra shell spawn.
+ * Capture the agent environment for the desktop app: source the user's login
+ * shell (recovering PATH/keys the Dock-launched GUI never sees), then apply the
+ * shared `basic`/`all` filter. Falls back to `process.env` + identity when no
+ * supported login shell exists.
  */
-export async function resolveSourceEnv(
-  opts: { sourceShell?: boolean; fallbackEnv?: NodeJS.ProcessEnv; deps?: Partial<ShellEnvDeps> } = {},
-): Promise<NodeJS.ProcessEnv> {
-  const { sourceShell = true, fallbackEnv = process.env, deps = {} } = opts;
-  if (sourceShell) {
-    const shell = pickLoginShell(fallbackEnv, deps);
-    if (shell) {
-      return resolveShellEnv(shell, deps);
-    }
-  }
-  // No sourcing (disabled, or no supported shell): use the fallback env with
-  // authoritative identity overlaid on top.
-  return { ...fallbackEnv, ...getIdentityEnv(deps) };
+export async function captureEnvFromShell(
+  mode: EnvSyncMode,
+  deps: Partial<ShellEnvDeps> = {},
+  fallbackEnv: NodeJS.ProcessEnv = process.env,
+): Promise<Record<string, string>> {
+  const shell = pickLoginShell(fallbackEnv, deps);
+  const source = shell ? await resolveShellEnv(shell, deps) : { ...fallbackEnv, ...identityEnv(deps) };
+  return captureEnv(mode, source);
 }

@@ -6,12 +6,12 @@
  * agent: the CLI's interactive shell, or the desktop app's process. The daemon
  * never sources a login shell; its own service environment is sparse.
  *
- * The richest SOURCE environment (login-shell sourcing for the desktop +
- * authoritative password-DB identity) is built in shell-env.ts; this file owns
- * the `basic`/`all` filter that decides which of those vars reach the agent.
+ * This file owns the `basic`/`all` filter that decides which vars reach the
+ * agent. Login-shell sourcing (needed only by the Dock-launched desktop app)
+ * lives in the connector package; the CLI captures its already-sourced
+ * `process.env` directly and just applies this filter.
  */
-import { getIdentityEnv, resolveSourceEnv } from './shell-env.js';
-import type { ShellEnvDeps } from './shell-env.js';
+import { getIdentityEnv } from './identity.js';
 
 /** How much of the environment to capture for an agent. */
 export type EnvSyncMode = 'basic' | 'all';
@@ -95,23 +95,4 @@ export function captureEnv(mode: EnvSyncMode, source: NodeJS.ProcessEnv = proces
     }
   }
   return result;
-}
-
-/**
- * Capture environment variables, resolving the SOURCE first via shell-env:
- * - `sourceShell: true` (default) sources the user's login shell and overlays
- *   password-DB identity — for the desktop app, which is launched from the Dock
- *   without a sourced environment.
- * - `sourceShell: false` skips the shell spawn and only overlays identity onto
- *   the existing process environment — for the CLI, already inside a sourced
- *   interactive shell.
- *
- * Identity vars (`USER`/`HOME`/`LOGNAME`/`SHELL`) are in the `basic` allowlist,
- * so the authoritative overlay survives the filter in both modes.
- */
-export async function captureShellEnv(
-  mode: EnvSyncMode,
-  opts: { sourceShell?: boolean; fallbackEnv?: NodeJS.ProcessEnv; deps?: Partial<ShellEnvDeps> } = {},
-): Promise<Record<string, string>> {
-  return captureEnv(mode, await resolveSourceEnv(opts));
 }

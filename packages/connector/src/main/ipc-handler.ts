@@ -25,7 +25,7 @@ import type {
   EnvSyncMode,
 } from '../shared/types';
 import { STAGES } from '../shared/types';
-import { captureShellEnv } from '@newio/agent-engine';
+import { captureEnvFromShell } from './shell-env';
 import type { DaemonConnectionStatus } from '../shared/ipc-events';
 import { EVENT_CHANNELS } from '../shared/ipc-events';
 import type { StoreSchema } from './store';
@@ -188,9 +188,9 @@ export class IpcHandler implements IpcApi {
     // Source the user's LOGIN SHELL from the main process (never the daemon).
     // The desktop app is launched from the Dock with launchd's sparse env — it
     // never sees PATH/keys from .zshrc/.zprofile, and USER/HOME may be wrong.
-    // captureShellEnv sources the shell and overlays authoritative password-DB
-    // identity before applying the `basic`/`all` filter.
-    return captureShellEnv(mode);
+    // captureEnvFromShell sources the shell and overlays authoritative
+    // password-DB identity before applying the shared `basic`/`all` filter.
+    return captureEnvFromShell(mode);
   }
 
   async updateAgentEnvVars(agentId: string, envVars: Record<string, string>): Promise<AgentConfig> {

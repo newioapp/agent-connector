@@ -1,20 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { captureEnv, captureShellEnv, asEnvSyncMode, ENV_SYNC_MODES, inheritedBaseEnv } from '../src/env-capture';
-import type { ShellEnvDeps } from '../src/shell-env';
-
-const DELIMITER = '__NEWIO_SHELL_ENV_DELIMITER__';
-
-/** Deps that source a fixed identity + scripted shell, never touching the real OS. */
-function shellDeps(sourced: Record<string, string>): Partial<ShellEnvDeps> {
-  const body = Object.entries(sourced)
-    .map(([k, v]) => `${k}=${v}`)
-    .join('\0');
-  return {
-    readUserInfo: () => ({ username: 'real', homedir: '/Users/real', shell: '/bin/zsh' }),
-    readFile: () => '/bin/zsh\n',
-    runShell: (_shell, _command, cb) => cb(null, `${DELIMITER}${body}${DELIMITER}`),
-  };
-}
+import { captureEnv, asEnvSyncMode, ENV_SYNC_MODES, inheritedBaseEnv } from '../src/env-capture';
 
 describe('captureEnv', () => {
   it('basic keeps only allowlisted essentials (incl. LC_* locale) and drops the rest', () => {
@@ -90,48 +75,6 @@ describe('inheritedBaseEnv', () => {
     expect(
       inheritedBaseEnv({ USER: 'wrong', HOME: '/wrong' }, { USER: 'real', LOGNAME: 'real', HOME: '/Users/real' }),
     ).toEqual({ USER: 'real', LOGNAME: 'real', HOME: '/Users/real' });
-  });
-});
-
-describe('captureShellEnv', () => {
-  it('basic mode keeps the sourced PATH plus authoritative identity, dropping secrets', async () => {
-    const env = await captureShellEnv('basic', {
-      deps: shellDeps({ PATH: '/sourced/bin', SOME_SECRET: 'x', USER: 'stale' }),
-    });
-    // PATH from the sourced shell; USER from the password DB (not the stale one); secret dropped by `basic`.
-    expect(env).toEqual({
-      PATH: '/sourced/bin',
-      USER: 'real',
-      LOGNAME: 'real',
-      HOME: '/Users/real',
-      SHELL: '/bin/zsh',
-    });
-  });
-
-  it('all mode keeps sourced secrets too, but identity still wins', async () => {
-    const env = await captureShellEnv('all', {
-      deps: shellDeps({ PATH: '/sourced/bin', SOME_SECRET: 'x', USER: 'stale' }),
-    });
-    expect(env['SOME_SECRET']).toBe('x');
-    expect(env['USER']).toBe('real');
-  });
-
-  it('sourceShell:false captures the fallback env (no shell spawn) with identity overlaid', async () => {
-    let spawned = false;
-    const env = await captureShellEnv('all', {
-      sourceShell: false,
-      fallbackEnv: { PATH: '/from/process', USER: 'wrong' },
-      deps: {
-        readUserInfo: () => ({ username: 'real', homedir: '/Users/real', shell: '/bin/zsh' }),
-        runShell: (_s, _c, cb) => {
-          spawned = true;
-          cb(null, '');
-        },
-      },
-    });
-    expect(spawned).toBe(false);
-    expect(env['PATH']).toBe('/from/process');
-    expect(env['USER']).toBe('real');
   });
 });
 

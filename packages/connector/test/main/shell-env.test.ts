@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { getIdentityEnv, listLoginShells, pickLoginShell, resolveShellEnv, resolveSourceEnv } from '../src/shell-env';
-import type { ShellEnvDeps } from '../src/shell-env';
+import {
+  listLoginShells,
+  pickLoginShell,
+  resolveShellEnv,
+  captureEnvFromShell,
+  type ShellEnvDeps,
+} from '../../src/main/shell-env';
 
 const DELIMITER = '__NEWIO_SHELL_ENV_DELIMITER__';
 
@@ -23,35 +28,6 @@ function deps(over: Partial<ShellEnvDeps> = {}): Partial<ShellEnvDeps> {
     ...over,
   };
 }
-
-describe('getIdentityEnv', () => {
-  it('derives USER/LOGNAME/HOME/SHELL from the password database', () => {
-    expect(getIdentityEnv(deps())).toEqual({
-      USER: 'real',
-      LOGNAME: 'real',
-      HOME: '/Users/real',
-      SHELL: '/bin/zsh',
-    });
-  });
-
-  it('omits SHELL when the password database has none', () => {
-    expect(getIdentityEnv(deps({ readUserInfo: () => ({ ...realUser, shell: '' }) }))).toEqual({
-      USER: 'real',
-      LOGNAME: 'real',
-      HOME: '/Users/real',
-    });
-  });
-
-  it('returns {} when userInfo throws (uid not in password database)', () => {
-    expect(
-      getIdentityEnv({
-        readUserInfo: () => {
-          throw new Error('no such uid');
-        },
-      }),
-    ).toEqual({});
-  });
-});
 
 describe('listLoginShells', () => {
   it('keeps only supported shells (zsh/bash), dropping comments and others', () => {
@@ -151,38 +127,51 @@ describe('resolveShellEnv', () => {
   });
 });
 
-describe('resolveSourceEnv', () => {
-  it('sources the login shell by default', async () => {
-    const env = await resolveSourceEnv({
-      fallbackEnv: { PATH: '/sparse' },
-      deps: deps({ runShell: (_s, _c, cb) => cb(null, shellOutput({ PATH: '/sourced/bin' })) }),
+describe('captureEnvFromShell', () => {
+  it('basic mode keeps the sourced PATH + authoritative identity, dropping secrets', async () => {
+    const env = await captureEnvFromShell(
+      'basic',
+      deps({
+        runShell: (_s, _c, cb) => cb(null, shellOutput({ PATH: '/sourced/bin', SOME_SECRET: 'x', USER: 'stale' })),
+      }),
+    );
+    // PATH from the sourced shell; USER from the password DB (not the stale one); secret dropped by `basic`.
+    expect(env).toEqual({
+      PATH: '/sourced/bin',
+      USER: 'real',
+      LOGNAME: 'real',
+      HOME: '/Users/real',
+      SHELL: '/bin/zsh',
     });
-    expect(env['PATH']).toBe('/sourced/bin');
+  });
+
+  it('all mode keeps sourced secrets too, but identity still wins', async () => {
+    const env = await captureEnvFromShell(
+      'all',
+      deps({
+        runShell: (_s, _c, cb) => cb(null, shellOutput({ PATH: '/sourced/bin', SOME_SECRET: 'x', USER: 'stale' })),
+      }),
+    );
+    expect(env['SOME_SECRET']).toBe('x');
     expect(env['USER']).toBe('real');
   });
 
-  it('skips the shell spawn and overlays identity onto the fallback env when sourceShell is false', async () => {
+  it('falls back to the given env + identity when no supported login shell exists', async () => {
     let spawned = false;
-    const env = await resolveSourceEnv({
-      sourceShell: false,
-      fallbackEnv: { PATH: '/from/process', USER: 'wrong' },
-      deps: deps({
+    const env = await captureEnvFromShell(
+      'basic',
+      deps({
+        readUserInfo: () => ({ ...realUser, shell: '' }), // no SHELL from the password DB
+        readFile: () => '/usr/bin/fish\n', // /etc/shells has nothing supported
         runShell: (_s, _c, cb) => {
           spawned = true;
           cb(null, '');
         },
       }),
-    });
+      { PATH: '/from/process' }, // fallback env: no SHELL, so no shell is picked
+    );
+    // No shell was sourced; the fallback env is filtered, identity overlaid.
     expect(spawned).toBe(false);
-    expect(env['PATH']).toBe('/from/process');
-    expect(env['USER']).toBe('real'); // identity overlay still applied
-  });
-
-  it('falls back to fallbackEnv + identity when no supported shell exists', async () => {
-    const env = await resolveSourceEnv({
-      fallbackEnv: { PATH: '/from/process' },
-      deps: deps({ readUserInfo: () => ({ ...realUser, shell: '' }), readFile: () => '/usr/bin/fish\n' }),
-    });
     expect(env['PATH']).toBe('/from/process');
     expect(env['USER']).toBe('real');
   });
