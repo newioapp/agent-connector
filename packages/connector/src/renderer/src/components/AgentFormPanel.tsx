@@ -3,9 +3,9 @@
  * Renders in the detail panel area (right side) instead of a modal.
  */
 import { useEffect, useState } from 'react';
-import type { AgentType, AgentConfig, SessionMode } from '../../../shared/types';
+import type { AgentType, AgentConfig } from '../../../shared/types';
 import { useAgentStore } from '../stores/agent-store';
-import { Button, Input, Dropdown, Label } from './ui';
+import { Button, Input, Dropdown, Label, Textarea } from './ui';
 import { AgentTypeHint } from './AgentTypeHint';
 import { CreateAccountSection } from './CreateAccountSection';
 import { FolderOpen } from 'lucide-react';
@@ -42,26 +42,6 @@ const AGENT_TYPE_OPTIONS: readonly { value: AgentType; label: string }[] = [
   { value: 'custom', label: 'Custom ACP Agent' },
 ];
 
-const SESSION_MODE_OPTIONS: readonly { value: SessionMode; label: string; description: string }[] = [
-  {
-    value: 'isolated',
-    label: 'Isolated',
-    description: 'One session per conversation. Best for agents with specific tasks, e.g. individual contributor role.',
-  },
-  {
-    value: 'shared',
-    label: 'Shared',
-    description:
-      'Single session across all conversations. Best for agents that carry context between conversations, e.g. manager role.',
-  },
-  {
-    value: 'chat-shared',
-    label: 'Chat-shared',
-    description:
-      'DMs, group chats, and contact events share one session; each work session and cron job gets its own. Balances continuous chat context with focused task execution.',
-  },
-];
-
 export function AgentFormPanel({
   editAgent,
   onDone,
@@ -77,10 +57,12 @@ export function AgentFormPanel({
   const isEdit = !!editAgent;
 
   const [type, setType] = useState<AgentType>('claude-code');
-  const [sessionMode, setSessionMode] = useState<SessionMode>('isolated');
   const [newioUsername, setNewioUsername] = useState('');
   const [cwd, setCwd] = useState('');
-  const [executablePath, setExecutablePath] = useState('');
+  const [command, setCommand] = useState('');
+  // One argument per line — kept path-safe (each line is passed verbatim), mirroring
+  // the CLI's repeatable --arg.
+  const [argsText, setArgsText] = useState('');
   const [trustAllTools, setTrustAllTools] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -90,18 +72,25 @@ export function AgentFormPanel({
       return;
     }
     setType(editAgent.type);
-    setSessionMode(editAgent.sessionMode ?? 'isolated');
     setNewioUsername(editAgent.newio?.username ?? '');
     setCwd(editAgent.acp?.cwd ?? '');
     if (editAgent.acp) {
-      setExecutablePath(editAgent.acp.executablePath ?? '');
+      // Prefer the structured command/args. Migrate a legacy executablePath off the
+      // deprecated field by whitespace-splitting it (first token = command, rest = args).
+      if (editAgent.acp.command !== undefined) {
+        setCommand(editAgent.acp.command);
+        setArgsText((editAgent.acp.args ?? []).join('\n'));
+      } else if (editAgent.acp.executablePath) {
+        const parts = editAgent.acp.executablePath.trim().split(/\s+/).filter(Boolean);
+        setCommand(parts[0] ?? '');
+        setArgsText(parts.slice(1).join('\n'));
+      }
       setTrustAllTools(editAgent.acp.kiroCliTrustAllTools !== false);
     }
   }, [editAgent]);
 
-  // A custom agent needs a launch override: the executablePath field, OR a
-  // structured command set via the CLI that this form preserves but doesn't edit.
-  const hasLaunch = executablePath.trim().length > 0 || editAgent?.acp?.command !== undefined;
+  // A custom agent needs a launch command; built-in types may override their default binary.
+  const hasLaunch = command.trim().length > 0;
   const canSubmit = newioUsername.trim().length > 0 && cwd.trim().length > 0 && (type !== 'custom' || hasLaunch);
 
   async function handleSubmit(): Promise<void> {
@@ -110,32 +99,28 @@ export function AgentFormPanel({
     }
     setSubmitting(true);
     try {
-      const execTrimmed = executablePath.trim();
+      const trimmedCommand = command.trim();
+      const args = argsText
+        .split('\n')
+        .map((a) => a.trim())
+        .filter((a) => a.length > 0);
       const acpConfig = {
         cwd: cwd.trim(),
         ...(type === 'kiro-cli' ? { kiroCliTrustAllTools: trustAllTools } : {}),
-        // An entered executable path is a legacy override. Otherwise preserve a
-        // structured command/args set via the CLI — this form doesn't edit them,
-        // and acp is replaced wholesale, so they'd be lost without this.
-        ...(execTrimmed
-          ? { executablePath: execTrimmed }
-          : {
-              ...(editAgent?.acp?.command !== undefined ? { command: editAgent.acp.command } : {}),
-              ...(editAgent?.acp?.args !== undefined ? { args: editAgent.acp.args } : {}),
-            }),
+        // Path-safe launch override: a command plus its verbatim args. Omitted for a
+        // built-in type with no override, so the engine uses the type's default binary.
+        ...(trimmedCommand ? { command: trimmedCommand, args } : {}),
       };
 
       if (isEdit) {
         await updateAgent(editAgent.id, {
           newioUsername: newioUsername.trim(),
-          sessionMode,
           acp: acpConfig,
         });
       } else {
         await addAgent({
           type,
           newioUsername: newioUsername.trim(),
-          sessionMode,
           acp: acpConfig,
         });
       }
@@ -162,17 +147,13 @@ export function AgentFormPanel({
         {/* Type description */}
         <AgentTypeHint type={type} className="mb-4" />
 
-        {/* Session mode */}
-        <Label text="Session Mode">
-          <Dropdown<SessionMode> options={SESSION_MODE_OPTIONS} value={sessionMode} onChange={setSessionMode} />
-        </Label>
-
+        {/* Launch command */}
         <Label
-          text={type === 'custom' ? 'Executable Path' : 'Executable Path (optional)'}
+          text={type === 'custom' ? 'Command' : 'Command (optional)'}
           hint={
             type === 'custom' ? (
               <>
-                Command to start the agent in ACP mode.{' '}
+                Executable to start the agent in ACP mode.{' '}
                 <button
                   className="text-primary hover:underline"
                   onClick={() => void window.api.openExternal('https://agentclientprotocol.com/get-started/agents')}
@@ -182,14 +163,24 @@ export function AgentFormPanel({
                 .
               </>
             ) : (
-              'Override if the agent CLI is not on your PATH.'
+              'Override the default binary if the agent CLI is not on your PATH.'
             )
           }
         >
           <Input
             placeholder={type === 'custom' ? 'e.g. /usr/local/bin/my-agent' : 'e.g. /usr/local/bin/agent-cli'}
-            value={executablePath}
-            onChange={(e) => setExecutablePath(e.target.value)}
+            value={command}
+            onChange={(e) => setCommand(e.target.value)}
+          />
+        </Label>
+
+        {/* Launch arguments */}
+        <Label text="Arguments (optional)" hint="Passed to the command. One argument per line.">
+          <Textarea
+            rows={3}
+            placeholder={'e.g.\n--model\nclaude-sonnet-4'}
+            value={argsText}
+            onChange={(e) => setArgsText(e.target.value)}
           />
         </Label>
 
