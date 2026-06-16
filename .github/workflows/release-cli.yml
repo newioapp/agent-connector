@@ -1,9 +1,12 @@
 name: Release CLI
 
 on:
-  push:
-    tags:
-      - 'cli-v*'
+  # npm publishing for @newio/cli is not yet set up, so the automatic `cli-v*`
+  # tag trigger is disabled to stop prod releases failing on the publish step.
+  # Distribution is handled by release-cli-binaries.yml (SEA binaries -> CDN).
+  # Re-add the `push: tags: ['cli-v*']` trigger once the npm token/org is
+  # configured; until then this can be run manually via the Actions UI.
+  workflow_dispatch:
 
 permissions:
   contents: write
