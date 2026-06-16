@@ -1,5 +1,5 @@
 /**
- * Session resume across a connector restart (isolated mode).
+ * Session resume across a connector restart (chat-shared default mode).
  *
  * The connector persists a `sessionType/externalReferenceId → correlationId`
  * mapping to disk (`agents/<id>/sessions.json`). After the agent process is torn
@@ -31,7 +31,7 @@ import { startPuppetAgent } from '../src/puppet-agent.js';
 import { OwnerBackend, type AgentCredentials, type OwnerTokens } from '../src/backend.js';
 import { resolveBackendUrls } from '../src/config.js';
 
-describe('session resume across connector restart (isolated mode)', () => {
+describe('session resume across connector restart (chat-shared default mode)', () => {
   let backend: OwnerBackend;
   let owner: OwnerTokens & { readonly username: string };
   let agent: AgentCredentials;
