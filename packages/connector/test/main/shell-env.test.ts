@@ -19,12 +19,14 @@ function shellOutput(vars: Record<string, string>, opts: { banner?: string } = {
 
 const realUser = { username: 'real', homedir: '/Users/real', shell: '/bin/zsh' };
 
+const IDENTITY = { USER: 'real', LOGNAME: 'real', HOME: '/Users/real', SHELL: '/bin/zsh' };
+
 /** Deps that never touch the real OS — a fixed identity, a fixed /etc/shells, and a scripted shell. */
 function deps(over: Partial<ShellEnvDeps> = {}): Partial<ShellEnvDeps> {
   return {
     readUserInfo: () => realUser,
     readFile: () => '/bin/zsh\n/bin/bash\n# comment\n/usr/bin/false\n',
-    runShell: (_shell, _command, cb) => cb(null, shellOutput({ PATH: '/sourced/bin' })),
+    runShell: (_shell, _command, _env, cb) => cb(null, shellOutput({ PATH: '/sourced/bin' })),
     ...over,
   };
 }
@@ -76,11 +78,28 @@ describe('pickLoginShell', () => {
 });
 
 describe('resolveShellEnv', () => {
+  it('seeds the sourcing shell with identity + TERM=dumb (so $HOME-keyed profiles resolve)', async () => {
+    let spawnEnv: Record<string, string> | undefined;
+    await resolveShellEnv(
+      '/bin/zsh',
+      {},
+      deps({
+        runShell: (_s, _c, env, cb) => {
+          spawnEnv = env;
+          cb(null, shellOutput({ PATH: '/sourced/bin' }));
+        },
+      }),
+    );
+    // HOME present so bash -ilc can read ~/.bash_profile and nvm/Homebrew resolve $HOME.
+    expect(spawnEnv).toEqual({ TERM: 'dumb', ...IDENTITY });
+  });
+
   it('sources the shell, strips the banner, and overlays identity', async () => {
     const env = await resolveShellEnv(
       '/bin/zsh',
+      {},
       deps({
-        runShell: (_s, _c, cb) =>
+        runShell: (_s, _c, _env, cb) =>
           cb(null, shellOutput({ PATH: '/sourced/bin', USER: 'stale' }, { banner: 'Configuring from .zprofile\n' })),
       }),
     );
@@ -95,32 +114,31 @@ describe('resolveShellEnv', () => {
   it('drops transient shell bookkeeping (_, PWD, OLDPWD, SHLVL)', async () => {
     const env = await resolveShellEnv(
       '/bin/zsh',
+      {},
       deps({
-        runShell: (_s, _c, cb) =>
+        runShell: (_s, _c, _env, cb) =>
           cb(null, shellOutput({ PATH: '/sourced/bin', _: '/usr/bin/env', PWD: '/x', OLDPWD: '/y', SHLVL: '3' })),
       }),
     );
-    expect(env).toEqual({
-      PATH: '/sourced/bin',
-      USER: 'real',
-      LOGNAME: 'real',
-      HOME: '/Users/real',
-      SHELL: '/bin/zsh',
-    });
+    expect(env).toEqual({ PATH: '/sourced/bin', ...IDENTITY });
   });
 
-  it('falls back to identity-only when the shell spawn fails', async () => {
+  it('falls back to fallbackEnv + identity (not identity-only) when the shell spawn fails', async () => {
     const env = await resolveShellEnv(
       '/bin/zsh',
-      deps({ runShell: (_s, _c, cb) => cb(new Error('spawn EACCES'), '') }),
+      { PATH: '/launchd/bin', TMPDIR: '/tmp', UNSET: undefined },
+      deps({ runShell: (_s, _c, _env, cb) => cb(new Error('spawn EACCES'), '') }),
     );
-    expect(env).toEqual({ USER: 'real', LOGNAME: 'real', HOME: '/Users/real', SHELL: '/bin/zsh' });
+    // PATH/TMPDIR from the fallback survive (dropping them would be worse than the
+    // pre-sourcing env); undefined is filtered; identity is overlaid.
+    expect(env).toEqual({ PATH: '/launchd/bin', TMPDIR: '/tmp', ...IDENTITY });
   });
 
   it('falls back to raw output when delimiters are missing', async () => {
     const env = await resolveShellEnv(
       '/bin/zsh',
-      deps({ runShell: (_s, _c, cb) => cb(null, `PATH=/sourced/bin\0FOO=bar`) }),
+      {},
+      deps({ runShell: (_s, _c, _env, cb) => cb(null, `PATH=/sourced/bin\0FOO=bar`) }),
     );
     expect(env['PATH']).toBe('/sourced/bin');
     expect(env['FOO']).toBe('bar');
@@ -132,28 +150,35 @@ describe('captureEnvFromShell', () => {
     const env = await captureEnvFromShell(
       'basic',
       deps({
-        runShell: (_s, _c, cb) => cb(null, shellOutput({ PATH: '/sourced/bin', SOME_SECRET: 'x', USER: 'stale' })),
+        runShell: (_s, _c, _env, cb) =>
+          cb(null, shellOutput({ PATH: '/sourced/bin', SOME_SECRET: 'x', USER: 'stale' })),
       }),
     );
     // PATH from the sourced shell; USER from the password DB (not the stale one); secret dropped by `basic`.
-    expect(env).toEqual({
-      PATH: '/sourced/bin',
-      USER: 'real',
-      LOGNAME: 'real',
-      HOME: '/Users/real',
-      SHELL: '/bin/zsh',
-    });
+    expect(env).toEqual({ PATH: '/sourced/bin', ...IDENTITY });
   });
 
   it('all mode keeps sourced secrets too, but identity still wins', async () => {
     const env = await captureEnvFromShell(
       'all',
       deps({
-        runShell: (_s, _c, cb) => cb(null, shellOutput({ PATH: '/sourced/bin', SOME_SECRET: 'x', USER: 'stale' })),
+        runShell: (_s, _c, _env, cb) =>
+          cb(null, shellOutput({ PATH: '/sourced/bin', SOME_SECRET: 'x', USER: 'stale' })),
       }),
     );
     expect(env['SOME_SECRET']).toBe('x');
     expect(env['USER']).toBe('real');
+  });
+
+  it('supported shell selected but spawn fails → keeps the fallback PATH, not identity-only', async () => {
+    const env = await captureEnvFromShell(
+      'basic',
+      deps({ runShell: (_s, _c, _env, cb) => cb(new Error('timeout'), '') }),
+      { PATH: '/launchd/bin', SOME_SECRET: 'x' }, // a supported shell (/bin/zsh) is still picked from identity
+    );
+    // The launchd-provided PATH is preserved so the next agent launch can still
+    // find node; `basic` still drops the secret; identity overlaid.
+    expect(env).toEqual({ PATH: '/launchd/bin', ...IDENTITY });
   });
 
   it('falls back to the given env + identity when no supported login shell exists', async () => {
@@ -163,7 +188,7 @@ describe('captureEnvFromShell', () => {
       deps({
         readUserInfo: () => ({ ...realUser, shell: '' }), // no SHELL from the password DB
         readFile: () => '/usr/bin/fish\n', // /etc/shells has nothing supported
-        runShell: (_s, _c, cb) => {
+        runShell: (_s, _c, _env, cb) => {
           spawned = true;
           cb(null, '');
         },

@@ -52,20 +52,23 @@ export interface ShellEnvDeps {
   readonly readUserInfo: () => UserIdentity;
   /** Reads a file synchronously as utf8. Defaults to fs.readFileSync. */
   readonly readFile: (path: string) => string;
-  /** Spawns `shell -ilc <command>` and yields its stdout (or an error). */
-  readonly runShell: (shell: string, command: string, callback: (err: Error | null, stdout: string) => void) => void;
+  /** Spawns `shell -ilc <command>` with the given environment, yielding its stdout (or an error). */
+  readonly runShell: (
+    shell: string,
+    command: string,
+    env: Record<string, string>,
+    callback: (err: Error | null, stdout: string) => void,
+  ) => void;
 }
 
 const defaultDeps: ShellEnvDeps = {
   readUserInfo: userInfo,
   readFile: (path) => readFileSync(path, 'utf8'),
-  runShell: (shell, command, callback) => {
-    // Seed the sourcing shell with TERM=dumb so profile scripts don't emit
-    // terminal control sequences; identity is overlaid afterwards.
+  runShell: (shell, command, env, callback) => {
     execFile(
       shell,
       ['-ilc', command],
-      { encoding: 'utf8', timeout: SHELL_SOURCE_TIMEOUT_MS, env: { TERM: 'dumb' } },
+      { encoding: 'utf8', timeout: SHELL_SOURCE_TIMEOUT_MS, env },
       // With `encoding: 'utf8'`, execFile types stdout as a string.
       (err, stdout) => callback(err, stdout),
     );
@@ -75,6 +78,17 @@ const defaultDeps: ShellEnvDeps = {
 /** Resolve identity from injected deps, falling back to the OS password database. */
 function identityEnv(deps: Partial<ShellEnvDeps>): Record<string, string> {
   return getIdentityEnv(deps.readUserInfo ?? defaultDeps.readUserInfo);
+}
+
+/** Drop `undefined`-valued entries so a sparse ProcessEnv becomes a clean Record. */
+function definedEntries(env: NodeJS.ProcessEnv): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (value !== undefined) {
+      result[key] = value;
+    }
+  }
+  return result;
 }
 
 /**
@@ -116,19 +130,30 @@ export function pickLoginShell(
 /**
  * Source the given login shell and return its environment, with transient
  * bookkeeping stripped and password-DB identity overlaid last. On any failure
- * (spawn error, empty output) returns just the authoritative identity, so
- * callers still get a correct USER/LOGNAME/HOME.
+ * (spawn error, timeout, empty output) returns `fallbackEnv` + identity — never
+ * identity-only, which would drop PATH/TMPDIR/locale and make the next agent
+ * launch fail harder than the un-sourced sparse env it replaced.
  */
-export function resolveShellEnv(shell: string, deps: Partial<ShellEnvDeps> = {}): Promise<Record<string, string>> {
+export function resolveShellEnv(
+  shell: string,
+  fallbackEnv: NodeJS.ProcessEnv,
+  deps: Partial<ShellEnvDeps> = {},
+): Promise<Record<string, string>> {
   const runShell = deps.runShell ?? defaultDeps.runShell;
   const identity = identityEnv(deps);
+  // Seed the sourcing shell with identity (HOME/USER/LOGNAME/SHELL) so profile
+  // scripts that key off $HOME/$USER — nvm, pyenv, Homebrew — resolve against the
+  // real user. Without HOME, `bash -ilc` may not even read ~/.bash_profile, so
+  // the very PATH this is meant to recover would be missed. TERM=dumb keeps
+  // profile output free of terminal control sequences.
+  const spawnEnv = { TERM: 'dumb', ...identity };
   return new Promise((resolve) => {
     // Bracket `env -0` (null-delimited, so values may contain newlines) with a
     // marker, so we can strip any banner a profile script printed to stdout.
     const command = `printf %s '${ENV_DELIMITER}'; env -0; printf %s '${ENV_DELIMITER}'`;
-    runShell(shell, command, (err, stdout) => {
+    runShell(shell, command, spawnEnv, (err, stdout) => {
       if (err || !stdout) {
-        resolve({ ...identity });
+        resolve({ ...definedEntries(fallbackEnv), ...identity });
         return;
       }
       // Keep only what's between the two markers; a profile banner lands before
@@ -167,6 +192,6 @@ export async function captureEnvFromShell(
   fallbackEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<Record<string, string>> {
   const shell = pickLoginShell(fallbackEnv, deps);
-  const source = shell ? await resolveShellEnv(shell, deps) : { ...fallbackEnv, ...identityEnv(deps) };
+  const source = shell ? await resolveShellEnv(shell, fallbackEnv, deps) : { ...fallbackEnv, ...identityEnv(deps) };
   return captureEnv(mode, source);
 }
