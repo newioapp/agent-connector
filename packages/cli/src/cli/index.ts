@@ -20,9 +20,12 @@ import type { AddOptions, CreateAccountOptions, UpdateOptions } from './agent-co
 import * as updater from './update-commands.js';
 import type { UpdateContext } from './update-commands.js';
 import { LOG_LEVELS } from '../daemon/log-level.js';
+import { commandPathOf, shouldEnforceVersionGate, enforceVersionGate } from './version-gate.js';
+import type { VersionGateContext } from './version-gate.js';
+import { resolvePlatform } from '../update/version-gate.js';
 
 // Resolved once at startup from NEWIO_STAGE / NEWIO_API_URL / NEWIO_WS_URL / NEWIO_CDN_URL.
-const { stage, cdnBaseUrl } = resolveConfig();
+const { stage, apiBaseUrl, cdnBaseUrl } = resolveConfig();
 
 // Everything the self-updater needs: which channel (CDN) to check, the running
 // version, and where to cache the once-per-day result for this stage.
@@ -38,6 +41,16 @@ const updateContext: UpdateContext = {
   argv0: process.argv0,
 };
 
+// Everything the per-command version gate needs: the backend to ask, the running
+// version + platform to report, and where to cache the verdict for this stage.
+const versionGateContext: VersionGateContext = {
+  apiBaseUrl,
+  currentVersion: version,
+  platform: resolvePlatform(),
+  cachePath: getDaemonPaths(stage).versionGateCachePath,
+  argv0: process.argv0,
+};
+
 const program = new Command();
 program
   .name('newio')
@@ -47,6 +60,18 @@ program
 // Client commands install no log handler: the SDK logger drops getLogger() calls
 // when none is set, and a failed command surfaces through the top-level catch
 // below (console.error). Only the daemon installs a handler (see runDaemon).
+
+// Before any command's action, ask the backend whether this version may still
+// operate (cached, fail-open). A forced update aborts here; deprecation warns.
+// Skips the updater, the internal bridge, and daemon manage/inspect verbs so a
+// forced-out connector can still recover. Running per-command (not once at daemon
+// startup) is deliberate: the daemon launches once and rarely restarts, while
+// users touch these commands constantly.
+program.hook('preAction', async (_thisCommand, actionCommand) => {
+  if (shouldEnforceVersionGate(commandPathOf(actionCommand))) {
+    await enforceVersionGate(versionGateContext);
+  }
+});
 
 // ---------------------------------------------------------------------------
 // daemon

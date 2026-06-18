@@ -1,21 +1,23 @@
 /**
  * Backend-driven version gating for the connector.
  *
- * On startup the daemon asks the backend `GET /version/check` whether the running
- * binary is still allowed to run. The backend owns the policy:
- *   - `forceUpdate` → this version is below the minimum supported; the daemon must
- *     refuse to start and tell the user to update.
- *   - `deprecation` → still supported, but scheduled for sunset; the daemon warns
- *     and continues.
+ * The CLI asks the backend `GET /version/check` whether the running binary is
+ * still allowed to operate. The backend owns the policy:
+ *   - `forceUpdate` → this version is below the minimum supported; the CLI must
+ *     abort the command and tell the user to update.
+ *   - `deprecation` → still supported, but scheduled for sunset; warn and continue.
  *
- * The verdict is cached to a per-stage file (like the CDN self-updater's
- * once-per-day check) so frequent daemon restarts don't re-hit the backend every
- * time — within {@link GATE_CHECK_INTERVAL_MS} a restart reuses the last verdict.
+ * Like the CDN self-updater's once-per-day check, the verdict is cached to a
+ * per-stage file so the gate that runs before each command doesn't re-hit the
+ * backend every time — within {@link GATE_CHECK_INTERVAL_MS} a command reuses the
+ * last verdict. (Running per-command, not once at daemon startup, is deliberate:
+ * the daemon process is launched once and rarely restarts, whereas users touch the
+ * client commands constantly.)
  *
  * This is distinct from {@link import('./check.js')} (the CDN self-updater that
  * surfaces "a newer build exists"): that asks *what's latest*; this asks *am I
  * still allowed to run*. The check always fails OPEN — a network blip, a 5xx, or a
- * malformed body must never stop the daemon, so any failure resolves to `unknown`
+ * malformed body must never block the user, so any failure resolves to `unknown`
  * (or the last cached verdict) and the caller proceeds as if healthy.
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';

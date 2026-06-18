@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -7,24 +7,19 @@ import { runDaemon } from '../src/daemon/index';
 
 const savedHome = process.env['HOME'];
 const savedLogFile = process.env['NEWIO_LOG_FILE'];
-const savedApiUrl = process.env['NEWIO_API_URL'];
-const savedNewioHome = process.env['NEWIO_HOME'];
 let dir: string | undefined;
 
-function restoreEnv(key: string, saved: string | undefined): void {
-  if (saved === undefined) {
-    delete process.env[key];
-  } else {
-    process.env[key] = saved;
-  }
-}
-
 afterEach(() => {
-  restoreEnv('HOME', savedHome);
-  restoreEnv('NEWIO_LOG_FILE', savedLogFile);
-  restoreEnv('NEWIO_API_URL', savedApiUrl);
-  restoreEnv('NEWIO_HOME', savedNewioHome);
-  vi.restoreAllMocks();
+  if (savedHome === undefined) {
+    delete process.env['HOME'];
+  } else {
+    process.env['HOME'] = savedHome;
+  }
+  if (savedLogFile === undefined) {
+    delete process.env['NEWIO_LOG_FILE'];
+  } else {
+    process.env['NEWIO_LOG_FILE'] = savedLogFile;
+  }
   setLogHandler(undefined);
   if (dir && existsSync(dir)) {
     rmSync(dir, { recursive: true, force: true });
@@ -47,33 +42,5 @@ describe('runDaemon startup failures', () => {
     const contents = readFileSync(logPath, 'utf8');
     expect(contents).toContain('Daemon failed to start');
     expect(contents).toContain('HOME is not set');
-  });
-
-  it('aborts startup when the backend forces an update', async () => {
-    dir = mkdtempSync(join(tmpdir(), 'newio-startup-'));
-    const logPath = join(dir, 'daemon.log');
-    process.env['NEWIO_LOG_FILE'] = logPath;
-    process.env['HOME'] = dir; // pass the HOME check so startup reaches the version gate
-    process.env['NEWIO_HOME'] = dir; // sandbox the version-gate cache write into the temp dir
-    process.env['NEWIO_API_URL'] = 'https://api.example.test';
-
-    // The gate runs before any socket/agent setup, so a forced response rejects
-    // cleanly without binding the socket.
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          minSupportedVersion: '99.0.0',
-          latestVersion: '99.0.0',
-          forceUpdate: true,
-          updateUrl: 'https://dl.test',
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      ),
-    );
-
-    await expect(runDaemon()).rejects.toThrow(/below the minimum supported version/);
-
-    const contents = readFileSync(logPath, 'utf8');
-    expect(contents).toContain('no longer supported');
   });
 });
