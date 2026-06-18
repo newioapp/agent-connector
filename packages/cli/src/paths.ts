@@ -89,9 +89,9 @@ export interface DaemonPaths {
   readonly updateCachePath: string;
   /**
    * Where the daemon caches the backend version-gate verdict (force-update /
-   * deprecation), so frequent restarts don't re-hit the backend every time. A
-   * stage-scoped sibling of the data dir (e.g. `~/.newio-dev/version-gate.json`),
-   * kept out of connector/ like the update cache so daemon uninstall preserves it.
+   * deprecation), so frequent restarts don't re-hit the backend every time. Lives
+   * inside the daemon-owned data dir (e.g. `~/.newio-dev/connector/version-gate.json`)
+   * — it's pure runtime state, so a `daemon uninstall` is welcome to clear it.
    */
   readonly versionGateCachePath: string;
 }
@@ -124,8 +124,8 @@ export function getDaemonPaths(stage: Stage): DaemonPaths {
     // Beside the data dir (not under connector/, which the daemon owns) so a
     // `daemon uninstall` doesn't wipe the update cadence: `~/.newio/update-check.json`.
     updateCachePath: join(base, home, 'update-check.json'),
-    // Likewise beside the data dir: `~/.newio/version-gate.json`.
-    versionGateCachePath: join(base, home, 'version-gate.json'),
+    // Inside the data dir (daemon-owned runtime state): `~/.newio/connector/version-gate.json`.
+    versionGateCachePath: join(dataDir, 'version-gate.json'),
   };
 }
 

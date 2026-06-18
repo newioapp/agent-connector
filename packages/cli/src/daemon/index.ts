@@ -169,14 +169,17 @@ export async function runDaemon(opts: RunDaemonOptions = {}): Promise<void> {
 
     const { dataDir, socketPath, pidPath, downloadsDir, versionGateCachePath } = getDaemonPaths(stage);
 
+    // Create the data dir up front (0o700) so the version-gate cache, which lives
+    // inside it, isn't the one to create it with looser default permissions.
+    if (!existsSync(dataDir)) {
+      mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+    }
+
     // Ask the backend whether this version may run before touching the socket or
     // launching agents. Forced updates abort here; deprecation only warns. The
     // verdict is cached (versionGateCachePath) so frequent restarts don't re-hit
     // the backend, and the gate fails open — an unreachable backend never blocks.
     await enforceVersionGate(apiBaseUrl, versionGateCachePath);
-    if (!existsSync(dataDir)) {
-      mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-    }
 
     // ACP agents launch the MCP bridge by re-invoking this same CLI as
     // `<self> mcp-bridge <socket>` — no reliance on `newio` being on the agent
