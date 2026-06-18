@@ -8,10 +8,13 @@ import { getDaemonPaths, resolveConfig, stageSuffix, stageFromCommandName, type 
 import { createServiceManager, type InstallOptions, type ServiceStatus } from '../service/index.js';
 import { withDaemon } from '../client/connect.js';
 import { resolveSelfExec, resolveLauncherPath, cliCommandName } from '../sea.js';
+import { parseLogLevel, DEFAULT_LOG_LEVEL } from '../daemon/log-level.js';
 
 export interface DaemonStartOptions {
   readonly stage: Stage;
   readonly enable: boolean;
+  /** Log verbosity from `--log-level`; baked into the service env, defaults to `info`. */
+  readonly logLevel?: string;
 }
 
 /** Build the install options (service argv + baked environment) for a stage. */
@@ -43,8 +46,14 @@ function resolveInstallOptions(opts: DaemonStartOptions): InstallOptions {
   // version-pinned real path so updates apply on the daemon's next start.
   const programExec = entryArgs.length === 0 ? resolveLauncherPath(execPath) : execPath;
 
+  // Bake the resolved level into the service argv as `daemon run --log-level
+  // <level>` — the same flag the user passed — so the service-launched daemon is
+  // driven by the flag, not an env var. Validated by commander; falls back to
+  // `info` when omitted.
+  const logLevel = parseLogLevel(opts.logLevel) ?? DEFAULT_LOG_LEVEL;
+
   return {
-    programArguments: [programExec, ...entryArgs, 'daemon', 'run'],
+    programArguments: [programExec, ...entryArgs, 'daemon', 'run', '--log-level', logLevel],
     env,
     logPath,
     enable: opts.enable,
