@@ -35,10 +35,13 @@ export function resolvePlatform(platform: NodeJS.Platform = process.platform): V
   }
 }
 
-/** Mirrors the backend `CheckVersionResponse`; extra fields are ignored. */
+/**
+ * Mirrors the relevant fields of the backend `CheckVersionResponse`; extra fields
+ * (including the deprecated `latestVersion`) are ignored. The latest available
+ * version is sourced from the CDN release manifest, not this endpoint.
+ */
 const responseSchema = z.object({
   minSupportedVersion: z.string(),
-  latestVersion: z.string(),
   forceUpdate: z.boolean(),
   updateUrl: z.string(),
   deprecation: z
@@ -56,12 +59,7 @@ const responseSchema = z.object({
 export type VersionGateResult =
   | { readonly status: 'ok' }
   | { readonly status: 'deprecated'; readonly sunsetDate: string; readonly message: string }
-  | {
-      readonly status: 'forced';
-      readonly minSupportedVersion: string;
-      readonly latestVersion: string;
-      readonly updateUrl: string;
-    }
+  | { readonly status: 'forced'; readonly minSupportedVersion: string; readonly updateUrl: string }
   | { readonly status: 'unknown' };
 
 export interface VersionGateOptions {
@@ -108,12 +106,7 @@ export async function evaluateVersionGate(opts: VersionGateOptions): Promise<Ver
     }
     const data = parsed.data;
     if (data.forceUpdate) {
-      return {
-        status: 'forced',
-        minSupportedVersion: data.minSupportedVersion,
-        latestVersion: data.latestVersion,
-        updateUrl: data.updateUrl,
-      };
+      return { status: 'forced', minSupportedVersion: data.minSupportedVersion, updateUrl: data.updateUrl };
     }
     if (data.deprecation !== undefined) {
       return { status: 'deprecated', sunsetDate: data.deprecation.sunsetDate, message: data.deprecation.message };

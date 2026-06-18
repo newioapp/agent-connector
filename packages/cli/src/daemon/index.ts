@@ -45,7 +45,7 @@ async function enforceVersionGate(apiBaseUrl: string): Promise<void> {
     case 'forced':
       log.error(
         `This connector (${version}) is no longer supported — the minimum supported version is ${gate.minSupportedVersion}. ` +
-          `Update to ${gate.latestVersion} or newer (${gate.updateUrl}) and start the daemon again.`,
+          `Update to the latest version (${gate.updateUrl}) and start the daemon again.`,
       );
       throw new Error(
         `Connector version ${version} is below the minimum supported version ${gate.minSupportedVersion}. Update to continue (${gate.updateUrl}).`,

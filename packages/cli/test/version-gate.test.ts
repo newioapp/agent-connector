@@ -37,6 +37,7 @@ describe('resolvePlatform', () => {
 
 describe('evaluateVersionGate', () => {
   it('returns "forced" when the backend forces an update', async () => {
+    // latestVersion is deprecated and ignored — the gate does not surface it.
     const fetchImpl = vi.fn().mockResolvedValue(
       jsonResponse({
         minSupportedVersion: '1.0.0',
@@ -46,12 +47,7 @@ describe('evaluateVersionGate', () => {
       }),
     );
     const result = await evaluateVersionGate({ apiBaseUrl: API, currentVersion: '0.9.0', fetchImpl });
-    expect(result).toEqual({
-      status: 'forced',
-      minSupportedVersion: '1.0.0',
-      latestVersion: '1.3.0',
-      updateUrl: 'https://dl.test',
-    });
+    expect(result).toEqual({ status: 'forced', minSupportedVersion: '1.0.0', updateUrl: 'https://dl.test' });
   });
 
   it('returns "deprecated" with the verbatim message when a deprecation block is present', async () => {
