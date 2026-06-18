@@ -8,6 +8,7 @@ import { runDaemon } from '../src/daemon/index';
 const savedHome = process.env['HOME'];
 const savedLogFile = process.env['NEWIO_LOG_FILE'];
 const savedApiUrl = process.env['NEWIO_API_URL'];
+const savedNewioHome = process.env['NEWIO_HOME'];
 let dir: string | undefined;
 
 function restoreEnv(key: string, saved: string | undefined): void {
@@ -22,6 +23,7 @@ afterEach(() => {
   restoreEnv('HOME', savedHome);
   restoreEnv('NEWIO_LOG_FILE', savedLogFile);
   restoreEnv('NEWIO_API_URL', savedApiUrl);
+  restoreEnv('NEWIO_HOME', savedNewioHome);
   vi.restoreAllMocks();
   setLogHandler(undefined);
   if (dir && existsSync(dir)) {
@@ -52,6 +54,7 @@ describe('runDaemon startup failures', () => {
     const logPath = join(dir, 'daemon.log');
     process.env['NEWIO_LOG_FILE'] = logPath;
     process.env['HOME'] = dir; // pass the HOME check so startup reaches the version gate
+    process.env['NEWIO_HOME'] = dir; // sandbox the version-gate cache write into the temp dir
     process.env['NEWIO_API_URL'] = 'https://api.example.test';
 
     // The gate runs before any socket/agent setup, so a forced response rejects

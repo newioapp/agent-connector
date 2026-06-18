@@ -35,11 +35,12 @@ const log = getLogger('daemon');
  * continue. The check fails open — a failed/unreachable check resolves to
  * `unknown` and never blocks the daemon.
  */
-async function enforceVersionGate(apiBaseUrl: string): Promise<void> {
+async function enforceVersionGate(apiBaseUrl: string, cachePath: string): Promise<void> {
   const gate = await evaluateVersionGate({
     apiBaseUrl,
     currentVersion: version,
     platform: resolvePlatform(),
+    cachePath,
   });
   switch (gate.status) {
     case 'forced':
@@ -166,12 +167,13 @@ export async function runDaemon(opts: RunDaemonOptions = {}): Promise<void> {
 
     const { stage, apiBaseUrl, wsUrl } = resolveConfig();
 
+    const { dataDir, socketPath, pidPath, downloadsDir, versionGateCachePath } = getDaemonPaths(stage);
+
     // Ask the backend whether this version may run before touching the socket or
     // launching agents. Forced updates abort here; deprecation only warns. The
-    // gate fails open, so an unreachable backend never blocks startup.
-    await enforceVersionGate(apiBaseUrl);
-
-    const { dataDir, socketPath, pidPath, downloadsDir } = getDaemonPaths(stage);
+    // verdict is cached (versionGateCachePath) so frequent restarts don't re-hit
+    // the backend, and the gate fails open — an unreachable backend never blocks.
+    await enforceVersionGate(apiBaseUrl, versionGateCachePath);
     if (!existsSync(dataDir)) {
       mkdirSync(dataDir, { recursive: true, mode: 0o700 });
     }

@@ -8,15 +8,27 @@
  *   - `deprecation` → still supported, but scheduled for sunset; the daemon warns
  *     and continues.
  *
+ * The verdict is cached to a per-stage file (like the CDN self-updater's
+ * once-per-day check) so frequent daemon restarts don't re-hit the backend every
+ * time — within {@link GATE_CHECK_INTERVAL_MS} a restart reuses the last verdict.
+ *
  * This is distinct from {@link import('./check.js')} (the CDN self-updater that
  * surfaces "a newer build exists"): that asks *what's latest*; this asks *am I
  * still allowed to run*. The check always fails OPEN — a network blip, a 5xx, or a
  * malformed body must never stop the daemon, so any failure resolves to `unknown`
- * and the caller proceeds as if healthy.
+ * (or the last cached verdict) and the caller proceeds as if healthy.
  */
+import { readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { dirname } from 'path';
 import { z } from 'zod';
 
 const DEFAULT_TIMEOUT_MS = 3000;
+
+/**
+ * Re-check the gate at most once per this window; daemon restarts within it reuse
+ * the cached verdict. 4h matches the desktop app's force-update re-check cadence.
+ */
+export const GATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
 /** Platform values the backend's `/version/check` accepts. */
 export type VersionCheckPlatform = 'macos' | 'windows' | 'linux';
@@ -62,6 +74,23 @@ export type VersionGateResult =
   | { readonly status: 'forced'; readonly minSupportedVersion: string; readonly updateUrl: string }
   | { readonly status: 'unknown' };
 
+/** Verdicts worth caching — everything except the transient `unknown` failure. */
+const cacheableVerdictSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('ok') }),
+  z.object({ status: z.literal('deprecated'), sunsetDate: z.string(), message: z.string() }),
+  z.object({ status: z.literal('forced'), minSupportedVersion: z.string(), updateUrl: z.string() }),
+]);
+
+const cacheSchema = z.object({
+  /** Epoch ms of the last successful check. */
+  lastCheckAt: z.number(),
+  /** The binary version the verdict was computed for — a self-update invalidates it. */
+  currentVersion: z.string(),
+  verdict: cacheableVerdictSchema,
+});
+
+type GateCache = z.infer<typeof cacheSchema>;
+
 export interface VersionGateOptions {
   /** Backend API base URL (no trailing slash), e.g. `https://api.newio.app`. */
   readonly apiBaseUrl: string;
@@ -72,6 +101,12 @@ export interface VersionGateOptions {
   readonly timeoutMs?: number;
   /** Injectable fetch for tests; defaults to the global. */
   readonly fetchImpl?: typeof fetch;
+  /** Where to persist/read the cached verdict. Omit to disable caching (always fetch). */
+  readonly cachePath?: string;
+  /** Bypass a fresh cache and force a network check. */
+  readonly force?: boolean;
+  /** Injectable clock for tests. */
+  readonly now?: number;
 }
 
 /** Build the `/version/check` URL for the connector software. */
@@ -84,11 +119,29 @@ export function versionCheckUrl(apiBaseUrl: string, currentVersion: string, plat
   return `${base}/version/check?${params.toString()}`;
 }
 
+function readCache(cachePath: string): GateCache | null {
+  try {
+    const result = cacheSchema.safeParse(JSON.parse(readFileSync(cachePath, 'utf8')));
+    return result.success ? result.data : null;
+  } catch {
+    return null; // missing or corrupt — treat as no cache
+  }
+}
+
+function writeCache(cachePath: string, cache: GateCache): void {
+  try {
+    mkdirSync(dirname(cachePath), { recursive: true });
+    writeFileSync(cachePath, JSON.stringify(cache, null, 2));
+  } catch {
+    // A non-writable cache only costs an extra check on the next start — never fatal.
+  }
+}
+
 /**
- * Ask the backend whether this version may run. Always resolves — never throws —
- * returning `unknown` on any network/HTTP/parse failure so the daemon fails open.
+ * Hit the backend and translate the response into a verdict. Always resolves —
+ * never throws — returning `unknown` on any network/HTTP/parse failure.
  */
-export async function evaluateVersionGate(opts: VersionGateOptions): Promise<VersionGateResult> {
+async function fetchVersionGate(opts: VersionGateOptions): Promise<VersionGateResult> {
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
   const url = versionCheckUrl(opts.apiBaseUrl, opts.currentVersion, opts.platform);
   try {
@@ -117,4 +170,33 @@ export async function evaluateVersionGate(opts: VersionGateOptions): Promise<Ver
     // check itself — proceed as if healthy.
     return { status: 'unknown' };
   }
+}
+
+/**
+ * Resolve the version gate, fetching from the backend only when forced or when the
+ * cached verdict is missing/stale/for a different binary version. A successful
+ * verdict is cached; a failed check reuses the last cached verdict (so a backend
+ * blip never un-gates a forced client) or falls open to `unknown`.
+ */
+export async function evaluateVersionGate(opts: VersionGateOptions): Promise<VersionGateResult> {
+  const now = opts.now ?? Date.now();
+  const cached = opts.cachePath !== undefined ? readCache(opts.cachePath) : null;
+  // Reusable only if computed for THIS binary version (a self-update invalidates it).
+  const usable = cached !== null && cached.currentVersion === opts.currentVersion ? cached : null;
+
+  if (usable !== null && opts.force !== true && now - usable.lastCheckAt < GATE_CHECK_INTERVAL_MS) {
+    return usable.verdict;
+  }
+
+  const verdict = await fetchVersionGate(opts);
+  if (verdict.status !== 'unknown') {
+    if (opts.cachePath !== undefined) {
+      writeCache(opts.cachePath, { lastCheckAt: now, currentVersion: opts.currentVersion, verdict });
+    }
+    return verdict;
+  }
+
+  // The check itself failed: prefer the last known verdict for this version (even
+  // if stale) over nothing, else fail open.
+  return usable !== null ? usable.verdict : { status: 'unknown' };
 }
