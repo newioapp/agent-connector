@@ -19,6 +19,7 @@ import * as agent from './agent-commands.js';
 import type { AddOptions, CreateAccountOptions, UpdateOptions } from './agent-commands.js';
 import * as updater from './update-commands.js';
 import type { UpdateContext } from './update-commands.js';
+import { LOG_LEVELS, installClientLogHandler } from '../daemon/log-level.js';
 
 // Resolved once at startup from NEWIO_STAGE / NEWIO_API_URL / NEWIO_WS_URL / NEWIO_CDN_URL.
 const { stage, cdnBaseUrl } = resolveConfig();
@@ -43,6 +44,13 @@ program
   .description('Newio Agent Connector — headless agent management')
   .version(version, '-v, --version');
 
+// Client commands' getLogger() diagnostics (e.g. launchd/systemd service install)
+// need a sink or they vanish. Install one for every client invocation, fixed at
+// the `info` default and routed to stderr — there's no client-side flag yet (add
+// one later if a child command needs finer control). `daemon run` overrides this
+// with its own file/console handler once the daemon boots.
+installClientLogHandler();
+
 // ---------------------------------------------------------------------------
 // daemon
 // ---------------------------------------------------------------------------
@@ -52,18 +60,21 @@ const daemonCmd = program.command('daemon').description('Manage the daemon servi
 daemonCmd
   .command('run')
   .description('Run the daemon in the foreground')
-  .action(async () => {
+  .addOption(new Option('--log-level <level>', 'daemon log verbosity (default: info)').choices([...LOG_LEVELS]))
+  .action(async (_options: unknown, cmd: Command) => {
+    const { logLevel } = cmd.opts<{ logLevel?: string }>();
     const { runDaemon } = await import('../daemon/index.js');
-    await runDaemon();
+    await runDaemon({ logLevel });
   });
 
 daemonCmd
   .command('start')
   .description('Install and start the daemon service')
   .option('--no-enable', 'do not start on login/boot')
+  .addOption(new Option('--log-level <level>', 'daemon log verbosity (default: info)').choices([...LOG_LEVELS]))
   .action((_options: unknown, cmd: Command) => {
-    const o = cmd.opts<{ enable: boolean }>();
-    daemon.daemonStart({ stage, enable: o.enable });
+    const { enable, logLevel } = cmd.opts<{ enable: boolean; logLevel?: string }>();
+    daemon.daemonStart({ stage, enable, logLevel });
   });
 
 daemonCmd

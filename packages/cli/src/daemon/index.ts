@@ -21,6 +21,7 @@ import { resolveSelfExec, isSeaBinary } from '../sea.js';
 import { DaemonServer } from './server.js';
 import { DaemonHandler } from './handler.js';
 import { createDaemonFileLog } from './file-log.js';
+import { resolveLogLevel, isLevelEnabled } from './log-level.js';
 import { resolveConfig, getDaemonPaths } from '../paths.js';
 import { version } from '../../package.json';
 
@@ -47,11 +48,26 @@ function isSocketAlive(socketPath: string): Promise<boolean> {
   });
 }
 
+/** Options for {@link runDaemon}. */
+export interface RunDaemonOptions {
+  /**
+   * Effective log level from the `--log-level` flag. When omitted, falls back to
+   * the baked `NEWIO_LOG_LEVEL` (service path) and then the `info` default — see
+   * {@link resolveLogLevel}.
+   */
+  readonly logLevel?: string;
+}
+
 /**
  * Boot the daemon. Resolves config from the environment, sets up the agent
  * runtime, and serves JSON-RPC over the stage's Unix socket until SIGINT/SIGTERM.
  */
-export async function runDaemon(): Promise<void> {
+export async function runDaemon(opts: RunDaemonOptions = {}): Promise<void> {
+  // Resolve the threshold once: an explicit `--log-level` wins, else the
+  // `NEWIO_LOG_LEVEL` baked by `daemon start`, else `info`. Logs below it are
+  // dropped at the handler so production logs aren't flooded with `debug`.
+  const logLevel = resolveLogLevel(opts.logLevel);
+
   // A launchd-managed daemon gets NEWIO_LOG_FILE baked into its plist and owns a
   // rotating log file at that path (launchd no longer captures our stdout, so the
   // file can't grow unbounded and we never rotate it out from under an open
@@ -60,6 +76,9 @@ export async function runDaemon(): Promise<void> {
   const logFilePath = process.env['NEWIO_LOG_FILE'];
   const fileLog = logFilePath ? createDaemonFileLog(logFilePath) : undefined;
   setLogHandler((level, name, message, args) => {
+    if (!isLevelEnabled(level, logLevel)) {
+      return;
+    }
     if (fileLog) {
       fileLog.write(level, name, message, args);
       return;
@@ -230,7 +249,7 @@ export async function runDaemon(): Promise<void> {
 
     const server = new DaemonServer(handler);
     await server.listen(socketPath);
-    log.info(`newio daemon ${version} started (pid ${process.pid}, stage ${stage})`);
+    log.info(`newio daemon ${version} started (pid ${process.pid}, stage ${stage}, log level ${logLevel})`);
 
     let shuttingDown = false;
     async function shutdown(): Promise<void> {
