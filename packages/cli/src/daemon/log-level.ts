@@ -1,18 +1,17 @@
 /**
- * Log-level resolution + filtering for both the daemon and the client CLI.
+ * Daemon log-level resolution + filtering.
  *
  * The SDK logger (see packages/sdk/src/core/logger.ts) forwards every call to the
- * global handler regardless of level — filtering is the handler's job. Both the
- * long-running daemon and the short-lived client commands install a handler here
- * so `getLogger()` diagnostics have a sink everywhere, gated by one threshold.
+ * global handler regardless of level — filtering is the handler's job. The daemon
+ * applies a single threshold here so production logs aren't drowned in `debug`.
+ * (Client commands install no handler, so their getLogger() calls are dropped.)
  *
- * The daemon's level is controlled by `--log-level` on `daemon run`/`start` (a
- * CLI flag, per issue #462 — deliberately not an environment variable); `daemon
- * start` bakes the same `--log-level <level>` into the service unit's argv so the
- * launchd/systemd-launched `daemon run` is driven by the very same flag. The
- * client handler has no flag yet and runs at a fixed `info` default.
+ * The level is controlled by `--log-level` on `daemon run`/`start` (a CLI flag,
+ * per issue #462 — deliberately not an environment variable); `daemon start`
+ * bakes the same `--log-level <level>` into the service unit's argv so the
+ * launchd/systemd-launched `daemon run` is driven by the very same flag.
  */
-import { setLogHandler, type LogLevel } from '@newio/agent-sdk';
+import type { LogLevel } from '@newio/agent-sdk';
 
 /** The connector's log levels, in ascending order of severity. */
 export const LOG_LEVELS: readonly LogLevel[] = ['debug', 'info', 'warn', 'error'];
@@ -25,7 +24,7 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
   error: 3,
 };
 
-/** Default level for both the daemon and the client handler. */
+/** The daemon's default level: quiet enough for production, still useful. */
 export const DEFAULT_LOG_LEVEL: LogLevel = 'info';
 
 /** Narrow an arbitrary string to a known {@link LogLevel}, else `undefined`. */
@@ -48,25 +47,4 @@ export function resolveLogLevel(flag: string | undefined): LogLevel {
 /** True when `level` is at or above the configured `threshold`. */
 export function isLevelEnabled(level: LogLevel, threshold: LogLevel): boolean {
   return LEVEL_ORDER[level] >= LEVEL_ORDER[threshold];
-}
-
-/**
- * Install the client-side log handler for a CLI invocation.
- *
- * Unlike the daemon handler (which writes a timestamped, sortable log file), this
- * targets a human running a short-lived command, so it stays terse: just a
- * `[name]` source tag, no timestamp. Every level is written to **stderr** so it
- * never mixes into the stdout a command reserves for its results (e.g. `agent
- * info` JSON). Fixed at the `info` default — there is no client-side flag yet.
- *
- * The daemon's foreground process replaces this with its own handler when it
- * boots, so this only governs true client commands.
- */
-export function installClientLogHandler(): void {
-  setLogHandler((level, name, message, args) => {
-    if (!isLevelEnabled(level, DEFAULT_LOG_LEVEL)) {
-      return;
-    }
-    console.error(`[${name}]`, message, ...args);
-  });
 }

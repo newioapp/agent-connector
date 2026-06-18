@@ -19,7 +19,7 @@ import * as agent from './agent-commands.js';
 import type { AddOptions, CreateAccountOptions, UpdateOptions } from './agent-commands.js';
 import * as updater from './update-commands.js';
 import type { UpdateContext } from './update-commands.js';
-import { LOG_LEVELS, installClientLogHandler } from '../daemon/log-level.js';
+import { LOG_LEVELS } from '../daemon/log-level.js';
 
 // Resolved once at startup from NEWIO_STAGE / NEWIO_API_URL / NEWIO_WS_URL / NEWIO_CDN_URL.
 const { stage, cdnBaseUrl } = resolveConfig();
@@ -44,12 +44,9 @@ program
   .description('Newio Agent Connector — headless agent management')
   .version(version, '-v, --version');
 
-// Client commands' getLogger() diagnostics (e.g. launchd/systemd service install)
-// need a sink or they vanish. Install one for every client invocation, fixed at
-// the `info` default and routed to stderr — there's no client-side flag yet (add
-// one later if a child command needs finer control). `daemon run` overrides this
-// with its own file/console handler once the daemon boots.
-installClientLogHandler();
+// Client commands install no log handler: the SDK logger drops getLogger() calls
+// when none is set, and a failed command surfaces through the top-level catch
+// below (console.error). Only the daemon installs a handler (see runDaemon).
 
 // ---------------------------------------------------------------------------
 // daemon

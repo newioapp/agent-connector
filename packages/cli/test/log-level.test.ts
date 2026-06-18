@@ -1,12 +1,5 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { getLogger, setLogHandler } from '@newio/agent-sdk';
-import {
-  parseLogLevel,
-  resolveLogLevel,
-  isLevelEnabled,
-  installClientLogHandler,
-  DEFAULT_LOG_LEVEL,
-} from '../src/daemon/log-level';
+import { describe, it, expect } from 'vitest';
+import { parseLogLevel, resolveLogLevel, isLevelEnabled, DEFAULT_LOG_LEVEL } from '../src/daemon/log-level';
 
 describe('parseLogLevel', () => {
   it('accepts each known level', () => {
@@ -54,41 +47,5 @@ describe('isLevelEnabled', () => {
   it('passes only errors at error threshold', () => {
     expect(isLevelEnabled('warn', 'error')).toBe(false);
     expect(isLevelEnabled('error', 'error')).toBe(true);
-  });
-});
-
-describe('installClientLogHandler', () => {
-  afterEach(() => {
-    setLogHandler(undefined);
-    vi.restoreAllMocks();
-  });
-
-  it('writes diagnostics to stderr with a [name] tag and no timestamp', () => {
-    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    installClientLogHandler();
-
-    getLogger('launchd').info('Wrote plist', { path: '/x' });
-
-    expect(err).toHaveBeenCalledWith('[launchd]', 'Wrote plist', { path: '/x' });
-    // No ISO-8601 timestamp prefix (that's the daemon file log's concern).
-    expect(err.mock.calls[0]?.[0]).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
-  });
-
-  it('runs at the info default — suppresses debug, keeps info/warn/error', () => {
-    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    installClientLogHandler();
-    expect(DEFAULT_LOG_LEVEL).toBe('info');
-
-    const log = getLogger('svc');
-    log.debug('d');
-    log.info('i');
-    log.warn('w');
-    log.error('e');
-
-    expect(err).toHaveBeenCalledTimes(3);
-    expect(err).not.toHaveBeenCalledWith('[svc]', 'd');
-    expect(err).toHaveBeenCalledWith('[svc]', 'i');
-    expect(err).toHaveBeenCalledWith('[svc]', 'w');
-    expect(err).toHaveBeenCalledWith('[svc]', 'e');
   });
 });
