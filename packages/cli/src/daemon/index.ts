@@ -23,9 +23,43 @@ import { DaemonHandler } from './handler.js';
 import { createDaemonFileLog } from './file-log.js';
 import { resolveLogLevel, isLevelEnabled } from './log-level.js';
 import { resolveConfig, getDaemonPaths } from '../paths.js';
+import { evaluateVersionGate, resolvePlatform } from '../update/version-gate.js';
 import { version } from '../../package.json';
 
 const log = getLogger('daemon');
+
+/**
+ * Gate the daemon on the backend's version policy before it does any work.
+ *
+ * `forceUpdate` aborts startup (throws); a deprecation warning is logged and we
+ * continue. The check fails open — a failed/unreachable check resolves to
+ * `unknown` and never blocks the daemon.
+ */
+async function enforceVersionGate(apiBaseUrl: string): Promise<void> {
+  const gate = await evaluateVersionGate({
+    apiBaseUrl,
+    currentVersion: version,
+    platform: resolvePlatform(),
+  });
+  switch (gate.status) {
+    case 'forced':
+      log.error(
+        `This connector (${version}) is no longer supported — the minimum supported version is ${gate.minSupportedVersion}. ` +
+          `Update to ${gate.latestVersion} or newer (${gate.updateUrl}) and start the daemon again.`,
+      );
+      throw new Error(
+        `Connector version ${version} is below the minimum supported version ${gate.minSupportedVersion}. Update to continue (${gate.updateUrl}).`,
+      );
+    case 'deprecated':
+      log.warn(`Connector version ${version} is deprecated: ${gate.message}`);
+      break;
+    case 'unknown':
+      log.debug('Version check unavailable — continuing without gating.');
+      break;
+    case 'ok':
+      break;
+  }
+}
 
 /**
  * Probe whether a daemon is already listening on the socket. Returns true only
@@ -131,6 +165,11 @@ export async function runDaemon(opts: RunDaemonOptions = {}): Promise<void> {
     }
 
     const { stage, apiBaseUrl, wsUrl } = resolveConfig();
+
+    // Ask the backend whether this version may run before touching the socket or
+    // launching agents. Forced updates abort here; deprecation only warns. The
+    // gate fails open, so an unreachable backend never blocks startup.
+    await enforceVersionGate(apiBaseUrl);
 
     const { dataDir, socketPath, pidPath, downloadsDir } = getDaemonPaths(stage);
     if (!existsSync(dataDir)) {
