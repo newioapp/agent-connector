@@ -51,9 +51,9 @@ function isSocketAlive(socketPath: string): Promise<boolean> {
 /** Options for {@link runDaemon}. */
 export interface RunDaemonOptions {
   /**
-   * Effective log level from the `--log-level` flag. When omitted, falls back to
-   * the baked `NEWIO_LOG_LEVEL` (service path) and then the `info` default — see
-   * {@link resolveLogLevel}.
+   * Effective log level from the `--log-level` flag (passed directly in the
+   * foreground, or baked into the service argv by `daemon start`). When omitted,
+   * falls back to the `info` default — see {@link resolveLogLevel}.
    */
   readonly logLevel?: string;
 }
@@ -63,9 +63,9 @@ export interface RunDaemonOptions {
  * runtime, and serves JSON-RPC over the stage's Unix socket until SIGINT/SIGTERM.
  */
 export async function runDaemon(opts: RunDaemonOptions = {}): Promise<void> {
-  // Resolve the threshold once: an explicit `--log-level` wins, else the
-  // `NEWIO_LOG_LEVEL` baked by `daemon start`, else `info`. Logs below it are
-  // dropped at the handler so production logs aren't flooded with `debug`.
+  // Resolve the threshold once: the `--log-level` flag if given, else the `info`
+  // default. Logs below it are dropped at the handler so production logs aren't
+  // flooded with `debug`.
   const logLevel = resolveLogLevel(opts.logLevel);
 
   // A launchd-managed daemon gets NEWIO_LOG_FILE baked into its plist and owns a
