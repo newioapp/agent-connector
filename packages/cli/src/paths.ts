@@ -87,6 +87,15 @@ export interface DaemonPaths {
    * `~/.newio-dev/update-check.json`) so each stage tracks its own channel.
    */
   readonly updateCachePath: string;
+  /**
+   * Where the CLI caches the backend version-gate verdict (force-update /
+   * deprecation) so the per-command gate doesn't re-hit the backend every time.
+   * A stage-scoped sibling of the data dir, right next to the self-updater's
+   * cache (e.g. `~/.newio-dev/version-gate.json`) — both are client-side caches,
+   * and keeping them out of connector/ means `daemon uninstall` doesn't reset the
+   * gate cadence for the client commands that still run after it.
+   */
+  readonly versionGateCachePath: string;
 }
 
 /**
@@ -117,6 +126,8 @@ export function getDaemonPaths(stage: Stage): DaemonPaths {
     // Beside the data dir (not under connector/, which the daemon owns) so a
     // `daemon uninstall` doesn't wipe the update cadence: `~/.newio/update-check.json`.
     updateCachePath: join(base, home, 'update-check.json'),
+    // Beside the data dir, next to the update cache: `~/.newio/version-gate.json`.
+    versionGateCachePath: join(base, home, 'version-gate.json'),
   };
 }
 

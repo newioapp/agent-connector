@@ -65,6 +65,13 @@ describe('getDaemonPaths', () => {
     expect(paths.updateCachePath.startsWith(paths.dataDir)).toBe(false);
   });
 
+  it('caches the version-gate verdict beside the data dir, next to the update cache', () => {
+    expect(getDaemonPaths('prod').versionGateCachePath).toBe(join(homedir(), '.newio', 'version-gate.json'));
+    expect(getDaemonPaths('dev').versionGateCachePath).toBe(join(homedir(), '.newio-dev', 'version-gate.json'));
+    const paths = getDaemonPaths('dev');
+    expect(paths.versionGateCachePath.startsWith(paths.dataDir)).toBe(false);
+  });
+
   it('stage-suffixes both the data dir and the downloads dir for non-prod', () => {
     expect(getDaemonPaths('dev').dataDir).toBe(join(homedir(), '.newio-dev', 'connector'));
     expect(getDaemonPaths('dev').downloadsDir).toBe(join(homedir(), '.newio-dev-downloads'));
