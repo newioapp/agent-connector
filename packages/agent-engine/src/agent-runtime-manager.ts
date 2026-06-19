@@ -9,6 +9,7 @@ import type { CronStore, CronStoreFactory } from './cron-store';
 import type { EngineConfig } from './engine-config';
 import type { AgentRuntimeStatus, AgentErrorCode, AgentInfo } from './types';
 import type { AgentInstance } from './agent-instance';
+import type { WsConnectionStatus } from '@newio/agent-sdk';
 import { getLogger } from '@newio/agent-sdk';
 import { AgentInstanceImpl } from './agent-instance-impl';
 
@@ -45,10 +46,20 @@ export class AgentRuntimeManager {
     this.engineConfig = engineConfig;
   }
 
-  getStatus(agentId: string): { status: AgentRuntimeStatus; error?: string; errorCode?: AgentErrorCode } {
+  getStatus(agentId: string): {
+    status: AgentRuntimeStatus;
+    error?: string;
+    errorCode?: AgentErrorCode;
+    wsStatus?: WsConnectionStatus;
+  } {
     const instance = this.instances.get(agentId);
     return instance
-      ? { status: instance.status, error: instance.error, errorCode: instance.errorCode }
+      ? {
+          status: instance.status,
+          error: instance.error,
+          errorCode: instance.errorCode,
+          wsStatus: instance.getWsStatus(),
+        }
       : { status: 'stopped' };
   }
 

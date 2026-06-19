@@ -42,6 +42,7 @@ import { JsonSessionStore } from './json-session-store.js';
 import type { EngineConfig } from './engine-config';
 import { PromptManager } from './prompt-manager';
 import { getLogger } from '@newio/agent-sdk';
+import type { WsConnectionStatus } from '@newio/agent-sdk';
 import WebSocket from 'ws';
 import { PromptFormatterImpl } from './prompt-formatter';
 import { AcpSessionFactory } from './acp-session-factory.js';
@@ -152,6 +153,10 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   getAgentInfo(): AgentInfo | undefined {
     return this._sessionFactory?.getAgentInfo();
+  }
+
+  getWsStatus(): WsConnectionStatus | undefined {
+    return this._app?.getConnectionStatus();
   }
 
   async start(): Promise<void> {

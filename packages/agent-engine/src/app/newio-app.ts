@@ -22,6 +22,7 @@ import { buildMentions } from './mentions.js';
 import { MessageProcessor } from './message-processor.js';
 import { PendingActions } from './pending-actions.js';
 import type { WebSocketFactory } from '@newio/agent-sdk';
+import type { WsConnectionStatus } from '@newio/agent-sdk';
 import type { ApprovalHandle } from '@newio/agent-sdk';
 import type { StorePersistence } from './store.js';
 import type {
@@ -367,6 +368,11 @@ export class NewioApp implements NewioAppForAgent, NewioAppForMcp {
     this.cronScheduler.dispose();
     this.ws.disconnect();
     this.auth.dispose();
+  }
+
+  /** Get the live WebSocket connection health (connected / reconnecting / disconnected / connecting). */
+  getConnectionStatus(): WsConnectionStatus {
+    return this.ws.getConnectionStatus();
   }
 
   /** Register a listener for WebSocket disconnection. */

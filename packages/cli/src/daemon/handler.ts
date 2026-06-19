@@ -37,7 +37,7 @@ export class DaemonHandler implements RequestHandler {
     switch (method) {
       case 'agent.list': {
         return cfg.list().map((config) => {
-          const { status, error, errorCode } = rt.getStatus(config.id);
+          const { status, error, errorCode, wsStatus } = rt.getStatus(config.id);
           const approvalUrl = rt.getApprovalUrl(config.id);
           return {
             id: config.id,
@@ -46,6 +46,7 @@ export class DaemonHandler implements RequestHandler {
             error,
             ...(errorCode ? { errorCode } : {}),
             ...(approvalUrl ? { approvalUrl } : {}),
+            ...(wsStatus ? { wsStatus } : {}),
           };
         });
       }

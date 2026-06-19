@@ -9,6 +9,7 @@ export { NewioClient } from './core/client.js';
 export { NewioWebSocket } from './core/websocket.js';
 export type {
   ConnectionState,
+  WsConnectionStatus,
   ConnectionStateListener,
   ConnectionRejectedReason,
   ConnectionRejected,

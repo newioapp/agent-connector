@@ -105,6 +105,18 @@ export async function resolveAgentId(connector: DaemonConnector, query: string):
   throw new Error(`No agent matching "${query}".`);
 }
 
+/**
+ * Render the STATUS cell: the process-level runtime status, with the live
+ * WebSocket health appended when the realtime link is degraded (e.g. `running ·
+ * reconnecting`). Mirrors the desktop app, which surfaces only the dropped /
+ * reconnecting states — a healthy link adds no noise and shows just the status.
+ */
+function formatStatus(a: AgentStatusInfo): string {
+  return a.wsStatus === 'reconnecting' || a.wsStatus === 'disconnected'
+    ? `${a.runtimeStatus} · ${a.wsStatus}`
+    : a.runtimeStatus;
+}
+
 function printAgentTable(agents: readonly AgentStatusInfo[]): void {
   if (agents.length === 0) {
     console.log('No agents configured. Add one with: newio agent add --type <type> --username <username>');
@@ -115,9 +127,10 @@ function printAgentTable(agents: readonly AgentStatusInfo[]): void {
     name: a.config.newio?.displayName ?? '—',
     type: a.config.type,
     username: a.config.newio?.username ?? '—',
-    status: a.runtimeStatus,
-    // STATUS stays a single word; the full (possibly multi-line) error goes in
-    // DESCRIPTION, trimmed to its first line so the table stays aligned.
+    // The process status, plus the WebSocket health when the link is degraded.
+    // The full (possibly multi-line) error goes in DESCRIPTION, trimmed to its
+    // first line so the table stays aligned.
+    status: formatStatus(a),
     description: a.error ? firstLine(a.error) : '',
   }));
   const w = {
