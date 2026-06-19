@@ -15,16 +15,20 @@ export async function createAccount(
   onApprovalUrl: (url: string) => void,
 ): Promise<CreateAccountResult> {
   const auth = new AuthManager(apiBaseUrl);
-  const handle = await auth.register({ name });
-  log.info(`Registered agent ${handle.agentId}; awaiting browser approval`);
-  onApprovalUrl(handle.approvalUrl);
+  try {
+    const handle = await auth.register({ name });
+    log.info(`Registered agent ${handle.agentId}; awaiting browser approval`);
+    onApprovalUrl(handle.approvalUrl);
 
-  await handle.waitForApproval();
-  const client = new NewioClient({ baseUrl: apiBaseUrl, tokenProvider: auth.tokenProvider });
-  const me = await client.getMe({});
-  if (!me.username) {
-    throw new Error('Account was created but has no username.');
+    await handle.waitForApproval();
+    const client = new NewioClient({ baseUrl: apiBaseUrl, tokenProvider: auth.tokenProvider });
+    const me = await client.getMe({});
+    if (!me.username) {
+      throw new Error('Account was created but has no username.');
+    }
+    log.info(`Account created: @${me.username} (${me.userId})`);
+    return { username: me.username, agentId: me.userId };
+  } finally {
+    auth.dispose();
   }
-  log.info(`Account created: @${me.username} (${me.userId})`);
-  return { username: me.username, agentId: me.userId };
 }

@@ -259,13 +259,18 @@ export async function agentAdd(stage: Stage, opts: AddOptions): Promise<void> {
 export async function agentCreateAccount(opts: CreateAccountOptions): Promise<void> {
   const { apiBaseUrl } = resolveConfig();
   const auth = new AuthManager(apiBaseUrl);
-  const handle = await auth.register({ name: opts.name });
-  printApprovalUrl('Approve this new account in your browser:', handle.approvalUrl);
-  await handle.waitForApproval({ onPollAttempt: () => process.stdout.write('.') });
-  const client = new NewioClient({ baseUrl: apiBaseUrl, tokenProvider: auth.tokenProvider });
-  const me = await client.getMe({});
-  console.log(`\nAccount created: @${me.username ?? '(username not set)'} (${me.userId}).`);
-  console.log(`Add a runner for it with: newio agent add --type <type> --username ${me.username ?? '<username>'}`);
+  try {
+    const handle = await auth.register({ name: opts.name });
+    printApprovalUrl('Approve this new account in your browser:', handle.approvalUrl);
+    await handle.waitForApproval({ onPollAttempt: () => process.stdout.write('.') });
+    const client = new NewioClient({ baseUrl: apiBaseUrl, tokenProvider: auth.tokenProvider });
+    const me = await client.getMe({});
+    console.log(`\nAccount created: @${me.username ?? '(username not set)'} (${me.userId}).`);
+  } finally {
+    // Approval scheduled a token-refresh timer that keeps the event loop alive.
+    // This command is one-shot (no daemon, no saved tokens), so tear it down to let the process exit.
+    auth.dispose();
+  }
 }
 
 export async function agentRemove(stage: Stage, query: string): Promise<void> {
