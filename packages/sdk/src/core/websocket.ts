@@ -546,13 +546,9 @@ export class NewioWebSocket {
         this.wireWsHandlers(newWs);
         this.onWsConnected();
         if (oldWs && !oldWsState.died) {
-          oldWs.onmessage = null;
-          oldWs.onclose = null;
-          try {
-            oldWs.close();
-          } catch {
-            /* ignore */
-          }
+          // Tear down via detachWs so the shared protocol-pong listener is removed too —
+          // otherwise a late pong on the old socket would clear the new socket's watchdog.
+          this.detachWs(oldWs);
         }
       }
     } catch (err) {

@@ -460,6 +460,41 @@ describe('NewioWebSocket', () => {
       client.disconnect();
       expect(ws.pongListenerCount()).toBe(0);
     });
+
+    it('should remove the old socket pong listener after a proactive reconnect', async () => {
+      const wsInstances: ReturnType<typeof createProtocolMockWs>[] = [];
+      const client = new NewioWebSocket({
+        url: 'wss://ws.test',
+        tokenProvider: () => 'test-token',
+        proactiveReconnectMs: 5000,
+        wsFactory: () => {
+          const ws = createProtocolMockWs();
+          wsInstances.push(ws);
+          if (wsInstances.length === 1) {
+            queueMicrotask(() => ws.triggerOpenAndAccept());
+          }
+          return ws;
+        },
+      });
+
+      await client.connect();
+      expect(wsInstances[0]!.pongListenerCount()).toBe(1);
+
+      // Proactive reconnect: open + accept the new socket.
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(wsInstances).toHaveLength(2);
+      wsInstances[1]!.triggerOpen();
+      await vi.advanceTimersByTimeAsync(0);
+      wsInstances[1]!.triggerMessage(JSON.stringify({ action: 'connection.accepted' }));
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Old socket closed and its pong listener removed; new socket has exactly one.
+      expect(wsInstances[0]!.close).toHaveBeenCalled();
+      expect(wsInstances[0]!.pongListenerCount()).toBe(0);
+      expect(wsInstances[1]!.pongListenerCount()).toBe(1);
+
+      client.disconnect();
+    });
   });
 
   describe('auto-reconnect', () => {
