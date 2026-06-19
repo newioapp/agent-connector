@@ -2,68 +2,21 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NewioWebSocket, type WebSocketLike } from '../src/core/websocket.js';
 import { ConnectionRejectedError } from '../src/core/errors.js';
 
-/** Creates a mock WebSocket that exposes trigger methods. */
-function createMockWs() {
-  const ws: WebSocketLike & {
-    triggerOpen: () => void;
-    triggerClose: () => void;
-    triggerMessage: (data: unknown) => void;
-    triggerError: () => void;
-    triggerOpenAndAccept: () => void;
-    sent: string[];
-  } = {
-    onopen: null,
-    onclose: null,
-    onmessage: null,
-    onerror: null,
-    readyState: 1,
-    sent: [],
-    close: vi.fn(),
-    send: vi.fn((data: string) => {
-      ws.sent.push(data);
-      // Auto-reply with pong when ping is sent, so pong timeout doesn't fire in tests
-      try {
-        const parsed = JSON.parse(data) as { action?: string };
-        if (parsed.action === 'ping') {
-          ws.onmessage?.({ data: JSON.stringify({ action: 'pong' }) });
-        }
-      } catch {
-        /* ignore */
-      }
-    }),
-    triggerOpen() {
-      ws.onopen?.(null);
-    },
-    triggerClose() {
-      ws.onclose?.(null);
-    },
-    triggerMessage(data: unknown) {
-      ws.onmessage?.({ data });
-    },
-    triggerError() {
-      ws.onerror?.(null);
-    },
-    triggerOpenAndAccept() {
-      ws.triggerOpen();
-      queueMicrotask(() => ws.triggerMessage(JSON.stringify({ action: 'connection.accepted' })));
-    },
-  };
-  return ws;
-}
-
 /**
- * Creates a mock WebSocket that supports RFC 6455 protocol ping/pong (like Node `ws`):
- * exposes `ping()`, `on('pong')`, and `off('pong')`. When `autoPong` is true, calling
- * `ping()` synchronously fires registered pong listeners (simulating API Gateway's
- * gateway-level auto-pong) so the pong timeout never fires.
+ * Creates a mock WebSocket (modeled on Node `ws`) that exposes trigger methods.
+ * Supports RFC 6455 protocol ping/pong: `ping()`, `on('pong')`, `off('pong')`.
+ * When `autoPong` is true (default), calling `ping()` synchronously fires the
+ * registered pong listeners (simulating API Gateway's gateway-level auto-pong),
+ * so the pong timeout never fires in tests.
  */
-function createProtocolMockWs(opts: { autoPong?: boolean } = {}) {
+function createMockWs(opts: { autoPong?: boolean } = {}) {
   const autoPong = opts.autoPong ?? true;
   const pongListeners = new Set<() => void>();
   const ws: WebSocketLike & {
     triggerOpen: () => void;
     triggerClose: () => void;
     triggerMessage: (data: unknown) => void;
+    triggerError: () => void;
     triggerOpenAndAccept: () => void;
     triggerPong: () => void;
     pongListenerCount: () => number;
@@ -107,6 +60,9 @@ function createProtocolMockWs(opts: { autoPong?: boolean } = {}) {
     },
     triggerMessage(data: unknown) {
       ws.onmessage?.({ data });
+    },
+    triggerError() {
+      ws.onerror?.(null);
     },
     triggerPong() {
       for (const l of [...pongListeners]) {
@@ -343,56 +299,25 @@ describe('NewioWebSocket', () => {
     });
   });
 
-  describe('keepalive', () => {
-    it('should send ping every 30 seconds', async () => {
+  describe('keepalive (RFC 6455 protocol ping/pong)', () => {
+    it('should send a protocol ping (not a data frame) every 30 seconds', async () => {
       const ws = createMockWs();
       const client = createClient(ws);
-      await client.connect();
-
-      const initialSent = ws.sent.length;
-      await vi.advanceTimersByTimeAsync(30_000);
-
-      const pings = ws.sent.slice(initialSent).filter((s) => s.includes('ping'));
-      expect(pings).toHaveLength(1);
-      expect(JSON.parse(pings[0]!) as unknown).toEqual({ action: 'ping' });
-
-      client.disconnect();
-    });
-  });
-
-  describe('protocol keepalive (RFC 6455)', () => {
-    function createProtocolClient(mockWs: ReturnType<typeof createProtocolMockWs>, autoOpen = true) {
-      return new NewioWebSocket({
-        url: 'wss://ws.test',
-        tokenProvider: () => 'test-token',
-        wsFactory: () => {
-          if (autoOpen) {
-            queueMicrotask(() => mockWs.triggerOpenAndAccept());
-          }
-          return mockWs;
-        },
-      });
-    }
-
-    it('should send a protocol ping (not a JSON ping) when the socket supports it', async () => {
-      const ws = createProtocolMockWs();
-      const client = createProtocolClient(ws);
       await client.connect();
 
       const sentBefore = ws.sent.length;
       await vi.advanceTimersByTimeAsync(30_000);
 
-      // One protocol ping control frame, no JSON {action:'ping'} on the data channel.
+      // One protocol ping control frame, nothing written to the data channel.
       expect(ws.pingCount).toBe(1);
-      const jsonPings = ws.sent.slice(sentBefore).filter((s) => s.includes('"action":"ping"'));
-      expect(jsonPings).toHaveLength(0);
+      expect(ws.sent.slice(sentBefore)).toHaveLength(0);
 
       client.disconnect();
     });
 
     it('should register exactly one protocol pong listener', async () => {
-      const ws = createProtocolMockWs();
-      const client = createProtocolClient(ws);
+      const ws = createMockWs();
+      const client = createClient(ws);
       await client.connect();
 
       expect(ws.pongListenerCount()).toBe(1);
@@ -401,8 +326,8 @@ describe('NewioWebSocket', () => {
     });
 
     it('should stay connected when protocol pongs arrive (gateway auto-pong)', async () => {
-      const ws = createProtocolMockWs({ autoPong: true });
-      const client = createProtocolClient(ws);
+      const ws = createMockWs({ autoPong: true });
+      const client = createClient(ws);
       await client.connect();
 
       // Several keepalive cycles; each ping is auto-ponged, so the pong timeout never fires.
@@ -416,7 +341,7 @@ describe('NewioWebSocket', () => {
     });
 
     it('should reconnect when no protocol pong arrives within the timeout', async () => {
-      const wsInstances: ReturnType<typeof createProtocolMockWs>[] = [];
+      const wsInstances: ReturnType<typeof createMockWs>[] = [];
       let connectCount = 0;
 
       const client = new NewioWebSocket({
@@ -425,7 +350,7 @@ describe('NewioWebSocket', () => {
         wsFactory: () => {
           connectCount++;
           // First connection never auto-pongs; reconnection does (so it settles).
-          const ws = createProtocolMockWs({ autoPong: connectCount > 1 });
+          const ws = createMockWs({ autoPong: connectCount > 1 });
           wsInstances.push(ws);
           queueMicrotask(() => ws.triggerOpenAndAccept());
           return ws;
@@ -452,8 +377,8 @@ describe('NewioWebSocket', () => {
     });
 
     it('should remove the protocol pong listener on disconnect', async () => {
-      const ws = createProtocolMockWs();
-      const client = createProtocolClient(ws);
+      const ws = createMockWs();
+      const client = createClient(ws);
       await client.connect();
       expect(ws.pongListenerCount()).toBe(1);
 
@@ -462,13 +387,13 @@ describe('NewioWebSocket', () => {
     });
 
     it('should remove the old socket pong listener after a proactive reconnect', async () => {
-      const wsInstances: ReturnType<typeof createProtocolMockWs>[] = [];
+      const wsInstances: ReturnType<typeof createMockWs>[] = [];
       const client = new NewioWebSocket({
         url: 'wss://ws.test',
         tokenProvider: () => 'test-token',
         proactiveReconnectMs: 5000,
         wsFactory: () => {
-          const ws = createProtocolMockWs();
+          const ws = createMockWs();
           wsInstances.push(ws);
           if (wsInstances.length === 1) {
             queueMicrotask(() => ws.triggerOpenAndAccept());
