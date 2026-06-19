@@ -4,6 +4,7 @@
  * Each agent type provides its own implementation.
  * The instance manages its own SDK auth, WebSocket connection, and agent-specific logic.
  */
+import type { WsConnectionStatus } from '@newio/agent-sdk';
 import type { AgentRuntimeStatus, AgentErrorCode, AgentInfo } from './types';
 
 export interface AgentInstanceListener {
@@ -39,4 +40,6 @@ export interface AgentInstance {
   readonly errorCode?: AgentErrorCode;
   /** Runtime agent info — available after initialization. */
   getAgentInfo(): AgentInfo | undefined;
+  /** Live WebSocket connection health, or `undefined` when no app is running. */
+  getWsStatus(): WsConnectionStatus | undefined;
 }

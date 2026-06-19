@@ -24,6 +24,7 @@ import type {
   StartSessionResponse,
   UpdateMemoryRequest,
   UpdateMemoryResponse,
+  WsConnectionStatus,
 } from '@newio/agent-sdk';
 import type {
   AppEventHandlers,
@@ -104,6 +105,9 @@ export class MockNewioApp implements NewioAppForAgent, NewioAppForMcp {
     this.backend.unregisterListener(this.identity.userId);
   }
   onDisconnect(): void {}
+  getConnectionStatus(): WsConnectionStatus {
+    return 'connected';
+  }
 
   // ── Events ─────────────────────────────────────────────────────────────────
 

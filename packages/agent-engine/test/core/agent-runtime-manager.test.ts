@@ -91,6 +91,7 @@ describe('AgentRuntimeManager', () => {
         start: vi.fn().mockResolvedValue(undefined),
         stop: vi.fn().mockResolvedValue(undefined),
         getAgentInfo: vi.fn().mockReturnValue(undefined),
+        getWsStatus: vi.fn().mockReturnValue('connected'),
       } as never;
     });
   });
@@ -102,7 +103,7 @@ describe('AgentRuntimeManager', () => {
 
     it('returns instance status after start', () => {
       manager.start('agent-1');
-      expect(manager.getStatus('agent-1')).toEqual({ status: 'running', error: undefined });
+      expect(manager.getStatus('agent-1')).toEqual({ status: 'running', error: undefined, wsStatus: 'connected' });
     });
   });
 

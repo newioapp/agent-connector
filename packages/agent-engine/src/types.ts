@@ -21,6 +21,7 @@ import type {
   StartSessionResponse,
   UpdateMemoryRequest,
   UpdateMemoryResponse,
+  WsConnectionStatus,
 } from '@newio/agent-sdk';
 import type {
   CancelSessionHandler,
@@ -208,6 +209,12 @@ export interface AgentStatusInfo {
   readonly errorCode?: AgentErrorCode;
   /** Pending browser-approval URL while `runtimeStatus === 'awaiting_approval'`, for late-attaching clients. */
   readonly approvalUrl?: string;
+  /**
+   * Live WebSocket connection health, when the agent has a running app (omitted
+   * when stopped). Surfaced alongside `runtimeStatus` to show e.g. `running ·
+   * reconnecting` when the realtime link has dropped and is recovering.
+   */
+  readonly wsStatus?: WsConnectionStatus;
 }
 
 // ---------------------------------------------------------------------------
@@ -275,6 +282,8 @@ export interface NewioAppForAgent {
   init(): Promise<void>;
   dispose(): void;
   onDisconnect(handler: () => void): void;
+  /** Live WebSocket connection health (connected / reconnecting / disconnected / connecting). */
+  getConnectionStatus(): WsConnectionStatus;
 
   // ── Events ──
   onMessageNew(handler: MessageNewHandler): void;

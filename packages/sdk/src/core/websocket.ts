@@ -7,6 +7,16 @@ import type { ActivityStatus } from './types.js';
 /** WebSocket connection state. */
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected';
 
+/**
+ * Higher-level connection health, derived from {@link ConnectionState} plus
+ * connection history. Unlike the raw state, it distinguishes a first-time
+ * connect (`connecting`) from a recovery after a previously-good connection
+ * dropped (`reconnecting`), and an intentional/rejected close (`disconnected`)
+ * from a transient drop. Surfaced by callers (e.g. the CLI agent list) to mirror
+ * the desktop app's disconnect/reconnect indicator.
+ */
+export type WsConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
+
 /** Reason codes for server-initiated connection rejection. */
 export type ConnectionRejectedReason = 'CONNECTION_LIMIT_EXCEEDED';
 
@@ -128,6 +138,8 @@ export class NewioWebSocket {
   private pongTimeoutTimer: ReturnType<typeof setTimeout> | undefined;
   private intentionalClose = false;
   private rejected = false;
+  /** True once the socket has reached `connected` at least once — distinguishes initial connect from reconnect. */
+  private hasEverConnected = false;
   /** Stable listener for protocol pong frames — clears the pong timeout. */
   private readonly onProtocolPong: () => void;
 
@@ -183,6 +195,24 @@ export class NewioWebSocket {
   /** Get the current connection state. */
   getState(): ConnectionState {
     return this.state;
+  }
+
+  /**
+   * Get the derived connection health. Maps the raw {@link ConnectionState} and
+   * connection history to a status suitable for display:
+   * - `connected` — the link is up.
+   * - `disconnected` — intentionally closed, or rejected by the server (no auto-reconnect).
+   * - `reconnecting` — a previously-good connection dropped; auto-reconnect is in progress.
+   * - `connecting` — the initial connection has not yet succeeded.
+   */
+  getConnectionStatus(): WsConnectionStatus {
+    if (this.state === 'connected') {
+      return 'connected';
+    }
+    if (this.intentionalClose || this.rejected) {
+      return 'disconnected';
+    }
+    return this.hasEverConnected ? 'reconnecting' : 'connecting';
   }
 
   /** Register a listener for connection state changes. */
@@ -599,6 +629,9 @@ export class NewioWebSocket {
   private setState(newState: ConnectionState): void {
     if (this.state === newState) {
       return;
+    }
+    if (newState === 'connected') {
+      this.hasEverConnected = true;
     }
     this.state = newState;
     for (const listener of this.stateListeners) {

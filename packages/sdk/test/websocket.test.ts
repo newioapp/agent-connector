@@ -145,6 +145,62 @@ describe('NewioWebSocket', () => {
     });
   });
 
+  describe('getConnectionStatus (derived health)', () => {
+    it('reports connecting before the first connect, connected after, disconnected on intentional close', async () => {
+      const ws = createMockWs();
+      const client = createClient(ws);
+
+      expect(client.getConnectionStatus()).toBe('connecting');
+
+      await client.connect();
+      expect(client.getConnectionStatus()).toBe('connected');
+
+      client.disconnect();
+      expect(client.getConnectionStatus()).toBe('disconnected');
+    });
+
+    it('reports reconnecting after an unexpected drop, then connected once recovered', async () => {
+      const ws = createMockWs();
+      const client = createClient(ws);
+      await client.connect();
+      expect(client.getConnectionStatus()).toBe('connected');
+
+      // Unexpected close → auto-reconnect is scheduled; health is "reconnecting"
+      // for the whole recovery window (raw state cycles disconnected → connecting).
+      ws.triggerClose();
+      expect(client.getState()).toBe('disconnected');
+      expect(client.getConnectionStatus()).toBe('reconnecting');
+
+      // After the backoff elapses the reconnect succeeds (the mock re-accepts).
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(client.getConnectionStatus()).toBe('connected');
+
+      client.disconnect();
+    });
+
+    it('reports disconnected when the server rejects the connection (no auto-reconnect)', async () => {
+      const mockWs = createMockWs();
+      const client = new NewioWebSocket({
+        url: 'wss://ws.test',
+        tokenProvider: () => 'test-token',
+        wsFactory: () => {
+          queueMicrotask(() => {
+            mockWs.triggerOpen();
+            queueMicrotask(() =>
+              mockWs.triggerMessage(
+                JSON.stringify({ action: 'connection.rejected', reason: 'CONNECTION_LIMIT_EXCEEDED' }),
+              ),
+            );
+          });
+          return mockWs;
+        },
+      });
+
+      await expect(client.connect()).rejects.toThrow(ConnectionRejectedError);
+      expect(client.getConnectionStatus()).toBe('disconnected');
+    });
+  });
+
   describe('event handlers', () => {
     it('should dispatch typed events via on()', async () => {
       const ws = createMockWs();
