@@ -300,13 +300,13 @@ describe('NewioWebSocket', () => {
   });
 
   describe('keepalive (RFC 6455 protocol ping/pong)', () => {
-    it('should send a protocol ping (not a data frame) every 30 seconds', async () => {
+    it('should send a protocol ping (not a data frame) every 25 seconds', async () => {
       const ws = createMockWs();
       const client = createClient(ws);
       await client.connect();
 
       const sentBefore = ws.sent.length;
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(25_000);
 
       // One protocol ping control frame, nothing written to the data channel.
       expect(ws.pingCount).toBe(1);
@@ -331,8 +331,9 @@ describe('NewioWebSocket', () => {
       await client.connect();
 
       // Several keepalive cycles; each ping is auto-ponged, so the pong timeout never fires.
-      await vi.advanceTimersByTimeAsync(30_000 + 10_000);
-      await vi.advanceTimersByTimeAsync(30_000 + 10_000);
+      // 70s total → pings at 25s and 50s.
+      await vi.advanceTimersByTimeAsync(25_000 + 10_000);
+      await vi.advanceTimersByTimeAsync(25_000 + 10_000);
 
       expect(client.getState()).toBe('connected');
       expect(ws.pingCount).toBe(2);
@@ -361,7 +362,7 @@ describe('NewioWebSocket', () => {
       expect(connectCount).toBe(1);
 
       // Keepalive fires a ping; no pong comes back.
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(25_000);
       expect(wsInstances[0]!.pingCount).toBe(1);
       expect(client.getState()).toBe('connected');
 
