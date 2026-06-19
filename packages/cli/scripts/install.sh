@@ -1,8 +1,8 @@
-#!/usr/bin/env bash
+#!/bin/sh
 #
-# Newio CLI installer.
+# Newio CLI installer. POSIX sh — works under bash, dash, etc.
 #
-#   curl -fsSL https://cdn.newio.app/downloads/cli/install.sh | bash
+#   curl -fsSL https://cdn.newio.app/downloads/cli/install.sh | sh
 #
 # Detects your OS/arch, downloads the matching `newio` archive from the CDN,
 # verifies its SHA-256, and installs it with a versioned layout:
@@ -34,7 +34,7 @@
 #   NEWIO_DATA_DIR          Versioned binaries dir (default: ~/.local/share/<cmd>).
 #   NEWIO_VERSION           Install a specific published version instead of latest.
 #   NEWIO_KEEP_VERSIONS     How many versions to retain (default: 3).
-set -euo pipefail
+set -eu
 
 BASE_URL="${NEWIO_INSTALL_BASE_URL:-https://cdn.newio.app/downloads/cli}"
 BIN_DIR="${NEWIO_BIN_DIR:-$HOME/.local/bin}"
@@ -126,10 +126,10 @@ mkdir -p "$BIN_DIR"
 ln -sfn "$dest/$cli_name" "$BIN_DIR/$cli_name" # atomic-ish replace of the launcher
 
 # --- prune old versions (keep the symlink target + newest KEEP_VERSIONS) ----
-# Best-effort: run in a subshell with errexit/pipefail off so a no-match grep
+# Best-effort: run in a subshell with errexit off so a no-match grep
 # (e.g. on a first install) never aborts the installer.
 (
-  set +e +o pipefail
+  set +e
   case "$KEEP_VERSIONS" in '' | *[!0-9]*) KEEP_VERSIONS=0 ;; esac
   if [ "$KEEP_VERSIONS" -gt 0 ]; then
     current="$(basename "$dest")"
