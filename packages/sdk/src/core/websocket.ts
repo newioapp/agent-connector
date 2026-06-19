@@ -47,6 +47,14 @@ export interface SubscriptionError {
 /**
  * Minimal WebSocket interface — allows injecting a mock in tests.
  * Compatible with both browser `WebSocket` and Node.js `ws`.
+ *
+ * The `ping`/`on`/`off` members are optional and only present on the Node.js
+ * `ws` library. When available, the client uses RFC 6455 protocol ping/pong
+ * control frames for keepalive instead of application-level JSON frames — these
+ * are handled at the API Gateway layer, so they keep the connection alive
+ * without invoking the `$default` Lambda route. Browser `WebSocket` (and the
+ * undici global) do not expose protocol ping, so those clients fall back to the
+ * JSON `{ action: 'ping' }` path.
  */
 export interface WebSocketLike {
   onopen: ((ev: unknown) => void) | null;
@@ -56,6 +64,12 @@ export interface WebSocketLike {
   close(): void;
   send(data: string): void;
   readonly readyState: number;
+  /** Node `ws` only: send an RFC 6455 protocol ping control frame (opcode 0x9). */
+  ping?(data?: unknown): void;
+  /** Node `ws` (EventEmitter) only: subscribe to protocol pong control frames (opcode 0xA). */
+  on?(event: 'pong', listener: () => void): void;
+  /** Node `ws` (EventEmitter) only: remove a protocol pong listener. */
+  off?(event: 'pong', listener: () => void): void;
 }
 
 /** Factory function to create a WebSocket instance. */
@@ -81,7 +95,10 @@ const log = getLogger('websocket');
  * Features:
  * - JWT auth via `?token=` query param on connect
  * - Auto-reconnect with exponential backoff (1s → 30s cap)
- * - Keepalive ping every 5 minutes
+ * - Keepalive ping every 30s — RFC 6455 protocol ping/pong when the runtime
+ *   supports it (Node `ws`), falling back to application-level JSON ping/pong
+ *   for browser clients. Protocol pings keep the connection alive without
+ *   invoking the API Gateway `$default` Lambda route.
  * - Proactive reconnect at ~1h50m (avoids API Gateway 2-hour hard disconnect)
  * - Typed event handlers via `on()` / `off()`
  * - On-demand topic subscribe/unsubscribe
@@ -110,6 +127,10 @@ export class NewioWebSocket {
   private pongTimeoutTimer: ReturnType<typeof setTimeout> | undefined;
   private intentionalClose = false;
   private rejected = false;
+  /** Whether the active connection uses RFC 6455 protocol ping/pong (vs JSON keepalive). */
+  private usesProtocolPing = false;
+  /** Stable listener for protocol pong frames — clears the pong timeout. */
+  private readonly onProtocolPong: () => void;
 
   private readonly wsUrl: string;
   private readonly tokenProvider: TokenProvider;
@@ -132,6 +153,7 @@ export class NewioWebSocket {
     this.tokenProvider = opts.tokenProvider;
     this.wsFactory = opts.wsFactory ?? ((url) => new WebSocket(url) as unknown as WebSocketLike);
     this.proactiveReconnectMs = opts.proactiveReconnectMs ?? DEFAULT_PROACTIVE_RECONNECT_MS;
+    this.onProtocolPong = () => this.clearPongTimeout();
   }
 
   // ---------------------------------------------------------------------------
@@ -368,6 +390,7 @@ export class NewioWebSocket {
     ws.onclose = null;
     ws.onmessage = null;
     ws.onerror = null;
+    ws.off?.('pong', this.onProtocolPong);
     try {
       ws.close();
     } catch {
@@ -383,10 +406,8 @@ export class NewioWebSocket {
       // Ack messages use 'action' field
       if (typeof parsed['action'] === 'string') {
         if (parsed['action'] === 'pong') {
-          if (this.pongTimeoutTimer !== undefined) {
-            clearTimeout(this.pongTimeoutTimer);
-            this.pongTimeoutTimer = undefined;
-          }
+          // Application-level pong (JSON keepalive fallback for clients without protocol ping).
+          this.clearPongTimeout();
         } else if (parsed['action'] === 'subscribe_ack') {
           log.debug('Received subscribe_ack.');
           this.onSubscribeAckHandler?.(parsed as unknown as SubscribeAck);
@@ -422,19 +443,54 @@ export class NewioWebSocket {
     }
   }
 
+  /**
+   * Whether the given socket supports RFC 6455 protocol ping/pong.
+   * True only for the Node `ws` library (browser/undici WebSocket lack `.ping()`).
+   */
+  private supportsProtocolPing(ws: WebSocketLike): boolean {
+    return typeof ws.ping === 'function' && typeof ws.on === 'function' && typeof ws.off === 'function';
+  }
+
+  /** Clear a pending pong-timeout timer (pong received, or connection torn down). */
+  private clearPongTimeout(): void {
+    if (this.pongTimeoutTimer !== undefined) {
+      clearTimeout(this.pongTimeoutTimer);
+      this.pongTimeoutTimer = undefined;
+    }
+  }
+
+  /** Arm the pong-timeout watchdog: if no pong arrives in time, treat the connection as dead. */
+  private armPongTimeout(): void {
+    // Set before sending — for protocol/JSON pongs that may fire synchronously in tests.
+    this.clearPongTimeout();
+    this.pongTimeoutTimer = setTimeout(() => {
+      log.warn('Pong timeout — connection appears dead, reconnecting');
+      this.cleanup();
+      this.setState('disconnected');
+      this.scheduleReconnect();
+    }, PONG_TIMEOUT_MS);
+  }
+
   private startKeepalive(): void {
+    // Decide per-connection: protocol ping/pong (server-side `ws`) vs JSON (browser).
+    this.usesProtocolPing = !!this.ws && this.supportsProtocolPing(this.ws);
+    if (this.usesProtocolPing && this.ws) {
+      // off-then-on guarantees exactly one listener even across reconnect/revert cycles.
+      this.ws.off?.('pong', this.onProtocolPong);
+      this.ws.on?.('pong', this.onProtocolPong);
+      log.debug('Keepalive using RFC 6455 protocol ping/pong.');
+    }
+
     this.keepaliveTimer = setInterval(() => {
       if (this.ws && this.state === 'connected') {
         try {
-          // Set pong timeout before sending — the pong handler may fire synchronously
-          clearTimeout(this.pongTimeoutTimer ?? undefined);
-          this.pongTimeoutTimer = setTimeout(() => {
-            log.warn('Pong timeout — connection appears dead, reconnecting');
-            this.cleanup();
-            this.setState('disconnected');
-            this.scheduleReconnect();
-          }, PONG_TIMEOUT_MS);
-          this.ws.send(JSON.stringify({ action: 'ping' }));
+          this.armPongTimeout();
+          if (this.usesProtocolPing) {
+            // Control frame (opcode 0x9) — handled by API Gateway, no Lambda invocation.
+            this.ws.ping?.();
+          } else {
+            this.ws.send(JSON.stringify({ action: 'ping' }));
+          }
         } catch (err) {
           log.warn('Keepalive ping send failed.', err);
           // Will trigger onclose → reconnect
@@ -490,13 +546,9 @@ export class NewioWebSocket {
         this.wireWsHandlers(newWs);
         this.onWsConnected();
         if (oldWs && !oldWsState.died) {
-          oldWs.onmessage = null;
-          oldWs.onclose = null;
-          try {
-            oldWs.close();
-          } catch {
-            /* ignore */
-          }
+          // Tear down via detachWs so the shared protocol-pong listener is removed too —
+          // otherwise a late pong on the old socket would clear the new socket's watchdog.
+          this.detachWs(oldWs);
         }
       }
     } catch (err) {
@@ -547,10 +599,7 @@ export class NewioWebSocket {
       clearTimeout(this.proactiveReconnectTimer);
       this.proactiveReconnectTimer = undefined;
     }
-    if (this.pongTimeoutTimer !== undefined) {
-      clearTimeout(this.pongTimeoutTimer);
-      this.pongTimeoutTimer = undefined;
-    }
+    this.clearPongTimeout();
   }
 
   private cleanup(): void {
