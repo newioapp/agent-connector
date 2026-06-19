@@ -74,8 +74,8 @@ export interface WebSocketLike {
 /** Factory function to create a WebSocket instance. */
 export type WebSocketFactory = (url: string) => WebSocketLike;
 
-/** Keepalive interval: 30 seconds. */
-const KEEPALIVE_MS = 30_000;
+/** Keepalive interval: 25 seconds. */
+const KEEPALIVE_MS = 25_000;
 /** Pong timeout: if no pong received within this window after a ping, reconnect. */
 const PONG_TIMEOUT_MS = 10_000;
 /** Default proactive reconnect before API Gateway 2-hour hard limit. */
@@ -94,7 +94,7 @@ const log = getLogger('websocket');
  * Features:
  * - JWT auth via `?token=` query param on connect
  * - Auto-reconnect with exponential backoff (1s → 30s cap)
- * - Keepalive via RFC 6455 protocol ping/pong every 30s — control frames keep
+ * - Keepalive via RFC 6455 protocol ping/pong every 25s — control frames keep
  *   the connection alive without invoking the API Gateway `$default` Lambda
  *   route. A missing pong within the timeout triggers reconnect.
  * - Proactive reconnect at ~1h50m (avoids API Gateway 2-hour hard disconnect)
