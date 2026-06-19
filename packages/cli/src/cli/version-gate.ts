@@ -44,6 +44,22 @@ export function shouldEnforceVersionGate(commandPath: string): boolean {
   return !GATE_SKIP.has(commandPath);
 }
 
+/**
+ * The sentinel version an *unreleased* build carries: the monorepo's package.json
+ * pins `0.0.0`, and the release workflow overwrites it with the real tag version
+ * when building a shipped binary (`npm pkg set version=…`, see
+ * release-cli-binaries.yml). So a `0.0.0` build is a local/source/e2e build that
+ * was never released — and the backend would force-update any version below its
+ * floor, so the gate must never run for it. (Released builds, including dev `0.x`
+ * like `0.5.2`, carry a real version and stay gated.)
+ */
+export const UNRELEASED_VERSION = '0.0.0';
+
+/** Whether `version` is the unreleased sentinel — such builds skip the gate. */
+export function isUnreleasedBuild(version: string): boolean {
+  return version === UNRELEASED_VERSION;
+}
+
 export interface VersionGateContext {
   readonly apiBaseUrl: string;
   readonly currentVersion: string;
@@ -60,6 +76,9 @@ export interface VersionGateContext {
  * failure (or healthy verdict) falls open and returns without blocking.
  */
 export async function enforceVersionGate(ctx: VersionGateContext): Promise<void> {
+  if (isUnreleasedBuild(ctx.currentVersion)) {
+    return;
+  }
   const gate = await evaluateVersionGate({
     apiBaseUrl: ctx.apiBaseUrl,
     currentVersion: ctx.currentVersion,

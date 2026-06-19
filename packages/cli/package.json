@@ -1,6 +1,6 @@
 {
   "name": "@newio/cli",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "description": "Newio CLI and daemon — headless agent management",
   "license": "MIT",
   "type": "module",
