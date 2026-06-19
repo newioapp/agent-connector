@@ -6,10 +6,17 @@ import { DaemonServer } from '../src/daemon/server';
 import { DaemonHandler } from '../src/daemon/handler';
 import { DaemonClient } from '../src/client';
 import { DaemonConnector } from '../src/connector';
-import { parseEnvPairs, resolveAgentId, firstLine, remediationHint, agentAdd } from '../src/cli/agent-commands';
+import {
+  parseEnvPairs,
+  resolveAgentId,
+  firstLine,
+  remediationHint,
+  agentAdd,
+  formatStatus,
+} from '../src/cli/agent-commands';
 import { daemonLogsHint } from '../src/cli/daemon-commands';
 import type { DaemonConnector } from '../src/connector';
-import type { AgentConfig, AgentConfigManager, AgentRuntimeManager } from '@newio/agent-engine';
+import type { AgentConfig, AgentConfigManager, AgentRuntimeManager, AgentStatusInfo } from '@newio/agent-engine';
 
 describe('parseEnvPairs', () => {
   it('parses KEY=VALUE pairs (values may contain =)', () => {
@@ -60,6 +67,27 @@ describe('remediationHint', () => {
 
   it('returns undefined for an unknown/absent error code', () => {
     expect(remediationHint(undefined, 'aaaa1111')).toBeUndefined();
+  });
+});
+
+describe('formatStatus', () => {
+  function status(wsStatus?: AgentStatusInfo['wsStatus']): AgentStatusInfo {
+    return {
+      id: 'agent-1',
+      config: agent('agent-1', 'alpha'),
+      runtimeStatus: 'running',
+      ...(wsStatus ? { wsStatus } : {}),
+    };
+  }
+
+  it('omits healthy WebSocket status', () => {
+    expect(formatStatus(status())).toBe('running');
+    expect(formatStatus(status('connected'))).toBe('running');
+  });
+
+  it('appends degraded WebSocket status', () => {
+    expect(formatStatus(status('reconnecting'))).toBe('running · reconnecting');
+    expect(formatStatus(status('disconnected'))).toBe('running · disconnected');
   });
 });
 

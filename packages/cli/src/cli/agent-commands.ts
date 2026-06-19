@@ -111,7 +111,7 @@ export async function resolveAgentId(connector: DaemonConnector, query: string):
  * reconnecting`). Mirrors the desktop app, which surfaces only the dropped /
  * reconnecting states — a healthy link adds no noise and shows just the status.
  */
-function formatStatus(a: AgentStatusInfo): string {
+export function formatStatus(a: AgentStatusInfo): string {
   return a.wsStatus === 'reconnecting' || a.wsStatus === 'disconnected'
     ? `${a.runtimeStatus} · ${a.wsStatus}`
     : a.runtimeStatus;
