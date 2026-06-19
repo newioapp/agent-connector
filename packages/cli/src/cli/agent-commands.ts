@@ -266,7 +266,6 @@ export async function agentCreateAccount(opts: CreateAccountOptions): Promise<vo
     const client = new NewioClient({ baseUrl: apiBaseUrl, tokenProvider: auth.tokenProvider });
     const me = await client.getMe({});
     console.log(`\nAccount created: @${me.username ?? '(username not set)'} (${me.userId}).`);
-    console.log(`Add a runner for it with: newio agent add --type <type> --username ${me.username ?? '<username>'}`);
   } finally {
     // Approval scheduled a token-refresh timer that keeps the event loop alive.
     // This command is one-shot (no daemon, no saved tokens), so tear it down to let the process exit.
