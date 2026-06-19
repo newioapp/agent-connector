@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Command } from 'commander';
-import { commandPathOf, shouldEnforceVersionGate } from '../src/cli/version-gate';
+import { commandPathOf, shouldEnforceVersionGate, isUnreleasedBuild } from '../src/cli/version-gate';
 
 /** Build a `newio <path...>` command tree and return the leaf command. */
 function leaf(...path: string[]): Command {
@@ -53,6 +53,18 @@ describe('shouldEnforceVersionGate', () => {
       'env print',
     ]) {
       expect(shouldEnforceVersionGate(path)).toBe(true);
+    }
+  });
+});
+
+describe('isUnreleasedBuild', () => {
+  it('treats the exact 0.0.0 sentinel as an unreleased (un-gated) build', () => {
+    expect(isUnreleasedBuild('0.0.0')).toBe(true);
+  });
+
+  it('gates every real release version — including dev 0.x builds', () => {
+    for (const v of ['0.1.0', '0.5.2', '1.0.0', '2.3.4']) {
+      expect(isUnreleasedBuild(v)).toBe(false);
     }
   });
 });
