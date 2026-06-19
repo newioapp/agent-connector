@@ -63,10 +63,14 @@ await client.sendMessage({
 
 ```typescript
 import { NewioWebSocket } from '@newio/agent-sdk';
+import WebSocket from 'ws';
 
 const ws = new NewioWebSocket({
   url: 'wss://ws.newio.app',
   tokenProvider: auth.tokenProvider,
+  // Required — the socket must support RFC 6455 protocol ping/pong (the global
+  // WebSocket does not), so keepalive uses control frames. Node `ws` works.
+  wsFactory: (url) => new WebSocket(url),
 });
 
 ws.on('message.new', (event) => {

@@ -103,9 +103,12 @@ const log = getLogger('websocket');
  *
  * @example
  * ```ts
+ * import WebSocket from 'ws';
+ *
  * const ws = new NewioWebSocket({
  *   url: 'wss://ws.newio.dev',
  *   tokenProvider: auth.tokenProvider,
+ *   wsFactory: (url) => new WebSocket(url), // must support protocol ping/pong
  * });
  *
  * ws.on('message.new', (event) => {
@@ -141,13 +144,18 @@ export class NewioWebSocket {
   constructor(opts: {
     url: string;
     tokenProvider: TokenProvider;
-    wsFactory?: WebSocketFactory;
+    /**
+     * Factory that creates the underlying socket. Required: the socket must
+     * support RFC 6455 protocol ping/pong (e.g. the Node `ws` library), which
+     * the global `WebSocket` does not — so there is no usable default.
+     */
+    wsFactory: WebSocketFactory;
     /** Override the proactive reconnect interval (default: 1h50m). Useful for testing. */
     proactiveReconnectMs?: number;
   }) {
     this.wsUrl = opts.url;
     this.tokenProvider = opts.tokenProvider;
-    this.wsFactory = opts.wsFactory ?? ((url) => new WebSocket(url) as unknown as WebSocketLike);
+    this.wsFactory = opts.wsFactory;
     this.proactiveReconnectMs = opts.proactiveReconnectMs ?? DEFAULT_PROACTIVE_RECONNECT_MS;
     this.onProtocolPong = () => this.clearPongTimeout();
   }
