@@ -41,6 +41,13 @@ interface SessionSlot {
 
 const SESSION_TYPE: SessionType = 'conversation';
 
+/**
+ * EXPERIMENTAL — not yet exposed via the CLI and not wired into any released
+ * configuration. The shared session model runs a single agent session across all
+ * scopes (every conversation, contact, and cron event share one session), as an
+ * alternative to the shipped chat-shared model ({@link ChatSharedSessionManager}).
+ * Kept for ongoing experimentation; the API and behavior may change or be removed.
+ */
 export class SharedSessionManager implements SessionManager {
   private sharedSessionSlot: SessionSlot | undefined;
   /** Tracks which conversation scopes have already been injected into the shared session. */
