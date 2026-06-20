@@ -70,10 +70,9 @@ export class SessionEventProcessorImpl implements SessionEventProcessor {
   ): Promise<void> {
     const userText = this.promptManager.formatMessagePrompt(session.promptFormatterVersion, messages);
     try {
-      // These hit the backend (load conversation/members) and can throw on a
-      // transient failure; keep them inside the try so a blip is logged and the
-      // session loop survives rather than tearing down on an unguarded await.
-      const controls = await this.app.getConversationControls(conversationId);
+      // ownerVisible hits the backend (load conversation/members) and can throw
+      // on a transient failure; keep it inside the try so a blip is logged and
+      // the session loop survives rather than tearing down on an unguarded await.
       const ownerId = this.app.identity.ownerId;
       const ownerVisible = ownerId && (await this.app.isConversationMember(conversationId, ownerId));
       log.debug(
@@ -87,16 +86,24 @@ export class SessionEventProcessorImpl implements SessionEventProcessor {
           !this.promptManager.isSkip(session.promptFormatterVersion, segment.text)
         ) {
           await this.app.sendMessage(conversationId, text);
-        } else if (segment.type === 'agent_thought_chunk' && controls?.showThoughts && text && ownerVisible) {
-          await this.app.sendMessage(conversationId, text, {
-            metadata: { type: 'agent_thought' },
-            visibleTo: [ownerId],
-          });
-        } else if (segment.type === 'tool_call' && controls?.showToolCalls && text && ownerVisible) {
-          await this.app.sendMessage(conversationId, text, {
-            metadata: { type: 'tool_call', toolCallId: segment.toolCallId, status: segment.toolCallStatus },
-            visibleTo: [ownerId],
-          });
+        } else if (segment.type === 'agent_thought_chunk' && text && ownerVisible) {
+          // Re-read controls per segment rather than snapshotting at turn start, so a
+          // mid-turn capabilities toggle takes effect on later segments of the same turn.
+          const controls = await this.app.getConversationControls(conversationId);
+          if (controls?.showThoughts) {
+            await this.app.sendMessage(conversationId, text, {
+              metadata: { type: 'agent_thought' },
+              visibleTo: [ownerId],
+            });
+          }
+        } else if (segment.type === 'tool_call' && text && ownerVisible) {
+          const controls = await this.app.getConversationControls(conversationId);
+          if (controls?.showToolCalls) {
+            await this.app.sendMessage(conversationId, text, {
+              metadata: { type: 'tool_call', toolCallId: segment.toolCallId, status: segment.toolCallStatus },
+              visibleTo: [ownerId],
+            });
+          }
         }
       }
     } catch (err: unknown) {

@@ -134,6 +134,35 @@ describe('SessionEventProcessorImpl', () => {
       });
       expect(app.sendMessage).toHaveBeenCalledWith('conv-1', 'Hi!');
     });
+
+    it('re-reads capability controls each segment so a mid-turn toggle affects later segments', async () => {
+      const app = createMockApp();
+      // showThoughts is on for the first thought segment, then toggled off mid-turn.
+      (app.getConversationControls as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ showToolCalls: false, showThoughts: true })
+        .mockResolvedValueOnce({ showToolCalls: false, showThoughts: false });
+      const promptManager = createMockPromptManager();
+      const processor = new SessionEventProcessorImpl('[test]', app, promptManager);
+      const session = {
+        ...createMockSession(),
+        prompt: vi.fn(async function* () {
+          yield { type: 'agent_thought_chunk', text: 'First thought' };
+          yield { type: 'agent_thought_chunk', text: 'Second thought' };
+          yield { type: 'agent_message_chunk', text: 'Done' };
+        }),
+      } as unknown as AgentSession;
+
+      await processor.processEvent({ type: 'messages', conversationId: 'conv-1', messages: [makeMessage()] }, session);
+
+      // First thought sent (capability on); second suppressed (toggled off mid-turn);
+      // the normal message still goes through.
+      expect(app.sendMessage).toHaveBeenCalledWith('conv-1', 'First thought', {
+        metadata: { type: 'agent_thought' },
+        visibleTo: ['owner-1'],
+      });
+      expect(app.sendMessage).not.toHaveBeenCalledWith('conv-1', 'Second thought', expect.anything());
+      expect(app.sendMessage).toHaveBeenCalledWith('conv-1', 'Done');
+    });
   });
 
   describe('processEvent — contact', () => {
