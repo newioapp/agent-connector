@@ -319,7 +319,6 @@ describe('IsolatedSessionManager', () => {
       });
 
       expect(result.isLive).toBe(false);
-      expect(result.originSessionReference).toBeUndefined();
     });
 
     it('returns live info for active sessions', async () => {
@@ -331,11 +330,9 @@ describe('IsolatedSessionManager', () => {
       });
 
       expect(result.isLive).toBe(true);
-      // Isolated mode: config lives on the conversation the session owns.
-      expect(result.originSessionReference).toEqual({
-        sessionType: 'conversation',
-        externalReferenceId: result.externalReferenceId,
-      });
+      // Isolated mode: the session owns its conversation; live info carries the session's own
+      // externalReferenceId (the mock session reports 'conv-1'), which is also its config home.
+      expect(result.externalReferenceId).toBe('conv-1');
     });
   });
 

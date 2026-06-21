@@ -243,12 +243,8 @@ describe('ChatSharedSessionManager', () => {
 
       const info = manager.getLiveSessionInfo({ sessionType: 'conversation', externalReferenceId: OWNER_DM_CONV });
       expect(info.isLive).toBe(true);
-      expect(info.externalReferenceId).toBe(OWNER_DM_CONV);
       // The chat slot is keyed by the owner DM, which is also where its config lives.
-      expect(info.originSessionReference).toEqual({
-        sessionType: 'conversation',
-        externalReferenceId: 'owner-dm-conv',
-      });
+      expect(info.externalReferenceId).toBe(OWNER_DM_CONV);
     });
 
     it('routes a work-session conversationId to its focused session', async () => {
@@ -257,9 +253,8 @@ describe('ChatSharedSessionManager', () => {
 
       const info = manager.getLiveSessionInfo({ sessionType: 'conversation', externalReferenceId: 'work-7' });
       expect(info.isLive).toBe(true);
-      expect(info.externalReferenceId).toBe('work-7');
       // A focused work session owns its conversation, so config lives on that conversation itself.
-      expect(info.originSessionReference).toEqual({ sessionType: 'conversation', externalReferenceId: 'work-7' });
+      expect(info.externalReferenceId).toBe('work-7');
     });
 
     it('routes a cronId to its cron session', async () => {
@@ -269,56 +264,45 @@ describe('ChatSharedSessionManager', () => {
       const info = manager.getLiveSessionInfo({ sessionType: 'cron', externalReferenceId: 'cron-7' });
       expect(info.isLive).toBe(true);
       expect(info.externalReferenceId).toBe('cron-7');
-      // Cron sessions have no model/mode config home.
-      expect(info.originSessionReference).toBeUndefined();
     });
 
-    it('reports not-live (and no originSessionReference) for an unknown session', () => {
+    it('reports not-live for an unknown session', () => {
       const info = manager.getLiveSessionInfo({ sessionType: 'cron', externalReferenceId: 'nope' });
       expect(info.isLive).toBe(false);
-      expect(info.originSessionReference).toBeUndefined();
     });
   });
 
   describe('handleStartSession', () => {
-    it('wraps the chat slot response with the owner-DM originSessionReference', async () => {
+    it('starts the chat slot keyed by the owner DM', async () => {
       const result = await manager.handleStartSession({
         sessionType: 'conversation',
         externalReferenceId: OWNER_DM_CONV,
       });
       expect(result.success).toBe(true);
-      // The auto-started chat slot must carry the origin reference so a client caching this
-      // response can route model/mode writes without waiting for a later live-info refresh.
-      expect(result.info?.originSessionReference).toEqual({
-        sessionType: 'conversation',
-        externalReferenceId: 'owner-dm-conv',
-      });
+      // The chat slot is keyed by (and configured on) the owner DM — clients route model/mode
+      // writes to this top-level externalReferenceId.
+      expect(result.info?.externalReferenceId).toBe(OWNER_DM_CONV);
     });
 
-    it('starts a non-owner DM/group via the chat slot, reporting the owner DM as origin', async () => {
+    it('starts a non-owner DM/group via the chat slot (owner-DM-keyed)', async () => {
       (app.getConversationInfo as ReturnType<typeof vi.fn>).mockResolvedValue({ type: 'group' });
       const result = await manager.handleStartSession({
         sessionType: 'conversation',
         externalReferenceId: 'conv-group',
       });
       expect(result.success).toBe(true);
-      expect(result.info?.originSessionReference).toEqual({
-        sessionType: 'conversation',
-        externalReferenceId: 'owner-dm-conv',
-      });
+      // Served by the chat slot, so the returned session is keyed by the owner DM, not conv-group.
+      expect(result.info?.externalReferenceId).toBe(OWNER_DM_CONV);
     });
 
-    it('starts a work session as a focused slot reporting its own conversation as origin', async () => {
+    it('starts a work session as a focused slot keyed by its own conversation', async () => {
       (app.getConversationInfo as ReturnType<typeof vi.fn>).mockResolvedValue({ type: 'temp_group' });
       const result = await manager.handleStartSession({
         sessionType: 'conversation',
         externalReferenceId: 'work-7',
       });
       expect(result.success).toBe(true);
-      expect(result.info?.originSessionReference).toEqual({
-        sessionType: 'conversation',
-        externalReferenceId: 'work-7',
-      });
+      expect(result.info?.externalReferenceId).toBe('work-7');
     });
   });
 

@@ -542,16 +542,17 @@ export abstract class BaseAgentInstance implements AgentInstance {
         });
       },
       reportContextWindow: async (context, activeConversationId) => {
-        // In chat-shared mode the chat slot's externalReferenceId is the owner DM, but one slot
-        // serves many conversations — report against the in-flight turn's conversation so clients
-        // attribute usage to the conversation actually being viewed. Falls back to the slot key for
-        // sessions without a per-turn conversation (e.g. cron).
+        // The chat-shared chat slot's externalReferenceId is the owner DM, but one slot serves many
+        // conversations — pass the in-flight turn's conversation separately so clients can attribute
+        // usage to the conversation actually being viewed (it's undefined for sessions without a
+        // per-turn conversation, e.g. cron).
         await this.app.sendContextWindowUpdate(
           ownerId,
           type,
-          activeConversationId ?? externalReferenceId,
+          externalReferenceId,
           context.size,
           context.used,
+          activeConversationId,
         );
       },
     };

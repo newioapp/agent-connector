@@ -356,6 +356,7 @@ export interface NewioAppForAgent {
     externalReferenceId: string,
     contextWindowSize: number,
     contextWindowUsed: number,
+    activeConversationId?: string,
   ): Promise<void>;
 }
 

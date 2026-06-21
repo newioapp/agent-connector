@@ -328,9 +328,10 @@ export class ChatSharedSessionManager implements SessionManager {
     );
 
     // Apply persisted acpModel/acpMode BEFORE providing context (the first prompt must run with
-    // the configured model/mode in effect). The chat slot reads config from the owner DM member
-    // record; a focused conversation reads it from its own conversation.
-    await this.applyPersistedSessionConfig(slotConfigSource(type, externalReferenceId), session);
+    // the configured model/mode in effect). Every conversation slot is keyed by a real backend
+    // Conversation (the chat slot by the owner DM, focused work sessions by their own conversation),
+    // so config is read from that conversation; cron sessions have none.
+    await this.applyPersistedSessionConfig(type === 'conversation' ? externalReferenceId : undefined, session);
 
     if (session.resumed) {
       if (role === 'chat') {
@@ -554,9 +555,7 @@ export class ChatSharedSessionManager implements SessionManager {
     if (!slot.session) {
       return { success: false, error: 'Session launch failed' };
     }
-    // Wrap with originSessionReference so clients caching this response (e.g. desktop after an
-    // auto-start) can route model/mode writes without waiting for a later live-info refresh.
-    return { success: true, info: this.withOriginSessionReference(slot, slot.session.getLiveSessionInfo()) };
+    return { success: true, info: slot.session.getLiveSessionInfo() };
   }
 
   async handleUpdateMemory(request: UpdateMemoryRequest): Promise<UpdateMemoryResponse> {
@@ -609,21 +608,7 @@ export class ChatSharedSessionManager implements SessionManager {
         canCompact: false,
       };
     }
-    return this.withOriginSessionReference(slot, slot.session.getLiveSessionInfo());
-  }
-
-  /**
-   * Wrap a live slot's raw session info with originSessionReference — the conversation that owns its
-   * model/mode config: the chat slot is keyed by (and configured on) the owner DM, focused work
-   * sessions on their own conversation. Cron sessions have no config home, so the field is omitted.
-   * Shared by getLiveSessionInfo and handleStartSession so an auto-started session's response
-   * carries the same reference clients use to route model/mode writes.
-   */
-  private withOriginSessionReference(slot: SessionSlot, info: LiveSessionInfoResponse): LiveSessionInfoResponse {
-    const configConversationId = slotConfigSource(slot.type, slot.externalReferenceId);
-    return configConversationId
-      ? { ...info, originSessionReference: { sessionType: 'conversation', externalReferenceId: configConversationId } }
-      : info;
+    return slot.session.getLiveSessionInfo();
   }
 
   async handleCancelSession(request: CancelSessionRequest): Promise<CancelSessionResponse> {
@@ -789,13 +774,4 @@ export class ChatSharedSessionManager implements SessionManager {
     }
     this.cronSlots.clear();
   }
-}
-
-/**
- * The conversation whose persisted acpModel/acpMode config a session reads from and writes to —
- * simply its own conversation, since every conversation slot (the chat slot keyed by the owner DM,
- * and each focused work session) is keyed by a real backend Conversation. Cron sessions have none.
- */
-function slotConfigSource(type: SessionType, externalReferenceId: string): string | undefined {
-  return type === 'conversation' ? externalReferenceId : undefined;
 }
