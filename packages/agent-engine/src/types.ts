@@ -356,6 +356,7 @@ export interface NewioAppForAgent {
     externalReferenceId: string,
     contextWindowSize: number,
     contextWindowUsed: number,
+    activeConversationId?: string,
   ): Promise<void>;
 }
 
@@ -443,7 +444,8 @@ export interface CreateSessionInput {
   readonly mcpBridgeArgsPrefix: readonly string[];
   readonly skipToken: string;
   readonly updateConfig: (config: SessionConfig) => Promise<void>;
-  readonly reportContextWindow: (contextWindow: ContextWindow) => Promise<void>;
+  /** Report context-window usage; `activeConversationId` is the in-flight turn's conversation. */
+  readonly reportContextWindow: (contextWindow: ContextWindow, activeConversationId?: string) => Promise<void>;
 }
 
 /** Input for resuming an existing session — a create input plus the prior correlationId. */

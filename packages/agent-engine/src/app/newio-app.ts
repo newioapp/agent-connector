@@ -972,6 +972,7 @@ export class NewioApp implements NewioAppForAgent, NewioAppForMcp {
     externalReferenceId: string,
     contextWindowSize: number,
     contextWindowUsed: number,
+    activeConversationId?: string,
   ): Promise<void> {
     await this.client.sendSignal({
       targetUserId,
@@ -981,6 +982,7 @@ export class NewioApp implements NewioAppForAgent, NewioAppForMcp {
       payload: {
         sessionType,
         externalReferenceId,
+        activeConversationId,
         contextWindowSize,
         contextWindowUsed,
       },

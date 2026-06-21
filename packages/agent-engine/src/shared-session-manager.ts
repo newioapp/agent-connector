@@ -409,11 +409,10 @@ export class SharedSessionManager implements SessionManager {
         canCompact: false,
       };
     }
-    // The single shared session spans all conversations; its model/mode config lives on the owner DM.
-    return {
-      ...slot.session.getLiveSessionInfo(),
-      originSessionReference: { sessionType: 'conversation', externalReferenceId: this.ownerDmConversationId },
-    };
+    // Experimental: this manager still keys the singleton by the synthetic SHARED_SESSION_ID, so its
+    // config home is no longer advertised — it would need owner-DM keying (like the chat-shared
+    // manager) to support client-driven model/mode writes.
+    return slot.session.getLiveSessionInfo();
   }
 
   /** Handle cancel session signal. Only cancels if the session is actively processing the target conversation. */

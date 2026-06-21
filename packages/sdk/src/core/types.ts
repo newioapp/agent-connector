@@ -1033,15 +1033,6 @@ export interface LiveSessionInfoResponse {
   readonly canCompact: boolean;
   readonly contextWindowSize?: number;
   readonly contextWindowUsed?: number;
-  /**
-   * Where this session's acpModel/acpMode config actually lives — the conversation member record a
-   * client should read from and write to when changing model/mode. It can differ from
-   * (sessionType, externalReferenceId): a session that spans many conversations (the shared
-   * singleton, or the chat slot in chat-shared mode) reports the owner DM here, since its config is
-   * stored there rather than on the synthetic SHARED_SESSION_ID. Omitted when the live session has
-   * no config home (e.g. cron sessions) or when it cannot be resolved (session not live).
-   */
-  readonly originSessionReference?: { readonly sessionType: SessionType; readonly externalReferenceId: string };
 }
 
 export interface CancelSessionRequest {
@@ -1115,6 +1106,8 @@ export interface RotateSessionResponse {
 export interface ContextWindowUpdatePayload {
   readonly sessionType: SessionType;
   readonly externalReferenceId: string;
+  /** The conversation whose turn produced this update; clients should prefer it over the slot key. */
+  readonly activeConversationId?: string;
   readonly contextWindowSize: number;
   readonly contextWindowUsed: number;
 }

@@ -55,7 +55,8 @@ export interface AcpAgentSessionInit {
   /** The token the agent uses to indicate "no reply needed". */
   readonly skipToken: string;
   readonly updateConfig: (config: SessionConfig) => Promise<void>;
-  readonly reportContextWindow: (contextWindow: ContextWindow) => Promise<void>;
+  /** Report context-window usage; `activeConversationId` is the in-flight turn's conversation. */
+  readonly reportContextWindow: (contextWindow: ContextWindow, activeConversationId?: string) => Promise<void>;
 }
 
 export interface AcpAgentSessionInterface extends AgentSession {}
@@ -105,7 +106,8 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
     this.contextWindowHandler = new AcpSessionContextWindowHandler(
       init.type,
       init.externalReferenceId,
-      init.reportContextWindow,
+      // Tag the report with the in-flight turn's conversation (the chat-shared slot serves many).
+      (contextWindow) => init.reportContextWindow(contextWindow, this._currentConversationId),
     );
     this.slashCommandHandler = new AcpSlashCommandHandler(
       init.type,

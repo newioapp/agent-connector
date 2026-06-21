@@ -25,7 +25,6 @@ import {
   LiveSessionInfoResponse,
   RotateSessionRequest,
   RotateSessionResponse,
-  SHARED_SESSION_ID,
   StartSessionRequest,
   StartSessionResponse,
   UpdateMemoryRequest,
@@ -50,7 +49,7 @@ const log = getLogger('chat-shared-session-manager');
 
 interface SessionSlot {
   readonly type: SessionType;
-  /** ConversationId, SHARED_SESSION_ID (chat slot), or cron id. */
+  /** ConversationId (the owner DM for the chat slot), or cron id. */
   readonly externalReferenceId: string;
   /** Prompt role this slot's sessions are launched with. */
   readonly role: SessionPromptRole;
@@ -152,7 +151,8 @@ export class ChatSharedSessionManager implements SessionManager {
       this.chatSlot.lastActivityAt = Date.now();
       return this.chatSlot;
     }
-    const slot = this.createSlot('conversation', SHARED_SESSION_ID, 'chat');
+    // Key the single chat session by the owner DM — a real Conversation that is also its config home.
+    const slot = this.createSlot('conversation', this.ownerDmConversationId, 'chat');
     this.chatSlot = slot;
     return slot;
   }
@@ -187,9 +187,8 @@ export class ChatSharedSessionManager implements SessionManager {
     if (type === 'contact') {
       return this.chatSlot;
     }
-    // conversation: a known work-session slot wins; otherwise it's the chat slot
-    // (covers SHARED_SESSION_ID and any dm/group conversationId).
-    if (externalReferenceId !== SHARED_SESSION_ID && this.workSessionSlots.has(externalReferenceId)) {
+    // A known work-session slot wins; every other conversation resolves to the chat slot.
+    if (this.workSessionSlots.has(externalReferenceId)) {
       return this.workSessionSlots.get(externalReferenceId);
     }
     return this.chatSlot;
@@ -325,13 +324,9 @@ export class ChatSharedSessionManager implements SessionManager {
       `${this.logTag} Session ready: key=${type}/${externalReferenceId} role=${role} → ${session.correlationId}`,
     );
 
-    // Apply persisted acpModel/acpMode BEFORE providing context (the first prompt must run with
-    // the configured model/mode in effect). The chat slot reads config from the owner DM member
-    // record; a focused conversation reads it from its own conversation.
-    await this.applyPersistedSessionConfig(
-      slotConfigSource(type, externalReferenceId, role, this.ownerDmConversationId),
-      session,
-    );
+    // Apply persisted acpModel/acpMode before the first prompt; config lives on the slot's own
+    // conversation (cron sessions have none).
+    await this.applyPersistedSessionConfig(type === 'conversation' ? externalReferenceId : undefined, session);
 
     if (session.resumed) {
       if (role === 'chat') {
@@ -369,16 +364,13 @@ export class ChatSharedSessionManager implements SessionManager {
     log.info(`${this.logTag} Preparing memory (role=${role})`);
     const instruction = this.promptManager.buildNewioInstruction(session.promptFormatterVersion, role);
 
-    // A focused conversation session loads its own conversation's memory; the chat session and
-    // cron sessions load global + top-K only (conversationId undefined).
+    // Focused sessions load their conversation's memory; chat and cron load global-only. Keyed on
+    // role, not the id — the chat slot is keyed by a real conversation but must stay global-only.
     const memoryConversationId =
-      session.type === 'conversation' && session.externalReferenceId !== SHARED_SESSION_ID
-        ? session.externalReferenceId
-        : undefined;
+      session.type === 'conversation' && role !== 'chat' ? session.externalReferenceId : undefined;
     const memory = await this.app.loadMemoryForSession(memoryConversationId);
 
-    // Resolve handoff: in-memory note from rotation, else fetch from backend for conversation
-    // sessions (the chat slot uses SHARED_SESSION_ID; cron sessions have none).
+    // In-memory note from rotation, else fetch from backend for conversation sessions.
     let resolvedHandoff: string | null = handoffNote ?? null;
     if (!resolvedHandoff && session.type === 'conversation') {
       resolvedHandoff = await this.app.getHandoffNote(session.externalReferenceId);
@@ -537,11 +529,10 @@ export class ChatSharedSessionManager implements SessionManager {
     }
     let slot: SessionSlot;
     try {
-      if (request.externalReferenceId === SHARED_SESSION_ID) {
+      if (request.externalReferenceId === this.ownerDmConversationId) {
         slot = this.getOrCreateChatSlot();
       } else {
-        // A real conversationId: only work sessions (temp_group) get their own slot; DMs and group
-        // chats are served by the chat slot.
+        // Only work sessions (temp_group) get their own slot; DMs and group chats use the chat slot.
         const info = await this.app.getConversationInfo(request.externalReferenceId);
         slot =
           info.type === 'temp_group'
@@ -608,18 +599,7 @@ export class ChatSharedSessionManager implements SessionManager {
         canCompact: false,
       };
     }
-    const info = slot.session.getLiveSessionInfo();
-    // Tell the client where this slot's model/mode config actually lives: the chat slot reports the
-    // owner DM (its config home), focused work sessions report their own conversation, cron none.
-    const configConversationId = slotConfigSource(
-      slot.type,
-      slot.externalReferenceId,
-      slot.role,
-      this.ownerDmConversationId,
-    );
-    return configConversationId
-      ? { ...info, originSessionReference: { sessionType: 'conversation', externalReferenceId: configConversationId } }
-      : info;
+    return slot.session.getLiveSessionInfo();
   }
 
   async handleCancelSession(request: CancelSessionRequest): Promise<CancelSessionResponse> {
@@ -785,25 +765,4 @@ export class ChatSharedSessionManager implements SessionManager {
     }
     this.cronSlots.clear();
   }
-}
-
-/**
- * The conversation whose persisted acpModel/acpMode config a freshly-launched session should adopt:
- * - chat slot → the owner DM member record.
- * - focused work-session conversation → its own conversation.
- * - cron (and the SHARED_SESSION_ID placeholder) → none.
- */
-function slotConfigSource(
-  type: SessionType,
-  externalReferenceId: string,
-  role: SessionPromptRole,
-  ownerDmConversationId: string,
-): string | undefined {
-  if (role === 'chat') {
-    return ownerDmConversationId;
-  }
-  if (type === 'conversation' && externalReferenceId !== SHARED_SESSION_ID) {
-    return externalReferenceId;
-  }
-  return undefined;
 }
