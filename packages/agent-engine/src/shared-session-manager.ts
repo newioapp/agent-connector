@@ -8,7 +8,6 @@ import {
   LiveSessionInfoResponse,
   RotateSessionRequest,
   RotateSessionResponse,
-  SHARED_SESSION_ID,
   StartSessionRequest,
   StartSessionResponse,
   UpdateMemoryRequest,
@@ -116,7 +115,7 @@ export class SharedSessionManager implements SessionManager {
 
   /** Create a new session slot — shared logic for all slot types. */
   private createSlot(): SessionSlot {
-    const queue = new EventQueue(SESSION_TYPE, SHARED_SESSION_ID);
+    const queue = new EventQueue(SESSION_TYPE, this.ownerDmConversationId);
     const sessionPromise = this.enqueueLaunch();
 
     const slot: SessionSlot = {
@@ -265,7 +264,7 @@ export class SharedSessionManager implements SessionManager {
    * session already holds its instruction + memory, so context injection is skipped.
    */
   private async launchSession(opts: { resume?: boolean; handoffNote?: string } = {}): Promise<AgentSession> {
-    const session = await this.newSession(SESSION_TYPE, SHARED_SESSION_ID, opts.resume ?? true);
+    const session = await this.newSession(SESSION_TYPE, this.ownerDmConversationId, opts.resume ?? true);
 
     // Wire status listener
     session.onStatus((status, conversationId) => {
@@ -333,7 +332,7 @@ export class SharedSessionManager implements SessionManager {
     // Use provided handoff note (in-memory from rotation) or fetch from backend
     let resolvedHandoff: string | null = handoffNote ?? null;
     if (!resolvedHandoff) {
-      resolvedHandoff = await this.app.getHandoffNote(SHARED_SESSION_ID);
+      resolvedHandoff = await this.app.getHandoffNote(this.ownerDmConversationId);
     }
 
     const memoryContext = this.promptManager.formatMemoryContext(
@@ -387,7 +386,7 @@ export class SharedSessionManager implements SessionManager {
       // Persist handoff so the self-recovery path can load it from backend
       if (handoffNote) {
         this.app
-          .putHandoffNote(SHARED_SESSION_ID, handoffNote)
+          .putHandoffNote(this.ownerDmConversationId, handoffNote)
           .catch((e: unknown) => log.warn(`${this.logTag} Failed to persist handoff note`, e));
       }
       slot.queue.close();
@@ -395,13 +394,13 @@ export class SharedSessionManager implements SessionManager {
     }
   }
 
-  /** Get live session info. Returns the singleton session's info with SHARED_SESSION_ID. */
+  /** Get live session info. The singleton session is keyed by the owner DM conversation. */
   getLiveSessionInfo(_request: LiveSessionInfoRequest): LiveSessionInfoResponse {
     const slot = this.sharedSessionSlot;
     if (!slot?.session) {
       return {
         sessionType: SESSION_TYPE,
-        externalReferenceId: SHARED_SESSION_ID,
+        externalReferenceId: this.ownerDmConversationId,
         isLive: false,
         availableModels: [],
         availableModes: [],
@@ -409,9 +408,6 @@ export class SharedSessionManager implements SessionManager {
         canCompact: false,
       };
     }
-    // Experimental: this manager still keys the singleton by the synthetic SHARED_SESSION_ID, so its
-    // config home is no longer advertised — it would need owner-DM keying (like the chat-shared
-    // manager) to support client-driven model/mode writes.
     return slot.session.getLiveSessionInfo();
   }
 

@@ -6,7 +6,6 @@ import type { AgentConfig, SessionConfig } from '../../src/types';
 import type { CronStore } from '../../src/cron-store';
 import type { EngineConfig } from '../../src/engine-config';
 import type { MemberRecord, ConversationListItem } from '@newio/agent-sdk';
-import { SHARED_SESSION_ID } from '@newio/agent-sdk';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -410,10 +409,8 @@ describe('AgentInstanceImpl — intentional teardown ordering', () => {
 });
 
 describe('AgentInstanceImpl — updateConfig persistence routing', () => {
-  // Regression guard for #500: the shared singleton (shared mode) and the chat slot (chat-shared
-  // mode) are addressed by SHARED_SESSION_ID, which is NOT a backend Conversation. Persisting
-  // their corrected config must target the owner DM member record — never SHARED_SESSION_ID,
-  // which 404s on the agent-settings endpoint.
+  // Every session slot is keyed by a real backend Conversation (chat-shared/shared by the owner DM,
+  // isolated by its own conversation), so updateConfig persists model/mode to externalReferenceId.
   const ownerId = 'owner-1';
   const ownerDmConvId = 'dm-owner-agent';
 
@@ -452,31 +449,21 @@ describe('AgentInstanceImpl — updateConfig persistence routing', () => {
     setOwnerDmConversationId(instance, ownerDmConvId);
   });
 
-  it('routes SHARED_SESSION_ID config writes to the owner DM, not the synthetic id', async () => {
-    const { updateConfig, updateAgentMemberConfig } = buildUpdateConfig(instance, SHARED_SESSION_ID);
+  it('writes an owner-DM-keyed session (chat-shared/shared) config to the owner DM', async () => {
+    const { updateConfig, updateAgentMemberConfig } = buildUpdateConfig(instance, ownerDmConvId);
 
     await updateConfig({ acpModel: 'opus', acpMode: 'normal' });
 
     expect(updateAgentMemberConfig).toHaveBeenCalledTimes(1);
     expect(updateAgentMemberConfig).toHaveBeenCalledWith(ownerDmConvId, { acpModel: 'opus', acpMode: 'normal' });
-    expect(updateAgentMemberConfig).not.toHaveBeenCalledWith(SHARED_SESSION_ID, expect.anything());
   });
 
-  it('writes a real conversation slot config to its own conversation', async () => {
+  it('writes a focused/isolated conversation slot config to its own conversation', async () => {
     const { updateConfig, updateAgentMemberConfig } = buildUpdateConfig(instance, 'conv-real');
 
     await updateConfig({ acpModel: 'sonnet', acpMode: null });
 
     expect(updateAgentMemberConfig).toHaveBeenCalledTimes(1);
     expect(updateAgentMemberConfig).toHaveBeenCalledWith('conv-real', { acpModel: 'sonnet', acpMode: null });
-  });
-
-  it('skips the write (no throw) when SHARED_SESSION_ID config has no resolved owner DM', async () => {
-    setOwnerDmConversationId(instance, undefined as unknown as string);
-    const { updateConfig, updateAgentMemberConfig } = buildUpdateConfig(instance, SHARED_SESSION_ID);
-
-    await expect(updateConfig({ acpModel: 'opus', acpMode: null })).resolves.toBeUndefined();
-
-    expect(updateAgentMemberConfig).not.toHaveBeenCalled();
   });
 });

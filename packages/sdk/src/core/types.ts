@@ -958,13 +958,6 @@ export interface SessionConfigUpdate {
 
 export type SessionType = 'conversation' | 'contact' | 'cron';
 
-/**
- * ExternalReferenceId used by agents running in shared session mode.
- * A single session serves all conversations, so there is no per-conversation
- * externalReferenceId.
- */
-export const SHARED_SESSION_ID = '__shared__' as const;
-
 // ---------------------------------------------------------------------------
 // Capabilities — agent remote control
 // ---------------------------------------------------------------------------

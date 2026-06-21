@@ -246,7 +246,6 @@ export type {
 } from './core/types.js';
 
 // Types — Signals (typed payloads)
-export { SHARED_SESSION_ID } from './core/types.js';
 export type {
   SignalType,
   SignalErrorCode,
