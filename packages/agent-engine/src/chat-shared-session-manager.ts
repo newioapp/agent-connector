@@ -25,7 +25,6 @@ import {
   LiveSessionInfoResponse,
   RotateSessionRequest,
   RotateSessionResponse,
-  SHARED_SESSION_ID,
   StartSessionRequest,
   StartSessionResponse,
   UpdateMemoryRequest,
@@ -50,7 +49,7 @@ const log = getLogger('chat-shared-session-manager');
 
 interface SessionSlot {
   readonly type: SessionType;
-  /** ConversationId, SHARED_SESSION_ID (chat slot), or cron id. */
+  /** ConversationId (the owner DM for the chat slot), or cron id. */
   readonly externalReferenceId: string;
   /** Prompt role this slot's sessions are launched with. */
   readonly role: SessionPromptRole;
@@ -152,7 +151,10 @@ export class ChatSharedSessionManager implements SessionManager {
       this.chatSlot.lastActivityAt = Date.now();
       return this.chatSlot;
     }
-    const slot = this.createSlot('conversation', SHARED_SESSION_ID, 'chat');
+    // The single chat session is keyed by the owner DM conversation — a real backend Conversation
+    // that also serves as the canonical home for its model/mode config. (DMs, group chats, and
+    // contact events all route to this one slot regardless of its key.)
+    const slot = this.createSlot('conversation', this.ownerDmConversationId, 'chat');
     this.chatSlot = slot;
     return slot;
   }
@@ -187,9 +189,9 @@ export class ChatSharedSessionManager implements SessionManager {
     if (type === 'contact') {
       return this.chatSlot;
     }
-    // conversation: a known work-session slot wins; otherwise it's the chat slot
-    // (covers SHARED_SESSION_ID and any dm/group conversationId).
-    if (externalReferenceId !== SHARED_SESSION_ID && this.workSessionSlots.has(externalReferenceId)) {
+    // conversation: a known work-session slot wins; otherwise it's the chat slot (the owner DM and
+    // any other dm/group conversationId all resolve to the single chat session).
+    if (this.workSessionSlots.has(externalReferenceId)) {
       return this.workSessionSlots.get(externalReferenceId);
     }
     return this.chatSlot;
@@ -328,10 +330,7 @@ export class ChatSharedSessionManager implements SessionManager {
     // Apply persisted acpModel/acpMode BEFORE providing context (the first prompt must run with
     // the configured model/mode in effect). The chat slot reads config from the owner DM member
     // record; a focused conversation reads it from its own conversation.
-    await this.applyPersistedSessionConfig(
-      slotConfigSource(type, externalReferenceId, role, this.ownerDmConversationId),
-      session,
-    );
+    await this.applyPersistedSessionConfig(slotConfigSource(type, externalReferenceId), session);
 
     if (session.resumed) {
       if (role === 'chat') {
@@ -370,15 +369,14 @@ export class ChatSharedSessionManager implements SessionManager {
     const instruction = this.promptManager.buildNewioInstruction(session.promptFormatterVersion, role);
 
     // A focused conversation session loads its own conversation's memory; the chat session and
-    // cron sessions load global + top-K only (conversationId undefined).
+    // cron sessions load global + top-K only (conversationId undefined). Keyed on role, not the id:
+    // the chat slot is keyed by the owner DM conversation, but must still load global-only memory.
     const memoryConversationId =
-      session.type === 'conversation' && session.externalReferenceId !== SHARED_SESSION_ID
-        ? session.externalReferenceId
-        : undefined;
+      session.type === 'conversation' && role !== 'chat' ? session.externalReferenceId : undefined;
     const memory = await this.app.loadMemoryForSession(memoryConversationId);
 
     // Resolve handoff: in-memory note from rotation, else fetch from backend for conversation
-    // sessions (the chat slot uses SHARED_SESSION_ID; cron sessions have none).
+    // sessions (the chat slot is keyed by the owner DM; cron sessions have none).
     let resolvedHandoff: string | null = handoffNote ?? null;
     if (!resolvedHandoff && session.type === 'conversation') {
       resolvedHandoff = await this.app.getHandoffNote(session.externalReferenceId);
@@ -537,7 +535,8 @@ export class ChatSharedSessionManager implements SessionManager {
     }
     let slot: SessionSlot;
     try {
-      if (request.externalReferenceId === SHARED_SESSION_ID) {
+      if (request.externalReferenceId === this.ownerDmConversationId) {
+        // The owner DM is the chat slot's key — short-circuit without a conversation lookup.
         slot = this.getOrCreateChatSlot();
       } else {
         // A real conversationId: only work sessions (temp_group) get their own slot; DMs and group
@@ -609,14 +608,9 @@ export class ChatSharedSessionManager implements SessionManager {
       };
     }
     const info = slot.session.getLiveSessionInfo();
-    // Tell the client where this slot's model/mode config actually lives: the chat slot reports the
-    // owner DM (its config home), focused work sessions report their own conversation, cron none.
-    const configConversationId = slotConfigSource(
-      slot.type,
-      slot.externalReferenceId,
-      slot.role,
-      this.ownerDmConversationId,
-    );
+    // A session's model/mode config lives on its own conversation: the chat slot is keyed by the
+    // owner DM, focused work sessions by their conversation. Cron sessions have no config home.
+    const configConversationId = slotConfigSource(slot.type, slot.externalReferenceId);
     return configConversationId
       ? { ...info, originSessionReference: { sessionType: 'conversation', externalReferenceId: configConversationId } }
       : info;
@@ -788,22 +782,10 @@ export class ChatSharedSessionManager implements SessionManager {
 }
 
 /**
- * The conversation whose persisted acpModel/acpMode config a freshly-launched session should adopt:
- * - chat slot → the owner DM member record.
- * - focused work-session conversation → its own conversation.
- * - cron (and the SHARED_SESSION_ID placeholder) → none.
+ * The conversation whose persisted acpModel/acpMode config a session reads from and writes to —
+ * simply its own conversation, since every conversation slot (the chat slot keyed by the owner DM,
+ * and each focused work session) is keyed by a real backend Conversation. Cron sessions have none.
  */
-function slotConfigSource(
-  type: SessionType,
-  externalReferenceId: string,
-  role: SessionPromptRole,
-  ownerDmConversationId: string,
-): string | undefined {
-  if (role === 'chat') {
-    return ownerDmConversationId;
-  }
-  if (type === 'conversation' && externalReferenceId !== SHARED_SESSION_ID) {
-    return externalReferenceId;
-  }
-  return undefined;
+function slotConfigSource(type: SessionType, externalReferenceId: string): string | undefined {
+  return type === 'conversation' ? externalReferenceId : undefined;
 }

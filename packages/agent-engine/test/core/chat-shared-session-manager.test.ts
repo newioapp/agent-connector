@@ -5,7 +5,10 @@ import type { SessionEventProcessor, NewioAppForSession, SessionType } from '../
 import type { PromptManager } from '../../src/prompt-manager';
 import type { IncomingMessage, ContactEvent, CronTriggerEvent } from '../../src/app/index.js';
 import type { ConversationType } from '@newio/agent-sdk';
-import { SHARED_SESSION_ID } from '@newio/agent-sdk';
+
+// The chat session is keyed by the owner DM conversation id (passed to the manager constructor),
+// not a synthetic shared id.
+const OWNER_DM_CONV = 'owner-dm-conv';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -13,7 +16,7 @@ import { SHARED_SESSION_ID } from '@newio/agent-sdk';
 
 function createMockSession(
   type: SessionType = 'conversation',
-  externalReferenceId: string = SHARED_SESSION_ID,
+  externalReferenceId: string = OWNER_DM_CONV,
   resumed = false,
 ): AgentSession {
   return {
@@ -165,22 +168,22 @@ describe('ChatSharedSessionManager', () => {
   });
 
   describe('routeInboundEvent', () => {
-    it('routes a DM message to the chat session (SHARED_SESSION_ID)', async () => {
+    it('routes a DM message to the chat session (owner DM)', async () => {
       manager.routeInboundEvent({ type: 'message', msg: makeMessage('conv-dm', 'dm') });
-      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', SHARED_SESSION_ID, true));
+      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', 'owner-dm-conv', true));
     });
 
-    it('routes a group message to the chat session (SHARED_SESSION_ID)', async () => {
+    it('routes a group message to the chat session (owner DM)', async () => {
       manager.routeInboundEvent({ type: 'message', msg: makeMessage('conv-group', 'group') });
-      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', SHARED_SESSION_ID, true));
+      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', 'owner-dm-conv', true));
     });
 
     it('shares one chat session across DM and group messages', async () => {
       manager.routeInboundEvent({ type: 'message', msg: makeMessage('conv-dm', 'dm') });
       manager.routeInboundEvent({ type: 'message', msg: makeMessage('conv-group', 'group') });
       await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalled());
-      // Only the chat slot was created — exactly one launch with SHARED_SESSION_ID.
-      const sharedLaunches = newSessionFn.mock.calls.filter((c) => c[1] === SHARED_SESSION_ID);
+      // Only the chat slot was created — exactly one launch with the owner DM id.
+      const sharedLaunches = newSessionFn.mock.calls.filter((c) => c[1] === OWNER_DM_CONV);
       expect(sharedLaunches).toHaveLength(1);
     });
 
@@ -200,7 +203,7 @@ describe('ChatSharedSessionManager', () => {
 
     it('routes contact events to the chat session', async () => {
       manager.routeInboundEvent({ type: 'contact', event: makeContactEvent() });
-      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', SHARED_SESSION_ID, true));
+      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', 'owner-dm-conv', true));
     });
 
     it('routes cron events to their own cron session', async () => {
@@ -213,7 +216,7 @@ describe('ChatSharedSessionManager', () => {
     it('routes share_context for a DM/group target to the chat session', async () => {
       (app.getConversationInfo as ReturnType<typeof vi.fn>).mockResolvedValue({ type: 'group' });
       manager.routeInboundEvent({ type: 'share_context', conversationId: 'conv-group', context: 'ctx' });
-      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', SHARED_SESSION_ID, true));
+      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', 'owner-dm-conv', true));
       // It did NOT create a per-conversation slot for the group.
       expect(newSessionFn).not.toHaveBeenCalledWith('conversation', 'conv-group', true);
     });
@@ -228,20 +231,20 @@ describe('ChatSharedSessionManager', () => {
   describe('getDmSession', () => {
     it('returns the chat session for any DM (including the owner DM)', async () => {
       const session = await manager.getDmSession('owner-dm-conv');
-      expect(session.externalReferenceId).toBe(SHARED_SESSION_ID);
-      expect(newSessionFn).toHaveBeenCalledWith('conversation', SHARED_SESSION_ID, true);
+      expect(session.externalReferenceId).toBe(OWNER_DM_CONV);
+      expect(newSessionFn).toHaveBeenCalledWith('conversation', 'owner-dm-conv', true);
     });
   });
 
   describe('owner-op routing (getLiveSessionInfo)', () => {
-    it('routes SHARED_SESSION_ID to the chat session', async () => {
+    it('routes the owner DM id to the chat session', async () => {
       manager.routeInboundEvent({ type: 'message', msg: makeMessage('conv-dm', 'dm') });
-      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', SHARED_SESSION_ID, true));
+      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', 'owner-dm-conv', true));
 
-      const info = manager.getLiveSessionInfo({ sessionType: 'conversation', externalReferenceId: SHARED_SESSION_ID });
+      const info = manager.getLiveSessionInfo({ sessionType: 'conversation', externalReferenceId: OWNER_DM_CONV });
       expect(info.isLive).toBe(true);
-      expect(info.externalReferenceId).toBe(SHARED_SESSION_ID);
-      // The chat slot's config lives on the owner DM, not the synthetic SHARED_SESSION_ID.
+      expect(info.externalReferenceId).toBe(OWNER_DM_CONV);
+      // The chat slot is keyed by the owner DM, which is also where its config lives.
       expect(info.originSessionReference).toEqual({
         sessionType: 'conversation',
         externalReferenceId: 'owner-dm-conv',
