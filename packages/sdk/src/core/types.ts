@@ -1041,7 +1041,7 @@ export interface LiveSessionInfoResponse {
    * stored there rather than on the synthetic SHARED_SESSION_ID. Omitted when the live session has
    * no config home (e.g. cron sessions) or when it cannot be resolved (session not live).
    */
-  readonly sessionReference?: { readonly sessionType: SessionType; readonly externalReferenceId: string };
+  readonly originSessionReference?: { readonly sessionType: SessionType; readonly externalReferenceId: string };
 }
 
 export interface CancelSessionRequest {

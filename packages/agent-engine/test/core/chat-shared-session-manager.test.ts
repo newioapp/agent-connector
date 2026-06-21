@@ -242,7 +242,10 @@ describe('ChatSharedSessionManager', () => {
       expect(info.isLive).toBe(true);
       expect(info.externalReferenceId).toBe(SHARED_SESSION_ID);
       // The chat slot's config lives on the owner DM, not the synthetic SHARED_SESSION_ID.
-      expect(info.sessionReference).toEqual({ sessionType: 'conversation', externalReferenceId: 'owner-dm-conv' });
+      expect(info.originSessionReference).toEqual({
+        sessionType: 'conversation',
+        externalReferenceId: 'owner-dm-conv',
+      });
     });
 
     it('routes a work-session conversationId to its focused session', async () => {
@@ -253,7 +256,7 @@ describe('ChatSharedSessionManager', () => {
       expect(info.isLive).toBe(true);
       expect(info.externalReferenceId).toBe('work-7');
       // A focused work session owns its conversation, so config lives on that conversation itself.
-      expect(info.sessionReference).toEqual({ sessionType: 'conversation', externalReferenceId: 'work-7' });
+      expect(info.originSessionReference).toEqual({ sessionType: 'conversation', externalReferenceId: 'work-7' });
     });
 
     it('routes a cronId to its cron session', async () => {
@@ -264,13 +267,13 @@ describe('ChatSharedSessionManager', () => {
       expect(info.isLive).toBe(true);
       expect(info.externalReferenceId).toBe('cron-7');
       // Cron sessions have no model/mode config home.
-      expect(info.sessionReference).toBeUndefined();
+      expect(info.originSessionReference).toBeUndefined();
     });
 
-    it('reports not-live (and no sessionReference) for an unknown session', () => {
+    it('reports not-live (and no originSessionReference) for an unknown session', () => {
       const info = manager.getLiveSessionInfo({ sessionType: 'cron', externalReferenceId: 'nope' });
       expect(info.isLive).toBe(false);
-      expect(info.sessionReference).toBeUndefined();
+      expect(info.originSessionReference).toBeUndefined();
     });
   });
 

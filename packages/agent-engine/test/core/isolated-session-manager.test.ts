@@ -319,7 +319,7 @@ describe('IsolatedSessionManager', () => {
       });
 
       expect(result.isLive).toBe(false);
-      expect(result.sessionReference).toBeUndefined();
+      expect(result.originSessionReference).toBeUndefined();
     });
 
     it('returns live info for active sessions', async () => {
@@ -332,7 +332,7 @@ describe('IsolatedSessionManager', () => {
 
       expect(result.isLive).toBe(true);
       // Isolated mode: config lives on the conversation the session owns.
-      expect(result.sessionReference).toEqual({
+      expect(result.originSessionReference).toEqual({
         sessionType: 'conversation',
         externalReferenceId: result.externalReferenceId,
       });

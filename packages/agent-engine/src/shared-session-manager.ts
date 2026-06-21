@@ -412,7 +412,7 @@ export class SharedSessionManager implements SessionManager {
     // The single shared session spans all conversations; its model/mode config lives on the owner DM.
     return {
       ...slot.session.getLiveSessionInfo(),
-      sessionReference: { sessionType: 'conversation', externalReferenceId: this.ownerDmConversationId },
+      originSessionReference: { sessionType: 'conversation', externalReferenceId: this.ownerDmConversationId },
     };
   }
 

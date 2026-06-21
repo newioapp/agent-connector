@@ -218,7 +218,10 @@ describe('SharedSessionManager', () => {
       expect(info.isLive).toBe(true);
       expect(info.externalReferenceId).toBe(SHARED_SESSION_ID);
       // The shared singleton's model/mode config lives on the owner DM, not SHARED_SESSION_ID.
-      expect(info.sessionReference).toEqual({ sessionType: 'conversation', externalReferenceId: 'owner-dm-conv' });
+      expect(info.originSessionReference).toEqual({
+        sessionType: 'conversation',
+        externalReferenceId: 'owner-dm-conv',
+      });
     });
   });
 

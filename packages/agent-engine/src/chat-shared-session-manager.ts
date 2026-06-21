@@ -618,7 +618,7 @@ export class ChatSharedSessionManager implements SessionManager {
       this.ownerDmConversationId,
     );
     return configConversationId
-      ? { ...info, sessionReference: { sessionType: 'conversation', externalReferenceId: configConversationId } }
+      ? { ...info, originSessionReference: { sessionType: 'conversation', externalReferenceId: configConversationId } }
       : info;
   }
 

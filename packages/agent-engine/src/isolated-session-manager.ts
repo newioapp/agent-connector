@@ -463,7 +463,10 @@ export class IsolatedSessionManager implements SessionManager {
     const info = slot.session.getLiveSessionInfo();
     // Isolated mode is one session per conversation, so config lives on that conversation itself.
     return info.sessionType === 'conversation'
-      ? { ...info, sessionReference: { sessionType: 'conversation', externalReferenceId: info.externalReferenceId } }
+      ? {
+          ...info,
+          originSessionReference: { sessionType: 'conversation', externalReferenceId: info.externalReferenceId },
+        }
       : info;
   }
 
