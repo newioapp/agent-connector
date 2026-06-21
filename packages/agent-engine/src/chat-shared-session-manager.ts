@@ -554,7 +554,9 @@ export class ChatSharedSessionManager implements SessionManager {
     if (!slot.session) {
       return { success: false, error: 'Session launch failed' };
     }
-    return { success: true, info: slot.session.getLiveSessionInfo() };
+    // Wrap with originSessionReference so clients caching this response (e.g. desktop after an
+    // auto-start) can route model/mode writes without waiting for a later live-info refresh.
+    return { success: true, info: this.withOriginSessionReference(slot, slot.session.getLiveSessionInfo()) };
   }
 
   async handleUpdateMemory(request: UpdateMemoryRequest): Promise<UpdateMemoryResponse> {
@@ -607,9 +609,17 @@ export class ChatSharedSessionManager implements SessionManager {
         canCompact: false,
       };
     }
-    const info = slot.session.getLiveSessionInfo();
-    // A session's model/mode config lives on its own conversation: the chat slot is keyed by the
-    // owner DM, focused work sessions by their conversation. Cron sessions have no config home.
+    return this.withOriginSessionReference(slot, slot.session.getLiveSessionInfo());
+  }
+
+  /**
+   * Wrap a live slot's raw session info with originSessionReference — the conversation that owns its
+   * model/mode config: the chat slot is keyed by (and configured on) the owner DM, focused work
+   * sessions on their own conversation. Cron sessions have no config home, so the field is omitted.
+   * Shared by getLiveSessionInfo and handleStartSession so an auto-started session's response
+   * carries the same reference clients use to route model/mode writes.
+   */
+  private withOriginSessionReference(slot: SessionSlot, info: LiveSessionInfoResponse): LiveSessionInfoResponse {
     const configConversationId = slotConfigSource(slot.type, slot.externalReferenceId);
     return configConversationId
       ? { ...info, originSessionReference: { sessionType: 'conversation', externalReferenceId: configConversationId } }

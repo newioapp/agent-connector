@@ -280,6 +280,48 @@ describe('ChatSharedSessionManager', () => {
     });
   });
 
+  describe('handleStartSession', () => {
+    it('wraps the chat slot response with the owner-DM originSessionReference', async () => {
+      const result = await manager.handleStartSession({
+        sessionType: 'conversation',
+        externalReferenceId: OWNER_DM_CONV,
+      });
+      expect(result.success).toBe(true);
+      // The auto-started chat slot must carry the origin reference so a client caching this
+      // response can route model/mode writes without waiting for a later live-info refresh.
+      expect(result.info?.originSessionReference).toEqual({
+        sessionType: 'conversation',
+        externalReferenceId: 'owner-dm-conv',
+      });
+    });
+
+    it('starts a non-owner DM/group via the chat slot, reporting the owner DM as origin', async () => {
+      (app.getConversationInfo as ReturnType<typeof vi.fn>).mockResolvedValue({ type: 'group' });
+      const result = await manager.handleStartSession({
+        sessionType: 'conversation',
+        externalReferenceId: 'conv-group',
+      });
+      expect(result.success).toBe(true);
+      expect(result.info?.originSessionReference).toEqual({
+        sessionType: 'conversation',
+        externalReferenceId: 'owner-dm-conv',
+      });
+    });
+
+    it('starts a work session as a focused slot reporting its own conversation as origin', async () => {
+      (app.getConversationInfo as ReturnType<typeof vi.fn>).mockResolvedValue({ type: 'temp_group' });
+      const result = await manager.handleStartSession({
+        sessionType: 'conversation',
+        externalReferenceId: 'work-7',
+      });
+      expect(result.success).toBe(true);
+      expect(result.info?.originSessionReference).toEqual({
+        sessionType: 'conversation',
+        externalReferenceId: 'work-7',
+      });
+    });
+  });
+
   describe('terminate', () => {
     it('ends sessions across all three slot collections', async () => {
       manager.routeInboundEvent({ type: 'message', msg: makeMessage('conv-dm', 'dm') });

@@ -443,7 +443,12 @@ export interface CreateSessionInput {
   readonly mcpBridgeArgsPrefix: readonly string[];
   readonly skipToken: string;
   readonly updateConfig: (config: SessionConfig) => Promise<void>;
-  readonly reportContextWindow: (contextWindow: ContextWindow) => Promise<void>;
+  /**
+   * Report context-window usage. `activeConversationId` is the conversation whose turn is in flight
+   * (the chat-shared session serves many conversations from one slot); when set it identifies which
+   * conversation the update belongs to, falling back to the slot's externalReferenceId otherwise.
+   */
+  readonly reportContextWindow: (contextWindow: ContextWindow, activeConversationId?: string) => Promise<void>;
 }
 
 /** Input for resuming an existing session — a create input plus the prior correlationId. */
