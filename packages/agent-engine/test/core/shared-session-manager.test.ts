@@ -4,7 +4,9 @@ import type { AgentSession } from '../../src/agent-session';
 import type { SessionEventProcessor, NewioAppForSession } from '../../src/types';
 import type { PromptManager } from '../../src/prompt-manager';
 import type { IncomingMessage, ContactEvent, CronTriggerEvent } from '../../src/app/index.js';
-import { SHARED_SESSION_ID } from '@newio/agent-sdk';
+
+// The shared singleton session is keyed by the owner DM conversation id (the manager constructor arg).
+const OWNER_DM_CONV = 'owner-dm-conv';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -14,7 +16,7 @@ function createMockSession(correlationId = 'session-1', resumed = false): AgentS
   return {
     correlationId,
     type: 'conversation',
-    externalReferenceId: SHARED_SESSION_ID,
+    externalReferenceId: OWNER_DM_CONV,
     promptFormatterVersion: '1.0.0',
     resumed,
     currentConversationId: undefined as string | undefined,
@@ -26,7 +28,7 @@ function createMockSession(correlationId = 'session-1', resumed = false): AgentS
     handleCancelSession: vi.fn().mockResolvedValue({ success: true }),
     getLiveSessionInfo: vi.fn().mockReturnValue({
       sessionType: 'conversation',
-      externalReferenceId: SHARED_SESSION_ID,
+      externalReferenceId: OWNER_DM_CONV,
       isLive: true,
       availableModels: [],
       availableModes: [],
@@ -152,11 +154,11 @@ describe('SharedSessionManager', () => {
   });
 
   describe('routeInboundEvent', () => {
-    it('routes all messages to the single shared session with SHARED_SESSION_ID', async () => {
+    it('routes all messages to the single shared session keyed by the owner DM', async () => {
       const msg = makeMessage('conv-a');
       manager.routeInboundEvent({ type: 'message', msg });
 
-      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', SHARED_SESSION_ID, true));
+      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', OWNER_DM_CONV, true));
     });
 
     it('routes messages from different conversations to the same session', async () => {
@@ -169,13 +171,13 @@ describe('SharedSessionManager', () => {
     it('routes contact events to the shared session', async () => {
       manager.routeInboundEvent({ type: 'contact', event: makeContactEvent() });
 
-      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', SHARED_SESSION_ID, true));
+      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', OWNER_DM_CONV, true));
     });
 
     it('routes cron events to the shared session', async () => {
       manager.routeInboundEvent({ type: 'cron', event: makeCronEvent() });
 
-      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', SHARED_SESSION_ID, true));
+      await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', OWNER_DM_CONV, true));
     });
   });
 
@@ -207,16 +209,16 @@ describe('SharedSessionManager', () => {
     it('returns not live when no session exists', () => {
       const info = manager.getLiveSessionInfo({ sessionType: 'conversation', externalReferenceId: 'conv-a' });
       expect(info.isLive).toBe(false);
-      expect(info.externalReferenceId).toBe(SHARED_SESSION_ID);
+      expect(info.externalReferenceId).toBe(OWNER_DM_CONV);
     });
 
-    it('returns session info with SHARED_SESSION_ID regardless of requested conversation', async () => {
+    it('returns session info keyed by the owner DM regardless of requested conversation', async () => {
       manager.routeInboundEvent({ type: 'message', msg: makeMessage('conv-a') });
       await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalled());
 
       const info = manager.getLiveSessionInfo({ sessionType: 'conversation', externalReferenceId: 'conv-b' });
       expect(info.isLive).toBe(true);
-      expect(info.externalReferenceId).toBe(SHARED_SESSION_ID);
+      expect(info.externalReferenceId).toBe(OWNER_DM_CONV);
     });
   });
 
@@ -288,9 +290,9 @@ describe('SharedSessionManager', () => {
   });
 
   describe('handoff notes', () => {
-    it('loads handoff from SHARED_SESSION_ID at launch', async () => {
+    it('loads handoff from the owner DM at launch', async () => {
       manager.routeInboundEvent({ type: 'message', msg: makeMessage('conv-a') });
-      await vi.waitFor(() => expect(app.getHandoffNote).toHaveBeenCalledWith(SHARED_SESSION_ID));
+      await vi.waitFor(() => expect(app.getHandoffNote).toHaveBeenCalledWith(OWNER_DM_CONV));
     });
   });
 

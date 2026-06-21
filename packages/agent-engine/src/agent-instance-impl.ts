@@ -10,7 +10,7 @@
  * Each session processes its own event queue concurrently.
  * Subclasses implement session creation and greeting logic.
  */
-import { ApprovalTimeoutError, ConnectionRejectedError, NotFoundApiError, SHARED_SESSION_ID } from '@newio/agent-sdk';
+import { ApprovalTimeoutError, ConnectionRejectedError, NotFoundApiError } from '@newio/agent-sdk';
 import { NewioApp } from './app/index.js';
 import type { ActionOption, ActionRequest } from '@newio/agent-sdk';
 import { NewioMcpServer, startUdsServer } from './mcp/index.js';
@@ -393,9 +393,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
     };
   }
 
-  /** Store key for the single shared session (shared mode only). */
+  /** Store key for the single shared session (shared mode only), keyed by the owner DM conversation. */
   private get sharedSessionKey(): string {
-    return sessionStoreKey('conversation', SHARED_SESSION_ID);
+    return sessionStoreKey('conversation', this.ownerDmConversationId);
   }
 
   private loadSharedInjectionState(): SharedInjectionState {
@@ -522,18 +522,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
       mcpBridgeArgsPrefix: this.engineConfig.mcpBridgeArgsPrefix,
       skipToken: this.promptManager.skipToken(promptFormatterVersion),
       updateConfig: async (config) => {
-        // The experimental shared mode's SHARED_SESSION_ID is not a backend Conversation (writing
-        // member config to it 404s), so route its write to the owner DM member record; every other
-        // slot owns a real conversation and writes to itself.
-        const configConversationId =
-          externalReferenceId === SHARED_SESSION_ID ? this._ownerDmConversationId : externalReferenceId;
-        if (!configConversationId) {
-          log.warn(
-            `${this.logTag} Cannot persist session config for ${externalReferenceId}: owner DM conversation not resolved yet`,
-          );
-          return;
-        }
-        await this.app.updateAgentMemberConfig(configConversationId, {
+        // Every slot owns a real backend Conversation (chat-shared/shared key by the owner DM,
+        // isolated by its own conversation), so write model/mode config to it directly.
+        await this.app.updateAgentMemberConfig(externalReferenceId, {
           acpModel: config.acpModel,
           acpMode: config.acpMode,
         });
