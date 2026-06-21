@@ -409,12 +409,9 @@ export class SharedSessionManager implements SessionManager {
         canCompact: false,
       };
     }
-    // NOTE: this experimental manager still keys the singleton by the synthetic SHARED_SESSION_ID,
-    // which is not a real backend Conversation. Its model/mode config actually lives on the owner DM
-    // (the connector remaps SHARED_SESSION_ID -> owner DM on config writes), but the live-info no
-    // longer advertises a separate config home. To support client-driven model/mode writes, this
-    // manager would need to key the session by the owner DM conversation id, as ChatSharedSessionManager
-    // now does. (Experimental: not exposed via the CLI.)
+    // Experimental: this manager still keys the singleton by the synthetic SHARED_SESSION_ID, so its
+    // config home is no longer advertised — it would need owner-DM keying (like the chat-shared
+    // manager) to support client-driven model/mode writes.
     return slot.session.getLiveSessionInfo();
   }
 

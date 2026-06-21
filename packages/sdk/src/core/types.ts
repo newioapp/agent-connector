@@ -1106,12 +1106,7 @@ export interface RotateSessionResponse {
 export interface ContextWindowUpdatePayload {
   readonly sessionType: SessionType;
   readonly externalReferenceId: string;
-  /**
-   * The conversation whose turn produced this update. A session can serve many conversations from
-   * one slot (the chat-shared chat slot is keyed by the owner DM), so externalReferenceId — the slot
-   * key — does not identify the active conversation; clients should prefer this when present and fall
-   * back to externalReferenceId otherwise. Undefined for sessions with no per-turn conversation (cron).
-   */
+  /** The conversation whose turn produced this update; clients should prefer it over the slot key. */
   readonly activeConversationId?: string;
   readonly contextWindowSize: number;
   readonly contextWindowUsed: number;

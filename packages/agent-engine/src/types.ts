@@ -444,11 +444,7 @@ export interface CreateSessionInput {
   readonly mcpBridgeArgsPrefix: readonly string[];
   readonly skipToken: string;
   readonly updateConfig: (config: SessionConfig) => Promise<void>;
-  /**
-   * Report context-window usage. `activeConversationId` is the conversation whose turn is in flight
-   * (the chat-shared session serves many conversations from one slot); when set it identifies which
-   * conversation the update belongs to, falling back to the slot's externalReferenceId otherwise.
-   */
+  /** Report context-window usage; `activeConversationId` is the in-flight turn's conversation. */
   readonly reportContextWindow: (contextWindow: ContextWindow, activeConversationId?: string) => Promise<void>;
 }
 

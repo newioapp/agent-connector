@@ -522,12 +522,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
       mcpBridgeArgsPrefix: this.engineConfig.mcpBridgeArgsPrefix,
       skipToken: this.promptManager.skipToken(promptFormatterVersion),
       updateConfig: async (config) => {
-        // SHARED_SESSION_ID (the shared singleton in the experimental shared mode) is a
-        // connector-internal id, NOT a backend Conversation — writing member config to it 404s. It
-        // reads its config from the owner DM member record, so that record is the canonical home:
-        // route the write there instead. Every other slot (isolated conversations, and chat-shared
-        // mode's chat slot — now keyed by the owner DM — plus its work/cron slots) owns a real
-        // conversation and writes to itself.
+        // The experimental shared mode's SHARED_SESSION_ID is not a backend Conversation (writing
+        // member config to it 404s), so route its write to the owner DM member record; every other
+        // slot owns a real conversation and writes to itself.
         const configConversationId =
           externalReferenceId === SHARED_SESSION_ID ? this._ownerDmConversationId : externalReferenceId;
         if (!configConversationId) {
@@ -542,10 +539,6 @@ export abstract class BaseAgentInstance implements AgentInstance {
         });
       },
       reportContextWindow: async (context, activeConversationId) => {
-        // The chat-shared chat slot's externalReferenceId is the owner DM, but one slot serves many
-        // conversations — pass the in-flight turn's conversation separately so clients can attribute
-        // usage to the conversation actually being viewed (it's undefined for sessions without a
-        // per-turn conversation, e.g. cron).
         await this.app.sendContextWindowUpdate(
           ownerId,
           type,

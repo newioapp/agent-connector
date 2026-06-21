@@ -982,9 +982,6 @@ export class NewioApp implements NewioAppForAgent, NewioAppForMcp {
       payload: {
         sessionType,
         externalReferenceId,
-        // The conversation whose turn produced this update. The chat-shared session serves many
-        // conversations from one slot, so externalReferenceId (the slot key, e.g. the owner DM) does
-        // not identify the active conversation; clients should prefer this when present.
         activeConversationId,
         contextWindowSize,
         contextWindowUsed,

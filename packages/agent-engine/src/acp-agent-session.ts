@@ -106,9 +106,7 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
     this.contextWindowHandler = new AcpSessionContextWindowHandler(
       init.type,
       init.externalReferenceId,
-      // Tag the report with the conversation whose turn is in flight, so the chat-shared session
-      // (one slot serving many conversations) attributes context usage to the right conversation
-      // rather than to its owner-DM slot key.
+      // Tag the report with the in-flight turn's conversation (the chat-shared slot serves many).
       (contextWindow) => init.reportContextWindow(contextWindow, this._currentConversationId),
     );
     this.slashCommandHandler = new AcpSlashCommandHandler(

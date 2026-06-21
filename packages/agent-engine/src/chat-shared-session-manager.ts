@@ -151,9 +151,7 @@ export class ChatSharedSessionManager implements SessionManager {
       this.chatSlot.lastActivityAt = Date.now();
       return this.chatSlot;
     }
-    // The single chat session is keyed by the owner DM conversation — a real backend Conversation
-    // that also serves as the canonical home for its model/mode config. (DMs, group chats, and
-    // contact events all route to this one slot regardless of its key.)
+    // Key the single chat session by the owner DM — a real Conversation that is also its config home.
     const slot = this.createSlot('conversation', this.ownerDmConversationId, 'chat');
     this.chatSlot = slot;
     return slot;
@@ -189,8 +187,7 @@ export class ChatSharedSessionManager implements SessionManager {
     if (type === 'contact') {
       return this.chatSlot;
     }
-    // conversation: a known work-session slot wins; otherwise it's the chat slot (the owner DM and
-    // any other dm/group conversationId all resolve to the single chat session).
+    // A known work-session slot wins; every other conversation resolves to the chat slot.
     if (this.workSessionSlots.has(externalReferenceId)) {
       return this.workSessionSlots.get(externalReferenceId);
     }
@@ -327,10 +324,8 @@ export class ChatSharedSessionManager implements SessionManager {
       `${this.logTag} Session ready: key=${type}/${externalReferenceId} role=${role} → ${session.correlationId}`,
     );
 
-    // Apply persisted acpModel/acpMode BEFORE providing context (the first prompt must run with
-    // the configured model/mode in effect). Every conversation slot is keyed by a real backend
-    // Conversation (the chat slot by the owner DM, focused work sessions by their own conversation),
-    // so config is read from that conversation; cron sessions have none.
+    // Apply persisted acpModel/acpMode before the first prompt; config lives on the slot's own
+    // conversation (cron sessions have none).
     await this.applyPersistedSessionConfig(type === 'conversation' ? externalReferenceId : undefined, session);
 
     if (session.resumed) {
@@ -369,15 +364,13 @@ export class ChatSharedSessionManager implements SessionManager {
     log.info(`${this.logTag} Preparing memory (role=${role})`);
     const instruction = this.promptManager.buildNewioInstruction(session.promptFormatterVersion, role);
 
-    // A focused conversation session loads its own conversation's memory; the chat session and
-    // cron sessions load global + top-K only (conversationId undefined). Keyed on role, not the id:
-    // the chat slot is keyed by the owner DM conversation, but must still load global-only memory.
+    // Focused sessions load their conversation's memory; chat and cron load global-only. Keyed on
+    // role, not the id — the chat slot is keyed by a real conversation but must stay global-only.
     const memoryConversationId =
       session.type === 'conversation' && role !== 'chat' ? session.externalReferenceId : undefined;
     const memory = await this.app.loadMemoryForSession(memoryConversationId);
 
-    // Resolve handoff: in-memory note from rotation, else fetch from backend for conversation
-    // sessions (the chat slot is keyed by the owner DM; cron sessions have none).
+    // In-memory note from rotation, else fetch from backend for conversation sessions.
     let resolvedHandoff: string | null = handoffNote ?? null;
     if (!resolvedHandoff && session.type === 'conversation') {
       resolvedHandoff = await this.app.getHandoffNote(session.externalReferenceId);
@@ -537,11 +530,9 @@ export class ChatSharedSessionManager implements SessionManager {
     let slot: SessionSlot;
     try {
       if (request.externalReferenceId === this.ownerDmConversationId) {
-        // The owner DM is the chat slot's key — short-circuit without a conversation lookup.
         slot = this.getOrCreateChatSlot();
       } else {
-        // A real conversationId: only work sessions (temp_group) get their own slot; DMs and group
-        // chats are served by the chat slot.
+        // Only work sessions (temp_group) get their own slot; DMs and group chats use the chat slot.
         const info = await this.app.getConversationInfo(request.externalReferenceId);
         slot =
           info.type === 'temp_group'
