@@ -409,7 +409,11 @@ export class SharedSessionManager implements SessionManager {
         canCompact: false,
       };
     }
-    return slot.session.getLiveSessionInfo();
+    // The single shared session spans all conversations; its model/mode config lives on the owner DM.
+    return {
+      ...slot.session.getLiveSessionInfo(),
+      sessionReference: { sessionType: 'conversation', externalReferenceId: this.ownerDmConversationId },
+    };
   }
 
   /** Handle cancel session signal. Only cancels if the session is actively processing the target conversation. */

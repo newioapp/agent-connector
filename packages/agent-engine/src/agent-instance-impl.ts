@@ -522,24 +522,23 @@ export abstract class BaseAgentInstance implements AgentInstance {
       mcpBridgeArgsPrefix: this.engineConfig.mcpBridgeArgsPrefix,
       skipToken: this.promptManager.skipToken(promptFormatterVersion),
       updateConfig: async (config) => {
-        await this.app.updateAgentMemberConfig(externalReferenceId, {
+        // SHARED_SESSION_ID (the shared singleton in shared mode and the chat slot in chat-shared
+        // mode) is a connector-internal id, NOT a backend Conversation — writing member config to
+        // it 404s. Both read their config from the owner DM member record, so that record is the
+        // canonical home: route the write there instead. Every other slot (isolated conversations,
+        // chat-shared work/cron slots) owns a real conversation and writes to itself.
+        const configConversationId =
+          externalReferenceId === SHARED_SESSION_ID ? this._ownerDmConversationId : externalReferenceId;
+        if (!configConversationId) {
+          log.warn(
+            `${this.logTag} Cannot persist session config for ${externalReferenceId}: owner DM conversation not resolved yet`,
+          );
+          return;
+        }
+        await this.app.updateAgentMemberConfig(configConversationId, {
           acpModel: config.acpModel,
           acpMode: config.acpMode,
         });
-        // The shared singleton (shared mode) and the chat slot (chat-shared mode) both read their
-        // config from the owner DM, so mirror writes back there to keep it canonical. Both are
-        // identified by SHARED_SESSION_ID; chat-shared work/cron slots use their own key and are
-        // excluded. (Isolated mode never uses SHARED_SESSION_ID, so it never mirrors.)
-        if (
-          externalReferenceId === SHARED_SESSION_ID &&
-          this._ownerDmConversationId &&
-          externalReferenceId !== this._ownerDmConversationId
-        ) {
-          await this.app.updateAgentMemberConfig(this._ownerDmConversationId, {
-            acpModel: config.acpModel,
-            acpMode: config.acpMode,
-          });
-        }
       },
       reportContextWindow: async (context) => {
         await this.app.sendContextWindowUpdate(ownerId, type, externalReferenceId, context.size, context.used);
