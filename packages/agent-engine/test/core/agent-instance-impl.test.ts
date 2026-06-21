@@ -2,10 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AgentInstanceImpl } from '../../src/agent-instance-impl';
 import type { AgentConfigManager } from '../../src/agent-config-manager';
 import type { AgentInstanceListener } from '../../src/agent-instance';
-import type { AgentConfig } from '../../src/types';
+import type { AgentConfig, SessionConfig } from '../../src/types';
 import type { CronStore } from '../../src/cron-store';
 import type { EngineConfig } from '../../src/engine-config';
 import type { MemberRecord, ConversationListItem } from '@newio/agent-sdk';
+import { SHARED_SESSION_ID } from '@newio/agent-sdk';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -405,5 +406,77 @@ describe('AgentInstanceImpl — intentional teardown ordering', () => {
     await (instance as unknown as Record<string, () => Promise<void>>)['teardown']!.call(instance);
 
     expect(order).toEqual(['markStopping', 'sessionManager.terminate', 'factory.terminate']);
+  });
+});
+
+describe('AgentInstanceImpl — updateConfig persistence routing', () => {
+  // Regression guard for #500: the shared singleton (shared mode) and the chat slot (chat-shared
+  // mode) are addressed by SHARED_SESSION_ID, which is NOT a backend Conversation. Persisting
+  // their corrected config must target the owner DM member record — never SHARED_SESSION_ID,
+  // which 404s on the agent-settings endpoint.
+  const ownerId = 'owner-1';
+  const ownerDmConvId = 'dm-owner-agent';
+
+  function setMcpSocketPath(instance: AgentInstanceImpl, path: string): void {
+    (instance as unknown as Record<string, unknown>)['_mcpSocketPath'] = path;
+  }
+
+  function setPromptManager(instance: AgentInstanceImpl): void {
+    (instance as unknown as Record<string, unknown>)['_promptManager'] = {
+      skipToken: () => '__skip__',
+    };
+  }
+
+  /** Build a session input and return its updateConfig callback plus the updateAgentMemberConfig spy. */
+  function buildUpdateConfig(
+    instance: AgentInstanceImpl,
+    externalReferenceId: string,
+  ): { updateConfig: (config: SessionConfig) => Promise<void>; updateAgentMemberConfig: ReturnType<typeof vi.fn> } {
+    const updateAgentMemberConfig = vi.fn().mockResolvedValue(undefined);
+    setApp(instance, { identity: { userId: 'agent-1', ownerId }, updateAgentMemberConfig });
+    setMcpSocketPath(instance, '/tmp/mcp.sock');
+    setPromptManager(instance);
+    const input = (
+      instance as unknown as Record<
+        string,
+        (t: string, e: string, v: string) => { updateConfig: (c: SessionConfig) => Promise<void> }
+      >
+    )['buildSessionInput']!.call(instance, 'conversation', externalReferenceId, 'v1');
+    return { updateConfig: input.updateConfig, updateAgentMemberConfig };
+  }
+
+  let instance: AgentInstanceImpl;
+
+  beforeEach(() => {
+    instance = createInstance();
+    setOwnerDmConversationId(instance, ownerDmConvId);
+  });
+
+  it('routes SHARED_SESSION_ID config writes to the owner DM, not the synthetic id', async () => {
+    const { updateConfig, updateAgentMemberConfig } = buildUpdateConfig(instance, SHARED_SESSION_ID);
+
+    await updateConfig({ acpModel: 'opus', acpMode: 'normal' });
+
+    expect(updateAgentMemberConfig).toHaveBeenCalledTimes(1);
+    expect(updateAgentMemberConfig).toHaveBeenCalledWith(ownerDmConvId, { acpModel: 'opus', acpMode: 'normal' });
+    expect(updateAgentMemberConfig).not.toHaveBeenCalledWith(SHARED_SESSION_ID, expect.anything());
+  });
+
+  it('writes a real conversation slot config to its own conversation', async () => {
+    const { updateConfig, updateAgentMemberConfig } = buildUpdateConfig(instance, 'conv-real');
+
+    await updateConfig({ acpModel: 'sonnet', acpMode: null });
+
+    expect(updateAgentMemberConfig).toHaveBeenCalledTimes(1);
+    expect(updateAgentMemberConfig).toHaveBeenCalledWith('conv-real', { acpModel: 'sonnet', acpMode: null });
+  });
+
+  it('skips the write (no throw) when SHARED_SESSION_ID config has no resolved owner DM', async () => {
+    setOwnerDmConversationId(instance, undefined as unknown as string);
+    const { updateConfig, updateAgentMemberConfig } = buildUpdateConfig(instance, SHARED_SESSION_ID);
+
+    await expect(updateConfig({ acpModel: 'opus', acpMode: null })).resolves.toBeUndefined();
+
+    expect(updateAgentMemberConfig).not.toHaveBeenCalled();
   });
 });

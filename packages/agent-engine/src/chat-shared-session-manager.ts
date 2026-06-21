@@ -608,7 +608,18 @@ export class ChatSharedSessionManager implements SessionManager {
         canCompact: false,
       };
     }
-    return slot.session.getLiveSessionInfo();
+    const info = slot.session.getLiveSessionInfo();
+    // Tell the client where this slot's model/mode config actually lives: the chat slot reports the
+    // owner DM (its config home), focused work sessions report their own conversation, cron none.
+    const configConversationId = slotConfigSource(
+      slot.type,
+      slot.externalReferenceId,
+      slot.role,
+      this.ownerDmConversationId,
+    );
+    return configConversationId
+      ? { ...info, originSessionReference: { sessionType: 'conversation', externalReferenceId: configConversationId } }
+      : info;
   }
 
   async handleCancelSession(request: CancelSessionRequest): Promise<CancelSessionResponse> {
