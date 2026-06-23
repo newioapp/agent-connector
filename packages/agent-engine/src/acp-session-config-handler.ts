@@ -221,6 +221,36 @@ export class AcpSessionConfigHandler {
       log.warn(`[${this.sessionType}/${this.externalReferenceId}] Failed to report corrected session config`, err);
     }
   }
+
+  /**
+   * Report the runner's advertised current model/mode at session start so the
+   * backend member record matches what the agent actually runs on (it's empty
+   * for a fresh conversation, and the connector otherwise only reports when
+   * correcting a stale persisted value). Sends only fields the runner advertised
+   * a current value for: an undefined selection is omitted, not sent as null,
+   * since the backend partial-update treats an omitted field as "no change" and
+   * undefined means "unknown", not "cleared".
+   */
+  async reportStartupConfig(): Promise<void> {
+    if (this.sessionType !== 'conversation') {
+      return;
+    }
+    const config: SessionConfig = {
+      ...(this.modelConfig?.selectedId !== undefined ? { acpModel: this.modelConfig.selectedId } : {}),
+      ...(this.modeConfig?.selectedId !== undefined ? { acpMode: this.modeConfig.selectedId } : {}),
+    };
+    if (config.acpModel === undefined && config.acpMode === undefined) {
+      return;
+    }
+    try {
+      await this.updateConfig(config);
+      log.info(
+        `[${this.sessionType}/${this.externalReferenceId}] Reported startup config for session ${this.correlationId}`,
+      );
+    } catch (err: unknown) {
+      log.warn(`[${this.sessionType}/${this.externalReferenceId}] Failed to report startup session config`, err);
+    }
+  }
 }
 
 /** Extract an AgentSessionConfig from configOptions by category, flattening grouped options. */

@@ -332,6 +332,11 @@ export class ChatSharedSessionManager implements SessionManager {
     // conversation (cron sessions have none).
     await this.applyPersistedSessionConfig(type === 'conversation' ? externalReferenceId : undefined, session);
 
+    // Report the runner's actual current model/mode so the backend record matches reality even when
+    // nothing was persisted (a fresh conversation), otherwise it stays empty and the desktop shows
+    // nothing for an offline agent.
+    await session.reportStartupConfig();
+
     if (session.resumed) {
       if (role === 'chat') {
         const state = this.app.loadSharedInjectionState();

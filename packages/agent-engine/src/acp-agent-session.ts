@@ -229,6 +229,10 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
     await this.configHandler.applySessionConfig(config);
   }
 
+  async reportStartupConfig(): Promise<void> {
+    await this.configHandler.reportStartupConfig();
+  }
+
   async dispose(): Promise<void> {
     if (!this.disposable) {
       log.info(`${this.logTag} [${this.correlationId}] Session is not disposable, skipping dispose`);

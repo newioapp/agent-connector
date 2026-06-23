@@ -293,6 +293,11 @@ export class SharedSessionManager implements SessionManager {
     // prompt, which must run with the configured model/mode already in effect.
     await this.applyPersistedSessionConfig(session);
 
+    // Report the runner's actual current model/mode so the backend record matches reality even when
+    // nothing was persisted (a fresh conversation), otherwise it stays empty and the desktop shows
+    // nothing for an offline agent.
+    await session.reportStartupConfig();
+
     // A resumed session already holds its instruction + memory + prior turns;
     // only fresh sessions need context injected. On resume, hydrate the injected
     // sets from the persisted state so we don't re-inject scopes after a restart.

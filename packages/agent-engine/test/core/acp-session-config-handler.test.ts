@@ -611,4 +611,78 @@ describe('AcpSessionConfigHandler', () => {
       expect(updateConfig).toHaveBeenCalledWith({ acpModel: null, acpMode: 'code' });
     });
   });
+
+  describe('reportStartupConfig', () => {
+    it('reports the runner default for a fresh session with nothing persisted', async () => {
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        mockConnection(),
+        updateConfig,
+        makeSessionResponse({
+          models: { availableModels: [{ modelId: 'sonnet', name: 'Sonnet' }], currentModelId: 'sonnet' },
+          modes: { availableModes: [{ id: 'default', name: 'Default' }], currentModeId: 'default' },
+        }),
+      );
+
+      await handler.reportStartupConfig();
+
+      expect(updateConfig).toHaveBeenCalledWith({ acpModel: 'sonnet', acpMode: 'default' });
+    });
+
+    it('omits a field the runner does not advertise a current value for (no-change, not cleared)', async () => {
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        mockConnection(),
+        updateConfig,
+        // Runner advertises a current mode but no model.
+        makeSessionResponse({
+          modes: { availableModes: [{ id: 'plan', name: 'Plan' }], currentModeId: 'plan' },
+        }),
+      );
+
+      await handler.reportStartupConfig();
+
+      expect(updateConfig).toHaveBeenCalledWith({ acpMode: 'plan' });
+    });
+
+    it('does not report when the runner advertises no current model or mode', async () => {
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        mockConnection(),
+        updateConfig,
+        makeSessionResponse(),
+      );
+
+      await handler.reportStartupConfig();
+
+      expect(updateConfig).not.toHaveBeenCalled();
+    });
+
+    it('does not report for non-conversation sessions (cron)', async () => {
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'cron',
+        'cron-1',
+        'sess-1',
+        mockConnection(),
+        updateConfig,
+        makeSessionResponse({
+          models: { availableModels: [{ modelId: 'sonnet', name: 'Sonnet' }], currentModelId: 'sonnet' },
+        }),
+      );
+
+      await handler.reportStartupConfig();
+
+      expect(updateConfig).not.toHaveBeenCalled();
+    });
+  });
 });

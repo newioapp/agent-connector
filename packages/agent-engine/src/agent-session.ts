@@ -60,4 +60,7 @@ export interface AgentSession {
 
   /** Apply session config (acpModel/acpMode) from the backend. Reports corrected values on failure. */
   applySessionConfig(config: SessionConfigUpdate): Promise<void>;
+
+  /** Report the runner's advertised current model/mode to the backend at session start. */
+  reportStartupConfig(): Promise<void>;
 }

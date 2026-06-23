@@ -21,6 +21,7 @@ function createMockSession(correlationId = 'session-1', resumed = false): AgentS
       yield { type: 'agent_message_chunk' as const, text: '' };
     }),
     applySessionConfig: vi.fn().mockResolvedValue(undefined),
+    reportStartupConfig: vi.fn().mockResolvedValue(undefined),
     handleCompactSession: vi.fn().mockResolvedValue({ success: true }),
     handleCancelSession: vi.fn().mockResolvedValue({ success: true }),
     getLiveSessionInfo: vi.fn().mockReturnValue({

@@ -286,6 +286,11 @@ export class IsolatedSessionManager implements SessionManager {
     // configured model/mode already in effect, not race a pending change.
     await this.applyPersistedSessionConfig(type, externalReferenceId, session);
 
+    // Report the runner's actual current model/mode so the backend record matches reality even when
+    // nothing was persisted (a fresh conversation), otherwise it stays empty and the desktop shows
+    // nothing for an offline agent.
+    await session.reportStartupConfig();
+
     // A resumed session already holds its instruction + memory + prior turns;
     // only fresh sessions need context injected.
     if (session.resumed) {
