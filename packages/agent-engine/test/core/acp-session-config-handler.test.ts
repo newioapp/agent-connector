@@ -7,6 +7,7 @@ import type { ClientSideConnection, NewSessionResponse } from '@agentclientproto
 interface TestableConfigHandler {
   setModel(modelId: string): Promise<void>;
   setMode(modeId: string): Promise<void>;
+  reportConfig(): Promise<void>;
 }
 
 /** Minimal mock connection — only setSessionMode and unstable_setSessionModel are used. */
@@ -542,10 +543,11 @@ describe('AcpSessionConfigHandler', () => {
 
       expect(conn.unstable_setSessionModel).not.toHaveBeenCalled();
       expect(handler.listModels()?.selectedId).toBe('gpt-5-codex');
-      expect(updateConfig).toHaveBeenCalledWith({ acpModel: 'gpt-5-codex', acpMode: null });
+      // Only the dimension the agent advertises a value for is reported; mode is omitted, not nulled.
+      expect(updateConfig).toHaveBeenCalledWith({ acpModel: 'gpt-5-codex' });
     });
 
-    it('does NOT apply any model when the agent advertises none; reports null', async () => {
+    it('does NOT apply or report when the agent advertises no model (undefined = unknown, not cleared)', async () => {
       const conn = mockConnection();
       const updateConfig = mockUpdateConfig();
       const handler = new AcpSessionConfigHandler(
@@ -560,7 +562,7 @@ describe('AcpSessionConfigHandler', () => {
       await handler.applySessionConfig({ acpModel: 'opus' });
 
       expect(conn.unstable_setSessionModel).not.toHaveBeenCalled();
-      expect(updateConfig).toHaveBeenCalledWith({ acpModel: null, acpMode: null });
+      expect(updateConfig).not.toHaveBeenCalled();
     });
 
     it('applies a persisted mode the agent advertises and does not report', async () => {
@@ -608,11 +610,11 @@ describe('AcpSessionConfigHandler', () => {
 
       expect(conn.setSessionMode).not.toHaveBeenCalled();
       expect(handler.listModes()?.selectedId).toBe('code');
-      expect(updateConfig).toHaveBeenCalledWith({ acpModel: null, acpMode: 'code' });
+      expect(updateConfig).toHaveBeenCalledWith({ acpMode: 'code' });
     });
   });
 
-  describe('reportAdvertisedConfig', () => {
+  describe('reportConfig', () => {
     it('reports the runner default for a fresh session with nothing persisted', async () => {
       const updateConfig = mockUpdateConfig();
       const handler = new AcpSessionConfigHandler(
@@ -627,7 +629,7 @@ describe('AcpSessionConfigHandler', () => {
         }),
       );
 
-      await handler.reportAdvertisedConfig();
+      await (handler as unknown as TestableConfigHandler).reportConfig();
 
       expect(updateConfig).toHaveBeenCalledWith({ acpModel: 'sonnet', acpMode: 'default' });
     });
@@ -646,7 +648,7 @@ describe('AcpSessionConfigHandler', () => {
         }),
       );
 
-      await handler.reportAdvertisedConfig();
+      await (handler as unknown as TestableConfigHandler).reportConfig();
 
       expect(updateConfig).toHaveBeenCalledWith({ acpMode: 'plan' });
     });
@@ -662,7 +664,7 @@ describe('AcpSessionConfigHandler', () => {
         makeSessionResponse(),
       );
 
-      await handler.reportAdvertisedConfig();
+      await (handler as unknown as TestableConfigHandler).reportConfig();
 
       expect(updateConfig).not.toHaveBeenCalled();
     });
@@ -680,7 +682,7 @@ describe('AcpSessionConfigHandler', () => {
         }),
       );
 
-      await handler.reportAdvertisedConfig();
+      await (handler as unknown as TestableConfigHandler).reportConfig();
 
       expect(updateConfig).not.toHaveBeenCalled();
     });
@@ -776,6 +778,91 @@ describe('AcpSessionConfigHandler', () => {
       await flush();
 
       expect(updateConfig).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('backend reconcile', () => {
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    it('reports the runner default on a fresh conversation (nothing persisted)', async () => {
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        mockConnection(),
+        updateConfig,
+        makeSessionResponse({
+          models: { availableModels: [{ modelId: 'sonnet', name: 'Sonnet' }], currentModelId: 'sonnet' },
+          modes: { availableModes: [{ id: 'default', name: 'Default' }], currentModeId: 'default' },
+        }),
+      );
+
+      await handler.applySessionConfig({});
+
+      expect(updateConfig).toHaveBeenCalledExactlyOnceWith({ acpModel: 'sonnet', acpMode: 'default' });
+    });
+
+    it('does not re-report when the runner echoes a value we just applied (no double report)', async () => {
+      const conn = mockConnection();
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        conn,
+        updateConfig,
+        makeSessionResponse({
+          models: {
+            availableModels: [
+              { modelId: 'a', name: 'A' },
+              { modelId: 'b', name: 'B' },
+            ],
+            currentModelId: 'a',
+          },
+        }),
+      );
+
+      // Backend already holds 'b'; the agent applies it → in sync, nothing to report.
+      await handler.applySessionConfig({ acpModel: 'b' });
+      expect(updateConfig).not.toHaveBeenCalled();
+
+      // The runner echoes the confirmed change as a session update — still in sync, no report.
+      handler.handleSessionUpdate({
+        sessionUpdate: 'config_option_update',
+        configOptions: [{ type: 'select', category: 'model', currentValue: 'b', options: [{ value: 'b', name: 'B' }] }],
+      } as never);
+      await flush();
+
+      expect(updateConfig).not.toHaveBeenCalled();
+    });
+
+    it('reports an agent-initiated change made after the startup reconcile', async () => {
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        mockConnection(),
+        updateConfig,
+        makeSessionResponse({
+          modes: {
+            availableModes: [
+              { id: 'code', name: 'Code' },
+              { id: 'plan', name: 'Plan' },
+            ],
+            currentModeId: 'code',
+          },
+        }),
+      );
+
+      await handler.applySessionConfig({});
+      expect(updateConfig).toHaveBeenNthCalledWith(1, { acpMode: 'code' });
+
+      handler.handleSessionUpdate({ sessionUpdate: 'current_mode_update', currentModeId: 'plan' } as never);
+      await flush();
+
+      expect(updateConfig).toHaveBeenNthCalledWith(2, { acpMode: 'plan' });
     });
   });
 });

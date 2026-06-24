@@ -329,13 +329,9 @@ export class ChatSharedSessionManager implements SessionManager {
     );
 
     // Apply persisted acpModel/acpMode before the first prompt; config lives on the slot's own
-    // conversation (cron sessions have none).
+    // conversation (cron sessions have none). This also reconciles the backend with the agent's
+    // actual selection, so a fresh conversation's default is reported even when nothing was persisted.
     await this.applyPersistedSessionConfig(type === 'conversation' ? externalReferenceId : undefined, session);
-
-    // Report the runner's actual current model/mode so the backend record matches reality even when
-    // nothing was persisted (a fresh conversation), otherwise it stays empty and the desktop shows
-    // nothing for an offline agent.
-    await session.reportStartupConfig();
 
     if (session.resumed) {
       if (role === 'chat') {
@@ -362,12 +358,10 @@ export class ChatSharedSessionManager implements SessionManager {
     }
     try {
       const config = await this.app.getConversationControls(configConversationId);
-      if (config) {
-        log.info(
-          `Apply persisted session config from conversation ${configConversationId}, acpMode=${config.acpMode}, acpModel=${config.acpModel}`,
-        );
-        await session.applySessionConfig({ acpModel: config.acpModel, acpMode: config.acpMode });
-      }
+      log.info(
+        `Apply persisted session config from conversation ${configConversationId}, acpMode=${config?.acpMode}, acpModel=${config?.acpModel}`,
+      );
+      await session.applySessionConfig({ acpModel: config?.acpModel, acpMode: config?.acpMode });
     } catch (err: unknown) {
       log.warn(`${this.logTag} Failed to apply persisted session config from ${configConversationId}`, err);
     }

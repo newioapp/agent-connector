@@ -58,9 +58,6 @@ export interface AgentSession {
   /** Handle compact session signal. */
   handleCompactSession(): Promise<CompactSessionResponse>;
 
-  /** Apply session config (acpModel/acpMode) from the backend. Reports corrected values on failure. */
+  /** Apply session config (acpModel/acpMode) from the backend and reconcile the backend with the agent's actual selection. */
   applySessionConfig(config: SessionConfigUpdate): Promise<void>;
-
-  /** Report the runner's advertised current model/mode to the backend at session start. */
-  reportStartupConfig(): Promise<void>;
 }

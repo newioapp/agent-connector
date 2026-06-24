@@ -291,12 +291,9 @@ export class SharedSessionManager implements SessionManager {
     // Apply persisted acpModel/acpMode config from the owner DM conversation
     // BEFORE providing context — provideContext issues the session's first
     // prompt, which must run with the configured model/mode already in effect.
+    // This also reconciles the backend with the agent's actual selection, so a
+    // fresh conversation's default is reported even when nothing was persisted.
     await this.applyPersistedSessionConfig(session);
-
-    // Report the runner's actual current model/mode so the backend record matches reality even when
-    // nothing was persisted (a fresh conversation), otherwise it stays empty and the desktop shows
-    // nothing for an offline agent.
-    await session.reportStartupConfig();
 
     // A resumed session already holds its instruction + memory + prior turns;
     // only fresh sessions need context injected. On resume, hydrate the injected
@@ -317,12 +314,10 @@ export class SharedSessionManager implements SessionManager {
   private async applyPersistedSessionConfig(session: AgentSession): Promise<void> {
     try {
       const config = await this.app.getConversationControls(this.ownerDmConversationId);
-      if (config) {
-        await session.applySessionConfig({ acpModel: config.acpModel, acpMode: config.acpMode });
-        log.info(
-          `${this.logTag} Applied persisted config from owner DM: model=${config.acpModel}, mode=${config.acpMode}`,
-        );
-      }
+      await session.applySessionConfig({ acpModel: config?.acpModel, acpMode: config?.acpMode });
+      log.info(
+        `${this.logTag} Applied persisted config from owner DM: model=${config?.acpModel}, mode=${config?.acpMode}`,
+      );
     } catch (err: unknown) {
       log.warn(`${this.logTag} Failed to apply persisted session config from owner DM`, err);
     }
