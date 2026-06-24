@@ -864,5 +864,49 @@ describe('AcpSessionConfigHandler', () => {
 
       expect(updateConfig).toHaveBeenNthCalledWith(2, { acpMode: 'plan' });
     });
+
+    it('serializes reconcile writes so a slow earlier write cannot clobber a later one', async () => {
+      const resolvers: Array<() => void> = [];
+      const calls: SessionConfig[] = [];
+      const updateConfig = vi.fn().mockImplementation((cfg: SessionConfig) => {
+        calls.push(cfg);
+        return new Promise<void>((resolve) => resolvers.push(resolve));
+      });
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        mockConnection(),
+        updateConfig,
+        makeSessionResponse({
+          modes: {
+            availableModes: [
+              { id: 'code', name: 'Code' },
+              { id: 'plan', name: 'Plan' },
+              { id: 'ask', name: 'Ask' },
+            ],
+            currentModeId: 'code',
+          },
+        }),
+      );
+
+      // First change: its backend write starts and stays in flight (unresolved).
+      handler.handleSessionUpdate({ sessionUpdate: 'current_mode_update', currentModeId: 'plan' } as never);
+      await flush();
+      expect(calls).toEqual([{ acpMode: 'plan' }]);
+
+      // Second change arrives while the first write is still pending — it must NOT start concurrently.
+      handler.handleSessionUpdate({ sessionUpdate: 'current_mode_update', currentModeId: 'ask' } as never);
+      await flush();
+      expect(calls).toHaveLength(1);
+
+      // Once the first write completes, the queued reconcile runs with the latest selection.
+      resolvers[0]!();
+      await flush();
+      expect(calls).toEqual([{ acpMode: 'plan' }, { acpMode: 'ask' }]);
+
+      resolvers[1]!();
+      await flush();
+    });
   });
 });

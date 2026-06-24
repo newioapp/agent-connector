@@ -44,6 +44,9 @@ export class AcpSessionConfigHandler {
   /** What we believe the backend member record holds per dimension; reconcile target. */
   private readonly believedBackend: Partial<Record<ConfigCategory, string | null>> = {};
 
+  /** Serializes reconcile writes so a slow earlier write can't complete after a newer one. */
+  private reconcileChain: Promise<void> = Promise.resolve();
+
   constructor(
     private readonly sessionType: SessionType,
     private readonly externalReferenceId: string,
@@ -222,8 +225,19 @@ export class AcpSessionConfigHandler {
    * agent advertises no value for is left untouched (undefined = unknown, not
    * cleared). No-ops when already in sync, so it is safe to call after every
    * apply and every session update without double-reporting.
+   *
+   * Reconciles run serialized on a single chain: rapid ACP updates (each firing
+   * a fire-and-forget reportConfig) must not write concurrently, or an older
+   * write completing last could leave the backend stale while believedBackend
+   * has already advanced. Serializing also coalesces — a queued reconcile re-reads
+   * the latest selection when it runs and no-ops if a prior write already synced it.
    */
-  private async reportConfig(): Promise<void> {
+  private reportConfig(): Promise<void> {
+    this.reconcileChain = this.reconcileChain.then(() => this.doReportConfig());
+    return this.reconcileChain;
+  }
+
+  private async doReportConfig(): Promise<void> {
     if (this.sessionType !== 'conversation') {
       return;
     }
@@ -242,8 +256,10 @@ export class AcpSessionConfigHandler {
     }
     try {
       await this.updateConfig(payload);
+      // Record what we actually wrote, not the live selection — a newer update may have advanced
+      // this.current while this write was in flight, and its own reconcile will pick that up.
       for (const category of reconciled) {
-        this.believedBackend[category] = this.current[category]?.selectedId ?? null;
+        this.believedBackend[category] = payload[CONFIG_FIELD[category]] ?? null;
       }
       log.info(
         `[${this.tag}] Reported config: ${reconciled.map((c) => `${CONFIG_FIELD[c]}=${payload[CONFIG_FIELD[c]]}`).join(', ')}`,
