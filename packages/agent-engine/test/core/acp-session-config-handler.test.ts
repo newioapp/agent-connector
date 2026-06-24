@@ -7,6 +7,7 @@ import type { ClientSideConnection, NewSessionResponse } from '@agentclientproto
 interface TestableConfigHandler {
   setModel(modelId: string): Promise<void>;
   setMode(modeId: string): Promise<void>;
+  reportConfig(): Promise<void>;
 }
 
 /** Minimal mock connection — only setSessionMode and unstable_setSessionModel are used. */
@@ -542,10 +543,11 @@ describe('AcpSessionConfigHandler', () => {
 
       expect(conn.unstable_setSessionModel).not.toHaveBeenCalled();
       expect(handler.listModels()?.selectedId).toBe('gpt-5-codex');
-      expect(updateConfig).toHaveBeenCalledWith({ acpModel: 'gpt-5-codex', acpMode: null });
+      // Only the dimension the agent advertises a value for is reported; mode is omitted, not nulled.
+      expect(updateConfig).toHaveBeenCalledWith({ acpModel: 'gpt-5-codex' });
     });
 
-    it('does NOT apply any model when the agent advertises none; reports null', async () => {
+    it('does NOT apply or report when the agent advertises no model (undefined = unknown, not cleared)', async () => {
       const conn = mockConnection();
       const updateConfig = mockUpdateConfig();
       const handler = new AcpSessionConfigHandler(
@@ -560,7 +562,7 @@ describe('AcpSessionConfigHandler', () => {
       await handler.applySessionConfig({ acpModel: 'opus' });
 
       expect(conn.unstable_setSessionModel).not.toHaveBeenCalled();
-      expect(updateConfig).toHaveBeenCalledWith({ acpModel: null, acpMode: null });
+      expect(updateConfig).not.toHaveBeenCalled();
     });
 
     it('applies a persisted mode the agent advertises and does not report', async () => {
@@ -608,7 +610,303 @@ describe('AcpSessionConfigHandler', () => {
 
       expect(conn.setSessionMode).not.toHaveBeenCalled();
       expect(handler.listModes()?.selectedId).toBe('code');
-      expect(updateConfig).toHaveBeenCalledWith({ acpModel: null, acpMode: 'code' });
+      expect(updateConfig).toHaveBeenCalledWith({ acpMode: 'code' });
+    });
+  });
+
+  describe('reportConfig', () => {
+    it('reports the runner default for a fresh session with nothing persisted', async () => {
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        mockConnection(),
+        updateConfig,
+        makeSessionResponse({
+          models: { availableModels: [{ modelId: 'sonnet', name: 'Sonnet' }], currentModelId: 'sonnet' },
+          modes: { availableModes: [{ id: 'default', name: 'Default' }], currentModeId: 'default' },
+        }),
+      );
+
+      await (handler as unknown as TestableConfigHandler).reportConfig();
+
+      expect(updateConfig).toHaveBeenCalledWith({ acpModel: 'sonnet', acpMode: 'default' });
+    });
+
+    it('omits a field the runner does not advertise a current value for (no-change, not cleared)', async () => {
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        mockConnection(),
+        updateConfig,
+        // Runner advertises a current mode but no model.
+        makeSessionResponse({
+          modes: { availableModes: [{ id: 'plan', name: 'Plan' }], currentModeId: 'plan' },
+        }),
+      );
+
+      await (handler as unknown as TestableConfigHandler).reportConfig();
+
+      expect(updateConfig).toHaveBeenCalledWith({ acpMode: 'plan' });
+    });
+
+    it('does not report when the runner advertises no current model or mode', async () => {
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        mockConnection(),
+        updateConfig,
+        makeSessionResponse(),
+      );
+
+      await (handler as unknown as TestableConfigHandler).reportConfig();
+
+      expect(updateConfig).not.toHaveBeenCalled();
+    });
+
+    it('does not report for non-conversation sessions (cron)', async () => {
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'cron',
+        'cron-1',
+        'sess-1',
+        mockConnection(),
+        updateConfig,
+        makeSessionResponse({
+          models: { availableModels: [{ modelId: 'sonnet', name: 'Sonnet' }], currentModelId: 'sonnet' },
+        }),
+      );
+
+      await (handler as unknown as TestableConfigHandler).reportConfig();
+
+      expect(updateConfig).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleSessionUpdate — reports changes to the backend', () => {
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    it('reports the new mode on current_mode_update', async () => {
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        mockConnection(),
+        updateConfig,
+        makeSessionResponse({
+          modes: {
+            availableModes: [
+              { id: 'code', name: 'Code' },
+              { id: 'plan', name: 'Plan' },
+            ],
+            currentModeId: 'code',
+          },
+        }),
+      );
+
+      handler.handleSessionUpdate({ sessionUpdate: 'current_mode_update', currentModeId: 'plan' } as never);
+      await flush();
+
+      expect(updateConfig).toHaveBeenCalledWith({ acpMode: 'plan' });
+    });
+
+    it('does not report a current_mode_update when the session advertises no modes', async () => {
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        mockConnection(),
+        updateConfig,
+        makeSessionResponse(),
+      );
+
+      handler.handleSessionUpdate({ sessionUpdate: 'current_mode_update', currentModeId: 'plan' } as never);
+      await flush();
+
+      expect(updateConfig).not.toHaveBeenCalled();
+    });
+
+    it('reports the new model on config_option_update', async () => {
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        mockConnection(),
+        updateConfig,
+        makeSessionResponse(),
+      );
+
+      handler.handleSessionUpdate({
+        sessionUpdate: 'config_option_update',
+        configOptions: [
+          {
+            type: 'select',
+            category: 'model',
+            currentValue: 'opus',
+            options: [{ value: 'opus', name: 'Opus' }],
+          },
+        ],
+      } as never);
+      await flush();
+
+      expect(updateConfig).toHaveBeenCalledWith({ acpModel: 'opus' });
+    });
+
+    it('does not report a config_option_update with no select options', async () => {
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        mockConnection(),
+        updateConfig,
+        makeSessionResponse(),
+      );
+
+      handler.handleSessionUpdate({
+        sessionUpdate: 'config_option_update',
+        configOptions: [{ type: 'toggle', category: 'model', currentValue: true }],
+      } as never);
+      await flush();
+
+      expect(updateConfig).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('backend reconcile', () => {
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    it('reports the runner default on a fresh conversation (nothing persisted)', async () => {
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        mockConnection(),
+        updateConfig,
+        makeSessionResponse({
+          models: { availableModels: [{ modelId: 'sonnet', name: 'Sonnet' }], currentModelId: 'sonnet' },
+          modes: { availableModes: [{ id: 'default', name: 'Default' }], currentModeId: 'default' },
+        }),
+      );
+
+      await handler.applySessionConfig({});
+
+      expect(updateConfig).toHaveBeenCalledExactlyOnceWith({ acpModel: 'sonnet', acpMode: 'default' });
+    });
+
+    it('does not re-report when the runner echoes a value we just applied (no double report)', async () => {
+      const conn = mockConnection();
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        conn,
+        updateConfig,
+        makeSessionResponse({
+          models: {
+            availableModels: [
+              { modelId: 'a', name: 'A' },
+              { modelId: 'b', name: 'B' },
+            ],
+            currentModelId: 'a',
+          },
+        }),
+      );
+
+      // Backend already holds 'b'; the agent applies it → in sync, nothing to report.
+      await handler.applySessionConfig({ acpModel: 'b' });
+      expect(updateConfig).not.toHaveBeenCalled();
+
+      // The runner echoes the confirmed change as a session update — still in sync, no report.
+      handler.handleSessionUpdate({
+        sessionUpdate: 'config_option_update',
+        configOptions: [{ type: 'select', category: 'model', currentValue: 'b', options: [{ value: 'b', name: 'B' }] }],
+      } as never);
+      await flush();
+
+      expect(updateConfig).not.toHaveBeenCalled();
+    });
+
+    it('reports an agent-initiated change made after the startup reconcile', async () => {
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        mockConnection(),
+        updateConfig,
+        makeSessionResponse({
+          modes: {
+            availableModes: [
+              { id: 'code', name: 'Code' },
+              { id: 'plan', name: 'Plan' },
+            ],
+            currentModeId: 'code',
+          },
+        }),
+      );
+
+      await handler.applySessionConfig({});
+      expect(updateConfig).toHaveBeenNthCalledWith(1, { acpMode: 'code' });
+
+      handler.handleSessionUpdate({ sessionUpdate: 'current_mode_update', currentModeId: 'plan' } as never);
+      await flush();
+
+      expect(updateConfig).toHaveBeenNthCalledWith(2, { acpMode: 'plan' });
+    });
+
+    it('serializes reconcile writes so a slow earlier write cannot clobber a later one', async () => {
+      const resolvers: Array<() => void> = [];
+      const calls: SessionConfig[] = [];
+      const updateConfig = vi.fn().mockImplementation((cfg: SessionConfig) => {
+        calls.push(cfg);
+        return new Promise<void>((resolve) => resolvers.push(resolve));
+      });
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        mockConnection(),
+        updateConfig,
+        makeSessionResponse({
+          modes: {
+            availableModes: [
+              { id: 'code', name: 'Code' },
+              { id: 'plan', name: 'Plan' },
+              { id: 'ask', name: 'Ask' },
+            ],
+            currentModeId: 'code',
+          },
+        }),
+      );
+
+      // First change: its backend write starts and stays in flight (unresolved).
+      handler.handleSessionUpdate({ sessionUpdate: 'current_mode_update', currentModeId: 'plan' } as never);
+      await flush();
+      expect(calls).toEqual([{ acpMode: 'plan' }]);
+
+      // Second change arrives while the first write is still pending — it must NOT start concurrently.
+      handler.handleSessionUpdate({ sessionUpdate: 'current_mode_update', currentModeId: 'ask' } as never);
+      await flush();
+      expect(calls).toHaveLength(1);
+
+      // Once the first write completes, the queued reconcile runs with the latest selection.
+      resolvers[0]!();
+      await flush();
+      expect(calls).toEqual([{ acpMode: 'plan' }, { acpMode: 'ask' }]);
+
+      resolvers[1]!();
+      await flush();
     });
   });
 });

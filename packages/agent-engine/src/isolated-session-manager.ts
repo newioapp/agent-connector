@@ -283,7 +283,9 @@ export class IsolatedSessionManager implements SessionManager {
     // only) BEFORE providing context. Awaited — and not fire-and-forget — and
     // ahead of provideContext, which issues the session's first prompt: that
     // prompt (and the later greeting connection test) must run with the
-    // configured model/mode already in effect, not race a pending change.
+    // configured model/mode already in effect, not race a pending change. This
+    // also reconciles the backend with the agent's actual selection, so a fresh
+    // conversation's default is reported even when nothing was persisted.
     await this.applyPersistedSessionConfig(type, externalReferenceId, session);
 
     // A resumed session already holds its instruction + memory + prior turns;
@@ -307,9 +309,7 @@ export class IsolatedSessionManager implements SessionManager {
     }
     try {
       const config = await this.app.getConversationControls(externalReferenceId);
-      if (config) {
-        await session.applySessionConfig({ acpModel: config.acpModel, acpMode: config.acpMode });
-      }
+      await session.applySessionConfig({ acpModel: config?.acpModel, acpMode: config?.acpMode });
     } catch (err: unknown) {
       log.warn(`${this.logTag} Failed to apply persisted session config for ${type}/${externalReferenceId}`, err);
     }

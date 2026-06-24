@@ -1,9 +1,14 @@
 /**
- * AcpSessionConfigHandler — manages model/mode config for an ACP session.
+ * AcpSessionConfigHandler — manages a session's config dimensions (model, mode, …).
  *
- * Extracts config from the session response (preferring configOptions over legacy
- * models/modes), handles set/list operations, and processes config-related session
- * updates (current_mode_update, config_option_update).
+ * Extracts each dimension from the session response (preferring configOptions over
+ * the legacy models/modes fields), applies persisted values, processes config-related
+ * session updates, and keeps the backend member record in sync with the value the
+ * agent is actually using.
+ *
+ * The set of dimensions is data-driven via CONFIG_FIELD: supporting a new one — e.g.
+ * "effort" — means adding an entry there and an applyCategory() case. Extraction,
+ * change-tracking and the backend reconcile are all generic over the category list.
  */
 import type { ClientSideConnection, NewSessionResponse, LoadSessionResponse } from '@agentclientprotocol/sdk';
 import type * as acp from '@agentclientprotocol/sdk';
@@ -14,9 +19,33 @@ import type { SessionConfig, SessionType } from './types';
 
 const log = getLogger('acp-session-config-handler');
 
+/** An ACP config dimension we track and sync with the backend member record. */
+type ConfigCategory = 'model' | 'mode';
+
+/** Backend SessionConfig field storing each category's selected value. */
+type ConfigField = 'acpModel' | 'acpMode';
+
+/** Maps each config dimension to its backend field. Single extension point for new dimensions. */
+const CONFIG_FIELD: Record<ConfigCategory, ConfigField> = {
+  model: 'acpModel',
+  mode: 'acpMode',
+};
+
+const CONFIG_CATEGORIES = Object.keys(CONFIG_FIELD) as ConfigCategory[];
+
+function isConfigCategory(category: string | null | undefined): category is ConfigCategory {
+  return category != null && (CONFIG_CATEGORIES as string[]).includes(category);
+}
+
 export class AcpSessionConfigHandler {
-  private modelConfig: AgentSessionConfig | undefined;
-  private modeConfig: AgentSessionConfig | undefined;
+  /** The value the agent is actually using per dimension — the source of truth. */
+  private readonly current: Record<ConfigCategory, AgentSessionConfig | undefined>;
+
+  /** What we believe the backend member record holds per dimension; reconcile target. */
+  private readonly believedBackend: Partial<Record<ConfigCategory, string | null>> = {};
+
+  /** Serializes reconcile writes so a slow earlier write can't complete after a newer one. */
+  private reconcileChain: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly sessionType: SessionType,
@@ -28,35 +57,46 @@ export class AcpSessionConfigHandler {
   ) {
     const { configOptions, models, modes } = sessionResponse;
 
-    this.modelConfig =
-      extractConfigByCategory(configOptions, 'model') ??
-      (models
-        ? {
-            options: models.availableModels.map((m) => ({
-              id: m.modelId,
-              name: m.name,
-              description: m.description ?? undefined,
-            })),
-            selectedId: models.currentModelId,
-          }
-        : undefined);
+    this.current = {
+      model:
+        extractConfigByCategory(configOptions, 'model') ??
+        (models
+          ? {
+              options: models.availableModels.map((m) => ({
+                id: m.modelId,
+                name: m.name,
+                description: m.description ?? undefined,
+              })),
+              selectedId: models.currentModelId,
+            }
+          : undefined),
+      mode:
+        extractConfigByCategory(configOptions, 'mode') ??
+        (modes
+          ? {
+              options: modes.availableModes.map((m) => ({
+                id: m.id,
+                name: m.name,
+                description: m.description ?? undefined,
+              })),
+              selectedId: modes.currentModeId,
+            }
+          : undefined),
+    };
+  }
 
-    this.modeConfig =
-      extractConfigByCategory(configOptions, 'mode') ??
-      (modes
-        ? {
-            options: modes.availableModes.map((m) => ({
-              id: m.id,
-              name: m.name,
-              description: m.description ?? undefined,
-            })),
-            selectedId: modes.currentModeId,
-          }
-        : undefined);
+  /** Dispatch a value to the category's ACP setter. */
+  private async applyCategory(category: ConfigCategory, value: string): Promise<void> {
+    switch (category) {
+      case 'model':
+        return this.setModel(value);
+      case 'mode':
+        return this.setMode(value);
+    }
   }
 
   private async setModel(modelId: string): Promise<void> {
-    log.info(`[${this.sessionType}/${this.externalReferenceId}] Setting model to: ${modelId}`);
+    log.info(`[${this.tag}] Setting model to: ${modelId}`);
     try {
       await this.connection.unstable_setSessionModel({ sessionId: this.correlationId, modelId });
     } catch (err: unknown) {
@@ -68,9 +108,7 @@ export class AcpSessionConfigHandler {
       if (!isMethodNotFound(err)) {
         throw new Error(extractAcpErrorMessage(err, `Failed to set model to "${modelId}"`));
       }
-      log.info(
-        `[${this.sessionType}/${this.externalReferenceId}] unstable_setSessionModel unavailable, falling back to setSessionConfigOption`,
-      );
+      log.info(`[${this.tag}] unstable_setSessionModel unavailable, falling back to setSessionConfigOption`);
       try {
         await this.connection.setSessionConfigOption({
           sessionId: this.correlationId,
@@ -81,65 +119,61 @@ export class AcpSessionConfigHandler {
         throw new Error(extractAcpErrorMessage(fallbackErr, `Failed to set model to "${modelId}"`));
       }
     }
-    if (this.modelConfig) {
-      this.modelConfig = { ...this.modelConfig, selectedId: modelId };
+    if (this.current.model) {
+      this.current.model = { ...this.current.model, selectedId: modelId };
     }
   }
 
   private async setMode(modeId: string): Promise<void> {
-    log.info(`[${this.sessionType}/${this.externalReferenceId}] Setting mode to: ${modeId}`);
+    log.info(`[${this.tag}] Setting mode to: ${modeId}`);
     try {
       await this.connection.setSessionMode({ sessionId: this.correlationId, modeId });
     } catch (err: unknown) {
       throw new Error(extractAcpErrorMessage(err, `Failed to set mode to "${modeId}"`));
     }
-    if (this.modeConfig) {
-      this.modeConfig = { ...this.modeConfig, selectedId: modeId };
+    if (this.current.mode) {
+      this.current.mode = { ...this.current.mode, selectedId: modeId };
     }
   }
 
   listModels(): AgentSessionConfig | undefined {
-    return this.modelConfig;
+    return this.current.model;
   }
 
   listModes(): AgentSessionConfig | undefined {
-    return this.modeConfig;
+    return this.current.mode;
   }
 
   /** Handle config-related session updates. Returns true if the update was handled. */
   handleSessionUpdate(update: acp.SessionUpdate): boolean {
     switch (update.sessionUpdate) {
       case 'current_mode_update': {
-        if (this.modeConfig) {
-          this.modeConfig = { ...this.modeConfig, selectedId: update.currentModeId };
-          log.info(
-            `[${this.sessionType}/${this.externalReferenceId}] Received acpMode updated to: ${update.currentModeId}`,
-          );
+        if (this.current.mode) {
+          this.current.mode = { ...this.current.mode, selectedId: update.currentModeId };
+          log.info(`[${this.tag}] Received acpMode updated to: ${update.currentModeId}`);
+          // The runner emits this for every confirmed change — agent-initiated or external — so it's
+          // the place that keeps the backend in sync afterward. reportConfig no-ops if already in sync.
+          void this.reportConfig();
         }
         return true;
       }
       case 'config_option_update': {
+        let changed = false;
         for (const opt of update.configOptions) {
-          if (opt.type !== 'select') {
+          if (opt.type !== 'select' || !isConfigCategory(opt.category)) {
             continue;
           }
-          if (opt.category === 'model') {
-            this.modelConfig = {
-              options: flattenSelectOptions(opt.options),
-              selectedId: opt.currentValue,
-            };
-            log.info(
-              `[${this.sessionType}/${this.externalReferenceId}] Received acpModel config updated via config_option_update to: ${opt.currentValue}`,
-            );
-          } else if (opt.category === 'mode') {
-            this.modeConfig = {
-              options: flattenSelectOptions(opt.options),
-              selectedId: opt.currentValue,
-            };
-            log.info(
-              `[${this.sessionType}/${this.externalReferenceId}] Received acpMode config updated via config_option_update to: ${opt.currentValue}`,
-            );
-          }
+          this.current[opt.category] = {
+            options: flattenSelectOptions(opt.options),
+            selectedId: opt.currentValue,
+          };
+          changed = true;
+          log.info(
+            `[${this.tag}] Received ${CONFIG_FIELD[opt.category]} updated via config_option_update to: ${opt.currentValue}`,
+          );
+        }
+        if (changed) {
+          void this.reportConfig();
         }
         return true;
       }
@@ -149,77 +183,94 @@ export class AcpSessionConfigHandler {
   }
 
   /**
-   * Apply acpModel/acpMode config. Only applies a value the agent actually
-   * advertises (from the session response or a later config_option_update);
-   * otherwise the persisted value is left unapplied and the session's current
-   * (valid) selection is reported back to correct the stale backend value.
+   * Apply persisted/requested config, then reconcile the backend with reality.
    *
-   * Why the validity gate rather than a try/catch: `setSessionModel` /
-   * `setSessionConfigOption` accept an unknown id silently and only surface the
-   * problem much later, at prompt time (e.g. a Codex runner that inherited a
-   * Claude "opus" model ends up on a model the ChatGPT account rejects when the
-   * first prompt runs). Setting never throws, so a try/catch fallback never
-   * fires — we must validate up front and simply not apply an unsupported value.
+   * Only a value the agent actually advertises is applied; an unadvertised value
+   * is skipped (not applied) because `setSessionModel`/`setSessionConfigOption`
+   * accept an unknown id silently and only fail much later at prompt time (e.g. a
+   * Codex runner that inherited a Claude "opus" model) — so a try/catch fallback
+   * never fires and we must validate up front. The incoming value is the current
+   * backend value (persisted load at startup, or the desktop's PUT), so we record
+   * it as believed-backend before reconciling; reportConfig then corrects the
+   * backend wherever the agent's actual selection differs.
    */
   async applySessionConfig(config: SessionConfigUpdate): Promise<void> {
-    log.info(
-      `[${this.sessionType}/${this.externalReferenceId}] Applying session config: acpMode=${config.acpMode}, acpModel=${config.acpModel}`,
-    );
-    let needsReport = false;
-
-    if (config.acpModel) {
-      if (this.isAdvertisedModel(config.acpModel)) {
-        await this.setModel(config.acpModel);
+    log.info(`[${this.tag}] Applying session config: acpMode=${config.acpMode}, acpModel=${config.acpModel}`);
+    for (const category of CONFIG_CATEGORIES) {
+      const requested = config[CONFIG_FIELD[category]];
+      this.believedBackend[category] = requested ?? null;
+      if (!requested) {
+        continue;
+      }
+      if (this.isAdvertised(category, requested)) {
+        await this.applyCategory(category, requested);
       } else {
         log.warn(
-          `[${this.sessionType}/${this.externalReferenceId}] Persisted model "${config.acpModel}" is not advertised by this agent; keeping current model "${this.modelConfig?.selectedId ?? 'unknown'}"`,
+          `[${this.tag}] Persisted ${category} "${requested}" is not advertised by this agent; keeping current "${this.current[category]?.selectedId ?? 'unknown'}"`,
         );
-        needsReport = true;
       }
     }
-
-    if (config.acpMode) {
-      if (this.isAdvertisedMode(config.acpMode)) {
-        await this.setMode(config.acpMode);
-      } else {
-        log.warn(
-          `[${this.sessionType}/${this.externalReferenceId}] Persisted mode "${config.acpMode}" is not advertised by this agent; keeping current mode "${this.modeConfig?.selectedId ?? 'unknown'}"`,
-        );
-        needsReport = true;
-      }
-    }
-
-    if (needsReport) {
-      await this.reportCurrentConfig();
-    }
+    await this.reportConfig();
   }
 
-  /** Whether the agent advertises a model with this id (from session response or config_option_update). */
-  private isAdvertisedModel(modelId: string): boolean {
-    return this.modelConfig?.options.some((o) => o.id === modelId) ?? false;
+  /** Whether the agent advertises a value with this id for the category. */
+  private isAdvertised(category: ConfigCategory, id: string): boolean {
+    return this.current[category]?.options.some((o) => o.id === id) ?? false;
   }
 
-  /** Whether the agent advertises a mode with this id. */
-  private isAdvertisedMode(modeId: string): boolean {
-    return this.modeConfig?.options.some((o) => o.id === modeId) ?? false;
+  /**
+   * Reconcile the backend member record with the value the agent is actually
+   * using: for each dimension where the agent advertises a current value that
+   * differs from what we believe the backend holds, push it. A dimension the
+   * agent advertises no value for is left untouched (undefined = unknown, not
+   * cleared). No-ops when already in sync, so it is safe to call after every
+   * apply and every session update without double-reporting.
+   *
+   * Reconciles run serialized on a single chain: rapid ACP updates (each firing
+   * a fire-and-forget reportConfig) must not write concurrently, or an older
+   * write completing last could leave the backend stale while believedBackend
+   * has already advanced. Serializing also coalesces — a queued reconcile re-reads
+   * the latest selection when it runs and no-ops if a prior write already synced it.
+   */
+  private reportConfig(): Promise<void> {
+    this.reconcileChain = this.reconcileChain.then(() => this.doReportConfig());
+    return this.reconcileChain;
   }
 
-  /** Report the current model/mode back to the backend (corrects stale persisted values). */
-  async reportCurrentConfig(): Promise<void> {
+  private async doReportConfig(): Promise<void> {
     if (this.sessionType !== 'conversation') {
       return;
     }
+    const payload: Partial<Record<ConfigField, string | null>> = {};
+    const reconciled: ConfigCategory[] = [];
+    for (const category of CONFIG_CATEGORIES) {
+      const selected = this.current[category]?.selectedId;
+      if (selected === undefined || selected === this.believedBackend[category]) {
+        continue;
+      }
+      payload[CONFIG_FIELD[category]] = selected;
+      reconciled.push(category);
+    }
+    if (reconciled.length === 0) {
+      return;
+    }
     try {
-      await this.updateConfig({
-        acpModel: this.modelConfig?.selectedId ?? null,
-        acpMode: this.modeConfig?.selectedId ?? null,
-      });
+      await this.updateConfig(payload);
+      // Record what we actually wrote, not the live selection — a newer update may have advanced
+      // this.current while this write was in flight, and its own reconcile will pick that up.
+      for (const category of reconciled) {
+        this.believedBackend[category] = payload[CONFIG_FIELD[category]] ?? null;
+      }
       log.info(
-        `[${this.sessionType}/${this.externalReferenceId}] Reported corrected config for session ${this.correlationId}`,
+        `[${this.tag}] Reported config: ${reconciled.map((c) => `${CONFIG_FIELD[c]}=${payload[CONFIG_FIELD[c]]}`).join(', ')}`,
       );
     } catch (err: unknown) {
-      log.warn(`[${this.sessionType}/${this.externalReferenceId}] Failed to report corrected session config`, err);
+      log.warn(`[${this.tag}] Failed to report session config`, err);
     }
+  }
+
+  private get tag(): string {
+    return `${this.sessionType}/${this.externalReferenceId}`;
   }
 }
 
