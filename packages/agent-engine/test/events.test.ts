@@ -88,7 +88,7 @@ describe('wireEvents', () => {
     handlers = {};
     processor = { handleMessage: vi.fn().mockResolvedValue(undefined) } as unknown as MessageProcessor;
     signalHandlers = {
-      liveSessionInfo: vi.fn().mockReturnValue({
+      liveSessionInfo: vi.fn().mockResolvedValue({
         sessionId: 's1',
         availableModels: [],
         availableModes: [],
@@ -564,7 +564,7 @@ describe('wireEvents', () => {
   // signal — capabilities request/response
   // -----------------------------------------------------------------------
 
-  it('dispatches live_session_info to handler and sends response', () => {
+  it('dispatches live_session_info to handler and sends response', async () => {
     const sendSignal = vi.fn().mockResolvedValue({ requestId: 'req-1' });
     (client as unknown as Record<string, unknown>).sendSignal = sendSignal;
 
@@ -578,6 +578,10 @@ describe('wireEvents', () => {
         type: 'live_session_info',
         payload: { sessionType: 'conversation', externalReferenceId: 's1' },
       },
+    });
+
+    await vi.waitFor(() => {
+      expect(sendSignal).toHaveBeenCalled();
     });
 
     expect(signalHandlers.liveSessionInfo).toHaveBeenCalledWith({

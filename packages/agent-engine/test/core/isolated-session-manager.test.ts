@@ -312,8 +312,8 @@ describe('IsolatedSessionManager', () => {
   });
 
   describe('getLiveSessionInfo', () => {
-    it('returns not-live for unknown sessions', () => {
-      const result = manager.getLiveSessionInfo({
+    it('returns not-live for unknown sessions', async () => {
+      const result = await manager.getLiveSessionInfo({
         sessionType: 'conversation',
         externalReferenceId: 'unknown-conv',
       });
@@ -324,7 +324,7 @@ describe('IsolatedSessionManager', () => {
     it('returns live info for active sessions', async () => {
       await manager.getDmSession('conv-live');
 
-      const result = manager.getLiveSessionInfo({
+      const result = await manager.getLiveSessionInfo({
         sessionType: 'conversation',
         externalReferenceId: 'conv-live',
       });

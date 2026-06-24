@@ -241,17 +241,21 @@ describe('ChatSharedSessionManager', () => {
       manager.routeInboundEvent({ type: 'message', msg: makeMessage('conv-dm', 'dm') });
       await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', 'owner-dm-conv', true));
 
-      const info = manager.getLiveSessionInfo({ sessionType: 'conversation', externalReferenceId: OWNER_DM_CONV });
+      const info = await manager.getLiveSessionInfo({
+        sessionType: 'conversation',
+        externalReferenceId: OWNER_DM_CONV,
+      });
       expect(info.isLive).toBe(true);
       // The chat slot is keyed by the owner DM, which is also where its config lives.
       expect(info.externalReferenceId).toBe(OWNER_DM_CONV);
     });
 
     it('routes a work-session conversationId to its focused session', async () => {
+      (app.getConversationInfo as ReturnType<typeof vi.fn>).mockResolvedValue({ type: 'temp_group' });
       manager.routeInboundEvent({ type: 'message', msg: makeMessage('work-7', 'temp_group') });
       await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('conversation', 'work-7', true));
 
-      const info = manager.getLiveSessionInfo({ sessionType: 'conversation', externalReferenceId: 'work-7' });
+      const info = await manager.getLiveSessionInfo({ sessionType: 'conversation', externalReferenceId: 'work-7' });
       expect(info.isLive).toBe(true);
       // A focused work session owns its conversation, so config lives on that conversation itself.
       expect(info.externalReferenceId).toBe('work-7');
@@ -261,13 +265,20 @@ describe('ChatSharedSessionManager', () => {
       manager.routeInboundEvent({ type: 'cron', event: makeCronEvent('cron-7') });
       await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalledWith('cron', 'cron-7', true));
 
-      const info = manager.getLiveSessionInfo({ sessionType: 'cron', externalReferenceId: 'cron-7' });
+      const info = await manager.getLiveSessionInfo({ sessionType: 'cron', externalReferenceId: 'cron-7' });
       expect(info.isLive).toBe(true);
       expect(info.externalReferenceId).toBe('cron-7');
     });
 
-    it('reports not-live for an unknown session', () => {
-      const info = manager.getLiveSessionInfo({ sessionType: 'cron', externalReferenceId: 'nope' });
+    it('reports not-live for an unknown session', async () => {
+      const info = await manager.getLiveSessionInfo({ sessionType: 'cron', externalReferenceId: 'nope' });
+      expect(info.isLive).toBe(false);
+    });
+
+    it('reports not-live for a work session with no live slot', async () => {
+      (app.getConversationInfo as ReturnType<typeof vi.fn>).mockResolvedValue({ type: 'temp_group' });
+      // No message ever routed for work-99, so no focused slot exists — must NOT fall back to the chat slot.
+      const info = await manager.getLiveSessionInfo({ sessionType: 'conversation', externalReferenceId: 'work-99' });
       expect(info.isLive).toBe(false);
     });
   });

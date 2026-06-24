@@ -243,7 +243,7 @@ export interface NewioTokens {
 // ---------------------------------------------------------------------------
 
 /** Handler for owner's live_session_info signal. Returns session state. */
-export type LiveSessionInfoHandler = (request: LiveSessionInfoRequest) => LiveSessionInfoResponse;
+export type LiveSessionInfoHandler = (request: LiveSessionInfoRequest) => Promise<LiveSessionInfoResponse>;
 
 /** Handler for owner's cancel_session signal. */
 export type CancelSessionHandler = (request: CancelSessionRequest) => Promise<CancelSessionResponse>;

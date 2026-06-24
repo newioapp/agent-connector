@@ -190,15 +190,16 @@ export class NewioApp implements NewioAppForAgent, NewioAppForMcp {
   private readonly cronScheduler: CronScheduler;
 
   private readonly eventHandlers: Partial<AppEventHandlers> = {};
-  private liveSessionInfoHandler: LiveSessionInfoHandler = (request) => ({
-    sessionType: request.sessionType,
-    externalReferenceId: request.externalReferenceId,
-    isLive: false,
-    availableModels: [],
-    availableModes: [],
-    canCancel: false,
-    canCompact: false,
-  });
+  private liveSessionInfoHandler: LiveSessionInfoHandler = (request) =>
+    Promise.resolve({
+      sessionType: request.sessionType,
+      externalReferenceId: request.externalReferenceId,
+      isLive: false,
+      availableModels: [],
+      availableModes: [],
+      canCancel: false,
+      canCompact: false,
+    });
   private cancelSessionHandler: CancelSessionHandler = () =>
     Promise.resolve({ success: false, errorCode: 'not_implemented', error: 'No handler registered' });
   private compactSessionHandler: CompactSessionHandler = () =>

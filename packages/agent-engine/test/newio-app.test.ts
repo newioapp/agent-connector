@@ -739,7 +739,7 @@ describe('NewioApp', () => {
 
     it('default liveSessionInfo handler returns empty info', async () => {
       const { app } = await createApp();
-      const result = app
+      const result = await app
         ._getSignalHandlers()
         .liveSessionInfo({ sessionType: 'conversation', externalReferenceId: 'c1' });
       expect(result).toEqual({

@@ -11,6 +11,7 @@ import type { ConversationType } from '@newio/agent-sdk';
 import type { MessageEventPayload } from '@newio/agent-sdk';
 import type {
   LiveSessionInfoRequest,
+  LiveSessionInfoResponse,
   CancelSessionRequest,
   CompactSessionRequest,
   StartSessionRequest,
@@ -298,9 +299,12 @@ export function wireEvents(
       return;
     }
 
+    log.debug(`Received request signal from ${senderId} with intent=${intent} type=${type}`, payload);
+
     const handlers = getSignalHandlers();
 
     const sendResponse = (responseType: string, responsePayload: SignalPayload): void => {
+      log.debug(`Responding signal request, responseType=${responseType}`, responsePayload);
       client
         .sendSignal({
           targetUserId: senderId,
@@ -316,8 +320,23 @@ export function wireEvents(
 
     if (type === 'live_session_info') {
       const request = payload as unknown as LiveSessionInfoRequest;
-      const response = handlers.liveSessionInfo(request);
-      sendResponse('live_session_info_response', response);
+      void handlers
+        .liveSessionInfo(request)
+        .catch((err: unknown): LiveSessionInfoResponse => {
+          log.error(`live_session_info handler failed`, err);
+          return {
+            sessionType: request.sessionType,
+            externalReferenceId: request.externalReferenceId,
+            isLive: false,
+            availableModels: [],
+            availableModes: [],
+            canCancel: false,
+            canCompact: false,
+          };
+        })
+        .then((response) => {
+          sendResponse('live_session_info_response', response);
+        });
     } else if (type === 'cancel_session') {
       const request = payload as unknown as CancelSessionRequest;
       void handlers

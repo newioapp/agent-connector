@@ -641,6 +641,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
         return;
       }
       if (changes.acpModel !== undefined || changes.acpMode !== undefined) {
+        log.info(
+          `Apply session config update acpModel=${changes.acpModel}, acpMode=${changes.acpMode}, initiated by ${updatedBy}`,
+        );
         void sessionManager.applySessionConfigUpdate({
           sessionType: 'conversation',
           externalReferenceId: conversationId,
