@@ -612,7 +612,7 @@ describe('AcpSessionConfigHandler', () => {
     });
   });
 
-  describe('reportStartupConfig', () => {
+  describe('reportAdvertisedConfig', () => {
     it('reports the runner default for a fresh session with nothing persisted', async () => {
       const updateConfig = mockUpdateConfig();
       const handler = new AcpSessionConfigHandler(
@@ -627,7 +627,7 @@ describe('AcpSessionConfigHandler', () => {
         }),
       );
 
-      await handler.reportStartupConfig();
+      await handler.reportAdvertisedConfig();
 
       expect(updateConfig).toHaveBeenCalledWith({ acpModel: 'sonnet', acpMode: 'default' });
     });
@@ -646,7 +646,7 @@ describe('AcpSessionConfigHandler', () => {
         }),
       );
 
-      await handler.reportStartupConfig();
+      await handler.reportAdvertisedConfig();
 
       expect(updateConfig).toHaveBeenCalledWith({ acpMode: 'plan' });
     });
@@ -662,7 +662,7 @@ describe('AcpSessionConfigHandler', () => {
         makeSessionResponse(),
       );
 
-      await handler.reportStartupConfig();
+      await handler.reportAdvertisedConfig();
 
       expect(updateConfig).not.toHaveBeenCalled();
     });
@@ -680,7 +680,100 @@ describe('AcpSessionConfigHandler', () => {
         }),
       );
 
-      await handler.reportStartupConfig();
+      await handler.reportAdvertisedConfig();
+
+      expect(updateConfig).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleSessionUpdate — reports changes to the backend', () => {
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    it('reports the new mode on current_mode_update', async () => {
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        mockConnection(),
+        updateConfig,
+        makeSessionResponse({
+          modes: {
+            availableModes: [
+              { id: 'code', name: 'Code' },
+              { id: 'plan', name: 'Plan' },
+            ],
+            currentModeId: 'code',
+          },
+        }),
+      );
+
+      handler.handleSessionUpdate({ sessionUpdate: 'current_mode_update', currentModeId: 'plan' } as never);
+      await flush();
+
+      expect(updateConfig).toHaveBeenCalledWith({ acpMode: 'plan' });
+    });
+
+    it('does not report a current_mode_update when the session advertises no modes', async () => {
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        mockConnection(),
+        updateConfig,
+        makeSessionResponse(),
+      );
+
+      handler.handleSessionUpdate({ sessionUpdate: 'current_mode_update', currentModeId: 'plan' } as never);
+      await flush();
+
+      expect(updateConfig).not.toHaveBeenCalled();
+    });
+
+    it('reports the new model on config_option_update', async () => {
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        mockConnection(),
+        updateConfig,
+        makeSessionResponse(),
+      );
+
+      handler.handleSessionUpdate({
+        sessionUpdate: 'config_option_update',
+        configOptions: [
+          {
+            type: 'select',
+            category: 'model',
+            currentValue: 'opus',
+            options: [{ value: 'opus', name: 'Opus' }],
+          },
+        ],
+      } as never);
+      await flush();
+
+      expect(updateConfig).toHaveBeenCalledWith({ acpModel: 'opus' });
+    });
+
+    it('does not report a config_option_update with no select options', async () => {
+      const updateConfig = mockUpdateConfig();
+      const handler = new AcpSessionConfigHandler(
+        'conversation',
+        'conv-1',
+        'sess-1',
+        mockConnection(),
+        updateConfig,
+        makeSessionResponse(),
+      );
+
+      handler.handleSessionUpdate({
+        sessionUpdate: 'config_option_update',
+        configOptions: [{ type: 'toggle', category: 'model', currentValue: true }],
+      } as never);
+      await flush();
 
       expect(updateConfig).not.toHaveBeenCalled();
     });

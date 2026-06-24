@@ -115,10 +115,14 @@ export class AcpSessionConfigHandler {
           log.info(
             `[${this.sessionType}/${this.externalReferenceId}] Received acpMode updated to: ${update.currentModeId}`,
           );
+          // The runner emits this for every confirmed change — agent-initiated or external — so it's
+          // the one place that keeps the backend in sync afterward. Fire-and-forget (self-catches).
+          void this.reportAdvertisedConfig();
         }
         return true;
       }
       case 'config_option_update': {
+        let changed = false;
         for (const opt of update.configOptions) {
           if (opt.type !== 'select') {
             continue;
@@ -128,6 +132,7 @@ export class AcpSessionConfigHandler {
               options: flattenSelectOptions(opt.options),
               selectedId: opt.currentValue,
             };
+            changed = true;
             log.info(
               `[${this.sessionType}/${this.externalReferenceId}] Received acpModel config updated via config_option_update to: ${opt.currentValue}`,
             );
@@ -136,10 +141,14 @@ export class AcpSessionConfigHandler {
               options: flattenSelectOptions(opt.options),
               selectedId: opt.currentValue,
             };
+            changed = true;
             log.info(
               `[${this.sessionType}/${this.externalReferenceId}] Received acpMode config updated via config_option_update to: ${opt.currentValue}`,
             );
           }
+        }
+        if (changed) {
+          void this.reportAdvertisedConfig();
         }
         return true;
       }
@@ -223,15 +232,15 @@ export class AcpSessionConfigHandler {
   }
 
   /**
-   * Report the runner's advertised current model/mode at session start so the
-   * backend member record matches what the agent actually runs on (it's empty
-   * for a fresh conversation, and the connector otherwise only reports when
-   * correcting a stale persisted value). Sends only fields the runner advertised
-   * a current value for: an undefined selection is omitted, not sent as null,
-   * since the backend partial-update treats an omitted field as "no change" and
-   * undefined means "unknown", not "cleared".
+   * Report the runner's advertised current model/mode to the backend so the
+   * member record matches what the agent actually runs on. Used at session start
+   * (the default from the session response, which never arrives as an update) and
+   * after every confirmed change (handleSessionUpdate). Sends only fields the
+   * runner advertised a current value for: an undefined selection is omitted, not
+   * sent as null, since the backend partial-update treats an omitted field as "no
+   * change" and undefined means "unknown", not "cleared".
    */
-  async reportStartupConfig(): Promise<void> {
+  async reportAdvertisedConfig(): Promise<void> {
     if (this.sessionType !== 'conversation') {
       return;
     }
@@ -245,10 +254,10 @@ export class AcpSessionConfigHandler {
     try {
       await this.updateConfig(config);
       log.info(
-        `[${this.sessionType}/${this.externalReferenceId}] Reported startup config for session ${this.correlationId}`,
+        `[${this.sessionType}/${this.externalReferenceId}] Reported advertised config for session ${this.correlationId}`,
       );
     } catch (err: unknown) {
-      log.warn(`[${this.sessionType}/${this.externalReferenceId}] Failed to report startup session config`, err);
+      log.warn(`[${this.sessionType}/${this.externalReferenceId}] Failed to report advertised session config`, err);
     }
   }
 }

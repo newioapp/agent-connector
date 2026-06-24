@@ -230,7 +230,7 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
   }
 
   async reportStartupConfig(): Promise<void> {
-    await this.configHandler.reportStartupConfig();
+    await this.configHandler.reportAdvertisedConfig();
   }
 
   async dispose(): Promise<void> {
