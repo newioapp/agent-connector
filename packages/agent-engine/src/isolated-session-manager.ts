@@ -447,10 +447,10 @@ export class IsolatedSessionManager implements SessionManager {
   }
 
   /** Get live session info for a session. */
-  getLiveSessionInfo(request: LiveSessionInfoRequest): LiveSessionInfoResponse {
+  getLiveSessionInfo(request: LiveSessionInfoRequest): Promise<LiveSessionInfoResponse> {
     const slot = this.getSlot(request.sessionType, request.externalReferenceId);
     if (!slot?.session) {
-      return {
+      return Promise.resolve({
         sessionType: request.sessionType,
         externalReferenceId: request.externalReferenceId,
         isLive: false,
@@ -458,9 +458,9 @@ export class IsolatedSessionManager implements SessionManager {
         availableModes: [],
         canCancel: false,
         canCompact: false,
-      };
+      });
     }
-    return slot.session.getLiveSessionInfo();
+    return Promise.resolve(slot.session.getLiveSessionInfo());
   }
 
   /** Handle cancel session signal. */

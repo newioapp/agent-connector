@@ -38,7 +38,7 @@ export class ActivityThrottle {
   /** Call on every raw status update. */
   update(conversationId: string, status: ActivityStatus): void {
     if (status === 'idle') {
-      log.debug('idle received, flushing', { conversationId });
+      log.debug('Idle received, flushing conversation activity', { conversationId });
       this.flush(conversationId);
       return;
     }
@@ -72,7 +72,7 @@ export class ActivityThrottle {
     }
     this.clearHeartbeat(state);
     if (state.status !== 'idle') {
-      log.debug('flushing to idle', { conversationId, previousStatus: state.status });
+      log.debug('Flushing conversation to idle', { conversationId, previousStatus: state.status });
       this.emit(conversationId, 'idle');
     }
     this.conversations.delete(conversationId);

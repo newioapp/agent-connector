@@ -180,15 +180,19 @@ export class ChatSharedSessionManager implements SessionManager {
   }
 
   /** Look up an existing slot by (type, externalReferenceId). */
-  private getSlot(type: SessionType, externalReferenceId: string): SessionSlot | undefined {
+  private async getSlot(type: SessionType, externalReferenceId: string): Promise<SessionSlot | undefined> {
     if (type === 'cron') {
       return this.cronSlots.get(externalReferenceId);
     }
     if (type === 'contact') {
       return this.chatSlot;
     }
-    // A known work-session slot wins; every other conversation resolves to the chat slot.
-    if (this.workSessionSlots.has(externalReferenceId)) {
+    // type === 'conversation': resolve the real conversation type. Only work sessions (temp_group)
+    // get their own isolated slot — and only one keyed by THIS conversation, never the chat slot
+    // (an idle/absent work-session slot must resolve to undefined, not silently fall back to chat).
+    // Every other conversation type (dm, group) is served by the singleton chat slot.
+    const info = await this.app.getConversationInfo(externalReferenceId);
+    if (info.type === 'temp_group') {
       return this.workSessionSlots.get(externalReferenceId);
     }
     return this.chatSlot;
@@ -348,11 +352,15 @@ export class ChatSharedSessionManager implements SessionManager {
     session: AgentSession,
   ): Promise<void> {
     if (!configConversationId) {
+      log.info(`Skip applying persisted session config as session is not associated with a conversation.`);
       return;
     }
     try {
       const config = await this.app.getConversationControls(configConversationId);
       if (config) {
+        log.info(
+          `Apply persisted session config from conversation ${configConversationId}, acpMode=${config.acpMode}, acpModel=${config.acpModel}`,
+        );
         await session.applySessionConfig({ acpModel: config.acpModel, acpMode: config.acpMode });
       }
     } catch (err: unknown) {
@@ -459,7 +467,7 @@ export class ChatSharedSessionManager implements SessionManager {
   // ---------------------------------------------------------------------------
 
   async rotateSession(type: SessionType, externalReferenceId: string): Promise<void> {
-    const slot = this.getSlot(type, externalReferenceId);
+    const slot = await this.getSlot(type, externalReferenceId);
     if (!slot?.session) {
       return;
     }
@@ -524,6 +532,7 @@ export class ChatSharedSessionManager implements SessionManager {
   // ---------------------------------------------------------------------------
 
   async handleStartSession(request: StartSessionRequest): Promise<StartSessionResponse> {
+    log.info(`Handling start session request for ${request.sessionType}/${request.externalReferenceId}`);
     if (request.sessionType !== 'conversation') {
       return { success: false, error: 'Can only start conversation session ondemand' };
     }
@@ -550,7 +559,7 @@ export class ChatSharedSessionManager implements SessionManager {
   }
 
   async handleUpdateMemory(request: UpdateMemoryRequest): Promise<UpdateMemoryResponse> {
-    const slot = this.getSlot(request.sessionType, request.externalReferenceId);
+    const slot = await this.getSlot(request.sessionType, request.externalReferenceId);
     if (!slot?.session) {
       return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
     }
@@ -570,7 +579,7 @@ export class ChatSharedSessionManager implements SessionManager {
     if (request.sessionType !== 'conversation') {
       return { success: false, errorCode: 'invalid_session_type', error: 'Can only rotate conversation sessions' };
     }
-    const slot = this.getSlot(request.sessionType, request.externalReferenceId);
+    const slot = await this.getSlot(request.sessionType, request.externalReferenceId);
     if (!slot?.session) {
       return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
     }
@@ -586,8 +595,8 @@ export class ChatSharedSessionManager implements SessionManager {
     }
   }
 
-  getLiveSessionInfo(request: LiveSessionInfoRequest): LiveSessionInfoResponse {
-    const slot = this.getSlot(request.sessionType, request.externalReferenceId);
+  async getLiveSessionInfo(request: LiveSessionInfoRequest): Promise<LiveSessionInfoResponse> {
+    const slot = await this.getSlot(request.sessionType, request.externalReferenceId);
     if (!slot?.session) {
       return {
         sessionType: request.sessionType,
@@ -603,7 +612,7 @@ export class ChatSharedSessionManager implements SessionManager {
   }
 
   async handleCancelSession(request: CancelSessionRequest): Promise<CancelSessionResponse> {
-    const slot = this.getSlot(request.sessionType, request.externalReferenceId);
+    const slot = await this.getSlot(request.sessionType, request.externalReferenceId);
     if (!slot?.session) {
       return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
     }
@@ -630,7 +639,7 @@ export class ChatSharedSessionManager implements SessionManager {
   }
 
   async handleCompactSession(request: CompactSessionRequest): Promise<CompactSessionResponse> {
-    const slot = this.getSlot(request.sessionType, request.externalReferenceId);
+    const slot = await this.getSlot(request.sessionType, request.externalReferenceId);
     if (!slot?.session) {
       return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
     }
@@ -647,7 +656,7 @@ export class ChatSharedSessionManager implements SessionManager {
   }
 
   async applySessionConfigUpdate(request: ApplySessionConfigUpdateRequest): Promise<void> {
-    const slot = this.getSlot(request.sessionType, request.externalReferenceId);
+    const slot = await this.getSlot(request.sessionType, request.externalReferenceId);
     if (!slot?.session) {
       log.debug(
         `${this.logTag} acpModel/acpMode change for ${request.sessionType}/${request.externalReferenceId} — session not active, ignoring`,

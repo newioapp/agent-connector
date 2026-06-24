@@ -395,10 +395,10 @@ export class SharedSessionManager implements SessionManager {
   }
 
   /** Get live session info. The singleton session is keyed by the owner DM conversation. */
-  getLiveSessionInfo(_request: LiveSessionInfoRequest): LiveSessionInfoResponse {
+  getLiveSessionInfo(_request: LiveSessionInfoRequest): Promise<LiveSessionInfoResponse> {
     const slot = this.sharedSessionSlot;
     if (!slot?.session) {
-      return {
+      return Promise.resolve({
         sessionType: SESSION_TYPE,
         externalReferenceId: this.ownerDmConversationId,
         isLive: false,
@@ -406,9 +406,9 @@ export class SharedSessionManager implements SessionManager {
         availableModes: [],
         canCancel: false,
         canCompact: false,
-      };
+      });
     }
-    return slot.session.getLiveSessionInfo();
+    return Promise.resolve(slot.session.getLiveSessionInfo());
   }
 
   /** Handle cancel session signal. Only cancels if the session is actively processing the target conversation. */

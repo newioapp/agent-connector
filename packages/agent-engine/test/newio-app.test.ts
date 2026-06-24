@@ -706,7 +706,7 @@ describe('NewioApp', () => {
   describe('signal handlers', () => {
     it('onLiveSessionInfo registers handler accessible via _getSignalHandlers', async () => {
       const { app } = await createApp();
-      const handler = vi.fn().mockReturnValue({
+      const handler = vi.fn().mockResolvedValue({
         sessionId: 's1',
         availableModels: [],
         availableModes: [],
@@ -715,7 +715,7 @@ describe('NewioApp', () => {
       });
       app.onLiveSessionInfo(handler);
       const handlers = app._getSignalHandlers();
-      handlers.liveSessionInfo({ sessionType: 'conversation', externalReferenceId: 's1' });
+      await handlers.liveSessionInfo({ sessionType: 'conversation', externalReferenceId: 's1' });
       expect(handler).toHaveBeenCalledWith({ sessionType: 'conversation', externalReferenceId: 's1' });
     });
 
@@ -739,7 +739,7 @@ describe('NewioApp', () => {
 
     it('default liveSessionInfo handler returns empty info', async () => {
       const { app } = await createApp();
-      const result = app
+      const result = await app
         ._getSignalHandlers()
         .liveSessionInfo({ sessionType: 'conversation', externalReferenceId: 'c1' });
       expect(result).toEqual({

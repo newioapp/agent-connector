@@ -56,6 +56,7 @@ export class AcpSessionConfigHandler {
   }
 
   private async setModel(modelId: string): Promise<void> {
+    log.info(`[${this.sessionType}/${this.externalReferenceId}] Setting model to: ${modelId}`);
     try {
       await this.connection.unstable_setSessionModel({ sessionId: this.correlationId, modelId });
     } catch (err: unknown) {
@@ -83,10 +84,10 @@ export class AcpSessionConfigHandler {
     if (this.modelConfig) {
       this.modelConfig = { ...this.modelConfig, selectedId: modelId };
     }
-    log.info(`[${this.sessionType}/${this.externalReferenceId}] Model set to: ${modelId}`);
   }
 
   private async setMode(modeId: string): Promise<void> {
+    log.info(`[${this.sessionType}/${this.externalReferenceId}] Setting mode to: ${modeId}`);
     try {
       await this.connection.setSessionMode({ sessionId: this.correlationId, modeId });
     } catch (err: unknown) {
@@ -95,7 +96,6 @@ export class AcpSessionConfigHandler {
     if (this.modeConfig) {
       this.modeConfig = { ...this.modeConfig, selectedId: modeId };
     }
-    log.info(`[${this.sessionType}/${this.externalReferenceId}] Mode set to: ${modeId}`);
   }
 
   listModels(): AgentSessionConfig | undefined {
@@ -112,7 +112,9 @@ export class AcpSessionConfigHandler {
       case 'current_mode_update': {
         if (this.modeConfig) {
           this.modeConfig = { ...this.modeConfig, selectedId: update.currentModeId };
-          log.info(`[${this.sessionType}/${this.externalReferenceId}] Mode updated to: ${update.currentModeId}`);
+          log.info(
+            `[${this.sessionType}/${this.externalReferenceId}] Received acpMode updated to: ${update.currentModeId}`,
+          );
         }
         return true;
       }
@@ -126,13 +128,17 @@ export class AcpSessionConfigHandler {
               options: flattenSelectOptions(opt.options),
               selectedId: opt.currentValue,
             };
-            log.info(`[${this.sessionType}/${this.externalReferenceId}] Model config updated via config_option_update`);
+            log.info(
+              `[${this.sessionType}/${this.externalReferenceId}] Received acpModel config updated via config_option_update to: ${opt.currentValue}`,
+            );
           } else if (opt.category === 'mode') {
             this.modeConfig = {
               options: flattenSelectOptions(opt.options),
               selectedId: opt.currentValue,
             };
-            log.info(`[${this.sessionType}/${this.externalReferenceId}] Mode config updated via config_option_update`);
+            log.info(
+              `[${this.sessionType}/${this.externalReferenceId}] Received acpMode config updated via config_option_update to: ${opt.currentValue}`,
+            );
           }
         }
         return true;
@@ -156,6 +162,9 @@ export class AcpSessionConfigHandler {
    * fires — we must validate up front and simply not apply an unsupported value.
    */
   async applySessionConfig(config: SessionConfigUpdate): Promise<void> {
+    log.info(
+      `[${this.sessionType}/${this.externalReferenceId}] Applying session config: acpMode=${config.acpMode}, acpModel=${config.acpModel}`,
+    );
     let needsReport = false;
 
     if (config.acpModel) {

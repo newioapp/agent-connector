@@ -378,7 +378,7 @@ export interface ApplySessionConfigUpdateRequest {
  */
 export interface SessionManager {
   routeInboundEvent(event: InboundEvent): void;
-  getLiveSessionInfo(request: LiveSessionInfoRequest): LiveSessionInfoResponse;
+  getLiveSessionInfo(request: LiveSessionInfoRequest): Promise<LiveSessionInfoResponse>;
   applySessionConfigUpdate(request: ApplySessionConfigUpdateRequest): Promise<void>;
   rotateSession(sessionType: SessionType, externalReferenceId: string): Promise<void>;
   getDmSession(convId: string): Promise<AgentSession>;

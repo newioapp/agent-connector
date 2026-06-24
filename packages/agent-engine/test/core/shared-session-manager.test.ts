@@ -206,8 +206,8 @@ describe('SharedSessionManager', () => {
   });
 
   describe('getLiveSessionInfo', () => {
-    it('returns not live when no session exists', () => {
-      const info = manager.getLiveSessionInfo({ sessionType: 'conversation', externalReferenceId: 'conv-a' });
+    it('returns not live when no session exists', async () => {
+      const info = await manager.getLiveSessionInfo({ sessionType: 'conversation', externalReferenceId: 'conv-a' });
       expect(info.isLive).toBe(false);
       expect(info.externalReferenceId).toBe(OWNER_DM_CONV);
     });
@@ -216,7 +216,7 @@ describe('SharedSessionManager', () => {
       manager.routeInboundEvent({ type: 'message', msg: makeMessage('conv-a') });
       await vi.waitFor(() => expect(newSessionFn).toHaveBeenCalled());
 
-      const info = manager.getLiveSessionInfo({ sessionType: 'conversation', externalReferenceId: 'conv-b' });
+      const info = await manager.getLiveSessionInfo({ sessionType: 'conversation', externalReferenceId: 'conv-b' });
       expect(info.isLive).toBe(true);
       expect(info.externalReferenceId).toBe(OWNER_DM_CONV);
     });
