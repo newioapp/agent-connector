@@ -92,6 +92,7 @@ function mockClient(contacts: ContactRecord[] = [], conversations: ConversationL
     }),
     batchUpdateMemory: vi.fn().mockResolvedValue({ applied: 1 }),
     touchMemoryScope: vi.fn().mockResolvedValue({}),
+    getMySettings: vi.fn().mockResolvedValue({ agentId: 'me', settings: {} }),
   } as unknown as NewioClient;
 }
 
@@ -147,6 +148,32 @@ describe('NewioApp', () => {
       expect(app.isContact('nonexistent')).toBe(false);
       expect(app.getContact('alice')).toBeDefined();
       expect(app.getContact('alice')?.username).toBe('Alice');
+    });
+
+    it('defaults memory to opted out when the setting is absent', async () => {
+      const { app } = await createApp();
+      expect(app.isMemoryEnabled()).toBe(false);
+    });
+
+    it('reads memoryEnabled from agent settings', async () => {
+      eventHandlers.clear();
+      const client = mockClient();
+      (client.getMySettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        agentId: 'me',
+        settings: { memoryEnabled: true },
+      });
+      const app = NewioApp.createFromComponents(identity, mockAuth(), client, mockWs());
+      await app.init();
+      expect(app.isMemoryEnabled()).toBe(true);
+    });
+
+    it('defaults memory to opted out when loading settings fails', async () => {
+      eventHandlers.clear();
+      const client = mockClient();
+      (client.getMySettings as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('network'));
+      const app = NewioApp.createFromComponents(identity, mockAuth(), client, mockWs());
+      await app.init();
+      expect(app.isMemoryEnabled()).toBe(false);
     });
   });
 

@@ -405,6 +405,10 @@ export class ChatSharedSessionManager implements SessionManager {
    * messages for a given conversation (copied from the shared-session strategy).
    */
   private async injectConversationContextIfNeeded(conversationId: string, session: AgentSession): Promise<void> {
+    // Opted out of memory → never inject per-conversation/participant memory scopes.
+    if (!this.app.isMemoryEnabled()) {
+      return;
+    }
     const agentId = this.app.agentUserId;
     const sections: string[] = [];
     let changed = false;
@@ -565,6 +569,9 @@ export class ChatSharedSessionManager implements SessionManager {
   }
 
   async handleUpdateMemory(request: UpdateMemoryRequest): Promise<UpdateMemoryResponse> {
+    if (!this.app.isMemoryEnabled()) {
+      return { success: false, errorCode: 'memory_disabled', error: 'Memory is disabled for this agent' };
+    }
     const slot = await this.getSlot(request.sessionType, request.externalReferenceId);
     if (!slot?.session) {
       return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
@@ -612,9 +619,10 @@ export class ChatSharedSessionManager implements SessionManager {
         availableModes: [],
         canCancel: false,
         canCompact: false,
+        memoryEnabled: this.app.isMemoryEnabled(),
       };
     }
-    return slot.session.getLiveSessionInfo();
+    return { ...slot.session.getLiveSessionInfo(), memoryEnabled: this.app.isMemoryEnabled() };
   }
 
   async handleCancelSession(request: CancelSessionRequest): Promise<CancelSessionResponse> {

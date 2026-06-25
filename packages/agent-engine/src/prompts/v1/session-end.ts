@@ -1,18 +1,24 @@
 /**
- * Session-end prompt — update memory and produce a handoff note.
+ * Session-end prompt — update memory (when enabled) and produce a handoff note.
  * Output is <handoff> tag (not <done />), since the connector parses the handoff content.
  */
 import { memoryRules } from './memory-rules.js';
 
-export function sessionEndPrompt(): string {
-  return `<event type="system.session_end">
-<instructions>
-Your session is ending. Complete these two steps:
-
+export function sessionEndPrompt(memoryEnabled: boolean): string {
+  const intro = memoryEnabled
+    ? 'Your session is ending. Complete these two steps:'
+    : 'Your session is ending. Complete this step:';
+  const updateMemoryStep = memoryEnabled
+    ? `
 <step name="update_memory">
 ${memoryRules()}
 </step>
-
+`
+    : '';
+  return `<event type="system.session_end">
+<instructions>
+${intro}
+${updateMemoryStep}
 <step name="handoff">
 Write a handoff note so the next session can pick up exactly where you left off — as if continuing the same session.
 

@@ -78,6 +78,8 @@ export async function createScenarioRunnerDeps(
     // cross-session delegation is a no-op here — same as initiateConversation.
     shareContext: () => {},
     sessionMode: effectiveSessionMode,
+    // Evals exercise memory behavior, so the static harness always enables the memory tools.
+    memoryEnabled: true,
     onToolCall,
   });
 

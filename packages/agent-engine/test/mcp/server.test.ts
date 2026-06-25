@@ -67,10 +67,14 @@ function mockApp(
   } as unknown as NewioApp;
 }
 
-async function createConnectedClient(app: NewioApp, sessionMode: SessionMode = 'isolated'): Promise<Client> {
+async function createConnectedClient(
+  app: NewioApp,
+  sessionMode: SessionMode = 'isolated',
+  memoryEnabled = true,
+): Promise<Client> {
   const initiateConversation = vi.fn();
   const shareContext = vi.fn();
-  const server = new NewioMcpServer({ app, initiateConversation, shareContext, sessionMode });
+  const server = new NewioMcpServer({ app, initiateConversation, shareContext, sessionMode, memoryEnabled });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
   const client = new Client({ name: 'test-client', version: '1.0.0' });
@@ -115,6 +119,18 @@ describe('MCP Server', () => {
       'update_memory_summary',
       'upload_attachment_to_current_conversation',
     ]);
+  });
+
+  it('omits the memory tools when memory is opted out', async () => {
+    const client = await createConnectedClient(mockApp(), 'isolated', false);
+    const { tools } = await client.listTools();
+    const names = tools.map((t) => t.name);
+    for (const memoryTool of ['get_memory', 'add_memory', 'update_memory', 'delete_memory', 'update_memory_summary']) {
+      expect(names).not.toContain(memoryTool);
+    }
+    // Non-memory tools remain available.
+    expect(names).toContain('send_friend_request');
+    expect(names).toContain('list_conversations');
   });
 
   it('lists all tools (shared mode)', async () => {
@@ -172,7 +188,13 @@ describe('MCP Server', () => {
     const app = mockApp();
     const initiateConversation = vi.fn();
     const shareContext = vi.fn();
-    const server = new NewioMcpServer({ app, initiateConversation, shareContext, sessionMode: 'chat-shared' });
+    const server = new NewioMcpServer({
+      app,
+      initiateConversation,
+      shareContext,
+      sessionMode: 'chat-shared',
+      memoryEnabled: true,
+    });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     const client = new Client({ name: 'test', version: '1.0.0' });
@@ -247,7 +269,13 @@ describe('MCP Server', () => {
   it('initiate_conversation delegates to agent instance', async () => {
     const app = mockApp();
     const initiateConversation = vi.fn();
-    const server = new NewioMcpServer({ app, initiateConversation, shareContext: vi.fn(), sessionMode: 'isolated' });
+    const server = new NewioMcpServer({
+      app,
+      initiateConversation,
+      shareContext: vi.fn(),
+      sessionMode: 'isolated',
+      memoryEnabled: true,
+    });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     const client = new Client({ name: 'test-client', version: '1.0.0' });
@@ -292,7 +320,13 @@ describe('MCP Server', () => {
   it('upload_attachment_to_current_conversation sends attachment-only message', async () => {
     const app = mockApp();
     const initiateConversation = vi.fn();
-    const server = new NewioMcpServer({ app, initiateConversation, shareContext: vi.fn(), sessionMode: 'isolated' });
+    const server = new NewioMcpServer({
+      app,
+      initiateConversation,
+      shareContext: vi.fn(),
+      sessionMode: 'isolated',
+      memoryEnabled: true,
+    });
     server.setCurrentConversationIdGetter(() => 'conv-1');
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
@@ -558,6 +592,7 @@ describe('onToolCall hook', () => {
       initiateConversation,
       shareContext: vi.fn(),
       sessionMode: 'shared',
+      memoryEnabled: true,
       onToolCall,
     });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();

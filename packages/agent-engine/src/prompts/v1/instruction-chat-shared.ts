@@ -13,16 +13,39 @@
  */
 import type { SessionPromptRole } from './instruction.js';
 
-export function instructionChatShared(role: SessionPromptRole): string {
+export function instructionChatShared(role: SessionPromptRole, memoryEnabled: boolean): string {
   if (role === 'focused') {
     // Focused sessions never receive contact events (the chat session handles those).
-    return [focusedLifecycle(), globalRules(), messageEvent(), cronEvent(), systemEvents()].join('\n\n');
+    return [
+      focusedLifecycle(memoryEnabled),
+      globalRules(memoryEnabled),
+      messageEvent(),
+      cronEvent(),
+      systemEvents(memoryEnabled),
+    ].join('\n\n');
   }
   // Chat sessions never receive cron events (each cron runs in its own focused session).
-  return [chatLifecycle(), globalRules(), messageEvent(), contactEvent(), systemEvents()].join('\n\n');
+  return [
+    chatLifecycle(memoryEnabled),
+    globalRules(memoryEnabled),
+    messageEvent(),
+    contactEvent(),
+    systemEvents(memoryEnabled),
+  ].join('\n\n');
 }
 
-function chatLifecycle(): string {
+/** Rotation block — describes what carries across a session rotation. */
+function rotation(memoryEnabled: boolean): string {
+  const carried = memoryEnabled
+    ? 'your memory is persisted automatically, and a new session starts with your memory + a\nhandoff note from this session.'
+    : 'a new session starts with a handoff note from this session.';
+  return `<rotation>
+When this session rotates — idle timeout, the owner starting a new session, or (if enabled) context
+pressure — ${carried}
+</rotation>`;
+}
+
+function chatLifecycle(memoryEnabled: boolean): string {
   return `<session_lifecycle mode="chat-shared" role="chat">
 You are the shared conversational session. All your direct messages, group chats, and contact events
 flow through this ONE continuous session, so context carries across them (e.g. remembering what your
@@ -41,15 +64,11 @@ it needs to act. share_context is fire-and-forget — the target session works o
 not receive a response. Use send_message / send_dm to message other conversations directly.
 </cross_session>
 
-<rotation>
-When this session rotates — idle timeout, the owner starting a new session, or (if enabled) context
-pressure — your memory is persisted automatically, and a new session starts with your memory + a
-handoff note from this session.
-</rotation>
+${rotation(memoryEnabled)}
 </session_lifecycle>`;
 }
 
-function focusedLifecycle(): string {
+function focusedLifecycle(memoryEnabled: boolean): string {
   return `<session_lifecycle mode="chat-shared" role="focused">
 You are a dedicated session for a single work session or cron job, running in your own context window —
 isolated from the shared chat session that handles your owner's DMs, group chats, and contact events.
@@ -62,15 +81,11 @@ session — use share_context with the target conversationId and a context strin
 Deliver results and messages with send_message / send_dm.
 </cross_session>
 
-<rotation>
-When this session rotates — idle timeout, the owner starting a new session, or (if enabled) context
-pressure — your memory is persisted automatically, and a new session starts with your memory + a
-handoff note from this session.
-</rotation>
+${rotation(memoryEnabled)}
 </session_lifecycle>`;
 }
 
-function globalRules(): string {
+function globalRules(memoryEnabled: boolean): string {
   return `<global_rules>
 <output_modes>
 Every response must be exactly ONE of these three modes:
@@ -89,12 +104,16 @@ Never mix modes. Never output reasoning, preamble, or commentary alongside <skip
 <tool_failures>
 If a tool call fails, retry once. If it fails again:
 - For message/contact/cron events: use send_dm to report the error to your owner, then output <done action="reported_failure_to_owner" />.
-- For system events (memory_update, session_end): proceed best-effort with remaining work and include the failure in your <done action="..." /> reason.
-</tool_failures>
+- For ${memoryEnabled ? 'system events (memory_update, session_end)' : 'the system.session_end event'}: proceed best-effort with remaining work and include the failure in your <done action="..." /> reason.
+</tool_failures>${
+    memoryEnabled
+      ? `
 
 <memory_timing>
 Do NOT call memory tools (get_memory, add_memory, update_memory, delete_memory, update_memory_summary) during message, contact, or cron events. Memory updates happen ONLY during system.session_end or system.memory_update events, where you are given explicit instructions and the 4-gate framework to follow.
-</memory_timing>
+</memory_timing>`
+      : ''
+  }
 </global_rules>`;
 }
 
@@ -188,7 +207,18 @@ function cronEvent(): string {
 </event_type>`;
 }
 
-function systemEvents(): string {
+function systemEvents(memoryEnabled: boolean): string {
+  const memoryUpdateEvent = memoryEnabled
+    ? `
+<system_event name="system.memory_update">
+  <description>Mid-session request to persist important facts to memory. Your session continues afterward.</description>
+  <routing>Follow the embedded instructions. Use memory tools as directed, then output <done action="..." />.</routing>
+</system_event>
+`
+    : '';
+  const sessionEndRouting = memoryEnabled
+    ? 'Follow the embedded instructions to update memory and produce a handoff note.'
+    : 'Follow the embedded instructions to produce a handoff note.';
   return `<system_events>
 Internal events from the connector.
 
@@ -196,15 +226,10 @@ Internal events from the connector.
   <description>Startup connection test.</description>
   <routing>Output a brief greeting (1-2 sentences). It is sent to your owner as a DM.</routing>
 </system_event>
-
-<system_event name="system.memory_update">
-  <description>Mid-session request to persist important facts to memory. Your session continues afterward.</description>
-  <routing>Follow the embedded instructions. Use memory tools as directed, then output <done action="..." />.</routing>
-</system_event>
-
+${memoryUpdateEvent}
 <system_event name="system.session_end">
   <description>Session is closing.</description>
-  <routing>Follow the embedded instructions to update memory and produce a handoff note.</routing>
+  <routing>${sessionEndRouting}</routing>
 </system_event>
 
 <system_event name="system.share_context">

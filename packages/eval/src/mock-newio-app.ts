@@ -177,6 +177,10 @@ export class MockNewioApp implements NewioAppForAgent, NewioAppForMcp {
 
   // ── Identity ───────────────────────────────────────────────────────────────
 
+  isMemoryEnabled(): boolean {
+    return true;
+  }
+
   getOwnerInfo(): { readonly username: string; readonly displayName: string } {
     if (!this.identity.ownerId) {
       throw new Error('Agent has no owner');

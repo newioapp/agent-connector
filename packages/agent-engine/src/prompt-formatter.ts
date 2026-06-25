@@ -70,6 +70,8 @@ export class PromptFormatterImpl implements PromptFormatter {
     private readonly identity: PromptFormatterIdentity,
     private readonly owner: PromptFormatterOwner,
     private readonly sessionMode: SessionMode,
+    /** When false (opted out), memory-related prompt sections are omitted. */
+    private readonly memoryEnabled: boolean = false,
   ) {}
 
   /** Detects skip, done, or handoff tags — all mean "don't send as a conversation reply". */
@@ -92,6 +94,7 @@ export class PromptFormatterImpl implements PromptFormatter {
       skipToken: this.skipToken,
       sessionMode: this.sessionMode,
       sessionRole: role,
+      memoryEnabled: this.memoryEnabled,
       customInstructions,
     });
     return { prompt, version: this.version };
@@ -147,6 +150,14 @@ export class PromptFormatterImpl implements PromptFormatter {
   }
 
   formatMemoryContext(memory: LoadSessionMemoryResponse, handoffNote?: string): string {
+    // When opted out, never inject memory facts — only the handoff note (if any) is carried forward.
+    if (!this.memoryEnabled) {
+      const emptyScope = { summary: null, facts: [] };
+      return memoryContextPrompt({
+        memory: { global: emptyScope, participants: {}, conversation: emptyScope, topUsers: [], topConversations: [] },
+        handoffNote,
+      });
+    }
     return memoryContextPrompt({ memory, handoffNote });
   }
 
@@ -155,7 +166,7 @@ export class PromptFormatterImpl implements PromptFormatter {
   }
 
   buildSessionEndPrompt(): string {
-    return sessionEndPrompt();
+    return sessionEndPrompt(this.memoryEnabled);
   }
 
   buildInitiateConversationPrompt(context: string): string {

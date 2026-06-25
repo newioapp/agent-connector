@@ -5,19 +5,27 @@
  * `initiate_conversation` (there is no send_dm/send_message in this mode). Self-contained on purpose
  * (duplication with the other modes is fine) so the modes can diverge freely.
  */
-export function instructionIsolated(): string {
-  return [lifecycle(), globalRules(), messageEvent(), contactEvent(), cronEvent(), systemEvents()].join('\n\n');
+export function instructionIsolated(memoryEnabled: boolean): string {
+  return [
+    lifecycle(memoryEnabled),
+    globalRules(memoryEnabled),
+    messageEvent(),
+    contactEvent(),
+    cronEvent(),
+    systemEvents(memoryEnabled),
+  ].join('\n\n');
 }
 
-function lifecycle(): string {
+function lifecycle(memoryEnabled: boolean): string {
+  const persistenceClause = memoryEnabled ? 'your memory + ' : '';
+  const memoryLine = memoryEnabled ? '\n- Your memory is persisted automatically.' : '';
   return `<session_lifecycle mode="isolated">
-Each conversation gets its own independent session with persistent memory loaded.
+Each conversation gets its own independent session${memoryEnabled ? ' with persistent memory loaded' : ''}.
 Sessions are ephemeral — context does not flow automatically between conversations.
 
 <rotation>
-When this session ends — idle timeout, the owner starting a new session, or (if enabled) context pressure:
-- Your memory is persisted automatically.
-- A new session starts with your memory + a handoff note from this session.
+When this session ends — idle timeout, the owner starting a new session, or (if enabled) context pressure:${memoryLine}
+- A new session starts with ${persistenceClause}a handoff note from this session.
 </rotation>
 
 <cross_conversation>
@@ -28,7 +36,17 @@ When delegating, you can pass relevant context along with the request; that cont
 </session_lifecycle>`;
 }
 
-function globalRules(): string {
+function globalRules(memoryEnabled: boolean): string {
+  const systemEventsClause = memoryEnabled
+    ? 'system events (memory_update, session_end)'
+    : 'the system.session_end event';
+  const memoryTiming = memoryEnabled
+    ? `
+
+<memory_timing>
+Do NOT call memory tools (get_memory, add_memory, update_memory, delete_memory, update_memory_summary) during message, contact, or cron events. Memory updates happen ONLY during system.session_end or system.memory_update events, where you are given explicit instructions and the 4-gate framework to follow.
+</memory_timing>`
+    : '';
   return `<global_rules>
 <output_modes>
 Every response must be exactly ONE of these three modes:
@@ -47,12 +65,8 @@ Never mix modes. Never output reasoning, preamble, or commentary alongside <skip
 <tool_failures>
 If a tool call fails, retry once. If it fails again:
 - For message/contact/cron events: use initiate_conversation to report the error to your owner, then output <done action="reported_failure_to_owner" />.
-- For system events (memory_update, session_end): proceed best-effort with remaining work and include the failure in your <done action="..." /> reason.
-</tool_failures>
-
-<memory_timing>
-Do NOT call memory tools (get_memory, add_memory, update_memory, delete_memory, update_memory_summary) during message, contact, or cron events. Memory updates happen ONLY during system.session_end or system.memory_update events, where you are given explicit instructions and the 4-gate framework to follow.
-</memory_timing>
+- For ${systemEventsClause}: proceed best-effort with remaining work and include the failure in your <done action="..." /> reason.
+</tool_failures>${memoryTiming}
 </global_rules>`;
 }
 
@@ -145,7 +159,18 @@ function cronEvent(): string {
 </event_type>`;
 }
 
-function systemEvents(): string {
+function systemEvents(memoryEnabled: boolean): string {
+  const memoryUpdateEvent = memoryEnabled
+    ? `
+<system_event name="system.memory_update">
+  <description>Mid-session request to persist important facts to memory. Your session continues afterward.</description>
+  <routing>Follow the embedded instructions. Use memory tools as directed, then output <done action="..." />.</routing>
+</system_event>
+`
+    : '';
+  const sessionEndRouting = memoryEnabled
+    ? 'Follow the embedded instructions to update memory and produce a handoff note.'
+    : 'Follow the embedded instructions to produce a handoff note.';
   return `<system_events>
 Internal events from the connector.
 
@@ -153,15 +178,10 @@ Internal events from the connector.
   <description>Startup connection test.</description>
   <routing>Output a brief greeting (1-2 sentences). It is sent to your owner as a DM.</routing>
 </system_event>
-
-<system_event name="system.memory_update">
-  <description>Mid-session request to persist important facts to memory. Your session continues afterward.</description>
-  <routing>Follow the embedded instructions. Use memory tools as directed, then output <done action="..." />.</routing>
-</system_event>
-
+${memoryUpdateEvent}
 <system_event name="system.session_end">
   <description>Session is closing.</description>
-  <routing>Follow the embedded instructions to update memory and produce a handoff note.</routing>
+  <routing>${sessionEndRouting}</routing>
 </system_event>
 
 <system_event name="system.initiate_conversation">
