@@ -167,13 +167,12 @@ describe('NewioApp', () => {
       expect(app.isMemoryEnabled()).toBe(true);
     });
 
-    it('defaults memory to opted out when loading settings fails', async () => {
+    it('fails startup when loading settings fails', async () => {
       eventHandlers.clear();
       const client = mockClient();
       (client.getMySettings as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('network'));
       const app = NewioApp.createFromComponents(identity, mockAuth(), client, mockWs());
-      await app.init();
-      expect(app.isMemoryEnabled()).toBe(false);
+      await expect(app.init()).rejects.toThrow('network');
     });
   });
 

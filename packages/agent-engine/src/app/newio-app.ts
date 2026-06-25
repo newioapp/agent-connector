@@ -373,15 +373,10 @@ export class NewioApp implements NewioAppForAgent, NewioAppForMcp {
     return this._memoryEnabled;
   }
 
-  /** Fetch the agent's account settings to learn the memory opt-in. Failures default to opted out. */
+  /** Fetch the agent's account settings to learn the memory opt-in. Throws to fail startup early. */
   private async loadSettings(): Promise<void> {
-    try {
-      const { settings } = await this.client.getMySettings({ agentId: this.identity.userId });
-      this._memoryEnabled = settings.memoryEnabled === true;
-    } catch (err) {
-      log.warn('Failed to load agent settings; defaulting memory to opted out.', err);
-      this._memoryEnabled = false;
-    }
+    const { settings } = await this.client.getMySettings({ agentId: this.identity.userId });
+    this._memoryEnabled = settings.memoryEnabled === true;
   }
 
   /** Disconnect WebSocket, cancel cron jobs, and dispose auth. */

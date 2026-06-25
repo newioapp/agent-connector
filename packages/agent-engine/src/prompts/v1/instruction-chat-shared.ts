@@ -36,12 +36,16 @@ export function instructionChatShared(role: SessionPromptRole, memoryEnabled: bo
 
 /** Rotation block — describes what carries across a session rotation. */
 function rotation(memoryEnabled: boolean): string {
-  const carried = memoryEnabled
-    ? 'your memory is persisted automatically, and a new session starts with your memory + a\nhandoff note from this session.'
-    : 'a new session starts with a handoff note from this session.';
+  if (memoryEnabled) {
+    return `<rotation>
+When this session rotates — idle timeout, the owner starting a new session, or (if enabled) context
+pressure — your memory is persisted automatically, and a new session starts with your memory + a
+handoff note from this session.
+</rotation>`;
+  }
   return `<rotation>
 When this session rotates — idle timeout, the owner starting a new session, or (if enabled) context
-pressure — ${carried}
+pressure — a new session starts with a handoff note from this session.
 </rotation>`;
 }
 
@@ -86,6 +90,33 @@ ${rotation(memoryEnabled)}
 }
 
 function globalRules(memoryEnabled: boolean): string {
+  if (memoryEnabled) {
+    return `<global_rules>
+<output_modes>
+Every response must be exactly ONE of these three modes:
+
+1. **Reply text** — plain text or markdown. Only valid when the event's routing says text is sent to a conversation.
+
+2. **Skip** — output exactly this tag and nothing else:
+   <skip reason="brief reason for logging" />
+
+3. **Done** — output exactly this tag after completing work via tools, when the event's routing says text is discarded:
+   <done action="brief description of what you did" />
+
+Never mix modes. Never output reasoning, preamble, or commentary alongside <skip /> or <done />.
+</output_modes>
+
+<tool_failures>
+If a tool call fails, retry once. If it fails again:
+- For message/contact/cron events: use send_dm to report the error to your owner, then output <done action="reported_failure_to_owner" />.
+- For system events (memory_update, session_end): proceed best-effort with remaining work and include the failure in your <done action="..." /> reason.
+</tool_failures>
+
+<memory_timing>
+Do NOT call memory tools (get_memory, add_memory, update_memory, delete_memory, update_memory_summary) during message, contact, or cron events. Memory updates happen ONLY during system.session_end or system.memory_update events, where you are given explicit instructions and the 4-gate framework to follow.
+</memory_timing>
+</global_rules>`;
+  }
   return `<global_rules>
 <output_modes>
 Every response must be exactly ONE of these three modes:
@@ -104,16 +135,8 @@ Never mix modes. Never output reasoning, preamble, or commentary alongside <skip
 <tool_failures>
 If a tool call fails, retry once. If it fails again:
 - For message/contact/cron events: use send_dm to report the error to your owner, then output <done action="reported_failure_to_owner" />.
-- For ${memoryEnabled ? 'system events (memory_update, session_end)' : 'the system.session_end event'}: proceed best-effort with remaining work and include the failure in your <done action="..." /> reason.
-</tool_failures>${
-    memoryEnabled
-      ? `
-
-<memory_timing>
-Do NOT call memory tools (get_memory, add_memory, update_memory, delete_memory, update_memory_summary) during message, contact, or cron events. Memory updates happen ONLY during system.session_end or system.memory_update events, where you are given explicit instructions and the 4-gate framework to follow.
-</memory_timing>`
-      : ''
-  }
+- For the system.session_end event: proceed best-effort with remaining work and include the failure in your <done action="..." /> reason.
+</tool_failures>
 </global_rules>`;
 }
 
@@ -208,17 +231,31 @@ function cronEvent(): string {
 }
 
 function systemEvents(memoryEnabled: boolean): string {
-  const memoryUpdateEvent = memoryEnabled
-    ? `
+  if (memoryEnabled) {
+    return `<system_events>
+Internal events from the connector.
+
+<system_event name="system.greeting">
+  <description>Startup connection test.</description>
+  <routing>Output a brief greeting (1-2 sentences). It is sent to your owner as a DM.</routing>
+</system_event>
+
 <system_event name="system.memory_update">
   <description>Mid-session request to persist important facts to memory. Your session continues afterward.</description>
   <routing>Follow the embedded instructions. Use memory tools as directed, then output <done action="..." />.</routing>
 </system_event>
-`
-    : '';
-  const sessionEndRouting = memoryEnabled
-    ? 'Follow the embedded instructions to update memory and produce a handoff note.'
-    : 'Follow the embedded instructions to produce a handoff note.';
+
+<system_event name="system.session_end">
+  <description>Session is closing.</description>
+  <routing>Follow the embedded instructions to update memory and produce a handoff note.</routing>
+</system_event>
+
+<system_event name="system.share_context">
+  <description>Another of your sessions shared context with this conversation via share_context.</description>
+  <routing>Absorb the context for when you next act in this conversation. Your text output is discarded — do NOT reply. If the context means you should message someone now, use send_dm/send_message explicitly; otherwise output <done action="absorbed shared context" />.</routing>
+</system_event>
+</system_events>`;
+  }
   return `<system_events>
 Internal events from the connector.
 
@@ -226,10 +263,10 @@ Internal events from the connector.
   <description>Startup connection test.</description>
   <routing>Output a brief greeting (1-2 sentences). It is sent to your owner as a DM.</routing>
 </system_event>
-${memoryUpdateEvent}
+
 <system_event name="system.session_end">
   <description>Session is closing.</description>
-  <routing>${sessionEndRouting}</routing>
+  <routing>Follow the embedded instructions to produce a handoff note.</routing>
 </system_event>
 
 <system_event name="system.share_context">
