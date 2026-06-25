@@ -20,3 +20,21 @@ export class InvalidEnvironmentError extends Error {
     this.name = 'InvalidEnvironmentError';
   }
 }
+
+/**
+ * The ACP agent failed a `session/prompt` turn (e.g. a `-32603` internal error,
+ * or it ended the turn in an unexpected state). Wraps the underlying rejection so
+ * callers can distinguish a failure *from the agent itself* from incidental
+ * failures of the surrounding turn handling (a `sendMessage` 403, a membership
+ * lookup blip) and surface a user-visible "agent hit an internal error" notice
+ * only for the former. The original error is preserved as `cause`.
+ */
+export class AgentPromptError extends Error {
+  constructor(
+    message: string,
+    readonly cause: unknown,
+  ) {
+    super(message);
+    this.name = 'AgentPromptError';
+  }
+}
