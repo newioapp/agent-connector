@@ -160,9 +160,10 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
         }
       })
       .catch((err: unknown) => {
-        // Don't log here — the failure is re-thrown as AgentPromptError below and
-        // logged once by the caller (with conversation context). The wrapped error
-        // carries the original as `cause`, so no detail is lost.
+        // Log the message only, not the err object — it is re-thrown as AgentPromptError
+        // below and the caller logs the full object (with conversation context); logging
+        // the object here too would duplicate it.
+        log.error(`${this.logTag} [${this.correlationId}] Prompt failed: ${extractErrorMessage(err)}`);
         promptError = err;
       })
       .finally(() => {
