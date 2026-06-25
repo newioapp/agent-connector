@@ -212,6 +212,22 @@ describe('CLI integ (hermetic — no backend)', () => {
     expect(result.stderr + result.stdout).toMatch(/--session-mode.*weird|allowed choices/i);
   });
 
+  it('update --session-mode changes the persisted mode', async () => {
+    const username = uniqueName('cliupdmode');
+    const id = await addCustom(username);
+
+    const readConfig = (): Record<string, unknown> =>
+      JSON.parse(readFileSync(join(box.dataDir, 'agents', id, 'config.json'), 'utf8')) as Record<string, unknown>;
+
+    // Added with no --session-mode, so nothing is persisted (chat-shared default).
+    expect(readConfig()).not.toHaveProperty('sessionMode');
+
+    await box.cli(['agent', 'update', id, '--session-mode', 'isolated']);
+    expect(readConfig()).toHaveProperty('sessionMode', 'isolated');
+
+    await box.cli(['agent', 'remove', id]);
+  });
+
   it('without --session-mode the config carries no sessionMode — the agent takes the chat-shared default', async () => {
     const username = uniqueName('clidefmode');
     const id = await addCustom(username);
