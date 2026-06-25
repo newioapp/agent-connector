@@ -92,6 +92,8 @@ export class ChatSharedSessionManager implements SessionManager {
     private readonly promptManager: PromptManager,
     private readonly app: NewioAppForSession,
     private readonly ownerDmConversationId: string,
+    /** When true, rotate a session automatically once its context window crosses the pressure threshold. */
+    private readonly autoSessionRotation: boolean = false,
   ) {}
 
   getDmSession(_convId: string): Promise<AgentSession> {
@@ -320,9 +322,12 @@ export class ChatSharedSessionManager implements SessionManager {
       this.app.handlePermissionRequest(title, options, conversationId),
     );
 
-    session.onContextPressure(() => {
-      void this.rotateSession(type, externalReferenceId);
-    });
+    // Wire context pressure — triggers session rotation (opt-in; off by default)
+    if (this.autoSessionRotation) {
+      session.onContextPressure(() => {
+        void this.rotateSession(type, externalReferenceId);
+      });
+    }
 
     log.info(
       `${this.logTag} Session ready: key=${type}/${externalReferenceId} role=${role} → ${session.correlationId}`,

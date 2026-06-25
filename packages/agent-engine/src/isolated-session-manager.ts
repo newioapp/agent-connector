@@ -70,6 +70,8 @@ export class IsolatedSessionManager implements SessionManager {
     private readonly endSession: (correlationId: string) => Promise<void>,
     private readonly promptManager: PromptManager,
     private readonly app: NewioAppForSession,
+    /** When true, rotate a session automatically once its context window crosses the pressure threshold. */
+    private readonly autoSessionRotation: boolean = false,
   ) {}
 
   getDmSession(convId: string): Promise<AgentSession> {
@@ -272,10 +274,12 @@ export class IsolatedSessionManager implements SessionManager {
       this.app.handlePermissionRequest(title, options, conversationId),
     );
 
-    // Wire context pressure — triggers session rotation
-    session.onContextPressure(() => {
-      void this.rotateSession(type, externalReferenceId);
-    });
+    // Wire context pressure — triggers session rotation (opt-in; off by default)
+    if (this.autoSessionRotation) {
+      session.onContextPressure(() => {
+        void this.rotateSession(type, externalReferenceId);
+      });
+    }
 
     log.info(`${this.logTag} Session ready: key=${type}/${externalReferenceId} → correlation=${session.correlationId}`);
 

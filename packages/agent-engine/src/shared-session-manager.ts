@@ -70,6 +70,8 @@ export class SharedSessionManager implements SessionManager {
     private readonly promptManager: PromptManager,
     private readonly app: NewioAppForSession,
     private readonly ownerDmConversationId: string,
+    /** When true, rotate the session automatically once its context window crosses the pressure threshold. */
+    private readonly autoSessionRotation: boolean = false,
   ) {}
 
   getDmSession(_convId: string): Promise<AgentSession> {
@@ -281,10 +283,12 @@ export class SharedSessionManager implements SessionManager {
       this.app.handlePermissionRequest(title, options, conversationId),
     );
 
-    // Wire context pressure — triggers session rotation
-    session.onContextPressure(() => {
-      void this.rotateSession();
-    });
+    // Wire context pressure — triggers session rotation (opt-in; off by default)
+    if (this.autoSessionRotation) {
+      session.onContextPressure(() => {
+        void this.rotateSession();
+      });
+    }
 
     log.info(`${this.logTag} Shared Session ready`);
 
