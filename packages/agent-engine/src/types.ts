@@ -143,7 +143,7 @@ export interface AgentConfig {
   /**
    * Session mode: 'isolated' (one session per conversation), 'shared' (single session for all
    * events), or 'chat-shared' (DM/group/contact share one session; work sessions + cron get their
-   * own). Default: 'isolated'.
+   * own). Default: 'chat-shared'.
    */
   readonly sessionMode?: SessionMode;
 

@@ -4,10 +4,10 @@
  * The full-stack counterpart to `cross-conversation.e2e.test.ts`: the same `send_dm`
  * / `send_message` tools, but the connector runs as the real `newio` daemon process
  * configured through the CLI rather than the embedded runtime — proving the tool
- * routing survives the CLI/daemon/RPC plumbing the embedded harness skips. The CLI
- * no longer exposes a session-mode flag, so the agent takes the default `chat-shared`
- * mode, which shares one session across DMs/groups/contacts and exposes the same
- * `send_dm` / `send_message` tools as `shared`.
+ * routing survives the CLI/daemon/RPC plumbing the embedded harness skips. This test
+ * passes no `--session-mode`, so the agent takes the default `chat-shared` mode, which
+ * shares one session across DMs/groups/contacts and exposes the same `send_dm` /
+ * `send_message` tools as `shared`.
  *
  *   1. `send_dm` — owner tells the puppet (in the owner DM) to DM a sibling agent;
  *      the message lands in a brand-new agent↔agent DM.

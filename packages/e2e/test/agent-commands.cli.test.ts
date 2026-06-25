@@ -171,24 +171,64 @@ describe('CLI integ (hermetic — no backend)', () => {
     expect(result.stderr + result.stdout).toMatch(/unknown option.*--exec/);
   });
 
-  it('rejects the removed --session-mode flag', async () => {
+  it('--session-mode writes the chosen mode into the config', async () => {
+    const username = uniqueName('clismode');
+    const result = await box.cli([
+      'agent',
+      'add',
+      '--type',
+      'custom',
+      '--username',
+      username,
+      '--command',
+      '/bin/echo',
+      '--session-mode',
+      'shared',
+    ]);
+    const id = /Added agent (\S+) for/.exec(result.stdout)?.[1] as string;
+    expect(id, `could not parse agent id from: ${result.stdout}`).toBeTruthy();
+
+    const config: unknown = JSON.parse(readFileSync(join(box.dataDir, 'agents', id, 'config.json'), 'utf8'));
+    expect(config).toHaveProperty('sessionMode', 'shared');
+
+    await box.cli(['agent', 'remove', id]);
+  });
+
+  it('rejects an unknown --session-mode value', async () => {
     const result = await box.runCli([
       'agent',
       'add',
       '--type',
       'custom',
       '--username',
-      uniqueName('clismode'),
+      uniqueName('clismodebad'),
       '--command',
       '/bin/echo',
       '--session-mode',
-      'shared',
+      'weird',
     ]);
     expect(result.code).not.toBe(0);
-    expect(result.stderr + result.stdout).toMatch(/unknown option.*--session-mode/);
+    // commander rejects the value against the choices() allowlist before our handler runs.
+    expect(result.stderr + result.stdout).toMatch(/--session-mode.*weird|allowed choices/i);
   });
 
-  it('does not write a sessionMode into the config — the agent takes the chat-shared default', async () => {
+  it('update --session-mode changes the persisted mode', async () => {
+    const username = uniqueName('cliupdmode');
+    const id = await addCustom(username);
+
+    const readConfig = (): Record<string, unknown> =>
+      JSON.parse(readFileSync(join(box.dataDir, 'agents', id, 'config.json'), 'utf8')) as Record<string, unknown>;
+
+    // Added with no --session-mode, so nothing is persisted (chat-shared default).
+    expect(readConfig()).not.toHaveProperty('sessionMode');
+
+    await box.cli(['agent', 'update', id, '--session-mode', 'isolated']);
+    expect(readConfig()).toHaveProperty('sessionMode', 'isolated');
+
+    await box.cli(['agent', 'remove', id]);
+  });
+
+  it('without --session-mode the config carries no sessionMode — the agent takes the chat-shared default', async () => {
     const username = uniqueName('clidefmode');
     const id = await addCustom(username);
 

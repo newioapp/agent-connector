@@ -167,6 +167,9 @@ agentCmd
     (value: string, previous: string[]) => [...previous, value],
     [] as string[],
   )
+  .addOption(
+    new Option('--session-mode <mode>', agent.SESSION_MODE_DESCRIPTION).choices([...agent.SESSION_MODE_CHOICES]),
+  )
   // The agent subprocess runs with exactly the environment synced here — PATH (to
   // find node + the agent binary), USER (Claude Code keys its Keychain credential
   // by it), API keys, etc. Captured from this CLI's own environment.
@@ -215,6 +218,9 @@ agentCmd
     [] as string[],
   )
   .option('--username <username>', 'Newio username')
+  .addOption(
+    new Option('--session-mode <mode>', agent.SESSION_MODE_DESCRIPTION).choices([...agent.SESSION_MODE_CHOICES]),
+  )
   .action((query: string, _options: unknown, cmd: Command) =>
     agent.agentUpdate(stage, query, cmd.opts<UpdateOptions>()),
   );
