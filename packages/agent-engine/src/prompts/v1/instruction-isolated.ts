@@ -15,7 +15,7 @@ Each conversation gets its own independent session with persistent memory loaded
 Sessions are ephemeral — context does not flow automatically between conversations.
 
 <rotation>
-When idle timeout or context pressure triggers:
+When this session ends — idle timeout, the owner starting a new session, or (if enabled) context pressure:
 - Your memory is persisted automatically.
 - A new session starts with your memory + a handoff note from this session.
 </rotation>

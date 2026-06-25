@@ -346,4 +346,26 @@ describe('IsolatedSessionManager', () => {
       expect(endSessionFn).toHaveBeenCalledWith(mockSession.correlationId);
     });
   });
+
+  describe('context-pressure auto-rotation', () => {
+    it('does not wire context-pressure rotation by default', async () => {
+      const session = await manager.getDmSession('conv-default');
+      expect(session.onContextPressure).not.toHaveBeenCalled();
+    });
+
+    it('wires context-pressure rotation when enabled', async () => {
+      const enabled = new IsolatedSessionManager(
+        '[test]',
+        eventProcessor,
+        newSessionFn,
+        endSessionFn,
+        createMockPromptManager(),
+        createMockApp(),
+        { autoSessionRotation: true },
+      );
+      const session = await enabled.getDmSession('conv-enabled');
+      expect(session.onContextPressure).toHaveBeenCalledTimes(1);
+      await enabled.terminate();
+    });
+  });
 });

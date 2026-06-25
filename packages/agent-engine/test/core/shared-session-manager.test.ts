@@ -338,4 +338,27 @@ describe('SharedSessionManager', () => {
       expect(mockSession.applySessionConfig).not.toHaveBeenCalled();
     });
   });
+
+  describe('context-pressure auto-rotation', () => {
+    it('does not wire context-pressure rotation by default', async () => {
+      const session = await manager.getDmSession(OWNER_DM_CONV);
+      expect(session.onContextPressure).not.toHaveBeenCalled();
+    });
+
+    it('wires context-pressure rotation when enabled', async () => {
+      const enabled = new SharedSessionManager(
+        '[test]',
+        eventProcessor,
+        newSessionFn,
+        endSessionFn,
+        createMockPromptManager(),
+        createMockApp(),
+        OWNER_DM_CONV,
+        { autoSessionRotation: true },
+      );
+      const session = await enabled.getDmSession(OWNER_DM_CONV);
+      expect(session.onContextPressure).toHaveBeenCalledTimes(1);
+      await enabled.terminate();
+    });
+  });
 });

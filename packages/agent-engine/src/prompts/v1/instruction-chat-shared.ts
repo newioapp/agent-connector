@@ -42,8 +42,9 @@ not receive a response. Use send_message / send_dm to message other conversation
 </cross_session>
 
 <rotation>
-When context pressure builds or idle timeout fires, this session rotates: your memory is persisted
-automatically, and a new session starts with your memory + a handoff note from this session.
+When this session rotates — idle timeout, the owner starting a new session, or (if enabled) context
+pressure — your memory is persisted automatically, and a new session starts with your memory + a
+handoff note from this session.
 </rotation>
 </session_lifecycle>`;
 }
@@ -62,8 +63,9 @@ Deliver results and messages with send_message / send_dm.
 </cross_session>
 
 <rotation>
-When context pressure builds or idle timeout fires, this session rotates: your memory is persisted
-automatically, and a new session starts with your memory + a handoff note from this session.
+When this session rotates — idle timeout, the owner starting a new session, or (if enabled) context
+pressure — your memory is persisted automatically, and a new session starts with your memory + a
+handoff note from this session.
 </rotation>
 </session_lifecycle>`;
 }

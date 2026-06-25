@@ -150,10 +150,39 @@ export interface AgentConfig {
   /** Idle timeout for sessions in ms. Sessions with no activity are stopped. Default: 1 hour. */
   readonly sessionIdleTimeoutMs?: number;
 
+  /**
+   * Opt-in toggles for behaviors that are off by default — typically because they are experimental
+   * or not yet fully reliable. Hand-editable in the agent's `config.json`; omitted flags fall back
+   * to their documented default. New such toggles should be added here rather than as loose
+   * top-level config fields. See {@link AgentFeatureFlags}.
+   */
+  readonly features?: AgentFeatureFlags;
+
   /** Environment variables passed to the agent process. */
   readonly envVars: Readonly<Record<string, string>>;
 
   readonly acp?: AcpConfig;
+}
+
+/**
+ * Opt-in feature flags. Each is independently toggleable; an omitted flag uses its documented
+ * default. Persisted verbatim in the stored agent config and round-tripped on read, so a flag set
+ * by hand survives other config updates.
+ */
+export interface AgentFeatureFlags {
+  /**
+   * Automatically rotate a session — persist a handoff note and start a fresh session — when its
+   * context window crosses the pressure threshold (~80% used). Default: false. The context-window
+   * size estimate is not yet reliable, so rotating on it can be premature or incorrect; when
+   * disabled, sessions are not auto-rotated and the owner relies on manual "Start new session" /
+   * Compact instead. Set to true to opt in.
+   */
+  readonly autoSessionRotation?: boolean;
+}
+
+/** Whether automatic session rotation on context-window pressure is enabled (default: false). */
+export function isAutoSessionRotationEnabled(features: AgentFeatureFlags | undefined): boolean {
+  return features?.autoSessionRotation ?? false;
 }
 
 export interface ContextWindow {

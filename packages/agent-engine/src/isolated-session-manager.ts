@@ -23,6 +23,8 @@ import {
   SessionManager,
   SessionType,
   DEFAULT_SESSION_IDLE_TIMEOUT_MS,
+  AgentFeatureFlags,
+  isAutoSessionRotationEnabled,
 } from './types';
 import { collectAgentMessage } from './utils';
 import { PromptManager } from './prompt-manager';
@@ -70,6 +72,8 @@ export class IsolatedSessionManager implements SessionManager {
     private readonly endSession: (correlationId: string) => Promise<void>,
     private readonly promptManager: PromptManager,
     private readonly app: NewioAppForSession,
+    /** Opt-in feature flags; gates e.g. automatic session rotation on context-window pressure. */
+    private readonly features: AgentFeatureFlags = {},
   ) {}
 
   getDmSession(convId: string): Promise<AgentSession> {
@@ -272,10 +276,12 @@ export class IsolatedSessionManager implements SessionManager {
       this.app.handlePermissionRequest(title, options, conversationId),
     );
 
-    // Wire context pressure — triggers session rotation
-    session.onContextPressure(() => {
-      void this.rotateSession(type, externalReferenceId);
-    });
+    // Wire context pressure — triggers session rotation (opt-in; off by default)
+    if (isAutoSessionRotationEnabled(this.features)) {
+      session.onContextPressure(() => {
+        void this.rotateSession(type, externalReferenceId);
+      });
+    }
 
     log.info(`${this.logTag} Session ready: key=${type}/${externalReferenceId} → correlation=${session.correlationId}`);
 

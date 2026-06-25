@@ -278,6 +278,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       );
 
       const sessionMode = resolveSessionMode(this.config.sessionMode);
+      const features = this.config.features;
       if (sessionMode === 'shared') {
         const ownerDmConversationId = await app.getOrCreateOwnerDmConversationId();
         this._ownerDmConversationId = ownerDmConversationId;
@@ -289,6 +290,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
           this._promptManager,
           this.getNewioAppForSession(),
           ownerDmConversationId,
+          features,
         );
       } else if (sessionMode === 'chat-shared') {
         const ownerDmConversationId = await app.getOrCreateOwnerDmConversationId();
@@ -301,6 +303,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
           this._promptManager,
           this.getNewioAppForSession(),
           ownerDmConversationId,
+          features,
         );
       } else {
         this._sessionManager = new IsolatedSessionManager(
@@ -310,6 +313,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
           (correlationId) => this.sessionFactory.destroySession(correlationId),
           this._promptManager,
           this.getNewioAppForSession(),
+          features,
         );
       }
       this._sessionManager.startIdleCleanup();
