@@ -211,6 +211,14 @@ export class OwnerBackend {
     });
   }
 
+  /** Opt an agent in/out of long-term memory (owner only; default is opted out). */
+  async setAgentMemoryEnabled(owner: OwnerTokens, agentId: string, memoryEnabled: boolean): Promise<void> {
+    await this.request(`/agents/${agentId}/settings`, owner.accessToken, {
+      method: 'PUT',
+      body: JSON.stringify({ memoryEnabled }),
+    });
+  }
+
   async listMessages(token: string, conversationId: string, limit = 50): Promise<readonly MessageSummary[]> {
     const body = asRecord(await this.request(`/conversations/${conversationId}/messages?limit=${limit}`, token));
     const messages = Array.isArray(body.messages) ? body.messages : [];

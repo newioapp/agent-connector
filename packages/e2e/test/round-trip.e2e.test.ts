@@ -33,6 +33,9 @@ describe('connector round-trip', () => {
   beforeAll(async () => {
     owner = await backend.createOwner();
     agent = await backend.createApprovedAgent(owner);
+    // Memory is opt-out by default (#564); opt this agent in before the connector boots,
+    // since the flag is read once at startup, so the add_memory tool is available.
+    await backend.setAgentMemoryEnabled(owner, agent.agentId, true);
 
     driver = await PuppetDriver.start();
     driver.onPrompt(({ text }) => {
