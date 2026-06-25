@@ -28,6 +28,13 @@ export interface NewioAppForSessionEventProcessor {
 
 const log = getLogger('session-event-processor-impl');
 
+/** Cap the agent-error detail shown to the owner so a runaway error string can't bloat the message. */
+const MAX_AGENT_ERROR_DETAIL = 500;
+
+function truncate(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
 export class SessionEventProcessorImpl implements SessionEventProcessor {
   constructor(
     private readonly logTag: string,
@@ -117,9 +124,10 @@ export class SessionEventProcessorImpl implements SessionEventProcessor {
       // would likely fail to deliver a notice anyway, so they only get logged.
       if (err instanceof AgentPromptError && ownerVisible && ownerId) {
         try {
+          const detail = truncate(extractErrorMessage(err.cause), MAX_AGENT_ERROR_DETAIL);
           await this.app.sendMessage(
             conversationId,
-            `⚠️ Hit an internal error and couldn't finish that turn. You can try again.\n\n\`${extractErrorMessage(err.cause)}\``,
+            `⚠️ Hit an internal error and couldn't finish that turn. You can try again.\n\n\`${detail}\``,
             { metadata: { type: 'agent_error' }, visibleTo: [ownerId] },
           );
         } catch (notifyErr: unknown) {

@@ -198,6 +198,21 @@ describe('SessionEventProcessorImpl', () => {
       expect(app.setStatus).toHaveBeenCalledWith('idle', 'conv-1');
     });
 
+    it('truncates a very long error detail in the owner notice', async () => {
+      const app = createMockApp();
+      const processor = new SessionEventProcessorImpl('[test]', app, createMockPromptManager());
+      const longDetail = 'x'.repeat(2000);
+      const session = sessionThatThrows(new AgentPromptError('Prompt failed', new Error(longDetail)));
+
+      await processor.processEvent({ type: 'messages', conversationId: 'conv-1', messages: [makeMessage()] }, session);
+
+      const text = (app.sendMessage as ReturnType<typeof vi.fn>).mock.calls[0]![1] as string;
+      // The full 2000-char detail must not pass through verbatim; it's capped and ellipsized.
+      expect(text).not.toContain(longDetail);
+      expect(text).toContain('…');
+      expect(text.length).toBeLessThan(700);
+    });
+
     it('does NOT post an agent_error notice when the failure is not from the agent prompt (e.g. sendMessage 403)', async () => {
       const app = createMockApp();
       const forbidden = new ForbiddenApiError('You do not have permission to send messages in this conversation.', {
