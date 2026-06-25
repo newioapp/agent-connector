@@ -1,8 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { SessionEventProcessorImpl } from '../../src/session-event-processor-impl';
 import type { NewioAppForSessionEventProcessor } from '../../src/session-event-processor-impl';
+import { AgentPromptError } from '../../src/errors';
+import { ForbiddenApiError } from '@newio/agent-sdk';
 import type { AgentSession } from '../../src/agent-session';
 import type { PromptManager } from '../../src/prompt-manager';
+import type { SessionStreamSegment } from '../../src/types';
 import type { IncomingMessage } from '../../src/app/index.js';
 
 // ---------------------------------------------------------------------------
@@ -162,6 +165,76 @@ describe('SessionEventProcessorImpl', () => {
       });
       expect(app.sendMessage).not.toHaveBeenCalledWith('conv-1', 'Second thought', expect.anything());
       expect(app.sendMessage).toHaveBeenCalledWith('conv-1', 'Done');
+    });
+  });
+
+  describe('processEvent — messages error handling', () => {
+    /** A session whose prompt() yields the given segments then optionally throws. */
+    function sessionThatThrows(throwErr: unknown, segments: SessionStreamSegment[] = []): AgentSession {
+      return {
+        ...createMockSession(),
+        prompt: vi.fn(async function* () {
+          for (const seg of segments) {
+            yield seg;
+          }
+          throw throwErr;
+        }),
+      } as unknown as AgentSession;
+    }
+
+    it('posts an owner-only agent_error notice when the agent prompt fails', async () => {
+      const app = createMockApp();
+      const processor = new SessionEventProcessorImpl('[test]', app, createMockPromptManager());
+      const session = sessionThatThrows(new AgentPromptError('Prompt failed: boom', new Error('boom detail')));
+
+      await processor.processEvent({ type: 'messages', conversationId: 'conv-1', messages: [makeMessage()] }, session);
+
+      expect(app.sendMessage).toHaveBeenCalledTimes(1);
+      const [conversationId, text, opts] = (app.sendMessage as ReturnType<typeof vi.fn>).mock.calls[0]!;
+      expect(conversationId).toBe('conv-1');
+      expect(text).toContain("Hit an internal error and couldn't finish that turn");
+      expect(text).toContain('boom detail');
+      expect(opts).toEqual({ metadata: { type: 'agent_error' }, visibleTo: ['owner-1'] });
+      expect(app.setStatus).toHaveBeenCalledWith('idle', 'conv-1');
+    });
+
+    it('does NOT post an agent_error notice when the failure is not from the agent prompt (e.g. sendMessage 403)', async () => {
+      const app = createMockApp();
+      const forbidden = new ForbiddenApiError('You do not have permission to send messages in this conversation.', {
+        errorCode: 'FORBIDDEN',
+      });
+      (app.sendMessage as ReturnType<typeof vi.fn>).mockRejectedValue(forbidden);
+      const processor = new SessionEventProcessorImpl('[test]', app, createMockPromptManager());
+      const session = createMockSession('reply');
+
+      await processor.processEvent({ type: 'messages', conversationId: 'conv-1', messages: [makeMessage()] }, session);
+
+      // Only the original (failed) reply attempt — no second agent_error message.
+      expect(app.sendMessage).toHaveBeenCalledTimes(1);
+      expect((app.sendMessage as ReturnType<typeof vi.fn>).mock.calls[0]![2]).toBeUndefined();
+    });
+
+    it('does not post an agent_error notice when the owner is not a member', async () => {
+      const app = createMockApp();
+      (app.isConversationMember as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+      const processor = new SessionEventProcessorImpl('[test]', app, createMockPromptManager());
+      const session = sessionThatThrows(new AgentPromptError('Prompt failed: boom', new Error('boom')));
+
+      await processor.processEvent({ type: 'messages', conversationId: 'conv-1', messages: [makeMessage()] }, session);
+
+      expect(app.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('swallows a failure to deliver the agent_error notice (turn still ends idle)', async () => {
+      const app = createMockApp();
+      (app.sendMessage as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('notice delivery failed'));
+      const processor = new SessionEventProcessorImpl('[test]', app, createMockPromptManager());
+      const session = sessionThatThrows(new AgentPromptError('Prompt failed: boom', new Error('boom')));
+
+      await expect(
+        processor.processEvent({ type: 'messages', conversationId: 'conv-1', messages: [makeMessage()] }, session),
+      ).resolves.toBeUndefined();
+      expect(app.setStatus).toHaveBeenCalledWith('idle', 'conv-1');
     });
   });
 

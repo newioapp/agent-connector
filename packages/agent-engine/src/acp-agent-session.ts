@@ -31,6 +31,7 @@ import type {
   SessionConfigUpdate,
 } from '@newio/agent-sdk';
 import { extractErrorMessage, withTimeout } from './utils';
+import { AgentPromptError } from './errors';
 
 const log = getLogger('acp-agent-session');
 
@@ -141,26 +142,40 @@ export class AcpAgentSession implements AcpAgentSessionInterface {
     const stream = new AcpSessionStream(this.statusListener, this.skipToken, conversationId);
     this.stream = stream;
 
+    // Capture the prompt failure instead of re-throwing from the .catch: a
+    // rejected promptDone would be "unhandled" until `await promptDone` attaches
+    // (only after the stream fully drains), and orphaned entirely if the consumer
+    // breaks early — both surface as daemon "Unhandled promise rejection". By
+    // never rejecting promptDone and re-throwing after the drain, the failure
+    // stays attached to this generator's control flow.
+    let promptError: unknown;
     const promptDone = this.connection
       .prompt({
         sessionId: this.correlationId,
         prompt: [{ type: 'text', text }],
       })
       .then((result) => {
-        stream.finish();
         if (result.stopReason !== 'end_turn') {
           log.warn(`${this.logTag} [${this.correlationId}] Prompt ended with stop reason: ${result.stopReason}`);
         }
       })
       .catch((err: unknown) => {
         log.error(`${this.logTag} [${this.correlationId}] Prompt failed`, err);
+        promptError = err;
+      })
+      .finally(() => {
         stream.finish();
-        throw err;
       });
 
     try {
       yield* stream.segments();
       await promptDone;
+      if (promptError !== undefined) {
+        throw new AgentPromptError(
+          `Prompt failed for session ${this.correlationId}: ${extractErrorMessage(promptError)}`,
+          promptError,
+        );
+      }
     } finally {
       this.stream = undefined;
       const convId = this._currentConversationId;

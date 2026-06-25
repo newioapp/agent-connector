@@ -3,7 +3,8 @@ import { ContactEvent, CronTriggerEvent, IncomingMessage } from './app/index.js'
 import { AgentSession } from './agent-session';
 import { AgentEvent, OwnerOpCallback } from './event-queue';
 import { PromptManager } from './prompt-manager';
-import { collectAgentMessage } from './utils';
+import { collectAgentMessage, extractErrorMessage } from './utils';
+import { AgentPromptError } from './errors';
 import type { ConversationControls } from './app/index.js';
 import { AgentIdentity, SessionType, SessionEventProcessor } from './types';
 
@@ -69,12 +70,14 @@ export class SessionEventProcessorImpl implements SessionEventProcessor {
     messages: readonly IncomingMessage[],
   ): Promise<void> {
     const userText = this.promptManager.formatMessagePrompt(session.promptFormatterVersion, messages);
+    const ownerId = this.app.identity.ownerId;
+    // Hoisted so the catch can decide whether to post an owner-only error notice.
+    let ownerVisible: string | boolean | undefined = false;
     try {
       // ownerVisible hits the backend (load conversation/members) and can throw
       // on a transient failure; keep it inside the try so a blip is logged and
       // the session loop survives rather than tearing down on an unguarded await.
-      const ownerId = this.app.identity.ownerId;
-      const ownerVisible = ownerId && (await this.app.isConversationMember(conversationId, ownerId));
+      ownerVisible = ownerId && (await this.app.isConversationMember(conversationId, ownerId));
       log.debug(
         `Prompting session ${session.correlationId} for conversation ${conversationId} with ${messages.length} message(s)`,
       );
@@ -86,7 +89,7 @@ export class SessionEventProcessorImpl implements SessionEventProcessor {
           !this.promptManager.isSkip(session.promptFormatterVersion, segment.text)
         ) {
           await this.app.sendMessage(conversationId, text);
-        } else if (segment.type === 'agent_thought_chunk' && text && ownerVisible) {
+        } else if (segment.type === 'agent_thought_chunk' && text && ownerId && ownerVisible) {
           // Re-read controls per segment rather than snapshotting at turn start, so a
           // mid-turn capabilities toggle takes effect on later segments of the same turn.
           const controls = await this.app.getConversationControls(conversationId);
@@ -96,7 +99,7 @@ export class SessionEventProcessorImpl implements SessionEventProcessor {
               visibleTo: [ownerId],
             });
           }
-        } else if (segment.type === 'tool_call' && text && ownerVisible) {
+        } else if (segment.type === 'tool_call' && text && ownerId && ownerVisible) {
           const controls = await this.app.getConversationControls(conversationId);
           if (controls?.showToolCalls) {
             await this.app.sendMessage(conversationId, text, {
@@ -108,6 +111,21 @@ export class SessionEventProcessorImpl implements SessionEventProcessor {
       }
     } catch (err: unknown) {
       log.error(`${this.logTag} Prompt/send failed for ${conversationId}`, err);
+      // Surface an owner-only notice ONLY when the agent's own prompt turn failed
+      // (AgentPromptError). Incidental failures of the turn handling itself — a
+      // sendMessage 403, a membership-lookup blip — are not the agent erroring and
+      // would likely fail to deliver a notice anyway, so they only get logged.
+      if (err instanceof AgentPromptError && ownerVisible && ownerId) {
+        try {
+          await this.app.sendMessage(
+            conversationId,
+            `⚠️ Hit an internal error and couldn't finish that turn. You can try again.\n\n\`${extractErrorMessage(err.cause)}\``,
+            { metadata: { type: 'agent_error' }, visibleTo: [ownerId] },
+          );
+        } catch (notifyErr: unknown) {
+          log.warn(`${this.logTag} Failed to deliver agent_error notice to ${conversationId}`, notifyErr);
+        }
+      }
     } finally {
       this.app.setStatus('idle', conversationId);
     }
