@@ -361,7 +361,7 @@ describe('IsolatedSessionManager', () => {
         endSessionFn,
         createMockPromptManager(),
         createMockApp(),
-        true,
+        { autoSessionRotation: true },
       );
       const session = await enabled.getDmSession('conv-enabled');
       expect(session.onContextPressure).toHaveBeenCalledTimes(1);

@@ -30,7 +30,7 @@ import type {
   CreateSessionInput,
   SharedInjectionState,
 } from './types';
-import { resolveSessionMode, isAutoSessionRotationEnabled } from './types';
+import { resolveSessionMode } from './types';
 import { ChatSharedSessionManager } from './chat-shared-session-manager.js';
 import type { AgentInfo, AgentErrorCode, PermissionRequestOption } from './types';
 import { InvalidEnvironmentError } from './errors.js';
@@ -278,7 +278,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       );
 
       const sessionMode = resolveSessionMode(this.config.sessionMode);
-      const autoSessionRotation = isAutoSessionRotationEnabled(this.config);
+      const features = this.config.features;
       if (sessionMode === 'shared') {
         const ownerDmConversationId = await app.getOrCreateOwnerDmConversationId();
         this._ownerDmConversationId = ownerDmConversationId;
@@ -290,7 +290,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
           this._promptManager,
           this.getNewioAppForSession(),
           ownerDmConversationId,
-          autoSessionRotation,
+          features,
         );
       } else if (sessionMode === 'chat-shared') {
         const ownerDmConversationId = await app.getOrCreateOwnerDmConversationId();
@@ -303,7 +303,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
           this._promptManager,
           this.getNewioAppForSession(),
           ownerDmConversationId,
-          autoSessionRotation,
+          features,
         );
       } else {
         this._sessionManager = new IsolatedSessionManager(
@@ -313,7 +313,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
           (correlationId) => this.sessionFactory.destroySession(correlationId),
           this._promptManager,
           this.getNewioAppForSession(),
-          autoSessionRotation,
+          features,
         );
       }
       this._sessionManager.startIdleCleanup();

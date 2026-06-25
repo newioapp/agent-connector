@@ -43,6 +43,8 @@ import {
   SessionManager,
   SessionType,
   DEFAULT_SESSION_IDLE_TIMEOUT_MS,
+  AgentFeatureFlags,
+  isAutoSessionRotationEnabled,
 } from './types';
 
 const log = getLogger('chat-shared-session-manager');
@@ -92,8 +94,8 @@ export class ChatSharedSessionManager implements SessionManager {
     private readonly promptManager: PromptManager,
     private readonly app: NewioAppForSession,
     private readonly ownerDmConversationId: string,
-    /** When true, rotate a session automatically once its context window crosses the pressure threshold. */
-    private readonly autoSessionRotation: boolean = false,
+    /** Opt-in feature flags; gates e.g. automatic session rotation on context-window pressure. */
+    private readonly features: AgentFeatureFlags = {},
   ) {}
 
   getDmSession(_convId: string): Promise<AgentSession> {
@@ -323,7 +325,7 @@ export class ChatSharedSessionManager implements SessionManager {
     );
 
     // Wire context pressure — triggers session rotation (opt-in; off by default)
-    if (this.autoSessionRotation) {
+    if (isAutoSessionRotationEnabled(this.features)) {
       session.onContextPressure(() => {
         void this.rotateSession(type, externalReferenceId);
       });

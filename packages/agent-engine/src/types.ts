@@ -181,8 +181,8 @@ export interface AgentFeatureFlags {
 }
 
 /** Whether automatic session rotation on context-window pressure is enabled (default: false). */
-export function isAutoSessionRotationEnabled(config: AgentConfig): boolean {
-  return config.features?.autoSessionRotation ?? false;
+export function isAutoSessionRotationEnabled(features: AgentFeatureFlags | undefined): boolean {
+  return features?.autoSessionRotation ?? false;
 }
 
 export interface ContextWindow {

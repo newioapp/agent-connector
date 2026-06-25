@@ -354,7 +354,7 @@ describe('SharedSessionManager', () => {
         createMockPromptManager(),
         createMockApp(),
         OWNER_DM_CONV,
-        true,
+        { autoSessionRotation: true },
       );
       const session = await enabled.getDmSession(OWNER_DM_CONV);
       expect(session.onContextPressure).toHaveBeenCalledTimes(1);
