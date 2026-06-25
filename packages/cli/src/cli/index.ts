@@ -149,7 +149,9 @@ agentCmd
 agentCmd
   .command('list')
   .description('List agents with runtime status')
-  .action(() => agent.agentList(stage));
+  .option('--desc', 'show the DESCRIPTION column (the agent error/detail)')
+  .option('--cwd', 'show the CWD column (the agent working directory)')
+  .action((options: { desc?: boolean; cwd?: boolean }) => agent.agentList(stage, options));
 
 agentCmd
   .command('add')

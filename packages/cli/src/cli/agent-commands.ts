@@ -138,47 +138,77 @@ export function formatStatus(a: AgentStatusInfo): string {
     : a.runtimeStatus;
 }
 
-function printAgentTable(agents: readonly AgentStatusInfo[]): void {
+/** Toggles for the optional `agent list` columns (both hidden by default). */
+export interface AgentTableOptions {
+  /** Append the DESCRIPTION column (the agent's error/detail, empty when healthy). */
+  readonly desc?: boolean;
+  /** Append the CWD column (the agent's working directory). */
+  readonly cwd?: boolean;
+}
+
+interface TableColumn {
+  readonly header: string;
+  readonly value: (a: AgentStatusInfo) => string;
+}
+
+/**
+ * Build the `agent list` table — header, one row per agent, and the
+ * remediation-hint block — as printable lines.
+ *
+ * SESSION-MODE shows the effective default (`chat-shared`) when `config.sessionMode`
+ * is unset, never blank. DESCRIPTION (the error text) and CWD are opt-in via flags;
+ * errors stay visible without DESCRIPTION through the STATUS cell and the hint block.
+ */
+export function buildAgentTable(agents: readonly AgentStatusInfo[], options: AgentTableOptions = {}): string[] {
   if (agents.length === 0) {
-    console.log('No agents configured. Add one with: newio agent add --type <type> --username <username>');
-    return;
+    return ['No agents configured. Add one with: newio agent add --type <type> --username <username>'];
   }
-  const rows = agents.map((a) => ({
-    id: a.id.slice(0, 8),
-    name: a.config.newio?.displayName ?? '—',
-    type: a.config.type,
-    username: a.config.newio?.username ?? '—',
+  const columns: TableColumn[] = [
+    { header: 'ID', value: (a) => a.id.slice(0, 8) },
+    { header: 'NAME', value: (a) => a.config.newio?.displayName ?? '—' },
+    { header: 'TYPE', value: (a) => a.config.type },
+    { header: 'USERNAME', value: (a) => a.config.newio?.username ?? '—' },
     // The process status, plus the WebSocket health when the link is degraded.
-    // The full (possibly multi-line) error goes in DESCRIPTION, trimmed to its
-    // first line so the table stays aligned.
-    status: formatStatus(a),
-    description: a.error ? firstLine(a.error) : '',
+    { header: 'STATUS', value: formatStatus },
+    { header: 'SESSION-MODE', value: (a) => a.config.sessionMode ?? 'chat-shared' },
+  ];
+  if (options.desc) {
+    // The full (possibly multi-line) error, trimmed to its first line so the table stays aligned.
+    columns.push({ header: 'DESCRIPTION', value: (a) => (a.error ? firstLine(a.error) : '') });
+  }
+  if (options.cwd) {
+    columns.push({ header: 'CWD', value: (a) => a.config.acp?.cwd ?? '' });
+  }
+  const sized = columns.map((col) => ({
+    ...col,
+    width: Math.max(col.header.length, ...agents.map((a) => col.value(a).length)),
   }));
-  const w = {
-    id: Math.max(2, ...rows.map((r) => r.id.length)),
-    name: Math.max(4, ...rows.map((r) => r.name.length)),
-    type: Math.max(4, ...rows.map((r) => r.type.length)),
-    username: Math.max(8, ...rows.map((r) => r.username.length)),
-    status: Math.max(6, ...rows.map((r) => r.status.length)),
-  };
-  const pad = (s: string, n: number): string => s.padEnd(n);
-  console.log(
-    `${pad('ID', w.id)}  ${pad('NAME', w.name)}  ${pad('TYPE', w.type)}  ${pad('USERNAME', w.username)}  ${pad('STATUS', w.status)}  DESCRIPTION`,
-  );
-  for (const r of rows) {
-    console.log(
-      `${pad(r.id, w.id)}  ${pad(r.name, w.name)}  ${pad(r.type, w.type)}  ${pad(r.username, w.username)}  ${pad(r.status, w.status)}  ${r.description}`.trimEnd(),
-    );
+  const formatRow = (cell: (col: TableColumn) => string): string =>
+    sized
+      .map((col) => cell(col).padEnd(col.width))
+      .join('  ')
+      .trimEnd();
+
+  const lines = [formatRow((col) => col.header)];
+  for (const a of agents) {
+    lines.push(formatRow((col) => col.value(a)));
   }
   // Actionable hints for agents stuck in a known error state.
   const hints = new Set(
     agents.map((a) => remediationHint(a.errorCode, a.id)).filter((h): h is string => h !== undefined),
   );
   if (hints.size > 0) {
-    console.log('');
+    lines.push('');
     for (const hint of hints) {
-      console.log(`  → ${hint}`);
+      lines.push(`  → ${hint}`);
     }
+  }
+  return lines;
+}
+
+function printAgentTable(agents: readonly AgentStatusInfo[], options: AgentTableOptions = {}): void {
+  for (const line of buildAgentTable(agents, options)) {
+    console.log(line);
   }
 }
 
@@ -258,8 +288,8 @@ export interface UpdateOptions {
   readonly sessionMode?: string;
 }
 
-export async function agentList(stage: Stage): Promise<void> {
-  await withDaemon(stage, async (c) => printAgentTable(await c.listAgents()));
+export async function agentList(stage: Stage, options: AgentTableOptions = {}): Promise<void> {
+  await withDaemon(stage, async (c) => printAgentTable(await c.listAgents(), options));
 }
 
 /** `agent add` — attach a runner config to an existing account, identified by username. */

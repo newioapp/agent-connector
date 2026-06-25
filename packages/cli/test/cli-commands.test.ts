@@ -13,6 +13,7 @@ import {
   remediationHint,
   agentAdd,
   formatStatus,
+  buildAgentTable,
 } from '../src/cli/agent-commands';
 import { daemonLogsHint } from '../src/cli/daemon-commands';
 import type { DaemonConnector } from '../src/connector';
@@ -88,6 +89,92 @@ describe('formatStatus', () => {
   it('appends degraded WebSocket status', () => {
     expect(formatStatus(status('reconnecting'))).toBe('running · reconnecting');
     expect(formatStatus(status('disconnected'))).toBe('running · disconnected');
+  });
+});
+
+describe('buildAgentTable', () => {
+  function row(opts: {
+    id: string;
+    username?: string;
+    sessionMode?: AgentConfig['sessionMode'];
+    cwd?: string;
+    runtimeStatus?: AgentStatusInfo['runtimeStatus'];
+    error?: string;
+    errorCode?: AgentStatusInfo['errorCode'];
+  }): AgentStatusInfo {
+    const config: AgentConfig = {
+      id: opts.id,
+      type: 'claude-code',
+      newio: { username: opts.username ?? 'alpha' },
+      envVars: {},
+      acp: { cwd: opts.cwd ?? '/tmp' },
+      ...(opts.sessionMode ? { sessionMode: opts.sessionMode } : {}),
+    };
+    return {
+      id: opts.id,
+      config,
+      runtimeStatus: opts.runtimeStatus ?? 'running',
+      ...(opts.error ? { error: opts.error } : {}),
+      ...(opts.errorCode ? { errorCode: opts.errorCode } : {}),
+    };
+  }
+
+  it('reports the empty state when there are no agents', () => {
+    expect(buildAgentTable([])).toEqual([expect.stringContaining('No agents configured')]);
+  });
+
+  it('shows the fixed columns ending in SESSION-MODE, hiding DESCRIPTION and CWD by default', () => {
+    const [header] = buildAgentTable([row({ id: 'aaaa1111-2222' })]);
+    expect(header).toMatch(/^ID\s+NAME\s+TYPE\s+USERNAME\s+STATUS\s+SESSION-MODE$/);
+    expect(header).not.toContain('DESCRIPTION');
+    expect(header).not.toContain('CWD');
+  });
+
+  it('shows the effective default chat-shared when sessionMode is unset, and the explicit value otherwise', () => {
+    const [, unset, explicit] = buildAgentTable([
+      row({ id: 'aaaa1111' }),
+      row({ id: 'bbbb2222', sessionMode: 'isolated' }),
+    ]);
+    expect(unset).toContain('chat-shared');
+    expect(explicit).toContain('isolated');
+  });
+
+  it('appends DESCRIPTION (the error first line) only with --desc', () => {
+    const agents = [row({ id: 'aaaa1111', error: 'node not found\n  at foo()' })];
+    expect(buildAgentTable(agents)[0]).not.toContain('DESCRIPTION');
+    const [header, dataRow] = buildAgentTable(agents, { desc: true });
+    expect(header).toContain('DESCRIPTION');
+    expect(dataRow).toContain('node not found');
+    expect(dataRow).not.toContain('at foo()');
+  });
+
+  it('appends CWD only with --cwd', () => {
+    const agents = [row({ id: 'aaaa1111', cwd: '/home/me/project' })];
+    expect(buildAgentTable(agents)[0]).not.toContain('CWD');
+    const [header, dataRow] = buildAgentTable(agents, { cwd: true });
+    expect(header).toContain('CWD');
+    expect(dataRow).toContain('/home/me/project');
+  });
+
+  it('composes --desc and --cwd, with DESCRIPTION before CWD', () => {
+    const [header] = buildAgentTable([row({ id: 'aaaa1111' })], { desc: true, cwd: true });
+    expect(header).toContain('DESCRIPTION');
+    expect(header).toContain('CWD');
+    expect(header.indexOf('DESCRIPTION')).toBeLessThan(header.indexOf('CWD'));
+  });
+
+  it('keeps errors visible without --desc via the STATUS cell and the remediation-hint block', () => {
+    const lines = buildAgentTable([
+      row({
+        id: 'aaaa1111-2222-3333-4444-555566667777',
+        runtimeStatus: 'error',
+        error: 'invalid environment',
+        errorCode: 'invalid_environment',
+      }),
+    ]);
+    expect(lines[0]).not.toContain('DESCRIPTION');
+    expect(lines[1]).toContain('error');
+    expect(lines.some((l) => l.includes('newio agent env edit aaaa1111'))).toBe(true);
   });
 });
 
