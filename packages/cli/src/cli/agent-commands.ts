@@ -14,6 +14,7 @@ import type {
   AgentErrorCode,
   AgentStatusInfo,
   AgentType,
+  SessionMode,
   UpdateAgentInput,
 } from '@newio/agent-engine';
 import { agentEnvFilePath, captureEnv, asEnvSyncMode, DEFAULT_ENV_SYNC_MODE } from '@newio/agent-engine';
@@ -23,16 +24,32 @@ import { resolveConfig, getDaemonPaths, stageSuffix, type Stage } from '../paths
 import { printApprovalUrl } from './qr.js';
 
 const AGENT_TYPES: readonly AgentType[] = ['claude-code', 'kiro-cli', 'codex', 'cursor', 'gemini', 'custom'];
+const SESSION_MODES: readonly SessionMode[] = ['chat-shared', 'isolated', 'shared'];
 
 /** Runtime statuses at which `agent start` is done waiting. */
 const TERMINAL_STATUSES = new Set(['running', 'error', 'stopped']);
 
 export const AGENT_TYPE_CHOICES: readonly string[] = AGENT_TYPES;
+export const SESSION_MODE_CHOICES: readonly string[] = SESSION_MODES;
+
+/** Help text for the `--session-mode` option. `chat-shared` is the shipped default; the others are experimental. */
+export const SESSION_MODE_DESCRIPTION =
+  'session mode (default: chat-shared) — chat-shared: DMs, group chats, and contact events share one ' +
+  'session, while each work session and cron job gets its own; isolated [experimental]: one session per ' +
+  'conversation; shared [experimental]: a single session across all events';
 
 function asAgentType(value: string): AgentType {
   const match = AGENT_TYPES.find((t) => t === value);
   if (!match) {
     throw new Error(`Invalid agent type "${value}". Expected one of: ${AGENT_TYPES.join(', ')}`);
+  }
+  return match;
+}
+
+function asSessionMode(value: string): SessionMode {
+  const match = SESSION_MODES.find((m) => m === value);
+  if (!match) {
+    throw new Error(`Invalid session mode "${value}". Expected one of: ${SESSION_MODES.join(', ')}`);
   }
   return match;
 }
@@ -216,6 +233,8 @@ export interface AddOptions {
   readonly command?: string;
   /** Args for `command` (commander collects repeated --arg into an array). */
   readonly arg?: readonly string[];
+  /** Session mode: chat-shared (default), or experimental isolated/shared. */
+  readonly sessionMode?: string;
   readonly envSync?: string;
 }
 
@@ -231,6 +250,8 @@ export interface UpdateOptions {
   /** Args for `command` (commander collects repeated --arg into an array). */
   readonly arg?: readonly string[];
   readonly username?: string;
+  /** Session mode: chat-shared (default), or experimental isolated/shared. */
+  readonly sessionMode?: string;
 }
 
 export async function agentList(stage: Stage): Promise<void> {
@@ -255,6 +276,7 @@ export async function agentAdd(stage: Stage, opts: AddOptions): Promise<void> {
       newioUsername: opts.username,
       acp: { cwd: opts.cwd ?? process.cwd(), ...launch },
       envVars,
+      ...(opts.sessionMode ? { sessionMode: asSessionMode(opts.sessionMode) } : {}),
     };
     return c.addAgent(input);
   });
@@ -358,6 +380,7 @@ export async function agentUpdate(stage: Stage, query: string, opts: UpdateOptio
     const updates: UpdateAgentInput = {
       ...(opts.name !== undefined ? { displayName: opts.name } : {}),
       ...(opts.username !== undefined ? { newioUsername: opts.username } : {}),
+      ...(opts.sessionMode !== undefined ? { sessionMode: asSessionMode(opts.sessionMode) } : {}),
       ...(acp !== undefined ? { acp } : {}),
     };
     await c.updateAgent(agentId, updates);
