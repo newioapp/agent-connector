@@ -26,6 +26,8 @@ export interface NewioMcpServerOptions {
   /** Hand context to another of the agent's sessions (share_context tool). The target absorbs it. */
   readonly shareContext: (convId: string, context: string) => void;
   readonly sessionMode: SessionMode;
+  /** Whether the agent has long-term memory enabled. When false, the memory tools are not registered. */
+  readonly memoryEnabled: boolean;
   /** Optional hook called before each tool invocation. */
   readonly onToolCall?: ToolCallHook;
 }
@@ -50,7 +52,7 @@ export class NewioMcpServer implements NewioMcpServerInterface {
       version: '0.1.0',
     });
 
-    const { app, initiateConversation, shareContext, sessionMode, onToolCall } = opts;
+    const { app, initiateConversation, shareContext, sessionMode, memoryEnabled, onToolCall } = opts;
 
     this.getCurrentConversationId = () => undefined;
     registerContactsTools(this.server, app, onToolCall);
@@ -67,7 +69,9 @@ export class NewioMcpServer implements NewioMcpServerInterface {
     );
     registerUsersTools(this.server, app, onToolCall);
     registerMediaTools(this.server, app, () => this.getCurrentConversationId(), onToolCall);
-    registerMemoryTools(this.server, app, onToolCall);
+    if (memoryEnabled) {
+      registerMemoryTools(this.server, app, onToolCall);
+    }
   }
 
   setCurrentConversationIdGetter(idGetter: IdGetter): void {

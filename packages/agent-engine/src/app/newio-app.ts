@@ -188,6 +188,8 @@ export class NewioApp implements NewioAppForAgent, NewioAppForMcp {
   private readonly downloadDir: string;
   private readonly activityThrottle: ActivityThrottle;
   private readonly cronScheduler: CronScheduler;
+  /** Long-term memory opt-in, read from account settings during init(). Default: opted out. */
+  private _memoryEnabled = false;
 
   private readonly eventHandlers: Partial<AppEventHandlers> = {};
   private liveSessionInfoHandler: LiveSessionInfoHandler = (request) =>
@@ -355,10 +357,26 @@ export class NewioApp implements NewioAppForAgent, NewioAppForMcp {
 
   async init(): Promise<void> {
     log.info('Loading initial data (contacts, conversations, requests)...');
-    await Promise.all([this.loadContacts(), this.loadConversations(), this.loadIncomingRequests()]);
+    await Promise.all([
+      this.loadContacts(),
+      this.loadConversations(),
+      this.loadIncomingRequests(),
+      this.loadSettings(),
+    ]);
     log.info(
       `Init complete. ${this.store.getAllContacts().length} contacts, ${this.store.getAllConversations().length} conversations, ${this.store.getIncomingRequests().length} incoming requests.`,
     );
+  }
+
+  /** Whether the agent uses long-term memory (read from account settings at init). Default: opted out. */
+  isMemoryEnabled(): boolean {
+    return this._memoryEnabled;
+  }
+
+  /** Fetch the agent's account settings to learn the memory opt-in. Throws to fail startup early. */
+  private async loadSettings(): Promise<void> {
+    const { settings } = await this.client.getMySettings({ agentId: this.identity.userId });
+    this._memoryEnabled = settings.memoryEnabled === true;
   }
 
   /** Disconnect WebSocket, cancel cron jobs, and dispose auth. */

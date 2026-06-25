@@ -78,6 +78,7 @@ export class EvalAgentInstance extends BaseAgentInstance {
         { username: this.mockApp.identity.username, displayName: this.mockApp.identity.displayName },
         this.mockApp.getOwnerInfo(),
         this.sessionMode,
+        this._memoryEnabled,
       ),
     );
     return new PromptManager([formatter], formatter);
@@ -111,6 +112,7 @@ export class EvalAgentInstance extends BaseAgentInstance {
         }
       },
       sessionMode: this.sessionMode,
+      memoryEnabled: this._memoryEnabled,
       onToolCall: (tool, args) => {
         this.onToolCall?.(tool, args);
       },

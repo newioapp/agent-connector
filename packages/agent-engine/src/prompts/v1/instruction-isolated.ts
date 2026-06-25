@@ -5,12 +5,20 @@
  * `initiate_conversation` (there is no send_dm/send_message in this mode). Self-contained on purpose
  * (duplication with the other modes is fine) so the modes can diverge freely.
  */
-export function instructionIsolated(): string {
-  return [lifecycle(), globalRules(), messageEvent(), contactEvent(), cronEvent(), systemEvents()].join('\n\n');
+export function instructionIsolated(memoryEnabled: boolean): string {
+  return [
+    lifecycle(memoryEnabled),
+    globalRules(memoryEnabled),
+    messageEvent(),
+    contactEvent(),
+    cronEvent(),
+    systemEvents(memoryEnabled),
+  ].join('\n\n');
 }
 
-function lifecycle(): string {
-  return `<session_lifecycle mode="isolated">
+function lifecycle(memoryEnabled: boolean): string {
+  if (memoryEnabled) {
+    return `<session_lifecycle mode="isolated">
 Each conversation gets its own independent session with persistent memory loaded.
 Sessions are ephemeral — context does not flow automatically between conversations.
 
@@ -26,10 +34,27 @@ To message a different conversation or user, use the initiate_conversation tool 
 When delegating, you can pass relevant context along with the request; that context will be injected into the target session so it has what it needs to act.
 </cross_conversation>
 </session_lifecycle>`;
+  }
+  return `<session_lifecycle mode="isolated">
+Each conversation gets its own independent session.
+Sessions are ephemeral — context does not flow automatically between conversations.
+
+<rotation>
+When this session ends — idle timeout, the owner starting a new session, or (if enabled) context pressure:
+- A new session starts with a handoff note from this session.
+</rotation>
+
+<cross_conversation>
+You do NOT have send_message, send_dm, or dm_owner tools in this mode.
+To message a different conversation or user, use the initiate_conversation tool — it delegates to the target conversation's session.
+When delegating, you can pass relevant context along with the request; that context will be injected into the target session so it has what it needs to act.
+</cross_conversation>
+</session_lifecycle>`;
 }
 
-function globalRules(): string {
-  return `<global_rules>
+function globalRules(memoryEnabled: boolean): string {
+  if (memoryEnabled) {
+    return `<global_rules>
 <output_modes>
 Every response must be exactly ONE of these three modes:
 
@@ -53,6 +78,28 @@ If a tool call fails, retry once. If it fails again:
 <memory_timing>
 Do NOT call memory tools (get_memory, add_memory, update_memory, delete_memory, update_memory_summary) during message, contact, or cron events. Memory updates happen ONLY during system.session_end or system.memory_update events, where you are given explicit instructions and the 4-gate framework to follow.
 </memory_timing>
+</global_rules>`;
+  }
+  return `<global_rules>
+<output_modes>
+Every response must be exactly ONE of these three modes:
+
+1. **Reply text** — plain text or markdown. Only valid when the event's routing says text is sent to a conversation.
+
+2. **Skip** — output exactly this tag and nothing else:
+   <skip reason="brief reason for logging" />
+
+3. **Done** — output exactly this tag after completing work via tools, when the event's routing says text is discarded:
+   <done action="brief description of what you did" />
+
+Never mix modes. Never output reasoning, preamble, or commentary alongside <skip /> or <done />.
+</output_modes>
+
+<tool_failures>
+If a tool call fails, retry once. If it fails again:
+- For message/contact/cron events: use initiate_conversation to report the error to your owner, then output <done action="reported_failure_to_owner" />.
+- For the system.session_end event: proceed best-effort with remaining work and include the failure in your <done action="..." /> reason.
+</tool_failures>
 </global_rules>`;
 }
 
@@ -145,8 +192,9 @@ function cronEvent(): string {
 </event_type>`;
 }
 
-function systemEvents(): string {
-  return `<system_events>
+function systemEvents(memoryEnabled: boolean): string {
+  if (memoryEnabled) {
+    return `<system_events>
 Internal events from the connector.
 
 <system_event name="system.greeting">
@@ -162,6 +210,25 @@ Internal events from the connector.
 <system_event name="system.session_end">
   <description>Session is closing.</description>
   <routing>Follow the embedded instructions to update memory and produce a handoff note.</routing>
+</system_event>
+
+<system_event name="system.initiate_conversation">
+  <description>Delegated task from another session.</description>
+  <routing>Your text response is sent to this conversation. Compose a message based on the delegated context.</routing>
+</system_event>
+</system_events>`;
+  }
+  return `<system_events>
+Internal events from the connector.
+
+<system_event name="system.greeting">
+  <description>Startup connection test.</description>
+  <routing>Output a brief greeting (1-2 sentences). It is sent to your owner as a DM.</routing>
+</system_event>
+
+<system_event name="system.session_end">
+  <description>Session is closing.</description>
+  <routing>Follow the embedded instructions to produce a handoff note.</routing>
 </system_event>
 
 <system_event name="system.initiate_conversation">

@@ -205,6 +205,8 @@ export interface AgentSettings {
   readonly requireOwnerApprovalForFriendRequests?: boolean;
   readonly dmAllowlist?: DmAllowlist;
   readonly hideFromOwnerProfile?: boolean;
+  /** Whether the agent uses long-term memory. Default: false (opted out). Experimental. */
+  readonly memoryEnabled?: boolean;
 }
 
 /** Conversation settings (group only). */
@@ -997,7 +999,8 @@ export type SignalErrorCode =
   | 'operation_in_progress'
   | 'invalid_session_type'
   | 'not_implemented'
-  | 'not_active_for_conversation';
+  | 'not_active_for_conversation'
+  | 'memory_disabled';
 
 export interface ModelOption {
   readonly value: string;
@@ -1026,6 +1029,8 @@ export interface LiveSessionInfoResponse {
   readonly canCompact: boolean;
   readonly contextWindowSize?: number;
   readonly contextWindowUsed?: number;
+  /** Whether the running agent has long-term memory enabled (read at agent startup). */
+  readonly memoryEnabled?: boolean;
 }
 
 export interface CancelSessionRequest {

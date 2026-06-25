@@ -306,6 +306,8 @@ export interface NewioAppForAgent {
 
   // ── Identity ──
   getOwnerInfo(): { readonly username: string; readonly displayName: string };
+  /** Whether the agent has long-term memory enabled (from account settings; read at startup). */
+  isMemoryEnabled(): boolean;
 
   // ── Lifecycle ──
   init(): Promise<void>;
@@ -438,6 +440,8 @@ export interface NewioAppForSession {
     options: ReadonlyArray<PermissionRequestOption>,
     conversationId?: string,
   ): Promise<string>;
+  /** Whether the agent has long-term memory enabled (read at startup). Gates memory injection. */
+  isMemoryEnabled(): boolean;
   loadMemoryForSession(conversationId?: string): Promise<LoadSessionMemoryResponse>;
   getHandoffNote(conversationId: string): Promise<string | null>;
   putHandoffNote(conversationId: string, note: string): Promise<void>;

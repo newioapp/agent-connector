@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { PromptFormatterImpl } from '../../src/prompt-formatter';
 import type { PromptFormatterIdentity, PromptFormatterOwner } from '../../src/prompt-formatter';
 import type { IncomingMessage, ContactEvent, CronTriggerEvent } from '../../src/app/index.js';
+import type { LoadSessionMemoryResponse } from '@newio/agent-sdk';
 
 function makeMsg(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
   return {
@@ -433,6 +434,61 @@ describe('PromptFormatterImpl', () => {
     it('extracts only the first handoff tag', () => {
       const pf = mockApp();
       expect(pf.extractHandoff('<handoff>First.</handoff> extra <handoff>Second.</handoff>')).toBe('First.');
+    });
+  });
+
+  describe('memory opt-out gating', () => {
+    function formatter(mode: 'isolated' | 'shared' | 'chat-shared', memoryEnabled: boolean): PromptFormatterImpl {
+      return new PromptFormatterImpl(defaultIdentity, defaultOwner, mode, memoryEnabled);
+    }
+
+    const memoryFixture: LoadSessionMemoryResponse = {
+      global: {
+        summary: null,
+        facts: [{ factId: 'g1', text: 'Owner likes brevity.', createdAt: 't', updatedAt: 't' }],
+      },
+      participants: {},
+      conversation: { summary: null, facts: [] },
+      topUsers: [],
+      topConversations: [],
+    };
+
+    for (const mode of ['isolated', 'shared', 'chat-shared'] as const) {
+      describe(`${mode} mode`, () => {
+        it('includes memory-timing rules and the memory_update event when enabled', () => {
+          const result = formatter(mode, true).buildNewioInstruction().prompt;
+          expect(result).toContain('<memory_timing>');
+          expect(result).toContain('system.memory_update');
+          expect(result).toContain('update memory and produce a handoff note');
+        });
+
+        it('omits memory-timing rules and the memory_update event when opted out', () => {
+          const result = formatter(mode, false).buildNewioInstruction().prompt;
+          expect(result).not.toContain('<memory_timing>');
+          expect(result).not.toContain('system.memory_update');
+          expect(result).not.toContain('Your memory is persisted automatically');
+          // The session lifecycle and handoff are unaffected.
+          expect(result).toContain('handoff note from this session');
+        });
+      });
+    }
+
+    it('session-end prompt includes the update_memory step only when enabled', () => {
+      expect(formatter('isolated', true).buildSessionEndPrompt()).toContain('<step name="update_memory">');
+      const optedOut = formatter('isolated', false).buildSessionEndPrompt();
+      expect(optedOut).not.toContain('<step name="update_memory">');
+      expect(optedOut).toContain('<step name="handoff">');
+      expect(optedOut).toContain('Complete this step:');
+    });
+
+    it('formatMemoryContext drops memory facts when opted out but keeps the handoff note', () => {
+      const enabled = formatter('isolated', true).formatMemoryContext(memoryFixture, 'pick up where we left off');
+      expect(enabled).toContain('Owner likes brevity.');
+      expect(enabled).toContain('pick up where we left off');
+
+      const optedOut = formatter('isolated', false).formatMemoryContext(memoryFixture, 'pick up where we left off');
+      expect(optedOut).not.toContain('Owner likes brevity.');
+      expect(optedOut).toContain('pick up where we left off');
     });
   });
 });

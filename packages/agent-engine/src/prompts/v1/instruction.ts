@@ -25,22 +25,32 @@ export interface InstructionProps {
   readonly sessionMode: SessionMode;
   /** Orchestration role — only consulted in chat-shared mode. Defaults to 'chat'. */
   readonly sessionRole?: SessionPromptRole;
+  /** When false (opted out), memory-timing rules and the memory_update event are omitted. */
+  readonly memoryEnabled: boolean;
   readonly customInstructions?: string;
 }
 
 export function instructionPrompt(props: InstructionProps): string {
-  const { username, displayName, ownerDisplayName, ownerUsername, sessionMode, sessionRole, customInstructions } =
-    props;
+  const {
+    username,
+    displayName,
+    ownerDisplayName,
+    ownerUsername,
+    sessionMode,
+    sessionRole,
+    memoryEnabled,
+    customInstructions,
+  } = props;
   const nameClause = displayName ? ` Your display name is "${displayName}".` : '';
 
   // The mode body — session lifecycle + global rules + per-event-type sections — lives in the
   // relevant instruction-{mode} file so the modes can diverge freely (some duplication is expected).
   const modeBody =
     sessionMode === 'chat-shared'
-      ? instructionChatShared(sessionRole ?? 'chat')
+      ? instructionChatShared(sessionRole ?? 'chat', memoryEnabled)
       : sessionMode === 'shared'
-        ? instructionShared()
-        : instructionIsolated();
+        ? instructionShared(memoryEnabled)
+        : instructionIsolated(memoryEnabled);
 
   const sections = [
     identity(username, nameClause, ownerDisplayName, ownerUsername),

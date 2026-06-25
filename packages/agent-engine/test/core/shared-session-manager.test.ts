@@ -49,6 +49,7 @@ function createMockEventProcessor(): SessionEventProcessor {
 function createMockApp(): NewioAppForSession {
   return {
     handlePermissionRequest: vi.fn().mockResolvedValue('allow'),
+    isMemoryEnabled: vi.fn().mockReturnValue(true),
     loadMemoryForSession: vi.fn().mockResolvedValue({
       global: { summary: null, facts: [] },
       participants: {},

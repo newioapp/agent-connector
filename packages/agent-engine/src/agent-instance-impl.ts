@@ -110,6 +110,12 @@ export abstract class BaseAgentInstance implements AgentInstance {
   private _sessionStore?: SessionStore;
   /** Socket path for the MCP UDS server. Set after auth in start(). */
   private _mcpSocketPath?: string;
+  /**
+   * Whether the agent uses long-term memory. Read once from the agent's account settings during
+   * start() (default: opted out) and held constant for the process lifetime. Gates the memory MCP
+   * tools and the memory prompt; a change takes effect only after the agent restarts.
+   */
+  protected _memoryEnabled = false;
 
   /** Inbound event buffer — events captured synchronously, routed serially. */
   protected readonly inbound: InboundEvent[] = [];
@@ -192,6 +198,9 @@ export abstract class BaseAgentInstance implements AgentInstance {
       this._mcpSocketPath = mcpSocketPath;
 
       await app.init();
+
+      this._memoryEnabled = app.isMemoryEnabled();
+      log.info(`${this.logTag} Long-term memory ${this._memoryEnabled ? 'enabled' : 'disabled (opted out)'}`);
 
       this._promptManager = await this.createPromptManager();
 
@@ -384,6 +393,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
       setStatus: (status, conversationId) => this.app.setStatus(status, conversationId),
       getConversationControls: (convId) => this.app.getConversationControls(convId),
       getConversationInfo: (convId) => this.app.getConversationInfo(convId),
+      isMemoryEnabled: () => this._memoryEnabled,
       loadMemoryForSession: (conversationId) => this.loadMemoryForSession(conversationId),
       getHandoffNote: (conversationId) => this.app.getHandoffNote(conversationId),
       putHandoffNote: (conversationId: string, note: string) => this.app.putHandoffNote(conversationId, note),
@@ -954,6 +964,7 @@ export class AgentInstanceImpl extends BaseAgentInstance {
       this.app.identity,
       this.app.getOwnerInfo(),
       resolveSessionMode(this.config.sessionMode),
+      this._memoryEnabled,
     );
     return new PromptManager([defaultPromptFormatter], defaultPromptFormatter);
   }
@@ -974,6 +985,7 @@ export class AgentInstanceImpl extends BaseAgentInstance {
         }
       },
       sessionMode: resolveSessionMode(this.config.sessionMode),
+      memoryEnabled: this._memoryEnabled,
     });
   }
 }

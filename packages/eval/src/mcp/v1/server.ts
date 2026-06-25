@@ -56,6 +56,8 @@ export interface NewioEvalMcpServerOptions {
   /** Hand context to another of the agent's sessions (chat-shared mode). The target absorbs it. */
   readonly shareContext: (convId: string, context: string) => void;
   readonly sessionMode: SessionMode;
+  /** Whether the agent has long-term memory enabled. When false, the memory tools are not registered. */
+  readonly memoryEnabled: boolean;
   /** Optional hook called before each tool invocation. */
   readonly onToolCall?: ToolCallHook;
 }
@@ -69,6 +71,7 @@ export class NewioEvalMcpServer implements NewioMcpServerInterface {
       initiateConversation: opts.initiateConversation,
       shareContext: opts.shareContext,
       sessionMode: opts.sessionMode,
+      memoryEnabled: opts.memoryEnabled,
       onToolCall: opts.onToolCall,
     });
   }

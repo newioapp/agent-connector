@@ -415,6 +415,9 @@ export class IsolatedSessionManager implements SessionManager {
 
   /** Handle update_memory signal — run the mid-session memory-update prompt. */
   async handleUpdateMemory(request: UpdateMemoryRequest): Promise<UpdateMemoryResponse> {
+    if (!this.app.isMemoryEnabled()) {
+      return { success: false, errorCode: 'memory_disabled', error: 'Memory is disabled for this agent' };
+    }
     const slot = this.getSlot(request.sessionType, request.externalReferenceId);
     if (!slot?.session) {
       return { success: false, errorCode: 'session_not_live', error: 'Session not found or not active' };
@@ -464,9 +467,10 @@ export class IsolatedSessionManager implements SessionManager {
         availableModes: [],
         canCancel: false,
         canCompact: false,
+        memoryEnabled: this.app.isMemoryEnabled(),
       });
     }
-    return Promise.resolve(slot.session.getLiveSessionInfo());
+    return Promise.resolve({ ...slot.session.getLiveSessionInfo(), memoryEnabled: this.app.isMemoryEnabled() });
   }
 
   /** Handle cancel session signal. */
