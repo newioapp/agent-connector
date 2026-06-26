@@ -628,6 +628,21 @@ describe('NewioWebSocket', () => {
 
       client.disconnect();
     });
+
+    it('surfaces the underlying handshake error instead of a generic connection error', async () => {
+      const mockWs = createMockWs();
+      const client = new NewioWebSocket({
+        url: 'wss://ws.test',
+        tokenProvider: () => 'test-token',
+        wsFactory: () => {
+          // The `ws` library reports an expired-token handshake as a 401 error event.
+          queueMicrotask(() => mockWs.onerror?.({ error: new Error('Unexpected server response: 401') }));
+          return mockWs;
+        },
+      });
+
+      await expect(client.connect()).rejects.toThrow('connection error: Unexpected server response: 401');
+    });
   });
 
   describe('proactive reconnect', () => {
