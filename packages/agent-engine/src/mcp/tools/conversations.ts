@@ -11,6 +11,16 @@ const structured = (obj: object) => ({
   structuredContent: obj as Record<string, unknown>,
 });
 
+/**
+ * After a conversation/member write returns, the backend still needs a moment to finalize member
+ * subscriptions. A message sent immediately can land before a freshly added agent is provisioned
+ * and miss its initial context. Settle here — only on the mutation tools, only after the write
+ * succeeds — to give provisioning time to catch up. A fixed timer is a probabilistic mitigation;
+ * awaiting an actual readiness signal is the longer-term fix (issue #269).
+ */
+export const WRITE_SETTLE_DELAY_MS = 3000;
+const settleAfterWrite = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, WRITE_SETTLE_DELAY_MS));
+
 export function registerConversationsTools(server: McpServer, app: NewioAppForMcp, onToolCall?: ToolCallHook): void {
   // ── list_conversations ──
   server.registerTool(
@@ -52,6 +62,7 @@ export function registerConversationsTools(server: McpServer, app: NewioAppForMc
     async ({ username }) => {
       onToolCall?.('create_dm', { username });
       const conversationId = await app.getOrCreateDm(username);
+      await settleAfterWrite();
       return structured({ conversationId });
     },
   );
@@ -73,6 +84,7 @@ export function registerConversationsTools(server: McpServer, app: NewioAppForMc
     async ({ name, usernames }) => {
       onToolCall?.('create_work_session', { name, usernames });
       const conversationId = await app.createWorkSession(name, usernames);
+      await settleAfterWrite();
       return structured({ conversationId });
     },
   );
@@ -94,6 +106,7 @@ export function registerConversationsTools(server: McpServer, app: NewioAppForMc
     async ({ name, usernames }) => {
       onToolCall?.('create_group', { name, usernames });
       const conversationId = await app.createGroup(name, usernames);
+      await settleAfterWrite();
       return structured({ conversationId });
     },
   );
@@ -179,6 +192,7 @@ export function registerConversationsTools(server: McpServer, app: NewioAppForMc
     async ({ conversationId, usernames }) => {
       onToolCall?.('add_members', { conversationId, usernames });
       await app.addMembersByUsername(conversationId, usernames);
+      await settleAfterWrite();
       return text(`Added ${usernames.join(', ')} to conversation`);
     },
   );
@@ -196,6 +210,7 @@ export function registerConversationsTools(server: McpServer, app: NewioAppForMc
     async ({ conversationId, username }) => {
       onToolCall?.('remove_member', { conversationId, username });
       await app.removeMemberByUsername(conversationId, username);
+      await settleAfterWrite();
       return text(`Removed @${username} from conversation`);
     },
   );

@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { NewioMcpServer, type MessagingProfile } from '../../src/mcp/server.js';
+import { WRITE_SETTLE_DELAY_MS } from '../../src/mcp/tools/conversations.js';
 import type { NewioApp, ContactSummary, ConversationSummary, FriendRequestSummary } from '../../src/app/index.js';
 
 /** Representative per-session profiles (see resolveMessagingProfile in agent-instance-impl). */
@@ -642,6 +643,96 @@ describe('MCP Server', () => {
       username: 'alice',
       conversationId: undefined,
     });
+  });
+});
+
+describe('write settle delay (issue #269)', () => {
+  // After a successful conversation/member write the tool settles for WRITE_SETTLE_DELAY_MS so the
+  // backend can finalize member subscriptions before a subsequent send_message — otherwise a
+  // freshly added agent can miss the message in its initial context.
+
+  /**
+   * Drive a mutation tool under fake timers: assert the write ran but the tool hasn't returned
+   * before the delay, then that it returns once the delay elapses.
+   */
+  async function expectSettles(
+    toolName: string,
+    args: Record<string, unknown>,
+    profile: MessagingProfile = ISOLATED_PROFILE,
+  ): Promise<void> {
+    vi.useFakeTimers();
+    try {
+      const app = mockApp();
+      const client = await createConnectedClient(app, profile);
+      let settled = false;
+      const call = client.callTool({ name: toolName, arguments: args }).finally(() => {
+        settled = true;
+      });
+
+      // The mock write resolves immediately; only the settle timer keeps the tool pending.
+      await vi.advanceTimersByTimeAsync(WRITE_SETTLE_DELAY_MS - 1);
+      expect(settled).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await call;
+      expect(settled).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it('uses a hard-coded 3-second delay', () => {
+    expect(WRITE_SETTLE_DELAY_MS).toBe(3000);
+  });
+
+  it('create_dm settles after the write', async () => {
+    await expectSettles('create_dm', { username: 'alice' }, SHARED_PROFILE);
+  });
+
+  it('create_work_session settles after the write', async () => {
+    await expectSettles('create_work_session', { name: 'Sprint', usernames: ['alice'] });
+  });
+
+  it('create_group settles after the write', async () => {
+    await expectSettles('create_group', { name: 'Team', usernames: ['alice'] });
+  });
+
+  it('add_members settles after the write', async () => {
+    await expectSettles('add_members', { conversationId: 'conv-1', usernames: ['alice'] });
+  });
+
+  it('remove_member settles after the write', async () => {
+    await expectSettles('remove_member', { conversationId: 'conv-1', username: 'alice' });
+  });
+
+  it('does not settle when the write fails (error path returns without the delay)', async () => {
+    vi.useFakeTimers();
+    try {
+      const app = mockApp();
+      (app.addMembersByUsername as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('boom'));
+      const client = await createConnectedClient(app);
+      // No timer advance: a failed write must surface immediately, with no settle delay.
+      const result = await client.callTool({
+        name: 'add_members',
+        arguments: { conversationId: 'conv-1', usernames: ['alice'] },
+      });
+      expect(result.isError).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not delay send_message (hot path)', async () => {
+    vi.useFakeTimers();
+    try {
+      const app = mockApp();
+      const client = await createConnectedClient(app, SHARED_PROFILE);
+      // No timer advance: send_message must return without any settle delay.
+      await client.callTool({ name: 'send_message', arguments: { conversationId: 'conv-1', text: 'hi' } });
+      expect(app.sendMessage).toHaveBeenCalledWith('conv-1', 'hi', undefined);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
