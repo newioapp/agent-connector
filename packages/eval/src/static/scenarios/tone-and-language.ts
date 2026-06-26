@@ -218,7 +218,7 @@ export const toneAndLanguageScenarios: readonly EvalScenario[] = [
       {
         type: 'tool_called',
         eventIndex: 0,
-        tool: 'send_dm',
+        tool: 'send_message',
         description: 'Agent relays greeting to owner',
       },
       {
@@ -227,7 +227,7 @@ export const toneAndLanguageScenarios: readonly EvalScenario[] = [
         context:
           'The agent has pre-loaded memory stating: "Marcus speaks English" and "Priya speaks Mandarin Chinese".',
         criteria:
-          'The agent calls send_dm to the owner (marcus42) with a message in English, relaying that Priya wants to know if he is free today.',
+          "The agent calls send_message to the owner (marcus42)'s DM with a message in English, relaying that Priya wants to know if he is free today.",
         minScore: 4,
         description: 'Relay to owner is in English',
       },
@@ -235,7 +235,7 @@ export const toneAndLanguageScenarios: readonly EvalScenario[] = [
       {
         type: 'tool_called',
         eventIndex: 1,
-        tool: 'send_dm',
+        tool: 'send_message',
         description: 'Agent sends question back to Priya',
       },
       {
@@ -244,7 +244,7 @@ export const toneAndLanguageScenarios: readonly EvalScenario[] = [
         context:
           'The agent has pre-loaded memory stating: "Marcus speaks English" and "Priya speaks Mandarin Chinese".',
         criteria:
-          'The agent calls send_dm to Priya (priya7k) with a message in Chinese (Mandarin), asking about the online conference start time.',
+          "The agent calls send_message to Priya (priya7k)'s DM with a message in Chinese (Mandarin), asking about the online conference start time.",
         minScore: 4,
         description: 'Relay to Priya is in Chinese',
       },

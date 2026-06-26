@@ -278,7 +278,7 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
   {
     id: 'tool-create-dm-isolated',
     name: 'create_dm — resolve DM conversation before delegating (isolated)',
-    description: 'In isolated mode, agent needs create_dm to get conversationId before initiate_conversation.',
+    description: 'In isolated mode, agent needs create_dm to get a conversationId before share_context.',
     area: 'tool_usage',
     sessionMode: 'isolated',
     setup: {
@@ -307,8 +307,8 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
       },
       {
         type: 'tool_called',
-        tool: 'initiate_conversation',
-        description: 'Should delegate message delivery to target session',
+        tool: 'share_context',
+        description: "Should hand the message to the target conversation's session via share_context",
       },
     ],
   },
@@ -575,8 +575,8 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
 
   {
     id: 'tool-send-dm-shared',
-    name: 'send_dm — message another user directly (shared)',
-    description: 'In shared mode, agent uses send_dm to message someone by username.',
+    name: 'DM a user directly (shared)',
+    description: 'In shared mode, agent uses create_dm to resolve the DM, then send_message.',
     area: 'tool_usage',
     sessionMode: 'shared',
     setup: {
@@ -599,11 +599,11 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
     expectations: [
       {
         type: 'tool_called',
-        tool: 'send_dm',
+        tool: 'create_dm',
         argsContain: { username: 'priya7k' },
-        description: 'Should DM Priya directly',
+        description: "Should resolve Priya's DM conversation",
       },
-      { type: 'tool_not_called', tool: 'send_message', description: 'Should not use send_message for a DM' },
+      { type: 'tool_called', tool: 'send_message', description: 'Should deliver the message to the resolved DM' },
     ],
   },
 
@@ -628,19 +628,18 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
     expectations: [
       { type: 'no_skip', eventIndex: 0, description: 'Agent should respond to a DM' },
       { type: 'tool_not_called', tool: 'send_message', description: 'Should not double-send via tool' },
-      { type: 'tool_not_called', tool: 'send_dm', description: 'Should not double-send via send_dm' },
       {
         type: 'tool_not_called',
-        tool: 'initiate_conversation',
-        description: 'Should not delegate for current conversation',
+        tool: 'share_context',
+        description: 'Should not delegate for the current conversation',
       },
     ],
   },
 
   {
     id: 'tool-initiate-conversation-isolated',
-    name: 'initiate_conversation — delegate to another session (isolated)',
-    description: 'In isolated mode, agent delegates cross-conversation messaging via initiate_conversation.',
+    name: 'share_context — delegate to another session (isolated)',
+    description: 'In isolated mode, agent delegates cross-conversation messaging via share_context.',
     area: 'tool_usage',
     sessionMode: 'isolated',
     setup: {
@@ -667,12 +666,15 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
     expectations: [
       {
         type: 'tool_called',
-        tool: 'initiate_conversation',
+        tool: 'share_context',
         argsContain: { conversationId: teamChatConvId },
-        description: 'Should delegate to target conversation session',
+        description: 'Should hand off to the Team Chat conversation session',
       },
-      { type: 'tool_not_called', tool: 'send_message', description: 'send_message unavailable in isolated mode' },
-      { type: 'tool_not_called', tool: 'send_dm', description: 'send_dm unavailable in isolated mode' },
+      {
+        type: 'tool_not_called',
+        tool: 'send_message',
+        description: 'Team Chat is a different conversation — must use share_context, not send_message',
+      },
     ],
   },
 
@@ -1099,7 +1101,7 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
     id: 'tool-multi-event-coordination-shared',
     name: 'Multi-tool: Coordinate a meeting across contacts (shared)',
     description:
-      'Owner asks agent to find a person, check their profile, then message them. Requires search → profile → send_dm chain.',
+      'Owner asks agent to message each contact. Requires list_contacts → create_dm + send_message per contact.',
     area: 'tool_usage',
     sessionMode: 'shared',
     setup: {
@@ -1126,16 +1128,17 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
       { type: 'tool_called', tool: 'list_contacts', description: 'Should enumerate contacts first' },
       {
         type: 'tool_called',
-        tool: 'send_dm',
+        tool: 'create_dm',
         argsContain: { username: 'priya7k' },
-        description: 'Should DM Priya about the social',
+        description: "Should resolve Priya's DM about the social",
       },
       {
         type: 'tool_called',
-        tool: 'send_dm',
+        tool: 'create_dm',
         argsContain: { username: 'jleon88' },
-        description: 'Should DM Jorge about the social',
+        description: "Should resolve Jorge's DM about the social",
       },
+      { type: 'tool_called', tool: 'send_message', description: 'Should deliver the invites via send_message' },
     ],
   },
 
@@ -1387,7 +1390,7 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
     id: 'tool-multi-cross-conv-isolated',
     name: 'Multi-tool: Cross-conversation relay with context (isolated)',
     description:
-      'In isolated mode, agent must create_dm + initiate_conversation with rich context to relay information between conversations.',
+      'In isolated mode, agent must create_dm + share_context with rich context to relay information between conversations.',
     area: 'tool_usage',
     sessionMode: 'isolated',
     setup: {
@@ -1425,8 +1428,8 @@ export const toolUsageScenarios: readonly EvalScenario[] = [
       },
       {
         type: 'tool_called',
-        tool: 'initiate_conversation',
-        description: 'Should delegate with context about the API info',
+        tool: 'share_context',
+        description: 'Should hand off with context about the API info via share_context',
       },
     ],
   },

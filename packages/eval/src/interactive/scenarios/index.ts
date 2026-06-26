@@ -15,7 +15,7 @@ export { sessionRotationShared } from './session-rotation-shared.js';
 export { sessionRotationIsolated } from './session-rotation-isolated.js';
 export { multiPersonaGroupPressure } from './multi-persona-group-pressure.js';
 export { sharedSessionPmCoordination } from './shared-session-pm-coordination.js';
-export { initiateConversationIsolated } from './initiate-conversation-isolated.js';
+export { shareContextIsolated } from './share-context-isolated.js';
 export { launchCoordinationChatShared } from './launch-coordination-chat-shared.js';
 
 import { smokeTest } from './smoke-test.js';
@@ -30,7 +30,7 @@ import { sessionRotationShared } from './session-rotation-shared.js';
 import { sessionRotationIsolated } from './session-rotation-isolated.js';
 import { multiPersonaGroupPressure } from './multi-persona-group-pressure.js';
 import { sharedSessionPmCoordination } from './shared-session-pm-coordination.js';
-import { initiateConversationIsolated } from './initiate-conversation-isolated.js';
+import { shareContextIsolated } from './share-context-isolated.js';
 import { launchCoordinationChatShared } from './launch-coordination-chat-shared.js';
 
 export const allInteractiveScenarios: readonly InteractiveScenario[] = [
@@ -46,6 +46,6 @@ export const allInteractiveScenarios: readonly InteractiveScenario[] = [
   sessionRotationIsolated,
   multiPersonaGroupPressure,
   sharedSessionPmCoordination,
-  initiateConversationIsolated,
+  shareContextIsolated,
   launchCoordinationChatShared,
 ];

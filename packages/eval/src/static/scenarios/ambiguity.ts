@@ -79,8 +79,8 @@ export const ambiguityScenarios: readonly EvalScenario[] = [
     ],
     expectations: [
       { type: 'no_skip', eventIndex: 0, description: 'Agent responds to DM' },
-      { type: 'tool_not_called', tool: 'send_dm', description: 'Should not guess and send to a random person' },
       { type: 'tool_not_called', tool: 'send_message', description: 'Should not guess and send' },
+      { type: 'tool_not_called', tool: 'share_context', description: 'Should not delegate to a guessed person' },
       {
         type: 'llm_judge',
         eventIndex: 0,

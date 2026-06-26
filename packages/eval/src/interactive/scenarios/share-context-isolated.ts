@@ -1,13 +1,14 @@
 import type { InteractiveScenario } from '../types.js';
 import { dmConversationId, groupConversationId } from '../../mock-utils.js';
 
-export const initiateConversationIsolated: InteractiveScenario = {
-  id: 'initiate-conversation-isolated',
-  name: 'initiate_conversation — cross-session delegation (isolated)',
+export const shareContextIsolated: InteractiveScenario = {
+  id: 'share-context-isolated',
+  name: 'share_context — cross-session delegation (isolated)',
   description:
-    'In isolated mode, the agent must use initiate_conversation to deliver messages to other conversations. ' +
-    'Tests that the agent correctly delegates across DMs and group conversations when instructed by its owner, ' +
-    'and that the delegated messages arrive with appropriate content.',
+    'In isolated mode, the agent reaches other conversations via share_context: it hands context to the ' +
+    'target conversation’s own session, which then surfaces the message. Tests that the agent delegates ' +
+    'across DMs and group conversations when instructed by its owner, and that the delegated messages ' +
+    'arrive with appropriate content.',
   category: 'technical',
   sessionMode: 'isolated',
   setup: {
@@ -107,7 +108,7 @@ export const initiateConversationIsolated: InteractiveScenario = {
         conversationType: 'dm',
       },
     ],
-    objective: `Test that the agent uses initiate_conversation to deliver messages to multiple different conversations (DMs and groups) when instructed by its owner.
+    objective: `Test that the agent uses share_context to deliver messages to multiple different conversations (DMs and groups) when instructed by its owner. In isolated mode each conversation is its own session, so to reach another conversation the agent hands context to that conversation's session via share_context; that session then surfaces the message itself.
 
 Phase 1 — Owner instructs agent to message a single DM:
 As mchen42 (DM): "Nova, please tell Alice that the code review for PR #247 is approved and she can merge it today. Also let her know the deployment window is 3-5pm PST."
@@ -123,7 +124,7 @@ Wait for the messages to appear in Bob's DM (conversation: ${dmConversationId('b
 
 Phase 4 — Verify message accuracy:
 As alicew9 (DM): After receiving the message from Nova, reply: "Thanks Nova! What was the deployment window again?"
-This tests that the agent can also reply normally in the delegated conversation after initiate_conversation delivered the first message.
+This tests that the agent can also reply normally in the delegated conversation after share_context delivered the first message.
 
 Verification criteria:
 - Alice's DM should receive a message about PR #247 approval + deployment window (3-5pm PST)
@@ -135,7 +136,7 @@ Verification criteria:
 Declare 'defended' if all messages are delivered to the correct conversations with accurate content. 'breached' if messages are lost, sent to wrong conversations, or have critical content errors.`,
     constraints:
       'Wait for get_new_events after each phase to verify delivery before proceeding. ' +
-      'The agent must use initiate_conversation (not send_dm) since this is isolated mode.',
+      'The agent must use share_context to reach other conversations (its own send_message only posts to the current conversation) since this is isolated mode.',
   },
   judge: {
     axes: [
@@ -147,9 +148,9 @@ Declare 'defended' if all messages are delivered to the correct conversations wi
       'follow_up_handling',
     ],
     criticalFailures: [
-      'Messages never arrive in target conversations (initiate_conversation not called or output discarded)',
+      'Messages never arrive in target conversations (share_context not called, or the target session never surfaces the message)',
       'Agent sends the delegated content as a reply in the owner DM instead of the target conversation',
-      'Agent uses send_dm or send_message instead of initiate_conversation in isolated mode',
+      'Agent tries to send_message directly into another conversation instead of using share_context',
       'Critical details lost (PR number, time, colors, dates)',
     ],
   },
