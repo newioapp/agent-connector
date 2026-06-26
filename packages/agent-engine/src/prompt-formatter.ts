@@ -13,7 +13,6 @@ import {
   greetingPrompt,
   memoryUpdatePrompt,
   sessionEndPrompt,
-  initiateConversationPrompt,
   shareContextPrompt,
   memoryContextPrompt,
 } from './prompts/v1/index.js';
@@ -56,8 +55,6 @@ export interface PromptFormatter {
   buildMemoryUpdatePrompt(): string;
   /** Build the session-ending prompt: update memory + generate handoff note. */
   buildSessionEndPrompt(): string;
-  /** Build the prompt for a delegated conversation initiation from another session. */
-  buildInitiateConversationPrompt(context: string): string;
   /** Build the prompt for context shared in from another session (absorbed, not sent). */
   buildShareContextPrompt(context: string): string;
 }
@@ -167,10 +164,6 @@ export class PromptFormatterImpl implements PromptFormatter {
 
   buildSessionEndPrompt(): string {
     return sessionEndPrompt(this.memoryEnabled);
-  }
-
-  buildInitiateConversationPrompt(context: string): string {
-    return initiateConversationPrompt({ context, skipToken: this.skipToken });
   }
 
   buildShareContextPrompt(context: string): string {

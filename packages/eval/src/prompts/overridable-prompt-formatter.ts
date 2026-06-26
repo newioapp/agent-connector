@@ -27,7 +27,6 @@ export interface PromptOverrides {
     customInstructions?: string,
   ) => Instruction;
   readonly buildShareContextPrompt?: (base: PromptFormatter, context: string) => string;
-  readonly buildInitiateConversationPrompt?: (base: PromptFormatter, context: string) => string;
 }
 
 export class OverridablePromptFormatter implements PromptFormatter {
@@ -84,12 +83,6 @@ export class OverridablePromptFormatter implements PromptFormatter {
 
   buildSessionEndPrompt(): string {
     return this.base.buildSessionEndPrompt();
-  }
-
-  buildInitiateConversationPrompt(context: string): string {
-    return this.overrides.buildInitiateConversationPrompt
-      ? this.overrides.buildInitiateConversationPrompt(this.base, context)
-      : this.base.buildInitiateConversationPrompt(context);
   }
 
   buildShareContextPrompt(context: string): string {

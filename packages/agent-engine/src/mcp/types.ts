@@ -145,7 +145,6 @@ export interface NewioAppForMcp {
     text?: string,
     opts?: { filePaths?: readonly string[]; metadata?: Record<string, unknown>; visibleTo?: readonly string[] },
   ): Promise<void>;
-  sendDm(username: string, text: string, filePaths?: readonly string[]): Promise<void>;
   listMessages(conversationId: string, limit?: number, beforeMessageId?: string): Promise<McpListMessagesResult>;
   downloadAttachment(conversationId: string, s3Key: string, fileName: string): Promise<string>;
 

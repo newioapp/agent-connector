@@ -285,14 +285,16 @@ export type PermissionHandler = (
 ) => Promise<string>;
 
 /**
- * Session mode controls how runtime sessions are partitioned and which messaging tools are available:
- * - 'isolated': One session per conversation. Uses `initiate_conversation` for cross-conversation
- *   delegation. `send_dm` and `dm_owner` are blocked.
- * - 'shared': Single session serves all conversations. Uses `send_dm` and `dm_owner` directly.
- *   `initiate_conversation` is not available.
- * - 'chat-shared': DMs, group chats, and contact events share ONE session (like 'shared'); each
- *   work session (temp_group) and each cron job gets its OWN session (like 'isolated'). Uses
- *   `send_dm`/`send_message` plus `share_context` for cross-session context hand-off.
+ * Session mode controls how runtime sessions are partitioned. A session may `send_message` only into
+ * the conversation(s) it owns; reaching any other conversation goes through `share_context`.
+ * - 'isolated': One session per conversation. `send_message` targets the current conversation;
+ *   `share_context` reaches a peer conversation's session. Contact/cron sessions own no conversation.
+ * - 'shared': Single session serves all conversations. `send_message` takes an explicit conversationId;
+ *   `share_context` is not needed (one session owns everything).
+ * - 'chat-shared': DMs, group chats, and contact events share ONE chat session; each work session
+ *   (temp_group) and each cron job gets its OWN session. The chat session is the hub — explicit-id
+ *   `send_message` (work sessions excluded) plus `share_context` to brief a spoke; work-session spokes
+ *   `send_message` into themselves and `share_context` back to the hub.
  */
 export type SessionMode = 'isolated' | 'shared' | 'chat-shared';
 
@@ -395,7 +397,6 @@ export type InboundEvent =
   | { readonly type: 'message'; readonly msg: IncomingMessage }
   | { readonly type: 'contact'; readonly event: ContactEvent }
   | { readonly type: 'cron'; readonly event: CronTriggerEvent }
-  | { readonly type: 'initiate_conversation'; readonly conversationId: string; readonly context: string }
   | { readonly type: 'share_context'; readonly conversationId: string; readonly context: string };
 
 export interface ApplySessionConfigUpdateRequest {

@@ -1,117 +1,159 @@
 /**
  * Messaging tools — thin MCP wrappers over NewioApp messaging methods.
+ *
+ * What's exposed is decided per session by a {@link MessagingProfile}, not by the agent-wide session
+ * mode: a session can only write to the conversation(s) it is responsible for. A session that maps 1:1
+ * to a conversation (isolated conversation session, chat-shared work session) gets a `send_message`
+ * that takes NO conversationId — it always targets that session's conversation. Multi-conversation
+ * sessions (chat-shared chat hub, shared) keep an explicit-conversationId `send_message`. To reach a
+ * conversation owned by a DIFFERENT session, a session uses `share_context` instead (the owning session
+ * surfaces the message), which keeps that session's visibility complete.
  */
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { IdGetter, NewioAppForMcp, ToolCallHook } from '../types';
-import type { SessionMode } from '../../types';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const json = (obj: unknown) => text(JSON.stringify(obj, null, 2));
+const error = (t: string) => ({ content: [{ type: 'text' as const, text: t }], isError: true });
+
+/**
+ * How `send_message` is exposed to a session:
+ * - 'none'              — not registered (cron / contact sessions own no conversation).
+ * - 'current'           — no conversationId arg; always sends to this session's own conversation.
+ * - 'explicit'          — takes a conversationId (multi-conversation session).
+ * - 'explicit-guarded'  — takes a conversationId but rejects work sessions (temp_group), which belong
+ *                          to their own session and must be reached via share_context.
+ */
+export type SendMessageMode = 'none' | 'current' | 'explicit' | 'explicit-guarded';
+
+/**
+ * How `share_context` is exposed to a session:
+ * - 'none'      — not registered (shared mode: a single session owns everything, nothing to hand off).
+ * - 'explicit'  — takes a target conversationId (peer hand-off / hub → spoke).
+ * - 'to-hub'    — no conversationId arg; always hands to the chat hub (chat-shared spoke → hub).
+ */
+export type ShareContextMode = 'none' | 'explicit' | 'to-hub';
+
+export interface MessagingProfile {
+  readonly sendMessage: SendMessageMode;
+  readonly shareContext: ShareContextMode;
+}
 
 export function registerMessagingTools(
   server: McpServer,
   app: NewioAppForMcp,
-  initiateConversation: (convId: string, context: string) => void,
   shareContext: (convId: string, context: string) => void,
   getCurrentConversationId: IdGetter,
-  sessionMode: SessionMode,
+  profile: MessagingProfile,
+  /** For shareContext 'to-hub': the chat hub (owner DM) conversation the context is handed to. */
+  hubConversationId: string | undefined,
   onToolCall?: ToolCallHook,
 ): void {
-  if (sessionMode === 'isolated') {
+  const filePathsSchema = z
+    .array(z.string())
+    .max(5)
+    .optional()
+    .describe('Optional local file paths to attach (max 5, absolute or relative)');
+
+  if (profile.sendMessage === 'current') {
     server.registerTool(
-      'initiate_conversation',
+      'send_message',
       {
         description:
-          "Delegate a task to another conversation's session. Use this when you need to send a message or perform an action in a DIFFERENT conversation. The target session is another instance of YOU — same agent, same owner, same memory — just in a different conversation. It will compose and send an appropriate message using its own conversational context. This is fire-and-forget — you will not receive a response. Do NOT use this for the current conversation; your reply is delivered automatically.",
+          'Send a message into THIS conversation — the one this session is responsible for, optionally with file attachments (max 5). Use @username to mention members, @everyone to notify all, or @here to notify online members. When you are replying to a message, your reply is already delivered automatically — only use this to send an ADDITIONAL message, or to speak up after absorbing context from another session (system.share_context), where your text reply is NOT auto-sent.',
         inputSchema: {
-          conversationId: z.string().describe('Conversation ID of the target conversation to delegate to'),
-          context: z
-            .string()
-            .describe(
-              "What you want communicated and why. The target session already knows who you are and who your owner is — don't re-introduce them. Focus on: what to say, who requested it (e.g. 'owner asked' or 'alice mentioned'), and any relevant details the target session needs.",
-            ),
+          text: z.string().describe('Message text (supports markdown)'),
+          filePaths: filePathsSchema,
         },
       },
-      ({ conversationId, context }) => {
-        onToolCall?.('initiate_conversation', { conversationId, context });
-        if (getCurrentConversationId() === conversationId) {
-          return text("Can't initiate the current conversation — your reply is delivered automatically.");
+      async ({ text: msgText, filePaths }) => {
+        onToolCall?.('send_message', { text: msgText, filePaths });
+        const conversationId = getCurrentConversationId();
+        if (!conversationId) {
+          return error('No active conversation for this session — cannot send a message right now.');
         }
-        initiateConversation(conversationId, context);
-        return text('Delegated to target conversation session.');
+        await app.sendMessage(conversationId, msgText, filePaths ? { filePaths } : undefined);
+        return text('Message sent');
+      },
+    );
+  } else if (profile.sendMessage === 'explicit' || profile.sendMessage === 'explicit-guarded') {
+    const guarded = profile.sendMessage === 'explicit-guarded';
+    server.registerTool(
+      'send_message',
+      {
+        description:
+          'Send a message to a group chat or DM you are responsible for, optionally with file attachments (max 5). Use @username to mention members, @everyone to notify all, or @here to notify online members. ⚠️ Only use this for a DIFFERENT conversation — if you are replying to the current conversation, your reply is delivered automatically (using this would send it twice). To reach a work session, use share_context instead (it belongs to its own session).',
+        inputSchema: {
+          conversationId: z.string().describe('Conversation ID to send the message to'),
+          text: z.string().describe('Message text (supports markdown)'),
+          filePaths: filePathsSchema,
+        },
+      },
+      async ({ conversationId, text: msgText, filePaths }) => {
+        onToolCall?.('send_message', { conversationId, text: msgText, filePaths });
+        if (getCurrentConversationId() === conversationId) {
+          return error("Can't send to the current conversation — your reply is delivered automatically.");
+        }
+        if (guarded) {
+          const info = await app.getConversationInfo(conversationId);
+          if (info.type === 'temp_group') {
+            return error(
+              'That is a work session, handled by its own session. Use share_context to hand it the message instead.',
+            );
+          }
+        }
+        await app.sendMessage(conversationId, msgText, filePaths ? { filePaths } : undefined);
+        return text('Message sent');
       },
     );
   }
 
-  if (sessionMode === 'chat-shared') {
+  if (profile.shareContext === 'explicit') {
     server.registerTool(
       'share_context',
       {
         description:
-          'Share context with another of your own sessions, identified by its conversationId. Works in either direction: from your chat session to a work session you just created (call create_work_session first) to brief it on why it exists and the goal, OR from a work session back to your main chat conversation (e.g. to report progress or a result for your owner). The target session is another instance of YOU — same agent, same owner, same memory — running in its own context window. This is fire-and-forget — you will NOT receive a response, and it does NOT send a user-visible message by itself. Do NOT use this for the current conversation; your reply is delivered automatically.',
+          "Hand context to another of your own sessions, identified by its conversationId — e.g. brief a work session you just created (call create_work_session first) on why it exists and the goal, or pass a request to a conversation handled by a different session. The target is another instance of YOU — same agent, owner, and memory — in its own context window. Fire-and-forget: you get NO response, and it does NOT post a user-visible message by itself. The target session decides whether to surface anything (it must send_message explicitly). Don't use this for the current conversation; your reply is delivered automatically.",
         inputSchema: {
-          conversationId: z.string().describe('Conversation ID of the target session to share context with'),
+          conversationId: z.string().describe('Conversation ID of the target session to hand context to'),
           context: z
             .string()
             .describe(
-              'The context to hand to the target session — what it should know and why. The target already knows who you are and who your owner is; focus on the task, goal, who requested it, and any details it needs to act.',
+              'The context to hand over — what the target should know and why. It already knows who you are and who your owner is; focus on the task, goal, who requested it, and any details it needs to act.',
             ),
         },
       },
       ({ conversationId, context }) => {
         onToolCall?.('share_context', { conversationId, context });
         if (getCurrentConversationId() === conversationId) {
-          return text("Can't share context with the current conversation — your reply is delivered automatically.");
+          return error("Can't share context with the current conversation — your reply is delivered automatically.");
         }
         shareContext(conversationId, context);
         return text('Context shared with the target session.');
       },
     );
-  }
-
-  if (sessionMode === 'shared' || sessionMode === 'chat-shared') {
+  } else if (profile.shareContext === 'to-hub') {
     server.registerTool(
-      'send_message',
+      'share_context',
       {
         description:
-          'Send a message to a group chat or work session, optionally with file attachments (max 5). Use @username to mention members, @everyone to notify all, or @here to notify online members. \u26a0\ufe0f Only use this to send messages to a DIFFERENT conversation. If you are responding to a message in the current conversation, your reply is delivered automatically — do NOT use this tool or the message will be sent twice.',
+          "Hand context back to your chat session — the session that handles your owner's DMs and group chats. Use this to report progress, a result, or anything you want surfaced to a person outside this work session. The chat session is another instance of YOU (same agent, owner, memory) and decides whether and where to message someone. Fire-and-forget: you get NO response, and it does NOT post a user-visible message by itself. To say something inside THIS work session, use send_message instead.",
         inputSchema: {
-          conversationId: z.string().describe('Conversation ID to send the message to'),
-          text: z.string().describe('Message text (supports markdown)'),
-          filePaths: z
-            .array(z.string())
-            .max(5)
-            .optional()
-            .describe('Optional local file paths to attach (max 5, absolute or relative)'),
+          context: z
+            .string()
+            .describe(
+              'The context to hand to your chat session — what it should know and why (e.g. who to tell and what). It already knows who you are and who your owner is.',
+            ),
         },
       },
-      async ({ conversationId, text: msgText, filePaths }) => {
-        onToolCall?.('send_message', { conversationId, text: msgText, filePaths });
-        await app.sendMessage(conversationId, msgText, filePaths ? { filePaths } : undefined);
-        return text('Message sent');
-      },
-    );
-
-    server.registerTool(
-      'send_dm',
-      {
-        description:
-          'Send a direct message to a user by their exact username (not display name), optionally with attachments. \u26a0\ufe0f Only use this to INITIATE a message to another user. If you are responding to a DM from that user, your reply is delivered automatically — do NOT use this tool or the message will be sent twice.',
-        inputSchema: {
-          username: z.string().describe('Exact username of the recipient, NOT their display name'),
-          text: z.string().describe('Message text (supports markdown)'),
-          filePaths: z
-            .array(z.string())
-            .max(5)
-            .optional()
-            .describe('Optional local file paths to attach (max 5, absolute or relative)'),
-        },
-      },
-      async ({ username, text: msgText, filePaths }) => {
-        onToolCall?.('send_dm', { username, text: msgText, filePaths });
-        await app.sendDm(username, msgText, filePaths);
-        return text(`DM sent to @${username}`);
+      ({ context }) => {
+        onToolCall?.('share_context', { context });
+        if (!hubConversationId) {
+          return error('No chat session is available to hand context to.');
+        }
+        shareContext(hubConversationId, context);
+        return text('Context handed to your chat session.');
       },
     );
   }

@@ -83,6 +83,9 @@ export type {
   McpContactSummary,
   McpMemoryData,
   NewioMcpServerInterface,
+  MessagingProfile,
+  SendMessageMode,
+  ShareContextMode,
 } from './mcp/index.js';
 
 // NewioApp — high-level agent client (moved here from @newio/agent-sdk).

@@ -44,18 +44,19 @@ import { NewioMcpServer } from '@newio/agent-engine';
 import type {
   NewioAppForMcp,
   NewioMcpServerInterface,
-  SessionMode,
+  MessagingProfile,
   ToolCallHook,
   Transport,
 } from '@newio/agent-engine';
 
 export interface NewioEvalMcpServerOptions {
   readonly app: NewioAppForMcp;
-  /** Delegate a task to another conversation's session (isolated mode). */
-  readonly initiateConversation: (convId: string, context: string) => void;
-  /** Hand context to another of the agent's sessions (chat-shared mode). The target absorbs it. */
+  /** Hand context to another of the agent's sessions (share_context tool). The target absorbs it. */
   readonly shareContext: (convId: string, context: string) => void;
-  readonly sessionMode: SessionMode;
+  /** Which messaging tools this session gets, decided per session. */
+  readonly profile: MessagingProfile;
+  /** For a share_context 'to-hub' profile: the chat hub (owner DM) conversation. */
+  readonly hubConversationId?: string;
   /** Whether the agent has long-term memory enabled. When false, the memory tools are not registered. */
   readonly memoryEnabled: boolean;
   /** Optional hook called before each tool invocation. */
@@ -68,9 +69,9 @@ export class NewioEvalMcpServer implements NewioMcpServerInterface {
   constructor(opts: NewioEvalMcpServerOptions) {
     this.inner = new NewioMcpServer({
       app: opts.app,
-      initiateConversation: opts.initiateConversation,
       shareContext: opts.shareContext,
-      sessionMode: opts.sessionMode,
+      profile: opts.profile,
+      hubConversationId: opts.hubConversationId,
       memoryEnabled: opts.memoryEnabled,
       onToolCall: opts.onToolCall,
     });

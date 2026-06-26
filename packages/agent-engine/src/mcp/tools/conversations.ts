@@ -4,7 +4,6 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { NewioAppForMcp, ToolCallHook } from '../types.js';
-import type { SessionMode } from '../../types.js';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 const structured = (obj: object) => ({
@@ -12,12 +11,7 @@ const structured = (obj: object) => ({
   structuredContent: obj as Record<string, unknown>,
 });
 
-export function registerConversationsTools(
-  server: McpServer,
-  app: NewioAppForMcp,
-  sessionMode: SessionMode,
-  onToolCall?: ToolCallHook,
-): void {
+export function registerConversationsTools(server: McpServer, app: NewioAppForMcp, onToolCall?: ToolCallHook): void {
   // ── list_conversations ──
   server.registerTool(
     'list_conversations',
@@ -44,25 +38,23 @@ export function registerConversationsTools(
     },
   );
 
-  // ── create_dm (isolated only) ──
-  if (sessionMode === 'isolated') {
-    server.registerTool(
-      'create_dm',
-      {
-        description:
-          'Get or create a DM conversation with a user by their exact username (not display name). Returns the conversationId. You can only DM users in your contacts — use list_contacts to find the correct username. If you cannot find the person, ask the user for the exact username.',
-        inputSchema: { username: z.string().describe('Exact username from your contacts, NOT the display name') },
-        outputSchema: z.object({
-          conversationId: z.string().describe('The DM conversation ID (existing or newly created)'),
-        }),
-      },
-      async ({ username }) => {
-        onToolCall?.('create_dm', { username });
-        const conversationId = await app.getOrCreateDm(username);
-        return structured({ conversationId });
-      },
-    );
-  }
+  // ── create_dm ──
+  server.registerTool(
+    'create_dm',
+    {
+      description:
+        'Get or create a DM conversation with a user by their exact username (not display name). Returns the conversationId — use it with send_message (if you are responsible for it) or share_context (otherwise). You can only DM users in your contacts — use list_contacts to find the correct username. If you cannot find the person, ask the user for the exact username.',
+      inputSchema: { username: z.string().describe('Exact username from your contacts, NOT the display name') },
+      outputSchema: z.object({
+        conversationId: z.string().describe('The DM conversation ID (existing or newly created)'),
+      }),
+    },
+    async ({ username }) => {
+      onToolCall?.('create_dm', { username });
+      const conversationId = await app.getOrCreateDm(username);
+      return structured({ conversationId });
+    },
+  );
 
   // ── create_work_session ──
   server.registerTool(

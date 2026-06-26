@@ -96,10 +96,6 @@ export class PromptManager {
     return this.findCompatiblePromptFormatter(promptVersion).buildSessionEndPrompt();
   }
 
-  buildInitiateConversationPrompt(promptVersion: string, context: string): string {
-    return this.findCompatiblePromptFormatter(promptVersion).buildInitiateConversationPrompt(context);
-  }
-
   buildShareContextPrompt(promptVersion: string, context: string): string {
     return this.findCompatiblePromptFormatter(promptVersion).buildShareContextPrompt(context);
   }

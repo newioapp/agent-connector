@@ -30,7 +30,6 @@ function createMockPromptManager(): PromptManager {
     buildGreetingPrompt: vi.fn().mockReturnValue('greeting'),
     buildSessionEndPrompt: vi.fn().mockReturnValue('session end'),
     buildMemoryUpdatePrompt: vi.fn().mockReturnValue('memory update'),
-    buildInitiateConversationPrompt: vi.fn().mockReturnValue('initiate'),
     buildShareContextPrompt: vi.fn().mockReturnValue('share context'),
     formatMemoryContext: vi.fn().mockReturnValue('memory context'),
     formatMessagePrompt: vi.fn().mockReturnValue('message prompt'),

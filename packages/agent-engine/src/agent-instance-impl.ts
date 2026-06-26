@@ -13,7 +13,7 @@
 import { ApprovalTimeoutError, ConnectionRejectedError, NotFoundApiError } from '@newio/agent-sdk';
 import { NewioApp } from './app/index.js';
 import type { ActionOption, ActionRequest } from '@newio/agent-sdk';
-import { NewioMcpServer, startUdsServer } from './mcp/index.js';
+import { NewioMcpServer, startUdsServer, type MessagingProfile } from './mcp/index.js';
 import type { Server } from 'net';
 import { hostname, tmpdir } from 'os';
 import { join } from 'path';
@@ -84,7 +84,14 @@ function delay(ms: number): Promise<void> {
 interface McpWiringWaiter {
   readonly promise: Promise<NewioMcpServerInterface>;
   readonly resolve: (server: NewioMcpServerInterface) => void;
+  /** The messaging tools the launching session should get (decided per session). */
+  readonly profile: MessagingProfile;
+  /** For a share_context 'to-hub' profile: the chat hub (owner DM) conversation. */
+  readonly hubConversationId?: string;
 }
+
+/** Messaging profile for a session that owns no conversation / hasn't been resolved yet. */
+const NO_MESSAGING_PROFILE: MessagingProfile = { sendMessage: 'none', shareContext: 'none' };
 
 export abstract class BaseAgentInstance implements AgentInstance {
   status: AgentRuntimeStatus = 'stopped';
@@ -144,7 +151,45 @@ export abstract class BaseAgentInstance implements AgentInstance {
 
   abstract createPromptManager(): Promise<PromptManager>;
 
-  abstract createMcpServer(app: NewioAppForMcp): NewioMcpServerInterface;
+  abstract createMcpServer(
+    app: NewioAppForMcp,
+    profile: MessagingProfile,
+    hubConversationId: string | undefined,
+  ): NewioMcpServerInterface;
+
+  /**
+   * Decide which messaging tools a session gets, from the session mode and the session's scope. A
+   * session may send_message only into the conversation(s) it owns; reaching any other conversation
+   * goes through share_context, so the owning session keeps full visibility.
+   *
+   * - shared: one session owns every conversation → explicit-id send_message, no share_context.
+   * - isolated: each conversation is its own session → send_message into the current conversation,
+   *   share_context to reach a peer; contact/cron sessions own no conversation → no send_message.
+   * - chat-shared: the chat hub (keyed by the owner DM) serves all DMs/groups → explicit-id
+   *   send_message (rejecting work sessions) + share_context to brief a spoke; each work session is a
+   *   spoke → send_message into itself + share_context back to the hub; cron spokes can't send_message.
+   */
+  protected resolveMessagingProfile(
+    type: SessionType,
+    externalReferenceId: string,
+  ): { profile: MessagingProfile; hubConversationId?: string } {
+    const mode = resolveSessionMode(this.config.sessionMode);
+    if (mode === 'shared') {
+      return { profile: { sendMessage: 'explicit', shareContext: 'none' } };
+    }
+    if (mode === 'isolated') {
+      return type === 'conversation'
+        ? { profile: { sendMessage: 'current', shareContext: 'explicit' } }
+        : { profile: { sendMessage: 'none', shareContext: 'explicit' } };
+    }
+    // chat-shared
+    const hubConversationId = this._ownerDmConversationId;
+    if (type === 'conversation' && externalReferenceId === hubConversationId) {
+      return { profile: { sendMessage: 'explicit-guarded', shareContext: 'explicit' } };
+    }
+    const sendMessage = type === 'conversation' ? 'current' : 'none';
+    return { profile: { sendMessage, shareContext: 'to-hub' }, hubConversationId };
+  }
 
   /**
    * Open the per-agent session store used to RESUME a prior ACP session instead
@@ -212,8 +257,14 @@ export abstract class BaseAgentInstance implements AgentInstance {
         socketPath: mcpSocketPath,
         onConnection: (transport) => {
           log.info(`${this.logTag} MCP client connected via ${mcpSocketPath}`);
-          const mcpServer = this.createMcpServer(app);
           const waiter = this.pendingMcpWiring;
+          // The launch awaiting this connection decided the session's messaging profile; a stray
+          // connection with no waiter gets no messaging tools (it can't be bound to a session anyway).
+          const mcpServer = this.createMcpServer(
+            app,
+            waiter?.profile ?? NO_MESSAGING_PROFILE,
+            waiter?.hubConversationId,
+          );
           if (waiter) {
             // Hand the server to the launch awaiting it. The launch wires the
             // conversation-id getter once its session exists, in either arrival order.
@@ -464,7 +515,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
     const mcpServerPromise = new Promise<NewioMcpServerInterface>((resolve) => {
       resolveMcp = resolve;
     });
-    this.pendingMcpWiring = { promise: mcpServerPromise, resolve: resolveMcp };
+    const { profile, hubConversationId } = this.resolveMessagingProfile(type, externalReferenceId);
+    this.pendingMcpWiring = { promise: mcpServerPromise, resolve: resolveMcp, profile, hubConversationId };
 
     try {
       const session = await produce();
@@ -969,22 +1021,21 @@ export class AgentInstanceImpl extends BaseAgentInstance {
     return new PromptManager([defaultPromptFormatter], defaultPromptFormatter);
   }
 
-  createMcpServer(app: NewioAppForMcp): NewioMcpServerInterface {
+  createMcpServer(
+    app: NewioAppForMcp,
+    profile: MessagingProfile,
+    hubConversationId: string | undefined,
+  ): NewioMcpServerInterface {
     return new NewioMcpServer({
-      app: app,
-      initiateConversation: (convId, context) => {
-        if (!this.abortController.signal.aborted) {
-          this.inbound.push({ type: 'initiate_conversation', conversationId: convId, context: context });
-          this.drainInbound();
-        }
-      },
+      app,
       shareContext: (convId, context) => {
         if (!this.abortController.signal.aborted) {
-          this.inbound.push({ type: 'share_context', conversationId: convId, context: context });
+          this.inbound.push({ type: 'share_context', conversationId: convId, context });
           this.drainInbound();
         }
       },
-      sessionMode: resolveSessionMode(this.config.sessionMode),
+      profile,
+      hubConversationId,
       memoryEnabled: this._memoryEnabled,
     });
   }

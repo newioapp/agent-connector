@@ -338,10 +338,19 @@ describe('PromptFormatterImpl', () => {
         expect(result.prompt).not.toContain('contact.batch');
       });
 
-      it('uses shared-style messaging tools (no initiate_conversation)', () => {
+      it('chat role uses send_message + share_context (no send_dm / initiate_conversation)', () => {
         const result = chatSharedFormatter().buildNewioInstruction('chat');
-        expect(result.prompt).toContain('send_dm');
+        expect(result.prompt).toContain('send_message');
+        expect(result.prompt).toContain('share_context');
+        expect(result.prompt).not.toContain('send_dm');
         expect(result.prompt).not.toContain('initiate_conversation');
+      });
+
+      it('focused role tells a work session to send_message into itself and share_context to the hub', () => {
+        const result = chatSharedFormatter().buildNewioInstruction('focused');
+        expect(result.prompt).toContain('send_message');
+        expect(result.prompt).toContain('share_context');
+        expect(result.prompt).not.toContain('send_dm');
       });
     });
 
@@ -361,14 +370,16 @@ describe('PromptFormatterImpl', () => {
       const pf = mockApp();
       const result = pf.buildNewioInstruction();
       expect(result.prompt).toContain('<session_lifecycle mode="isolated">');
-      expect(result.prompt).toContain('initiate_conversation');
+      expect(result.prompt).toContain('share_context');
+      expect(result.prompt).not.toContain('initiate_conversation');
     });
 
     it('includes session lifecycle for shared mode', () => {
       const pf = new PromptFormatterImpl(defaultIdentity, defaultOwner, 'shared');
       const result = pf.buildNewioInstruction();
       expect(result.prompt).toContain('<session_lifecycle mode="shared">');
-      expect(result.prompt).toContain('send_dm');
+      expect(result.prompt).toContain('send_message');
+      expect(result.prompt).not.toContain('send_dm');
     });
   });
 
