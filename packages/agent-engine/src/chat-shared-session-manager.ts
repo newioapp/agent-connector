@@ -12,8 +12,8 @@
  * - `cronSlots`          — one session per cron job (prompt role 'focused').
  *
  * The `share_context` MCP tool flows in as a `share_context` inbound event and is routed to the
- * target conversation's session, which ABSORBS the context (its text output is not sent — that's
- * what distinguishes it from isolated mode's `initiate_conversation`).
+ * target conversation's session, which ABSORBS the context (its text output is not sent). A spoke
+ * (work session / cron) can only hand context to the chat hub; the hub can brief any spoke.
  */
 import {
   CancelSessionRequest,
@@ -122,9 +122,8 @@ export class ChatSharedSessionManager implements SessionManager {
         break;
       }
       case 'share_context': {
-        // The target is a conversationId only, so resolve its type, then route the absorb-only event.
-        // TODO(share_context): isolated mode's `initiate_conversation` is a more specialized form of
-        // the same idea (it auto-sends); consider unifying the two tools behind share_context later.
+        // The target is a conversationId only (a spoke targets the owner DM = the hub), so resolve its
+        // type, then route the absorb-only event to the owning slot.
         void this.routeShareContext(event.conversationId, event.context);
         break;
       }

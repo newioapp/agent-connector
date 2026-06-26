@@ -13,19 +13,23 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { registerContactsTools } from './tools/contacts.js';
 import { registerConversationsTools } from './tools/conversations.js';
 import { registerCronTools } from './tools/cron.js';
-import { registerMessagingTools } from './tools/messaging.js';
+import { registerMessagingTools, type MessagingProfile } from './tools/messaging.js';
+export type { MessagingProfile } from './tools/messaging.js';
 import { registerUsersTools } from './tools/users.js';
 import { registerMediaTools } from './tools/media.js';
 import { registerMemoryTools } from './tools/memory.js';
 import type { IdGetter, NewioAppForMcp, NewioMcpServerInterface, ToolCallHook } from './types.js';
-import type { SessionMode } from '../types.js';
 
 export interface NewioMcpServerOptions {
   readonly app: NewioAppForMcp;
-  readonly initiateConversation: (convId: string, context: string) => void;
   /** Hand context to another of the agent's sessions (share_context tool). The target absorbs it. */
   readonly shareContext: (convId: string, context: string) => void;
-  readonly sessionMode: SessionMode;
+  /** Which messaging tools this session gets, decided per session (not agent-wide). */
+  readonly profile: MessagingProfile;
+  /** The conversation this session is responsible for (target of the 'current' send_message). */
+  readonly ownConversationId?: string;
+  /** For a share_context 'to-hub' profile: the chat hub (owner DM) conversation context is handed to. */
+  readonly hubConversationId?: string;
   /** Whether the agent has long-term memory enabled. When false, the memory tools are not registered. */
   readonly memoryEnabled: boolean;
   /** Optional hook called before each tool invocation. */
@@ -52,19 +56,20 @@ export class NewioMcpServer implements NewioMcpServerInterface {
       version: '0.1.0',
     });
 
-    const { app, initiateConversation, shareContext, sessionMode, memoryEnabled, onToolCall } = opts;
+    const { app, shareContext, profile, ownConversationId, hubConversationId, memoryEnabled, onToolCall } = opts;
 
     this.getCurrentConversationId = () => undefined;
     registerContactsTools(this.server, app, onToolCall);
-    registerConversationsTools(this.server, app, sessionMode, onToolCall);
+    registerConversationsTools(this.server, app, onToolCall);
     registerCronTools(this.server, app, onToolCall);
     registerMessagingTools(
       this.server,
       app,
-      initiateConversation,
       shareContext,
       () => this.getCurrentConversationId(),
-      sessionMode,
+      profile,
+      ownConversationId,
+      hubConversationId,
       onToolCall,
     );
     registerUsersTools(this.server, app, onToolCall);

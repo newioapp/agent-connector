@@ -145,7 +145,15 @@ export interface NewioAppForMcp {
     text?: string,
     opts?: { filePaths?: readonly string[]; metadata?: Record<string, unknown>; visibleTo?: readonly string[] },
   ): Promise<void>;
-  sendDm(username: string, text: string, filePaths?: readonly string[]): Promise<void>;
+  /**
+   * Send a message but reject work sessions (temp_group) — those belong to their own session and must
+   * be reached via share_context. Used by the chat hub. Throws if the target is a work session.
+   */
+  sendMessageToManagedConversation(
+    conversationId: string,
+    text?: string,
+    opts?: { filePaths?: readonly string[] },
+  ): Promise<void>;
   listMessages(conversationId: string, limit?: number, beforeMessageId?: string): Promise<McpListMessagesResult>;
   downloadAttachment(conversationId: string, s3Key: string, fileName: string): Promise<string>;
 

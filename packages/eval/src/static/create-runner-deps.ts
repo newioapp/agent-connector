@@ -19,7 +19,7 @@ import { MockNewioApp } from '../mock-newio-app.js';
 import { ToolInterceptor } from './tool-interceptor.js';
 import { buildScenarioData } from './build-scenario-data.js';
 import { TraceCollector } from './trace.js';
-import type { AgentConfig, PromptFormatter, ToolCallHook, NewioAppForMcp } from '@newio/agent-engine';
+import type { AgentConfig, PromptFormatter, ToolCallHook, NewioAppForMcp, MessagingProfile } from '@newio/agent-engine';
 import type { Server } from 'net';
 import type { EvalConfig, EvalScenario } from '../types.js';
 import type { AgentSession } from '@newio/agent-engine';
@@ -70,14 +70,19 @@ export async function createScenarioRunnerDeps(
     throw new Error('effectiveSessionMode must be resolved to isolated or shared before creating deps');
   }
 
+  // The static harness drives a single bare conversation session (no session manager), so map the
+  // session mode to that one session's profile: isolated → send into the current conversation;
+  // shared → send by explicit id. Cross-session share_context is a no-op here.
+  const profile: MessagingProfile =
+    effectiveSessionMode === 'isolated'
+      ? { sendMessage: 'current', shareContext: 'explicit' }
+      : { sendMessage: 'explicit', shareContext: 'none' };
+
   // Create MCP server with hook, backed by mock app
   const mcpServer = new NewioEvalMcpServer({
     app: mockApp as unknown as NewioAppForMcp,
-    initiateConversation: () => {},
-    // Static harness drives a single bare session (no session manager), so
-    // cross-session delegation is a no-op here — same as initiateConversation.
     shareContext: () => {},
-    sessionMode: effectiveSessionMode,
+    profile,
     // Evals exercise memory behavior, so the static harness always enables the memory tools.
     memoryEnabled: true,
     onToolCall,

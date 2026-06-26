@@ -28,9 +28,8 @@ export type AgentEvent =
   | { readonly type: 'messages'; readonly conversationId: string; readonly messages: readonly IncomingMessage[] }
   | { readonly type: 'contact'; readonly events: readonly ContactEvent[] }
   | { readonly type: 'cron'; readonly job: CronTriggerEvent }
-  | { readonly type: 'initiate_conversation'; readonly conversationId: string; readonly context: string }
-  // Context handed in from another of the agent's sessions via the share_context MCP tool. Unlike
-  // initiate_conversation, the session ABSORBS this context — its text output is not sent anywhere.
+  // Context handed in from another of the agent's sessions via the share_context MCP tool. The session
+  // ABSORBS this context — its text output is not sent anywhere; it must send_message to surface it.
   | { readonly type: 'share_context'; readonly conversationId: string; readonly context: string }
   | { readonly type: 'compact_session'; readonly callbacks: readonly OwnerOpCallback[] }
   | { readonly type: 'update_memory'; readonly callbacks: readonly OwnerOpCallback[] }
@@ -43,12 +42,6 @@ export type AgentEvent =
 
 /** Sentinel value used to signal the consumer to stop. */
 const CLOSED = Symbol('closed');
-
-interface InitiateConversation {
-  readonly __tag: 'initiate_conversation';
-  readonly conversationId: string;
-  readonly context: string;
-}
 
 interface ShareContext {
   readonly __tag: 'share_context';
@@ -69,7 +62,6 @@ type PendingKey =
   | 'update_memory'
   | 'rotate_session'
   | CronPendingKey
-  | InitiateConversation
   | ShareContext;
 
 export class EventQueue {
@@ -125,14 +117,6 @@ export class EventQueue {
       return;
     }
     this.pending.push({ __tag: 'cron', job });
-    this.wake();
-  }
-
-  enqueueInitiatingConversation(conversationId: string, context: string): void {
-    if (this.closed) {
-      return;
-    }
-    this.pending.push({ __tag: 'initiate_conversation', conversationId, context });
     this.wake();
   }
 
@@ -227,9 +211,7 @@ export class EventQueue {
 
       // Tagged object types — discriminated by __tag
       if (typeof key === 'object') {
-        if (key.__tag === 'initiate_conversation') {
-          yield { type: 'initiate_conversation', conversationId: key.conversationId, context: key.context };
-        } else if (key.__tag === 'share_context') {
+        if (key.__tag === 'share_context') {
           yield { type: 'share_context', conversationId: key.conversationId, context: key.context };
         } else {
           yield { type: 'cron', job: key.job };

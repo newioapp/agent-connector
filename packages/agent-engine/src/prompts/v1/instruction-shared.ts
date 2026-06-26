@@ -1,9 +1,10 @@
 /**
  * Full instruction body for shared (single-session) mode — XML format.
  *
- * One persistent session handles all conversations, contacts, and cron events serially. Cross-
- * conversation messaging uses send_dm / send_message directly. Self-contained on purpose (duplication
- * with the other modes is fine) so the modes can diverge freely.
+ * One persistent session handles all conversations, contacts, and cron events serially. It owns every
+ * conversation, so cross-conversation messaging uses send_message with the target conversationId
+ * (create_dm to get a DM's id). Self-contained on purpose (duplication with the other modes is fine)
+ * so the modes can diverge freely.
  */
 export function instructionShared(memoryEnabled: boolean): string {
   return [
@@ -65,7 +66,7 @@ Never mix modes. Never output reasoning, preamble, or commentary alongside <skip
 
 <tool_failures>
 If a tool call fails, retry once. If it fails again:
-- For message/contact/cron events: use send_dm to report the error to your owner, then output <done action="reported_failure_to_owner" />.
+- For message/contact/cron events: use send_message to your owner's DM (create_dm with your owner's username for its id) to report the error, then output <done action="reported_failure_to_owner" />.
 - For system events (memory_update, session_end): proceed best-effort with remaining work and include the failure in your <done action="..." /> reason.
 </tool_failures>
 
@@ -91,7 +92,7 @@ Never mix modes. Never output reasoning, preamble, or commentary alongside <skip
 
 <tool_failures>
 If a tool call fails, retry once. If it fails again:
-- For message/contact/cron events: use send_dm to report the error to your owner, then output <done action="reported_failure_to_owner" />.
+- For message/contact/cron events: use send_message to your owner's DM (create_dm with your owner's username for its id) to report the error, then output <done action="reported_failure_to_owner" />.
 - For the system.session_end event: proceed best-effort with remaining work and include the failure in your <done action="..." /> reason.
 </tool_failures>
 </global_rules>`;
@@ -129,8 +130,8 @@ With attachments:
 
 <rules>
 - Reply with plain text or markdown.
-- Do NOT use send_dm or send_message to reply to the CURRENT conversation — your text response is already delivered there. Using a tool would double-send.
-- Use send_dm or send_message to message OTHER conversations.
+- Do NOT use send_message to reply to the CURRENT conversation — your text response is already delivered there. Using a tool would double-send.
+- Use send_message with a conversationId to message a DIFFERENT conversation (create_dm for a DM's id).
 - If no reply is needed, output <skip reason="..." /> with nothing else.
 </rules>
 
@@ -160,7 +161,7 @@ function contactEvent(): string {
 
 <rules>
 - Use accept_friend_request or reject_friend_request to respond to incoming requests.
-- If unsure whether to accept, use send_dm to notify your owner and wait for guidance — do not accept or reject.
+- If unsure whether to accept, use send_message to notify your owner (create_dm with your owner's username for the DM id) and wait for guidance — do not accept or reject.
 - After acting, output <done action="..." />.
 </rules>
 </event_type>`;
@@ -179,7 +180,7 @@ function cronEvent(): string {
 <routing>Your text response is discarded. Act only through MCP tools, then output <done />.</routing>
 
 <rules>
-- Use send_message or send_dm to deliver cron-driven messages.
+- Use send_message with the target conversationId to deliver cron-driven messages (create_dm for a DM's id).
 - Use other MCP tools as needed to fulfill the job described by the label and payload.
 - After acting, output <done action="..." />.
 </rules>

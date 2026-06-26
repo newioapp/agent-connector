@@ -1,9 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { NewioMcpServer } from '../../src/mcp/server.js';
-import type { SessionMode } from '../../src/types.js';
+import { NewioMcpServer, type MessagingProfile } from '../../src/mcp/server.js';
 import type { NewioApp, ContactSummary, ConversationSummary, FriendRequestSummary } from '../../src/app/index.js';
+
+/** Representative per-session profiles (see resolveMessagingProfile in agent-instance-impl). */
+const ISOLATED_PROFILE: MessagingProfile = { sendMessage: 'current', shareContext: 'explicit' };
+const SHARED_PROFILE: MessagingProfile = { sendMessage: 'explicit', shareContext: 'none' };
+const CHAT_HUB_PROFILE: MessagingProfile = { sendMessage: 'explicit-guarded', shareContext: 'explicit' };
+const CHAT_SPOKE_PROFILE: MessagingProfile = { sendMessage: 'current', shareContext: 'to-hub' };
 
 /** Extract text from MCP callTool result (handles unknown content type). */
 function getResultText(result: Awaited<ReturnType<Client['callTool']>>): string {
@@ -25,6 +30,7 @@ function mockApp(
     createWorkSession: vi.fn().mockResolvedValue('ws-conv-id'),
     getOrCreateDm: vi.fn().mockResolvedValue('dm-conv-id'),
     sendMessage: vi.fn().mockResolvedValue(undefined),
+    sendMessageToManagedConversation: vi.fn().mockResolvedValue(undefined),
     sendDm: vi.fn().mockResolvedValue(undefined),
     dmOwner: vi.fn().mockResolvedValue(undefined),
     sendFriendRequestByUsername: vi.fn().mockResolvedValue(undefined),
@@ -69,12 +75,20 @@ function mockApp(
 
 async function createConnectedClient(
   app: NewioApp,
-  sessionMode: SessionMode = 'isolated',
+  profile: MessagingProfile = ISOLATED_PROFILE,
   memoryEnabled = true,
+  hubConversationId?: string,
+  ownConversationId?: string,
 ): Promise<Client> {
-  const initiateConversation = vi.fn();
   const shareContext = vi.fn();
-  const server = new NewioMcpServer({ app, initiateConversation, shareContext, sessionMode, memoryEnabled });
+  const server = new NewioMcpServer({
+    app,
+    shareContext,
+    profile,
+    ownConversationId,
+    hubConversationId,
+    memoryEnabled,
+  });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
   const client = new Client({ name: 'test-client', version: '1.0.0' });
@@ -83,7 +97,7 @@ async function createConnectedClient(
 }
 
 describe('MCP Server', () => {
-  it('lists all tools (isolated mode)', async () => {
+  it('lists all tools (isolated conversation profile: current send_message + share_context)', async () => {
     const client = await createConnectedClient(mockApp());
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
@@ -102,7 +116,6 @@ describe('MCP Server', () => {
       'get_memory',
       'get_my_profile',
       'get_user_profile',
-      'initiate_conversation',
       'list_contacts',
       'list_conversation_members',
       'list_conversations',
@@ -115,14 +128,19 @@ describe('MCP Server', () => {
       'schedule_cron',
       'search_users',
       'send_friend_request',
+      'send_message',
+      'share_context',
       'update_memory',
       'update_memory_summary',
       'upload_attachment_to_current_conversation',
     ]);
+    // Deprecated tools are gone.
+    expect(names).not.toContain('initiate_conversation');
+    expect(names).not.toContain('send_dm');
   });
 
   it('omits the memory tools when memory is opted out', async () => {
-    const client = await createConnectedClient(mockApp(), 'isolated', false);
+    const client = await createConnectedClient(mockApp(), ISOLATED_PROFILE, false);
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name);
     for (const memoryTool of ['get_memory', 'add_memory', 'update_memory', 'delete_memory', 'update_memory_summary']) {
@@ -133,8 +151,8 @@ describe('MCP Server', () => {
     expect(names).toContain('list_conversations');
   });
 
-  it('lists all tools (shared mode)', async () => {
-    const client = await createConnectedClient(mockApp(), 'shared');
+  it('lists all tools (shared profile: explicit send_message, no share_context)', async () => {
+    const client = await createConnectedClient(mockApp(), SHARED_PROFILE);
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual([
@@ -143,6 +161,7 @@ describe('MCP Server', () => {
       'add_memory',
       'cancel_cron',
       'check_is_member',
+      'create_dm',
       'create_group',
       'create_work_session',
       'delete_memory',
@@ -162,37 +181,35 @@ describe('MCP Server', () => {
       'remove_member',
       'schedule_cron',
       'search_users',
-      'send_dm',
       'send_friend_request',
       'send_message',
       'update_memory',
       'update_memory_summary',
       'upload_attachment_to_current_conversation',
     ]);
+    // Shared owns every conversation, so no cross-session hand-off; send_dm is gone.
+    expect(names).not.toContain('share_context');
+    expect(names).not.toContain('send_dm');
   });
 
-  it('exposes share_context (and shared-style messaging tools) in chat-shared mode', async () => {
-    const client = await createConnectedClient(mockApp(), 'chat-shared');
-    const { tools } = await client.listTools();
-    const names = tools.map((t) => t.name);
+  it('chat hub profile exposes explicit send_message + share_context + create_dm', async () => {
+    const client = await createConnectedClient(mockApp(), CHAT_HUB_PROFILE);
+    const names = (await client.listTools()).tools.map((t) => t.name);
     expect(names).toContain('share_context');
     expect(names).toContain('send_message');
-    expect(names).toContain('send_dm');
+    expect(names).toContain('create_dm');
     expect(names).toContain('create_work_session');
-    // chat-shared uses share_context + send_message instead of initiate_conversation / create_dm.
+    expect(names).not.toContain('send_dm');
     expect(names).not.toContain('initiate_conversation');
-    expect(names).not.toContain('create_dm');
   });
 
-  it('share_context delegates to the agent instance via the shareContext callback (chat-shared mode)', async () => {
+  it('share_context delegates to the agent instance via the shareContext callback', async () => {
     const app = mockApp();
-    const initiateConversation = vi.fn();
     const shareContext = vi.fn();
     const server = new NewioMcpServer({
       app,
-      initiateConversation,
       shareContext,
-      sessionMode: 'chat-shared',
+      profile: CHAT_HUB_PROFILE,
       memoryEnabled: true,
     });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -204,9 +221,30 @@ describe('MCP Server', () => {
       name: 'share_context',
       arguments: { conversationId: 'work-1', context: 'kick off the migration' },
     });
-    // share_context uses its own callback (absorb-only), NOT initiate_conversation (which auto-sends).
     expect(shareContext).toHaveBeenCalledWith('work-1', 'kick off the migration');
-    expect(initiateConversation).not.toHaveBeenCalled();
+  });
+
+  it('spoke share_context (to-hub) hands context to the hub conversation, no conversationId arg', async () => {
+    const app = mockApp();
+    const shareContext = vi.fn();
+    const server = new NewioMcpServer({
+      app,
+      shareContext,
+      profile: CHAT_SPOKE_PROFILE,
+      hubConversationId: 'owner-dm',
+      memoryEnabled: true,
+    });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    const client = new Client({ name: 'test', version: '1.0.0' });
+    await client.connect(clientTransport);
+
+    const { tools } = await client.listTools();
+    const shareTool = tools.find((t) => t.name === 'share_context')!;
+    expect(Object.keys(shareTool.inputSchema.properties ?? {})).toEqual(['context']);
+
+    await client.callTool({ name: 'share_context', arguments: { context: 'progress: migration done' } });
+    expect(shareContext).toHaveBeenCalledWith('owner-dm', 'progress: migration done');
   });
 
   it('list_conversations returns all conversations', async () => {
@@ -266,35 +304,62 @@ describe('MCP Server', () => {
     expect(app.createGroup).toHaveBeenCalledWith('Team', ['alice', 'bob']);
   });
 
-  it('initiate_conversation delegates to agent instance', async () => {
+  it('send_message (current profile) targets the responsible conversation, no conversationId arg', async () => {
     const app = mockApp();
-    const initiateConversation = vi.fn();
+    const shareContext = vi.fn();
+    // No currentConversationId getter set (as on a share_context turn) — it must use ownConversationId.
     const server = new NewioMcpServer({
       app,
-      initiateConversation,
-      shareContext: vi.fn(),
-      sessionMode: 'isolated',
+      shareContext,
+      profile: CHAT_SPOKE_PROFILE,
+      ownConversationId: 'work-1',
       memoryEnabled: true,
     });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     const client = new Client({ name: 'test-client', version: '1.0.0' });
     await client.connect(clientTransport);
-    await client.callTool({
-      name: 'initiate_conversation',
-      arguments: { conversationId: 'conv-1', context: 'Tell them I will be late' },
-    });
-    expect(initiateConversation).toHaveBeenCalledWith('conv-1', 'Tell them I will be late');
+
+    const { tools } = await client.listTools();
+    const sendTool = tools.find((t) => t.name === 'send_message')!;
+    expect(Object.keys(sendTool.inputSchema.properties ?? {}).sort()).toEqual(['filePaths', 'text']);
+
+    await client.callTool({ name: 'send_message', arguments: { text: 'on it' } });
+    expect(app.sendMessage).toHaveBeenCalledWith('work-1', 'on it', undefined);
   });
 
-  it('send_message sends to conversation in shared mode', async () => {
+  it('send_message (explicit profile) sends to the given conversation', async () => {
     const app = mockApp();
-    const client = await createConnectedClient(app, 'shared');
+    const client = await createConnectedClient(app, SHARED_PROFILE);
     await client.callTool({
       name: 'send_message',
       arguments: { conversationId: 'conv-1', text: 'check this', filePaths: ['/tmp/photo.jpg'] },
     });
     expect(app.sendMessage).toHaveBeenCalledWith('conv-1', 'check this', { filePaths: ['/tmp/photo.jpg'] });
+  });
+
+  it('send_message (guarded profile) routes through the app guard and surfaces its error', async () => {
+    const app = mockApp();
+    // The work-session validation lives in the app; the tool stays thin and surfaces the app error.
+    (app.sendMessageToManagedConversation as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('That is a work session — use share_context to hand it the message instead.'),
+    );
+    const client = await createConnectedClient(app, CHAT_HUB_PROFILE);
+    const result = await client.callTool({
+      name: 'send_message',
+      arguments: { conversationId: 'work-1', text: 'hi' },
+    });
+    expect(app.sendMessageToManagedConversation).toHaveBeenCalledWith('work-1', 'hi', undefined);
+    expect(result.isError).toBe(true);
+    expect(getResultText(result)).toContain('share_context');
+    expect(app.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('send_message (guarded profile) sends via the app guard for a normal conversation', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app, CHAT_HUB_PROFILE);
+    await client.callTool({ name: 'send_message', arguments: { conversationId: 'conv-1', text: 'hi' } });
+    expect(app.sendMessageToManagedConversation).toHaveBeenCalledWith('conv-1', 'hi', undefined);
   });
 
   it('download_attachment returns local file path', async () => {
@@ -319,12 +384,10 @@ describe('MCP Server', () => {
 
   it('upload_attachment_to_current_conversation sends attachment-only message', async () => {
     const app = mockApp();
-    const initiateConversation = vi.fn();
     const server = new NewioMcpServer({
       app,
-      initiateConversation,
       shareContext: vi.fn(),
-      sessionMode: 'isolated',
+      profile: ISOLATED_PROFILE,
       memoryEnabled: true,
     });
     server.setCurrentConversationIdGetter(() => 'conv-1');
@@ -443,11 +506,12 @@ describe('MCP Server', () => {
     expect(app.removeMemberByUsername).toHaveBeenCalledWith('conv-1', 'alice');
   });
 
-  it('send_dm sends direct message by username', async () => {
+  it('create_dm resolves a username to a conversationId', async () => {
     const app = mockApp();
-    const client = await createConnectedClient(app, 'shared');
-    await client.callTool({ name: 'send_dm', arguments: { username: 'alice', text: 'hey' } });
-    expect(app.sendDm).toHaveBeenCalledWith('alice', 'hey', undefined);
+    const client = await createConnectedClient(app, SHARED_PROFILE);
+    const result = await client.callTool({ name: 'create_dm', arguments: { username: 'alice' } });
+    expect(app.getOrCreateDm).toHaveBeenCalledWith('alice');
+    expect(JSON.parse(getResultText(result))).toHaveProperty('conversationId', 'dm-conv-id');
   });
 
   it('get_my_profile returns agent profile', async () => {
@@ -586,12 +650,10 @@ describe('onToolCall hook', () => {
     app: NewioApp,
     onToolCall: (toolName: string, args: Readonly<Record<string, unknown>>) => void,
   ): Promise<Client> {
-    const initiateConversation = vi.fn();
     const server = new NewioMcpServer({
       app,
-      initiateConversation,
       shareContext: vi.fn(),
-      sessionMode: 'shared',
+      profile: SHARED_PROFILE,
       memoryEnabled: true,
       onToolCall,
     });
@@ -602,18 +664,18 @@ describe('onToolCall hook', () => {
     return client;
   }
 
-  it('fires hook with tool name and args for send_dm', async () => {
+  it('fires hook with tool name and args for send_message', async () => {
     const app = mockApp();
     const calls: Array<{ tool: string; args: Record<string, unknown> }> = [];
     const client = await createClientWithHook(app, (tool, args) => {
       calls.push({ tool, args: { ...args } });
     });
 
-    await client.callTool({ name: 'send_dm', arguments: { username: 'alice', text: 'hello' } });
+    await client.callTool({ name: 'send_message', arguments: { conversationId: 'conv-1', text: 'hello' } });
 
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.tool).toBe('send_dm');
-    expect(calls[0]!.args).toEqual({ username: 'alice', text: 'hello', filePaths: undefined });
+    expect(calls[0]!.tool).toBe('send_message');
+    expect(calls[0]!.args).toEqual({ conversationId: 'conv-1', text: 'hello', filePaths: undefined });
   });
 
   it('fires hook for list_contacts (no args)', async () => {
@@ -654,8 +716,8 @@ describe('onToolCall hook', () => {
 
     await client.callTool({ name: 'list_contacts', arguments: {} });
     await client.callTool({ name: 'list_conversations', arguments: {} });
-    await client.callTool({ name: 'send_dm', arguments: { username: 'marcus42', text: 'hi' } });
+    await client.callTool({ name: 'send_message', arguments: { conversationId: 'conv-1', text: 'hi' } });
 
-    expect(calls.map((c) => c.tool)).toEqual(['list_contacts', 'list_conversations', 'send_dm']);
+    expect(calls.map((c) => c.tool)).toEqual(['list_contacts', 'list_conversations', 'send_message']);
   });
 });

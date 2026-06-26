@@ -1,9 +1,10 @@
 /**
  * Full instruction body for isolated session mode — XML format.
  *
- * Each conversation/contact/cron gets its own session. Cross-conversation messaging goes through
- * `initiate_conversation` (there is no send_dm/send_message in this mode). Self-contained on purpose
- * (duplication with the other modes is fine) so the modes can diverge freely.
+ * Each conversation/contact/cron gets its own session. `send_message` posts into THIS session's
+ * conversation; reaching a DIFFERENT conversation goes through `share_context` (the target
+ * conversation's own session surfaces anything). Self-contained on purpose (duplication with the
+ * other modes is fine) so the modes can diverge freely.
  */
 export function instructionIsolated(memoryEnabled: boolean): string {
   return [
@@ -29,9 +30,8 @@ When this session ends — idle timeout, the owner starting a new session, or (i
 </rotation>
 
 <cross_conversation>
-You do NOT have send_message, send_dm, or dm_owner tools in this mode.
-To message a different conversation or user, use the initiate_conversation tool — it delegates to the target conversation's session.
-When delegating, you can pass relevant context along with the request; that context will be injected into the target session so it has what it needs to act.
+This session handles ONE conversation. Reply to messages here as plain text (it is delivered automatically), or call send_message to post an ADDITIONAL message into THIS conversation.
+To reach a DIFFERENT conversation, use share_context with that conversation's id — it hands your request to that conversation's own session, which decides whether and how to surface it. It is fire-and-forget; you get no response. Use create_dm to get a user's DM conversationId.
 </cross_conversation>
 </session_lifecycle>`;
   }
@@ -45,9 +45,8 @@ When this session ends — idle timeout, the owner starting a new session, or (i
 </rotation>
 
 <cross_conversation>
-You do NOT have send_message, send_dm, or dm_owner tools in this mode.
-To message a different conversation or user, use the initiate_conversation tool — it delegates to the target conversation's session.
-When delegating, you can pass relevant context along with the request; that context will be injected into the target session so it has what it needs to act.
+This session handles ONE conversation. Reply to messages here as plain text (it is delivered automatically), or call send_message to post an ADDITIONAL message into THIS conversation.
+To reach a DIFFERENT conversation, use share_context with that conversation's id — it hands your request to that conversation's own session, which decides whether and how to surface it. It is fire-and-forget; you get no response. Use create_dm to get a user's DM conversationId.
 </cross_conversation>
 </session_lifecycle>`;
 }
@@ -71,7 +70,7 @@ Never mix modes. Never output reasoning, preamble, or commentary alongside <skip
 
 <tool_failures>
 If a tool call fails, retry once. If it fails again:
-- For message/contact/cron events: use initiate_conversation to report the error to your owner, then output <done action="reported_failure_to_owner" />.
+- For message/contact/cron events: use share_context to your owner's DM (create_dm with your owner's username for its id) to report the error, then output <done action="reported_failure_to_owner" />.
 - For system events (memory_update, session_end): proceed best-effort with remaining work and include the failure in your <done action="..." /> reason.
 </tool_failures>
 
@@ -97,7 +96,7 @@ Never mix modes. Never output reasoning, preamble, or commentary alongside <skip
 
 <tool_failures>
 If a tool call fails, retry once. If it fails again:
-- For message/contact/cron events: use initiate_conversation to report the error to your owner, then output <done action="reported_failure_to_owner" />.
+- For message/contact/cron events: use share_context to your owner's DM (create_dm with your owner's username for its id) to report the error, then output <done action="reported_failure_to_owner" />.
 - For the system.session_end event: proceed best-effort with remaining work and include the failure in your <done action="..." /> reason.
 </tool_failures>
 </global_rules>`;
@@ -134,9 +133,9 @@ With attachments:
 <routing>Your text response is sent directly to the source conversation.</routing>
 
 <rules>
-- Reply with plain text or markdown.
-- Do NOT use initiate_conversation to reply to the CURRENT conversation — your text response is already delivered there. Using a tool would double-send.
-- Use initiate_conversation only to message a DIFFERENT conversation or user.
+- Reply with plain text or markdown — it is delivered to THIS conversation automatically.
+- Do NOT use send_message to reply here — your text response is already delivered. Use send_message only to post an ADDITIONAL message into this conversation.
+- To message a DIFFERENT conversation, use share_context with that conversation's id (NOT send_message); its session will surface anything needed.
 - If no reply is needed, output <skip reason="..." /> with nothing else.
 </rules>
 
@@ -166,7 +165,7 @@ function contactEvent(): string {
 
 <rules>
 - Use accept_friend_request or reject_friend_request to respond to incoming requests.
-- If unsure whether to accept, use initiate_conversation to ask your owner for guidance — do not accept or reject.
+- If unsure whether to accept, use share_context to your owner's DM to ask for guidance — do not accept or reject.
 - After acting, output <done action="..." />.
 </rules>
 </event_type>`;
@@ -185,7 +184,7 @@ function cronEvent(): string {
 <routing>Your text response is discarded. Act only through MCP tools, then output <done />.</routing>
 
 <rules>
-- Use initiate_conversation to deliver cron-driven messages to the target conversation specified in the label or payload.
+- This session owns no conversation, so to deliver a message use share_context with the target conversation's id — its session posts the message. Use create_dm for a DM's id, or the conversation id named in the label/payload.
 - Use other MCP tools as needed to fulfill the job described by the label and payload.
 - After acting, output <done action="..." />.
 </rules>
@@ -212,9 +211,9 @@ Internal events from the connector.
   <routing>Follow the embedded instructions to update memory and produce a handoff note.</routing>
 </system_event>
 
-<system_event name="system.initiate_conversation">
-  <description>Delegated task from another session.</description>
-  <routing>Your text response is sent to this conversation. Compose a message based on the delegated context.</routing>
+<system_event name="system.share_context">
+  <description>Another of your sessions handed context to this conversation via share_context.</description>
+  <routing>Absorb the context for when you next act here. Your text output is discarded — do NOT reply. If the context means you should say something here now, call send_message; otherwise output <done action="absorbed shared context" />.</routing>
 </system_event>
 </system_events>`;
   }
@@ -231,9 +230,9 @@ Internal events from the connector.
   <routing>Follow the embedded instructions to produce a handoff note.</routing>
 </system_event>
 
-<system_event name="system.initiate_conversation">
-  <description>Delegated task from another session.</description>
-  <routing>Your text response is sent to this conversation. Compose a message based on the delegated context.</routing>
+<system_event name="system.share_context">
+  <description>Another of your sessions handed context to this conversation via share_context.</description>
+  <routing>Absorb the context for when you next act here. Your text output is discarded — do NOT reply. If the context means you should say something here now, call send_message; otherwise output <done action="absorbed shared context" />.</routing>
 </system_event>
 </system_events>`;
 }

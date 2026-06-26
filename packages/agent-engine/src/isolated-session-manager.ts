@@ -98,9 +98,11 @@ export class IsolatedSessionManager implements SessionManager {
         slot.queue.enqueueCron(event.event);
         break;
       }
-      case 'initiate_conversation': {
+      case 'share_context': {
+        // Each conversation is its own session, so hand the context to the target conversation's
+        // session, which absorbs it (text output not sent) and may send_message to surface anything.
         const slot = this.getOrCreateConversationSlot(event.conversationId);
-        slot.queue.enqueueInitiatingConversation(event.conversationId, event.context);
+        slot.queue.enqueueShareContext(event.conversationId, event.context);
         break;
       }
     }

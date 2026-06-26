@@ -75,7 +75,6 @@ function createMockPromptManager(): PromptManager {
     buildGreetingPrompt: vi.fn().mockReturnValue('greeting'),
     buildSessionEndPrompt: vi.fn().mockReturnValue('session end'),
     buildMemoryUpdatePrompt: vi.fn().mockReturnValue('memory update'),
-    buildInitiateConversationPrompt: vi.fn().mockReturnValue('initiate'),
     formatMemoryContext: vi.fn().mockReturnValue('memory context'),
     formatMessagePrompt: vi.fn().mockReturnValue('message prompt'),
     formatContactPrompt: vi.fn().mockReturnValue('contact prompt'),
@@ -184,9 +183,9 @@ describe('IsolatedSessionManager', () => {
       expect(newSessionFn).toHaveBeenCalledWith('conversation', 'conv-b', true);
     });
 
-    it('routes initiate_conversation events', async () => {
+    it('routes share_context events to the target conversation session', async () => {
       manager.routeInboundEvent({
-        type: 'initiate_conversation',
+        type: 'share_context',
         conversationId: 'conv-new',
         context: 'Please message Alice about the meeting',
       });

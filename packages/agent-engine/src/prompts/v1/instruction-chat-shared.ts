@@ -2,14 +2,14 @@
  * Full instruction body for chat-shared mode — XML format.
  *
  * Two session roles:
- * - 'chat': ONE shared session for all DMs, group chats, and contact events (no cron — cron runs in
- *   its own focused session).
- * - 'focused': a dedicated session for a single work session or cron job (no contact events — those
- *   are handled by the chat session).
+ * - 'chat': the hub — ONE shared session for all DMs, group chats, and contact events (no cron — cron
+ *   runs in its own focused session). Sends to any DM/group with send_message(conversationId); briefs a
+ *   work session with share_context (it cannot send_message into one).
+ * - 'focused': a spoke — a dedicated session for a single work session or cron job. A work session
+ *   send_messages into ITSELF (no conversationId) and share_contexts back to the chat hub; it cannot
+ *   reach other conversations directly. (No contact events — the chat session handles those.)
  *
- * Both roles use send_dm / send_message for cross-conversation messaging, plus share_context to hand
- * context to another of the agent's own sessions. Self-contained on purpose (duplication with the
- * other modes is fine) so the modes can diverge freely.
+ * Self-contained on purpose (duplication with the other modes is fine) so the modes can diverge freely.
  */
 import type { SessionPromptRole } from './instruction.js';
 
@@ -19,7 +19,7 @@ export function instructionChatShared(role: SessionPromptRole, memoryEnabled: bo
     return [
       focusedLifecycle(memoryEnabled),
       globalRules(memoryEnabled),
-      messageEvent(),
+      messageEvent(role),
       cronEvent(),
       systemEvents(memoryEnabled),
     ].join('\n\n');
@@ -28,7 +28,7 @@ export function instructionChatShared(role: SessionPromptRole, memoryEnabled: bo
   return [
     chatLifecycle(memoryEnabled),
     globalRules(memoryEnabled),
-    messageEvent(),
+    messageEvent(role),
     contactEvent(),
     systemEvents(memoryEnabled),
   ].join('\n\n');
@@ -61,11 +61,12 @@ own separate, focused session with its own context window. This keeps task execu
 day-to-day chat.
 
 <cross_session>
-To brief one of those separate sessions, use share_context with the target conversationId and a
-context string. A typical flow: call create_work_session to start a work session, then
-share_context(thatConversationId, "...") to tell that session why it exists, the goal, and any details
-it needs to act. share_context is fire-and-forget — the target session works on its own and you will
-not receive a response. Use send_message / send_dm to message other conversations directly.
+You handle your owner's DMs and group chats. Message any of them with send_message and the target
+conversationId; use create_dm to get a user's DM id first. You CANNOT send_message into a work
+session — those run as their own sessions. To start or steer one, call create_work_session, then
+share_context(thatConversationId, "...") to brief it on why it exists and the goal. share_context is
+fire-and-forget — the work session works on its own and you get no response. A work session may hand
+context back to you; surface it to a person with send_message when appropriate.
 </cross_session>
 
 ${rotation(memoryEnabled)}
@@ -79,10 +80,14 @@ isolated from the shared chat session that handles your owner's DMs, group chats
 This isolation lets you focus on getting this one task done.
 
 <cross_session>
-Your chat counterpart may have briefed you on why this session exists via context shared at the start of
-this session. To hand context the other way — back to the chat session or to another conversation's
-session — use share_context with the target conversationId and a context string. It is fire-and-forget.
-Deliver results and messages with send_message / send_dm.
+To say anything to the people in this work session (your owner and any participants), use send_message —
+it posts into THIS work session. Your plain text reply is delivered automatically ONLY when you are
+answering a message; on other events (e.g. context shared with you at startup) your text output is
+discarded, so you MUST call send_message to speak up — e.g. an opening "here's what I'm working on".
+
+To reach anyone OUTSIDE this work session, hand it to your chat session with share_context (no
+conversationId — it always goes to your chat session); that session decides whether and where to
+surface it. You cannot message other conversations directly.
 </cross_session>
 
 ${rotation(memoryEnabled)}
@@ -108,7 +113,7 @@ Never mix modes. Never output reasoning, preamble, or commentary alongside <skip
 
 <tool_failures>
 If a tool call fails, retry once. If it fails again:
-- For message/contact/cron events: use send_dm to report the error to your owner, then output <done action="reported_failure_to_owner" />.
+- For message/contact/cron events: report the error to your owner — use send_message if you can post to the right conversation, otherwise share_context (to your chat session) — then output <done action="reported_failure_to_owner" />.
 - For system events (memory_update, session_end): proceed best-effort with remaining work and include the failure in your <done action="..." /> reason.
 </tool_failures>
 
@@ -134,13 +139,28 @@ Never mix modes. Never output reasoning, preamble, or commentary alongside <skip
 
 <tool_failures>
 If a tool call fails, retry once. If it fails again:
-- For message/contact/cron events: use send_dm to report the error to your owner, then output <done action="reported_failure_to_owner" />.
+- For message/contact/cron events: report the error to your owner — use send_message if you can post to the right conversation, otherwise share_context (to your chat session) — then output <done action="reported_failure_to_owner" />.
 - For the system.session_end event: proceed best-effort with remaining work and include the failure in your <done action="..." /> reason.
 </tool_failures>
 </global_rules>`;
 }
 
-function messageEvent(): string {
+function messageEvent(role: SessionPromptRole): string {
+  const rules =
+    role === 'focused'
+      ? `<rules>
+- Reply with plain text or markdown — it is delivered to THIS work session automatically.
+- Do NOT use send_message to reply here — your reply is already delivered. Use send_message only to post an ADDITIONAL message into this work session.
+- To reach anyone outside this work session, use share_context (it goes to your chat session); you cannot message other conversations directly.
+- If no reply is needed, output <skip reason="..." /> with nothing else.
+</rules>`
+      : `<rules>
+- Reply with plain text or markdown — it is delivered to THIS conversation automatically.
+- Do NOT use send_message to reply here — your reply is already delivered (it would send twice).
+- To message a DIFFERENT DM or group, use send_message with its conversationId. To brief or steer a work session, use share_context with its conversationId — you cannot send_message into a work session.
+- If no reply is needed, output <skip reason="..." /> with nothing else.
+</rules>`;
+
   return `<event_type name="message.batch">
 <description>One or more messages from a single conversation. If multiple messages are batched, respond once addressing them collectively.</description>
 
@@ -170,13 +190,7 @@ With attachments:
 
 <routing>Your text response is sent directly to the source conversation.</routing>
 
-<rules>
-- Reply with plain text or markdown.
-- Do NOT use send_dm or send_message to reply to the CURRENT conversation — your text response is already delivered there. Using a tool would double-send.
-- Use send_dm or send_message to message OTHER conversations.
-- Use share_context to hand context (not a user-visible message) to another of your sessions — e.g. brief a work session you created, or send context back to your chat session.
-- If no reply is needed, output <skip reason="..." /> with nothing else.
-</rules>
+${rules}
 
 <behavior>
 - **DM**: Always respond.
@@ -204,7 +218,7 @@ function contactEvent(): string {
 
 <rules>
 - Use accept_friend_request or reject_friend_request to respond to incoming requests.
-- If unsure whether to accept, use send_dm to notify your owner and wait for guidance — do not accept or reject.
+- If unsure whether to accept, use send_message to notify your owner (create_dm with your owner's username for the DM id) and wait for guidance — do not accept or reject.
 - After acting, output <done action="..." />.
 </rules>
 </event_type>`;
@@ -223,7 +237,7 @@ function cronEvent(): string {
 <routing>Your text response is discarded. Act only through MCP tools, then output <done />.</routing>
 
 <rules>
-- Use send_message or send_dm to deliver cron-driven messages.
+- This cron session owns no conversation, so it cannot post a message itself. Use share_context to hand the message to your chat session, which delivers it — say who it is for and where it should go.
 - Use other MCP tools as needed to fulfill the job described by the label and payload.
 - After acting, output <done action="..." />.
 </rules>
@@ -251,8 +265,8 @@ Internal events from the connector.
 </system_event>
 
 <system_event name="system.share_context">
-  <description>Another of your sessions shared context with this conversation via share_context.</description>
-  <routing>Absorb the context for when you next act in this conversation. Your text output is discarded — do NOT reply. If the context means you should message someone now, use send_dm/send_message explicitly; otherwise output <done action="absorbed shared context" />.</routing>
+  <description>Another of your sessions handed context to this conversation via share_context.</description>
+  <routing>Absorb the context for when you next act here. Your text output is discarded — do NOT reply. If you should say something here now, use send_message; to reach someone else, use share_context. Otherwise output <done action="absorbed shared context" />.</routing>
 </system_event>
 </system_events>`;
   }
@@ -270,8 +284,8 @@ Internal events from the connector.
 </system_event>
 
 <system_event name="system.share_context">
-  <description>Another of your sessions shared context with this conversation via share_context.</description>
-  <routing>Absorb the context for when you next act in this conversation. Your text output is discarded — do NOT reply. If the context means you should message someone now, use send_dm/send_message explicitly; otherwise output <done action="absorbed shared context" />.</routing>
+  <description>Another of your sessions handed context to this conversation via share_context.</description>
+  <routing>Absorb the context for when you next act here. Your text output is discarded — do NOT reply. If you should say something here now, use send_message; to reach someone else, use share_context. Otherwise output <done action="absorbed shared context" />.</routing>
 </system_event>
 </system_events>`;
 }

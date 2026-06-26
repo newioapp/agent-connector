@@ -12,7 +12,7 @@ import type {
   EngineConfig,
   AgentInstanceListener,
 } from '@newio/agent-engine';
-import type { NewioAppForMcp, NewioMcpServerInterface } from '@newio/agent-engine';
+import type { NewioAppForMcp, NewioMcpServerInterface, MessagingProfile } from '@newio/agent-engine';
 import type { IncomingMessage, SessionStore } from '@newio/agent-engine';
 import { MockNewioApp } from '../mock-newio-app.js';
 import { OverridablePromptFormatter } from '../prompts/overridable-prompt-formatter.js';
@@ -96,22 +96,23 @@ export class EvalAgentInstance extends BaseAgentInstance {
   /** Optional hook called when the target agent invokes an MCP tool. */
   onToolCall?: (toolName: string, args: Readonly<Record<string, unknown>>) => void;
 
-  createMcpServer(app: NewioAppForMcp): NewioMcpServerInterface {
+  createMcpServer(
+    app: NewioAppForMcp,
+    profile: MessagingProfile,
+    ownConversationId: string | undefined,
+    hubConversationId: string | undefined,
+  ): NewioMcpServerInterface {
     return new NewioEvalMcpServer({
       app,
-      initiateConversation: (convId, context) => {
-        if (!this.abortController.signal.aborted) {
-          this.inbound.push({ type: 'initiate_conversation', conversationId: convId, context });
-          this.drainInbound();
-        }
-      },
       shareContext: (convId, context) => {
         if (!this.abortController.signal.aborted) {
           this.inbound.push({ type: 'share_context', conversationId: convId, context });
           this.drainInbound();
         }
       },
-      sessionMode: this.sessionMode,
+      profile,
+      ownConversationId,
+      hubConversationId,
       memoryEnabled: this._memoryEnabled,
       onToolCall: (tool, args) => {
         this.onToolCall?.(tool, args);

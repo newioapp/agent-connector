@@ -62,9 +62,6 @@ export class SessionEventProcessorImpl implements SessionEventProcessor {
       case 'update_memory':
         await this.processSessionMemoryUpdate(session, event.callbacks);
         break;
-      case 'initiate_conversation':
-        await this.processConversationInitiation(session, event.conversationId, event.context);
-        break;
       case 'share_context':
         await this.processSharedContext(session, event.conversationId, event.context);
         break;
@@ -215,27 +212,10 @@ export class SessionEventProcessorImpl implements SessionEventProcessor {
     }
   }
 
-  private async processConversationInitiation(session: AgentSession, conversationId: string, context: string) {
-    try {
-      const promptText = this.promptManager.buildInitiateConversationPrompt(session.promptFormatterVersion, context);
-      const output = await collectAgentMessage(session.prompt(promptText, conversationId));
-
-      if (!output || this.promptManager.isSkip(session.promptFormatterVersion, output)) {
-        log.debug(`${this.logTag} Conversation initiation skipped for ${conversationId} (no message produced)`);
-        return;
-      }
-
-      await this.app.sendMessage(conversationId, output);
-      log.info(`${this.logTag} Delegated message sent to ${conversationId}`);
-    } catch (err: unknown) {
-      log.error(`${this.logTag} Conversation initiation failed for ${conversationId}`, err);
-    }
-  }
-
   /**
-   * Inject context shared from another of the agent's sessions. Unlike conversation initiation, the
-   * session ABSORBS the context — its text output is discarded (not sent). The agent may still call
-   * send_dm/send_message tools during processing if it explicitly decides to message someone.
+   * Inject context shared from another of the agent's sessions. The session ABSORBS the context — its
+   * text output is discarded (not sent). The agent may call send_message during processing if it
+   * explicitly decides to surface something.
    */
   private async processSharedContext(session: AgentSession, conversationId: string, context: string) {
     try {
