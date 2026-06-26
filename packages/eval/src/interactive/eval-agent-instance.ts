@@ -99,6 +99,7 @@ export class EvalAgentInstance extends BaseAgentInstance {
   createMcpServer(
     app: NewioAppForMcp,
     profile: MessagingProfile,
+    ownConversationId: string | undefined,
     hubConversationId: string | undefined,
   ): NewioMcpServerInterface {
     return new NewioEvalMcpServer({
@@ -110,6 +111,7 @@ export class EvalAgentInstance extends BaseAgentInstance {
         }
       },
       profile,
+      ownConversationId,
       hubConversationId,
       memoryEnabled: this._memoryEnabled,
       onToolCall: (tool, args) => {

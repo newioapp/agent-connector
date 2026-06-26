@@ -46,6 +46,12 @@ export function registerMessagingTools(
   shareContext: (convId: string, context: string) => void,
   getCurrentConversationId: IdGetter,
   profile: MessagingProfile,
+  /**
+   * The conversation this session is responsible for (a 1:1 session's own conversation). Used as the
+   * target for the 'current' send_message — it is stable, unlike the per-turn current conversation,
+   * which is undefined on events that don't originate from a conversation (e.g. system.share_context).
+   */
+  ownConversationId: string | undefined,
   /** For shareContext 'to-hub': the chat hub (owner DM) conversation the context is handed to. */
   hubConversationId: string | undefined,
   onToolCall?: ToolCallHook,
@@ -69,9 +75,12 @@ export function registerMessagingTools(
       },
       async ({ text: msgText, filePaths }) => {
         onToolCall?.('send_message', { text: msgText, filePaths });
-        const conversationId = getCurrentConversationId();
+        // Send to the conversation this session is responsible for, falling back to the live current
+        // conversation. The responsible id is stable across events (e.g. it's set during a
+        // share_context turn, where the current conversation is undefined).
+        const conversationId = ownConversationId ?? getCurrentConversationId();
         if (!conversationId) {
-          return error('No active conversation for this session — cannot send a message right now.');
+          return error('No conversation for this session — cannot send a message right now.');
         }
         await app.sendMessage(conversationId, msgText, filePaths ? { filePaths } : undefined);
         return text('Message sent');
@@ -95,15 +104,18 @@ export function registerMessagingTools(
         if (getCurrentConversationId() === conversationId) {
           return error("Can't send to the current conversation — your reply is delivered automatically.");
         }
-        if (guarded) {
-          const info = await app.getConversationInfo(conversationId);
-          if (info.type === 'temp_group') {
-            return error(
-              'That is a work session, handled by its own session. Use share_context to hand it the message instead.',
-            );
+        const opts = filePaths ? { filePaths } : undefined;
+        try {
+          // The hub (guarded) must not message a work session — that belongs to its own session. The
+          // work-session check lives in the app so this layer stays thin; it throws on a work session.
+          if (guarded) {
+            await app.sendMessageToManagedConversation(conversationId, msgText, opts);
+          } else {
+            await app.sendMessage(conversationId, msgText, opts);
           }
+        } catch (err: unknown) {
+          return error(err instanceof Error ? err.message : 'Could not send the message.');
         }
-        await app.sendMessage(conversationId, msgText, filePaths ? { filePaths } : undefined);
         return text('Message sent');
       },
     );

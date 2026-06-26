@@ -379,6 +379,18 @@ export class MockNewioApp implements NewioAppForAgent, NewioAppForMcp {
     });
   }
 
+  async sendMessageToManagedConversation(
+    conversationId: string,
+    text?: string,
+    opts?: { filePaths?: readonly string[] },
+  ): Promise<void> {
+    const info = await this.getConversationInfo(conversationId);
+    if (info.type === 'temp_group') {
+      throw new Error('That is a work session — use share_context to hand it the message instead.');
+    }
+    await this.sendMessage(conversationId, text, opts);
+  }
+
   async sendDm(username: string, text: string, filePaths?: readonly string[]): Promise<void> {
     const convId = await this.getOrCreateDm(username);
     await this.sendMessage(convId, text, filePaths ? { filePaths } : undefined);

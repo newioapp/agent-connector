@@ -55,6 +55,8 @@ export interface NewioEvalMcpServerOptions {
   readonly shareContext: (convId: string, context: string) => void;
   /** Which messaging tools this session gets, decided per session. */
   readonly profile: MessagingProfile;
+  /** The conversation this session is responsible for (target of the 'current' send_message). */
+  readonly ownConversationId?: string;
   /** For a share_context 'to-hub' profile: the chat hub (owner DM) conversation. */
   readonly hubConversationId?: string;
   /** Whether the agent has long-term memory enabled. When false, the memory tools are not registered. */
@@ -71,6 +73,7 @@ export class NewioEvalMcpServer implements NewioMcpServerInterface {
       app: opts.app,
       shareContext: opts.shareContext,
       profile: opts.profile,
+      ownConversationId: opts.ownConversationId,
       hubConversationId: opts.hubConversationId,
       memoryEnabled: opts.memoryEnabled,
       onToolCall: opts.onToolCall,

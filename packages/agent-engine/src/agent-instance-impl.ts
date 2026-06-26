@@ -86,6 +86,8 @@ interface McpWiringWaiter {
   readonly resolve: (server: NewioMcpServerInterface) => void;
   /** The messaging tools the launching session should get (decided per session). */
   readonly profile: MessagingProfile;
+  /** The conversation the launching session is responsible for (target of 'current' send_message). */
+  readonly ownConversationId?: string;
   /** For a share_context 'to-hub' profile: the chat hub (owner DM) conversation. */
   readonly hubConversationId?: string;
 }
@@ -154,6 +156,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
   abstract createMcpServer(
     app: NewioAppForMcp,
     profile: MessagingProfile,
+    ownConversationId: string | undefined,
     hubConversationId: string | undefined,
   ): NewioMcpServerInterface;
 
@@ -172,23 +175,26 @@ export abstract class BaseAgentInstance implements AgentInstance {
   protected resolveMessagingProfile(
     type: SessionType,
     externalReferenceId: string,
-  ): { profile: MessagingProfile; hubConversationId?: string } {
+  ): { profile: MessagingProfile; ownConversationId?: string; hubConversationId?: string } {
+    // A conversation session is responsible for its own conversation (the 'current' send_message
+    // target). Contact/cron sessions own none.
+    const ownConversationId = type === 'conversation' ? externalReferenceId : undefined;
     const mode = resolveSessionMode(this.config.sessionMode);
     if (mode === 'shared') {
-      return { profile: { sendMessage: 'explicit', shareContext: 'none' } };
+      return { profile: { sendMessage: 'explicit', shareContext: 'none' }, ownConversationId };
     }
     if (mode === 'isolated') {
       return type === 'conversation'
-        ? { profile: { sendMessage: 'current', shareContext: 'explicit' } }
+        ? { profile: { sendMessage: 'current', shareContext: 'explicit' }, ownConversationId }
         : { profile: { sendMessage: 'none', shareContext: 'explicit' } };
     }
     // chat-shared
     const hubConversationId = this._ownerDmConversationId;
     if (type === 'conversation' && externalReferenceId === hubConversationId) {
-      return { profile: { sendMessage: 'explicit-guarded', shareContext: 'explicit' } };
+      return { profile: { sendMessage: 'explicit-guarded', shareContext: 'explicit' }, ownConversationId };
     }
     const sendMessage = type === 'conversation' ? 'current' : 'none';
-    return { profile: { sendMessage, shareContext: 'to-hub' }, hubConversationId };
+    return { profile: { sendMessage, shareContext: 'to-hub' }, ownConversationId, hubConversationId };
   }
 
   /**
@@ -263,6 +269,7 @@ export abstract class BaseAgentInstance implements AgentInstance {
           const mcpServer = this.createMcpServer(
             app,
             waiter?.profile ?? NO_MESSAGING_PROFILE,
+            waiter?.ownConversationId,
             waiter?.hubConversationId,
           );
           if (waiter) {
@@ -515,8 +522,14 @@ export abstract class BaseAgentInstance implements AgentInstance {
     const mcpServerPromise = new Promise<NewioMcpServerInterface>((resolve) => {
       resolveMcp = resolve;
     });
-    const { profile, hubConversationId } = this.resolveMessagingProfile(type, externalReferenceId);
-    this.pendingMcpWiring = { promise: mcpServerPromise, resolve: resolveMcp, profile, hubConversationId };
+    const { profile, ownConversationId, hubConversationId } = this.resolveMessagingProfile(type, externalReferenceId);
+    this.pendingMcpWiring = {
+      promise: mcpServerPromise,
+      resolve: resolveMcp,
+      profile,
+      ownConversationId,
+      hubConversationId,
+    };
 
     try {
       const session = await produce();
@@ -1024,6 +1037,7 @@ export class AgentInstanceImpl extends BaseAgentInstance {
   createMcpServer(
     app: NewioAppForMcp,
     profile: MessagingProfile,
+    ownConversationId: string | undefined,
     hubConversationId: string | undefined,
   ): NewioMcpServerInterface {
     return new NewioMcpServer({
@@ -1035,6 +1049,7 @@ export class AgentInstanceImpl extends BaseAgentInstance {
         }
       },
       profile,
+      ownConversationId,
       hubConversationId,
       memoryEnabled: this._memoryEnabled,
     });

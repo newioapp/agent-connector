@@ -529,6 +529,24 @@ export class NewioApp implements NewioAppForAgent, NewioAppForMcp {
   }
 
   /**
+   * Send a message but refuse work sessions (temp_group): those run as their own session and must be
+   * reached via share_context so that session keeps full visibility. Used by the chat hub.
+   */
+  async sendMessageToManagedConversation(
+    conversationId: string,
+    text?: string,
+    opts?: { filePaths?: readonly string[] },
+  ): Promise<void> {
+    const info = await this.getConversationInfo(conversationId);
+    if (info.type === 'temp_group') {
+      throw new Error(
+        'That is a work session, handled by its own session. Use share_context to hand it the message instead.',
+      );
+    }
+    await this.sendMessage(conversationId, text, opts);
+  }
+
+  /**
    * Send an action request message and wait for the recipient's response.
    *
    * Registers a pending promise keyed by `action.requestId`. The promise resolves

@@ -408,6 +408,28 @@ describe('NewioApp', () => {
     });
   });
 
+  describe('sendMessageToManagedConversation', () => {
+    it('rejects a work session (temp_group) and does not send', async () => {
+      const conv = makeConversation({ conversationId: 'work-1', type: 'temp_group' });
+      const client = mockClient([], [conv]);
+      const app = NewioApp.createFromComponents(identity, mockAuth(), client, mockWs());
+      await app.init();
+
+      await expect(app.sendMessageToManagedConversation('work-1', 'hi')).rejects.toThrow(/work session/i);
+      expect(client.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('sends to a non-work-session conversation', async () => {
+      const conv = makeConversation({ conversationId: 'grp-1', type: 'group' });
+      const client = mockClient([], [conv]);
+      const app = NewioApp.createFromComponents(identity, mockAuth(), client, mockWs());
+      await app.init();
+
+      await app.sendMessageToManagedConversation('grp-1', 'hi');
+      expect(client.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'grp-1' }));
+    });
+  });
+
   describe('dmOwner', () => {
     it('sends DM to owner', async () => {
       const { app, client } = await createApp();

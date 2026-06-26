@@ -30,6 +30,7 @@ function mockApp(
     createWorkSession: vi.fn().mockResolvedValue('ws-conv-id'),
     getOrCreateDm: vi.fn().mockResolvedValue('dm-conv-id'),
     sendMessage: vi.fn().mockResolvedValue(undefined),
+    sendMessageToManagedConversation: vi.fn().mockResolvedValue(undefined),
     sendDm: vi.fn().mockResolvedValue(undefined),
     dmOwner: vi.fn().mockResolvedValue(undefined),
     sendFriendRequestByUsername: vi.fn().mockResolvedValue(undefined),
@@ -77,9 +78,17 @@ async function createConnectedClient(
   profile: MessagingProfile = ISOLATED_PROFILE,
   memoryEnabled = true,
   hubConversationId?: string,
+  ownConversationId?: string,
 ): Promise<Client> {
   const shareContext = vi.fn();
-  const server = new NewioMcpServer({ app, shareContext, profile, hubConversationId, memoryEnabled });
+  const server = new NewioMcpServer({
+    app,
+    shareContext,
+    profile,
+    ownConversationId,
+    hubConversationId,
+    memoryEnabled,
+  });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
   const client = new Client({ name: 'test-client', version: '1.0.0' });
@@ -295,11 +304,17 @@ describe('MCP Server', () => {
     expect(app.createGroup).toHaveBeenCalledWith('Team', ['alice', 'bob']);
   });
 
-  it('send_message (current profile) sends to the session conversation with no conversationId arg', async () => {
+  it('send_message (current profile) targets the responsible conversation, no conversationId arg', async () => {
     const app = mockApp();
     const shareContext = vi.fn();
-    const server = new NewioMcpServer({ app, shareContext, profile: CHAT_SPOKE_PROFILE, memoryEnabled: true });
-    server.setCurrentConversationIdGetter(() => 'work-1');
+    // No currentConversationId getter set (as on a share_context turn) — it must use ownConversationId.
+    const server = new NewioMcpServer({
+      app,
+      shareContext,
+      profile: CHAT_SPOKE_PROFILE,
+      ownConversationId: 'work-1',
+      memoryEnabled: true,
+    });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     const client = new Client({ name: 'test-client', version: '1.0.0' });
@@ -323,21 +338,28 @@ describe('MCP Server', () => {
     expect(app.sendMessage).toHaveBeenCalledWith('conv-1', 'check this', { filePaths: ['/tmp/photo.jpg'] });
   });
 
-  it('send_message (guarded profile) refuses a work session and points to share_context', async () => {
+  it('send_message (guarded profile) routes through the app guard and surfaces its error', async () => {
     const app = mockApp();
-    (app.getConversationInfo as ReturnType<typeof vi.fn>).mockResolvedValue({
-      conversationId: 'work-1',
-      type: 'temp_group',
-      admins: [],
-    });
+    // The work-session validation lives in the app; the tool stays thin and surfaces the app error.
+    (app.sendMessageToManagedConversation as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('That is a work session — use share_context to hand it the message instead.'),
+    );
     const client = await createConnectedClient(app, CHAT_HUB_PROFILE);
     const result = await client.callTool({
       name: 'send_message',
       arguments: { conversationId: 'work-1', text: 'hi' },
     });
+    expect(app.sendMessageToManagedConversation).toHaveBeenCalledWith('work-1', 'hi', undefined);
     expect(result.isError).toBe(true);
     expect(getResultText(result)).toContain('share_context');
     expect(app.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('send_message (guarded profile) sends via the app guard for a normal conversation', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app, CHAT_HUB_PROFILE);
+    await client.callTool({ name: 'send_message', arguments: { conversationId: 'conv-1', text: 'hi' } });
+    expect(app.sendMessageToManagedConversation).toHaveBeenCalledWith('conv-1', 'hi', undefined);
   });
 
   it('download_attachment returns local file path', async () => {
