@@ -6,9 +6,10 @@
  * session updates, and keeps the backend member record in sync with the value the
  * agent is actually using.
  *
- * The set of dimensions is data-driven via CONFIG_FIELD: supporting a new one — e.g.
- * "effort" — means adding an entry there and an applyCategory() case. Extraction,
- * change-tracking and the backend reconcile are all generic over the category list.
+ * Every dimension is set through one generic ACP call — `setSessionConfigOption` — so
+ * supporting a new one (e.g. "effort") is just a CONFIG_FIELD entry plus extraction;
+ * no bespoke setter. The per-dimension legacy methods (`unstable_setSessionModel`,
+ * `setSessionMode`) survive only as a fallback for agents that predate the generic API.
  */
 import type { ClientSideConnection, NewSessionResponse, LoadSessionResponse } from '@agentclientprotocol/sdk';
 import type * as acp from '@agentclientprotocol/sdk';
@@ -41,6 +42,16 @@ export class AcpSessionConfigHandler {
   /** The value the agent is actually using per dimension — the source of truth. */
   private readonly current: Record<ConfigCategory, AgentSessionConfig | undefined>;
 
+  /**
+   * The advertised config-option `id` per category — the `configId` to pass to
+   * setSessionConfigOption. Present only when the agent advertises the dimension via
+   * configOptions; absent for legacy models/modes agents (we then fall back to the
+   * category name as a best-effort configId, which a true legacy agent rejects with
+   * -32601 so we drop to its per-dimension setter). Tracked separately because ACP's
+   * configId is the option's `id`, which need not equal the (UX-only) `category`.
+   */
+  private readonly configOptionId: Partial<Record<ConfigCategory, string>> = {};
+
   /** What we believe the backend member record holds per dimension; reconcile target. */
   private readonly believedBackend: Partial<Record<ConfigCategory, string | null>> = {};
 
@@ -57,82 +68,83 @@ export class AcpSessionConfigHandler {
   ) {
     const { configOptions, models, modes } = sessionResponse;
 
-    this.current = {
-      model:
-        extractConfigByCategory(configOptions, 'model') ??
-        (models
-          ? {
-              options: models.availableModels.map((m) => ({
-                id: m.modelId,
-                name: m.name,
-                description: m.description ?? undefined,
-              })),
-              selectedId: models.currentModelId,
-            }
-          : undefined),
-      mode:
-        extractConfigByCategory(configOptions, 'mode') ??
-        (modes
-          ? {
-              options: modes.availableModes.map((m) => ({
-                id: m.id,
-                name: m.name,
-                description: m.description ?? undefined,
-              })),
-              selectedId: modes.currentModeId,
-            }
-          : undefined),
-    };
+    const current = {} as Record<ConfigCategory, AgentSessionConfig | undefined>;
+    for (const category of CONFIG_CATEGORIES) {
+      const option = findSelectOption(configOptions, category);
+      if (option) {
+        current[category] = { options: flattenSelectOptions(option.options), selectedId: option.currentValue };
+        this.configOptionId[category] = option.id;
+        continue;
+      }
+      // Legacy fallback: older agents advertise model/mode via the dedicated fields, not configOptions.
+      if (category === 'model' && models) {
+        current[category] = {
+          options: models.availableModels.map((m) => ({
+            id: m.modelId,
+            name: m.name,
+            description: m.description ?? undefined,
+          })),
+          selectedId: models.currentModelId,
+        };
+      } else if (category === 'mode' && modes) {
+        current[category] = {
+          options: modes.availableModes.map((m) => ({
+            id: m.id,
+            name: m.name,
+            description: m.description ?? undefined,
+          })),
+          selectedId: modes.currentModeId,
+        };
+      } else {
+        current[category] = undefined;
+      }
+    }
+    this.current = current;
   }
 
-  /** Dispatch a value to the category's ACP setter. */
+  /**
+   * Set a dimension's value through the generic ACP config-option API, with the
+   * per-dimension legacy method as a fallback.
+   *
+   * setSessionConfigOption is the stable, generic setter that supersedes the dedicated
+   * model/mode methods. We always try it first (using the agent's advertised option id,
+   * or the category name as a best-effort id for legacy agents). Only on a "method not
+   * found" (-32601) reply — an agent that predates the generic API — do we fall back to
+   * the per-dimension legacy setter. Any other error (e.g. an invalid value) is a genuine
+   * failure that must surface rather than be masked by a second attempt.
+   */
   private async applyCategory(category: ConfigCategory, value: string): Promise<void> {
+    log.info(`[${this.tag}] Setting ${category} to: ${value}`);
+    const configId = this.configOptionId[category] ?? category;
+    const legacy = this.legacySetter(category);
+    try {
+      await this.connection.setSessionConfigOption({ sessionId: this.correlationId, configId, value });
+    } catch (err: unknown) {
+      if (!legacy || !isMethodNotFound(err)) {
+        throw new Error(extractAcpErrorMessage(err, `Failed to set ${category} to "${value}"`));
+      }
+      log.info(`[${this.tag}] setSessionConfigOption unavailable for ${category}, falling back to legacy setter`);
+      try {
+        await legacy(value);
+      } catch (fallbackErr: unknown) {
+        throw new Error(extractAcpErrorMessage(fallbackErr, `Failed to set ${category} to "${value}"`));
+      }
+    }
+    const cur = this.current[category];
+    if (cur) {
+      this.current[category] = { ...cur, selectedId: value };
+    }
+  }
+
+  /** The per-dimension legacy ACP setter for agents that predate setSessionConfigOption, if any. */
+  private legacySetter(category: ConfigCategory): ((value: string) => Promise<unknown>) | undefined {
     switch (category) {
       case 'model':
-        return this.setModel(value);
+        return (value) => this.connection.unstable_setSessionModel({ sessionId: this.correlationId, modelId: value });
       case 'mode':
-        return this.setMode(value);
-    }
-  }
-
-  private async setModel(modelId: string): Promise<void> {
-    log.info(`[${this.tag}] Setting model to: ${modelId}`);
-    try {
-      await this.connection.unstable_setSessionModel({ sessionId: this.correlationId, modelId });
-    } catch (err: unknown) {
-      // `unstable_setSessionModel` is the experimental model API: older agents
-      // implement it, newer agents drop it in favour of the stable
-      // `setSessionConfigOption` and reply "method not found" (-32601). Only
-      // fall back in that case — a genuine failure (e.g. an invalid model)
-      // should surface its own error rather than be masked by a second attempt.
-      if (!isMethodNotFound(err)) {
-        throw new Error(extractAcpErrorMessage(err, `Failed to set model to "${modelId}"`));
-      }
-      log.info(`[${this.tag}] unstable_setSessionModel unavailable, falling back to setSessionConfigOption`);
-      try {
-        await this.connection.setSessionConfigOption({
-          sessionId: this.correlationId,
-          configId: 'model',
-          value: modelId,
-        });
-      } catch (fallbackErr: unknown) {
-        throw new Error(extractAcpErrorMessage(fallbackErr, `Failed to set model to "${modelId}"`));
-      }
-    }
-    if (this.current.model) {
-      this.current.model = { ...this.current.model, selectedId: modelId };
-    }
-  }
-
-  private async setMode(modeId: string): Promise<void> {
-    log.info(`[${this.tag}] Setting mode to: ${modeId}`);
-    try {
-      await this.connection.setSessionMode({ sessionId: this.correlationId, modeId });
-    } catch (err: unknown) {
-      throw new Error(extractAcpErrorMessage(err, `Failed to set mode to "${modeId}"`));
-    }
-    if (this.current.mode) {
-      this.current.mode = { ...this.current.mode, selectedId: modeId };
+        return (value) => this.connection.setSessionMode({ sessionId: this.correlationId, modeId: value });
+      default:
+        return undefined;
     }
   }
 
@@ -167,6 +179,11 @@ export class AcpSessionConfigHandler {
             options: flattenSelectOptions(opt.options),
             selectedId: opt.currentValue,
           };
+          // The agent confirms it speaks the generic config-option API for this dimension; record
+          // its id so future sets target it directly rather than guessing from the category name.
+          if (opt.id) {
+            this.configOptionId[opt.category] = opt.id;
+          }
           changed = true;
           log.info(
             `[${this.tag}] Received ${CONFIG_FIELD[opt.category]} updated via config_option_update to: ${opt.currentValue}`,
@@ -186,13 +203,13 @@ export class AcpSessionConfigHandler {
    * Apply persisted/requested config, then reconcile the backend with reality.
    *
    * Only a value the agent actually advertises is applied; an unadvertised value
-   * is skipped (not applied) because `setSessionModel`/`setSessionConfigOption`
-   * accept an unknown id silently and only fail much later at prompt time (e.g. a
-   * Codex runner that inherited a Claude "opus" model) — so a try/catch fallback
-   * never fires and we must validate up front. The incoming value is the current
-   * backend value (persisted load at startup, or the desktop's PUT), so we record
-   * it as believed-backend before reconciling; reportConfig then corrects the
-   * backend wherever the agent's actual selection differs.
+   * is skipped (not applied) because `setSessionConfigOption` accepts an unknown id
+   * silently and only fails much later at prompt time (e.g. a Codex runner that
+   * inherited a Claude "opus" model) — so a try/catch fallback never fires and we
+   * must validate up front. The incoming value is the current backend value
+   * (persisted load at startup, or the desktop's PUT), so we record it as
+   * believed-backend before reconciling; reportConfig then corrects the backend
+   * wherever the agent's actual selection differs.
    */
   async applySessionConfig(config: SessionConfigUpdate): Promise<void> {
     log.info(`[${this.tag}] Applying session config: acpMode=${config.acpMode}, acpModel=${config.acpModel}`);
@@ -274,20 +291,17 @@ export class AcpSessionConfigHandler {
   }
 }
 
-/** Extract an AgentSessionConfig from configOptions by category, flattening grouped options. */
-function extractConfigByCategory(
+/** Find the select config option advertised for a category — carries its setter `id`. */
+function findSelectOption(
   configOptions: ReadonlyArray<acp.SessionConfigOption> | null | undefined,
   category: string,
-): AgentSessionConfig | undefined {
+): (acp.SessionConfigOption & { type: 'select' }) | undefined {
   if (!configOptions) {
     return undefined;
   }
   for (const opt of configOptions) {
     if (opt.type === 'select' && opt.category === category) {
-      return {
-        options: flattenSelectOptions(opt.options),
-        selectedId: opt.currentValue,
-      };
+      return opt;
     }
   }
   return undefined;
