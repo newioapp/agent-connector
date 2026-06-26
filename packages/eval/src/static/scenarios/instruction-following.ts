@@ -9,8 +9,9 @@ import { defaultSetup, owner, alice, ownerDmConvId, teamChatConvId, teamChat, ms
 export const instructionFollowingScenarios: readonly EvalScenario[] = [
   {
     id: 'instruction-isolated-no-send-dm',
-    name: 'Isolated mode does not call send_dm',
-    description: 'In isolated mode, send_dm is unavailable. Agent should use create_dm + initiate_conversation.',
+    name: 'Isolated mode DMs a user via create_dm + share_context',
+    description:
+      'In isolated mode, to DM a user the agent uses create_dm to resolve the conversation, then share_context.',
     area: 'instruction_following',
     sessionMode: 'isolated',
     setup: {
@@ -31,8 +32,17 @@ export const instructionFollowingScenarios: readonly EvalScenario[] = [
       },
     ],
     expectations: [
-      { type: 'tool_not_called', tool: 'send_dm', description: 'send_dm is not available in isolated mode' },
-      { type: 'tool_called', tool: 'create_dm', description: 'Should use create_dm + initiate_conversation pattern' },
+      {
+        type: 'tool_called',
+        tool: 'create_dm',
+        argsContain: { username: 'priya7k' },
+        description: "Should resolve Priya's DM conversation",
+      },
+      {
+        type: 'tool_called',
+        tool: 'share_context',
+        description: 'Should deliver via share_context (cross-conversation)',
+      },
     ],
   },
   {
@@ -63,7 +73,11 @@ export const instructionFollowingScenarios: readonly EvalScenario[] = [
     expectations: [
       { type: 'no_skip', eventIndex: 0, description: 'Agent responds to @mention' },
       { type: 'tool_not_called', tool: 'send_message', description: 'Reply is auto-delivered, no send_message needed' },
-      { type: 'tool_not_called', tool: 'send_dm', description: 'Should not send via DM either' },
+      {
+        type: 'tool_not_called',
+        tool: 'share_context',
+        description: 'Should not delegate for the current conversation',
+      },
     ],
   },
   {

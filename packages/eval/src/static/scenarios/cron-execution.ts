@@ -10,7 +10,8 @@ export const cronExecutionScenarios: readonly EvalScenario[] = [
   {
     id: 'cron-sends-to-correct-target',
     name: 'Cron sends message to correct recipient',
-    description: 'Cron label says "remind Priya about the meeting" — agent should call send_dm with priya7k.',
+    description:
+      'Cron label says "remind Priya about the meeting" — agent should create_dm + send_message to the target.',
     area: 'cron_execution',
     sessionMode: 'shared',
     setup: {
@@ -31,10 +32,11 @@ export const cronExecutionScenarios: readonly EvalScenario[] = [
       { type: 'skip', eventIndex: 0, description: 'Cron text is discarded' },
       {
         type: 'tool_called',
-        tool: 'send_dm',
+        tool: 'create_dm',
         argsContain: { username: alice.username },
-        description: 'Sends reminder to Priya',
+        description: 'Resolves the reminder recipient',
       },
+      { type: 'tool_called', tool: 'send_message', description: 'Sends the reminder' },
     ],
   },
   {
@@ -59,7 +61,11 @@ export const cronExecutionScenarios: readonly EvalScenario[] = [
     ],
     expectations: [
       { type: 'skip', eventIndex: 0, description: 'Cron output is _skip' },
-      { type: 'tool_called', tool: 'send_dm', description: 'Agent uses send_dm to send the check-in to owner' },
+      {
+        type: 'tool_called',
+        tool: 'send_message',
+        description: 'Agent uses send_message to send the check-in to owner',
+      },
     ],
   },
 ];

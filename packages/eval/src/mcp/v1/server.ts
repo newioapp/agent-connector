@@ -6,8 +6,8 @@
  * descriptions) that ship — no fork, no drift.
  *
  * Experiment seam (grow when needed): to give the agent a different toolset or
- * tool descriptions for an A/B — e.g. comparing `initiate_conversation` vs.
- * `share_context` — replace the delegation below with a registration that
+ * tool descriptions for an A/B — e.g. suppressing a tool or swapping a
+ * `share_context` description — replace the delegation below with a registration that
  * suppresses / overrides / adds tools, by running the real tool registration
  * against a `registerTool`-intercepting proxy of `McpServer` here, rather than
  * copying tool bodies. See OverridablePromptFormatter for the prompt-side analog.
@@ -22,7 +22,7 @@
  * import { registerNewioMcpTools } from '@newio/agent-engine'; // expose this fn when needed
  *
  * const server = new McpServer({ name: 'newio-mcp-server', version: '0.1.0' });
- * const suppress = new Set(['initiate_conversation']);                  // hide a tool
+ * const suppress = new Set(['share_context']);                         // hide a tool
  * const overrides: Record<string, { description?: string }> = {
  *   share_context: { description: ALT_SHARE_CONTEXT_DESCRIPTION },      // A/B a description
  * };
@@ -36,7 +36,7 @@
  *     };
  *   },
  * });
- * registerNewioMcpTools(proxy, { app, initiateConversation, shareContext, sessionMode, onToolCall });
+ * registerNewioMcpTools(proxy, { app, shareContext, profile, ownConversationId, hubConversationId, onToolCall });
  * // server.registerTool('my_experimental_tool', ...) to add extras, then keep `server` as `this.inner`'s transport target.
  * ```
  */
