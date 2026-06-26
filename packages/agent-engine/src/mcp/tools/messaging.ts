@@ -75,14 +75,13 @@ export function registerMessagingTools(
       },
       async ({ text: msgText, filePaths }) => {
         onToolCall?.('send_message', { text: msgText, filePaths });
-        // Send to the conversation this session is responsible for, falling back to the live current
-        // conversation. The responsible id is stable across events (e.g. it's set during a
-        // share_context turn, where the current conversation is undefined).
-        const conversationId = ownConversationId ?? getCurrentConversationId();
-        if (!conversationId) {
+        // Always the conversation this session is responsible for — stable across events (unlike the
+        // live current conversation, which is undefined on e.g. a share_context turn). The 'current'
+        // profile is only given to conversation-bound sessions, so this is always set.
+        if (!ownConversationId) {
           return error('No conversation for this session — cannot send a message right now.');
         }
-        await app.sendMessage(conversationId, msgText, filePaths ? { filePaths } : undefined);
+        await app.sendMessage(ownConversationId, msgText, filePaths ? { filePaths } : undefined);
         return text('Message sent');
       },
     );
