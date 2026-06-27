@@ -477,6 +477,24 @@ describe('AuthManager', () => {
 
       auth.dispose();
     });
+
+    it('should not retry a terminal auth failure (403 forbidden refresh token)', async () => {
+      const exp = Math.floor(Date.now() / 1000) + 600;
+      const oldToken = fakeJwt(exp);
+      mockFetch([{ status: 403, body: { error: 'forbidden', errorCode: 'FORBIDDEN' } }]);
+
+      const store = new InMemoryTokenStore();
+      const auth = new AuthManager('https://api.newio.dev', { store });
+      auth.setTokens(oldToken, 'refresh-1');
+
+      await vi.advanceTimersByTimeAsync(301_000);
+      // Terminal (auth) failure clears tokens and arms no retry.
+      expect(store.getRefreshToken()).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+
+      auth.dispose();
+    });
   });
 
   describe('waitForApproval — onPollAttempt callback', () => {

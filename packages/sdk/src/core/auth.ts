@@ -306,12 +306,15 @@ export class AuthManager {
         log.debug('Token refreshed successfully.');
       } catch (err) {
         log.error('Token refresh failed.', err);
-        if (err instanceof UnauthenticatedApiError) {
+        // Auth-related failures mean the refresh token itself was rejected
+        // (expired/revoked/forbidden) — terminal, retrying won't help.
+        const terminal = err instanceof UnauthenticatedApiError || err instanceof ForbiddenApiError;
+        if (terminal) {
           log.warn('Refresh token rejected by server — clearing tokens.');
           this.store.clear();
           this.clearRefreshTimer();
         }
-        throw new TokenRefreshError(err instanceof Error ? err.message : 'Token refresh failed.');
+        throw new TokenRefreshError(err instanceof Error ? err.message : 'Token refresh failed.', { terminal });
       }
     })();
 
@@ -346,8 +349,11 @@ export class AuthManager {
   private async runScheduledRefresh(): Promise<void> {
     try {
       await this.doRefresh();
-    } catch {
-      if (this.store.getRefreshToken()) {
+    } catch (err) {
+      // Only retry transient failures. A terminal failure (refresh token rejected)
+      // won't be helped by retrying, and doRefresh has already cleared the tokens.
+      const terminal = err instanceof TokenRefreshError && err.terminal;
+      if (!terminal && this.store.getRefreshToken()) {
         this.clearRefreshTimer();
         this.refreshTimer = setTimeout(() => {
           void this.runScheduledRefresh();
