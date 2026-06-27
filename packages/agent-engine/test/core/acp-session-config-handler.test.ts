@@ -5,7 +5,7 @@ import type { ClientSideConnection, NewSessionResponse } from '@agentclientproto
 
 /** Expose private methods for testing. */
 interface TestableConfigHandler {
-  applyCategory(category: 'model' | 'mode', value: string): Promise<void>;
+  applyConfig(configId: 'model' | 'mode', value: string): Promise<void>;
   reportConfig(): Promise<void>;
 }
 
@@ -50,6 +50,7 @@ describe('AcpSessionConfigHandler', () => {
             {
               type: 'select',
               category: 'model',
+              id: 'model',
               currentValue: 'gpt-4',
               options: [
                 { value: 'gpt-4', name: 'GPT-4' },
@@ -59,6 +60,7 @@ describe('AcpSessionConfigHandler', () => {
             {
               type: 'select',
               category: 'mode',
+              id: 'mode',
               currentValue: 'code',
               options: [{ value: 'code', name: 'Code' }],
             },
@@ -145,6 +147,7 @@ describe('AcpSessionConfigHandler', () => {
             {
               type: 'select',
               category: 'model',
+              id: 'model',
               currentValue: 'a',
               options: [
                 {
@@ -184,8 +187,8 @@ describe('AcpSessionConfigHandler', () => {
     });
   });
 
-  describe('applyCategory — model', () => {
-    it('sets model via setSessionConfigOption using the advertised option id', async () => {
+  describe('applyConfig — model', () => {
+    it('sets model via setSessionConfigOption keyed by the config id', async () => {
       const conn = mockConnection();
       const handler = new AcpSessionConfigHandler(
         'conversation',
@@ -194,12 +197,11 @@ describe('AcpSessionConfigHandler', () => {
         conn,
         mockUpdateConfig(),
         makeSessionResponse({
-          // configId is the option's `id` (not its category) — must be used verbatim.
           configOptions: [
             {
               type: 'select',
               category: 'model',
-              id: 'model-selector',
+              id: 'model',
               currentValue: 'a',
               options: [
                 { value: 'a', name: 'A' },
@@ -210,18 +212,18 @@ describe('AcpSessionConfigHandler', () => {
         }),
       );
 
-      await (handler as unknown as TestableConfigHandler).applyCategory('model', 'b');
+      await (handler as unknown as TestableConfigHandler).applyConfig('model', 'b');
 
       expect(conn.setSessionConfigOption).toHaveBeenCalledWith({
         sessionId: 'sess-1',
-        configId: 'model-selector',
+        configId: 'model',
         value: 'b',
       });
       expect(conn.unstable_setSessionModel).not.toHaveBeenCalled();
       expect(handler.listModels()?.selectedId).toBe('b');
     });
 
-    it('uses the category name as the configId for legacy-advertised agents', async () => {
+    it('uses the config id even when the agent advertised only the legacy models field', async () => {
       const conn = mockConnection();
       const handler = new AcpSessionConfigHandler(
         'conversation',
@@ -234,7 +236,7 @@ describe('AcpSessionConfigHandler', () => {
         }),
       );
 
-      await (handler as unknown as TestableConfigHandler).applyCategory('model', 'b');
+      await (handler as unknown as TestableConfigHandler).applyConfig('model', 'b');
 
       expect(conn.setSessionConfigOption).toHaveBeenCalledWith({ sessionId: 'sess-1', configId: 'model', value: 'b' });
       expect(handler.listModels()?.selectedId).toBe('b');
@@ -258,7 +260,7 @@ describe('AcpSessionConfigHandler', () => {
         }),
       );
 
-      await (handler as unknown as TestableConfigHandler).applyCategory('model', 'b');
+      await (handler as unknown as TestableConfigHandler).applyConfig('model', 'b');
 
       expect(unstable_setSessionModel).toHaveBeenCalledWith({ sessionId: 'sess-1', modelId: 'b' });
       expect(handler.listModels()?.selectedId).toBe('b');
@@ -281,7 +283,7 @@ describe('AcpSessionConfigHandler', () => {
         }),
       );
 
-      await expect((handler as unknown as TestableConfigHandler).applyCategory('model', 'bad')).rejects.toThrow(
+      await expect((handler as unknown as TestableConfigHandler).applyConfig('model', 'bad')).rejects.toThrow(
         'Model not found',
       );
       expect(unstable_setSessionModel).not.toHaveBeenCalled();
@@ -303,7 +305,7 @@ describe('AcpSessionConfigHandler', () => {
         }),
       );
 
-      await expect((handler as unknown as TestableConfigHandler).applyCategory('model', 'bad')).rejects.toThrow(
+      await expect((handler as unknown as TestableConfigHandler).applyConfig('model', 'bad')).rejects.toThrow(
         'Unknown model',
       );
     });
@@ -321,7 +323,7 @@ describe('AcpSessionConfigHandler', () => {
         makeSessionResponse(),
       );
 
-      await expect((handler as unknown as TestableConfigHandler).applyCategory('model', 'x')).rejects.toThrow(
+      await expect((handler as unknown as TestableConfigHandler).applyConfig('model', 'x')).rejects.toThrow(
         'connection lost',
       );
     });
@@ -339,13 +341,13 @@ describe('AcpSessionConfigHandler', () => {
         makeSessionResponse(),
       );
 
-      await expect((handler as unknown as TestableConfigHandler).applyCategory('model', 'x')).rejects.toThrow(
+      await expect((handler as unknown as TestableConfigHandler).applyConfig('model', 'x')).rejects.toThrow(
         'Failed to set model to "x"',
       );
     });
   });
 
-  describe('applyCategory — mode', () => {
+  describe('applyConfig — mode', () => {
     it('sets mode via setSessionConfigOption', async () => {
       const conn = mockConnection();
       const handler = new AcpSessionConfigHandler(
@@ -359,7 +361,7 @@ describe('AcpSessionConfigHandler', () => {
         }),
       );
 
-      await (handler as unknown as TestableConfigHandler).applyCategory('mode', 'slow');
+      await (handler as unknown as TestableConfigHandler).applyConfig('mode', 'slow');
 
       expect(conn.setSessionConfigOption).toHaveBeenCalledWith({
         sessionId: 'sess-1',
@@ -387,7 +389,7 @@ describe('AcpSessionConfigHandler', () => {
         }),
       );
 
-      await (handler as unknown as TestableConfigHandler).applyCategory('mode', 'slow');
+      await (handler as unknown as TestableConfigHandler).applyConfig('mode', 'slow');
 
       expect(setSessionMode).toHaveBeenCalledWith({ sessionId: 'sess-1', modeId: 'slow' });
       expect(handler.listModes()?.selectedId).toBe('slow');
@@ -408,7 +410,7 @@ describe('AcpSessionConfigHandler', () => {
         makeSessionResponse(),
       );
 
-      await expect((handler as unknown as TestableConfigHandler).applyCategory('mode', 'bad')).rejects.toThrow(
+      await expect((handler as unknown as TestableConfigHandler).applyConfig('mode', 'bad')).rejects.toThrow(
         'invalid mode',
       );
       expect(setSessionMode).not.toHaveBeenCalled();
@@ -472,6 +474,7 @@ describe('AcpSessionConfigHandler', () => {
           {
             type: 'select',
             category: 'model',
+            id: 'model',
             currentValue: 'new-model',
             options: [{ value: 'new-model', name: 'New Model' }],
           },
@@ -500,6 +503,7 @@ describe('AcpSessionConfigHandler', () => {
           {
             type: 'select',
             category: 'mode',
+            id: 'mode',
             currentValue: 'turbo',
             options: [{ value: 'turbo', name: 'Turbo' }],
           },
@@ -512,44 +516,32 @@ describe('AcpSessionConfigHandler', () => {
       });
     });
 
-    it('records the configId from a config_option_update so later sets target it directly', async () => {
-      const conn = mockConnection();
+    it('ignores a config_option_update whose id is not a supported config id', () => {
       const handler = new AcpSessionConfigHandler(
         'conversation',
         'conv-1',
         'sess-1',
-        conn,
+        mockConnection(),
         mockUpdateConfig(),
-        // Starts as a legacy-mode agent (configId would default to the category name)...
-        makeSessionResponse({
-          modes: { availableModes: [{ id: 'code', name: 'Code' }], currentModeId: 'code' },
-        }),
+        makeSessionResponse(),
       );
 
-      // ...then the agent reveals its generic config-option id for mode.
+      // A non-model/mode dimension (e.g. category 'thought_level', id 'effort') is not tracked here.
       handler.handleSessionUpdate({
         sessionUpdate: 'config_option_update',
         configOptions: [
           {
             type: 'select',
-            category: 'mode',
-            id: 'reasoning-mode',
-            currentValue: 'code',
-            options: [
-              { value: 'code', name: 'Code' },
-              { value: 'plan', name: 'Plan' },
-            ],
+            category: 'thought_level',
+            id: 'effort',
+            currentValue: 'high',
+            options: [{ value: 'high', name: 'High' }],
           },
         ],
       } as never);
 
-      await (handler as unknown as TestableConfigHandler).applyCategory('mode', 'plan');
-
-      expect(conn.setSessionConfigOption).toHaveBeenCalledWith({
-        sessionId: 'sess-1',
-        configId: 'reasoning-mode',
-        value: 'plan',
-      });
+      expect(handler.listModels()).toBeUndefined();
+      expect(handler.listModes()).toBeUndefined();
     });
 
     it('skips non-select config options in config_option_update', () => {
@@ -851,6 +843,7 @@ describe('AcpSessionConfigHandler', () => {
           {
             type: 'select',
             category: 'model',
+            id: 'model',
             currentValue: 'opus',
             options: [{ value: 'opus', name: 'Opus' }],
           },
@@ -931,7 +924,9 @@ describe('AcpSessionConfigHandler', () => {
       // The runner echoes the confirmed change as a session update — still in sync, no report.
       handler.handleSessionUpdate({
         sessionUpdate: 'config_option_update',
-        configOptions: [{ type: 'select', category: 'model', currentValue: 'b', options: [{ value: 'b', name: 'B' }] }],
+        configOptions: [
+          { type: 'select', category: 'model', id: 'model', currentValue: 'b', options: [{ value: 'b', name: 'B' }] },
+        ],
       } as never);
       await flush();
 
