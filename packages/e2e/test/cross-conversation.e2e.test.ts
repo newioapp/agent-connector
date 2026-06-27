@@ -1,19 +1,20 @@
 /**
  * Cross-conversation messaging e2e (shared session mode).
  *
- * In `shared` mode the agent runs a single session that serves every event, and
- * reaches OTHER conversations with the `send_dm` / `send_message` MCP tools (the
- * current conversation's reply is auto-delivered, so those tools are only for
- * elsewhere). This proves both route end to end through the real connector:
+ * In `shared` mode the agent runs a single session that serves every event and owns every
+ * conversation, so it reaches OTHER conversations with `send_message` (the current conversation's
+ * reply is auto-delivered, so the tool is only for elsewhere). `send_message` takes a conversation
+ * ID; a brand-new DM is resolved first with `create_dm`. This proves both routes end to end through
+ * the real connector:
  *
- *   1. `send_dm` — owner tells the puppet (in the owner DM) to DM a sibling agent;
+ *   1. `create_dm` + `send_message` — owner tells the puppet (in the owner DM) to DM a sibling agent;
  *      the message lands in a brand-new agent↔agent DM.
- *   2. `send_message` — owner tells the puppet to post into a Work Session it
- *      belongs to; the message lands in that group, visible to the owner.
+ *   2. `send_message` — owner tells the puppet to post into a Work Session it belongs to; the message
+ *      lands in that group, visible to the owner.
  *
- * The puppet keys off a marker in the owner's message and pulls the concrete
- * target (sibling username / work-session id) from the enclosing test scope, so
- * there's no brittle parsing of the wrapped prompt text.
+ * The puppet keys off a marker in the owner's message and pulls the concrete target (sibling
+ * username / resolved DM id / work-session id) from the enclosing test scope, so there's no brittle
+ * parsing of the wrapped prompt text.
  *
  * Run with: `pnpm --filter @newio/e2e test:e2e` — requires NEWIO_API_URL /
  * NEWIO_WS_URL (see packages/e2e/.env.example).
@@ -40,6 +41,7 @@ describe('cross-conversation messaging (shared mode)', () => {
 
   // Filled in before the relevant action so the puppet handler can close over them.
   let siblingUsername = '';
+  let siblingDmId = '';
   let workSessionId = '';
 
   beforeAll(async () => {
@@ -52,9 +54,17 @@ describe('cross-conversation messaging (shared mode)', () => {
 
     driver = await PuppetDriver.start();
     driver.onPrompt(({ text }) => {
+      // DM step 1: resolve (or create) the agent↔sibling DM to get its conversation id.
+      if (text.includes('RESOLVE_DM_MARKER')) {
+        return [
+          { kind: 'tool', name: 'create_dm', args: { username: siblingUsername } },
+          { kind: 'message', text: 'resolving dm' },
+        ];
+      }
+      // DM step 2: send into the resolved DM (id seeded into scope by the test).
       if (text.includes('SEND_DM_MARKER')) {
         return [
-          { kind: 'tool', name: 'send_dm', args: { username: siblingUsername, text: DM_TEXT } },
+          { kind: 'tool', name: 'send_message', args: { conversationId: siblingDmId, text: DM_TEXT } },
           { kind: 'message', text: 'dm sent' },
         ];
       }
@@ -90,13 +100,20 @@ describe('cross-conversation messaging (shared mode)', () => {
     return dm!.conversationId;
   }
 
-  it('delivers a send_dm to a sibling agent in a new agent↔agent DM', async () => {
+  it('delivers a DM to a sibling agent via create_dm + send_message', async () => {
     const conversationId = await ownerDm();
-    await backend.sendMessage(owner.accessToken, conversationId, 'SEND_DM_MARKER ping the sibling');
 
-    // The puppet's MCP tool call succeeded…
-    const toolResult = await driver.waitForToolResult((r) => r.name === 'send_dm');
-    expect(toolResult.isError).toBe(false);
+    // Step 1 — resolve the sibling DM and capture its id from the tool result.
+    await backend.sendMessage(owner.accessToken, conversationId, 'RESOLVE_DM_MARKER resolve the sibling DM');
+    const created = await driver.waitForToolResult((r) => r.name === 'create_dm');
+    expect(created.isError).toBe(false);
+    siblingDmId = (JSON.parse(created.text) as { conversationId: string }).conversationId;
+    expect(siblingDmId).toBeTruthy();
+
+    // Step 2 — send into that DM.
+    await backend.sendMessage(owner.accessToken, conversationId, 'SEND_DM_MARKER ping the sibling');
+    const sent = await driver.waitForToolResult((r) => r.name === 'send_message');
+    expect(sent.isError).toBe(false);
 
     // …and the message is readable in the agent↔sibling DM (read with the agent's
     // own token, scanning its DMs for the one carrying our marker).
@@ -115,9 +132,6 @@ describe('cross-conversation messaging (shared mode)', () => {
     const conversationId = await ownerDm();
     await backend.sendMessage(owner.accessToken, conversationId, 'SEND_GROUP_MARKER post to the group');
 
-    const toolResult = await driver.waitForToolResult((r) => r.name === 'send_message');
-    expect(toolResult.isError).toBe(false);
-
     // The owner is a member of the work session and sees the agent's post.
     const delivered = await backend.waitForMessage(
       owner.accessToken,
@@ -130,8 +144,8 @@ describe('cross-conversation messaging (shared mode)', () => {
 
 /**
  * Poll every DM visible to `token` until one carries a message matching
- * `predicate`. Used for `send_dm`, where the target DM is created lazily by the
- * tool call and its id isn't known up front.
+ * `predicate`. Used for the agent↔sibling DM, whose id isn't known to the
+ * agent's own token up front.
  */
 async function waitForMessageInAnyDm(
   backend: OwnerBackend,
