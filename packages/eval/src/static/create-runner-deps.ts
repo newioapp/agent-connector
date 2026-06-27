@@ -75,8 +75,8 @@ export async function createScenarioRunnerDeps(
   // shared → send by explicit id. Cross-session share_context is a no-op here.
   const profile: MessagingProfile =
     effectiveSessionMode === 'isolated'
-      ? { sendMessage: 'current', shareContext: 'explicit' }
-      : { sendMessage: 'explicit', shareContext: 'none' };
+      ? { sendMessage: 'current', shareContext: 'explicit', canCreateConversations: true }
+      : { sendMessage: 'explicit', shareContext: 'none', canCreateConversations: true };
 
   // Create MCP server with hook, backed by mock app
   const mcpServer = new NewioEvalMcpServer({

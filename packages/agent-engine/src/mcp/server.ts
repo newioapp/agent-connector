@@ -60,7 +60,7 @@ export class NewioMcpServer implements NewioMcpServerInterface {
 
     this.getCurrentConversationId = () => undefined;
     registerContactsTools(this.server, app, onToolCall);
-    registerConversationsTools(this.server, app, onToolCall);
+    registerConversationsTools(this.server, app, profile.canCreateConversations, onToolCall);
     registerCronTools(this.server, app, onToolCall);
     registerMessagingTools(
       this.server,

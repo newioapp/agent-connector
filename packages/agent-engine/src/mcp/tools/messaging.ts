@@ -38,6 +38,13 @@ export type ShareContextMode = 'none' | 'explicit' | 'to-hub';
 export interface MessagingProfile {
   readonly sendMessage: SendMessageMode;
   readonly shareContext: ShareContextMode;
+  /**
+   * Whether this session gets the conversation-creation tools (create_dm, create_group,
+   * create_work_session). False for chat-shared spokes (work session / cron), which can only reach
+   * the chat hub via share_context and so can't address anything they'd create — the hub owns
+   * conversation creation. True for the hub, isolated sessions, and shared.
+   */
+  readonly canCreateConversations: boolean;
 }
 
 export function registerMessagingTools(
