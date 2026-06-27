@@ -93,7 +93,11 @@ interface McpWiringWaiter {
 }
 
 /** Messaging profile for a session that owns no conversation / hasn't been resolved yet. */
-const NO_MESSAGING_PROFILE: MessagingProfile = { sendMessage: 'none', shareContext: 'none' };
+const NO_MESSAGING_PROFILE: MessagingProfile = {
+  sendMessage: 'none',
+  shareContext: 'none',
+  canCreateConversations: false,
+};
 
 export abstract class BaseAgentInstance implements AgentInstance {
   status: AgentRuntimeStatus = 'stopped';
@@ -181,20 +185,36 @@ export abstract class BaseAgentInstance implements AgentInstance {
     const ownConversationId = type === 'conversation' ? externalReferenceId : undefined;
     const mode = resolveSessionMode(this.config.sessionMode);
     if (mode === 'shared') {
-      return { profile: { sendMessage: 'explicit', shareContext: 'none' }, ownConversationId };
+      return {
+        profile: { sendMessage: 'explicit', shareContext: 'none', canCreateConversations: true },
+        ownConversationId,
+      };
     }
     if (mode === 'isolated') {
+      // Isolated sessions can share_context to any conversation, so they can act on what they create.
       return type === 'conversation'
-        ? { profile: { sendMessage: 'current', shareContext: 'explicit' }, ownConversationId }
-        : { profile: { sendMessage: 'none', shareContext: 'explicit' } };
+        ? {
+            profile: { sendMessage: 'current', shareContext: 'explicit', canCreateConversations: true },
+            ownConversationId,
+          }
+        : { profile: { sendMessage: 'none', shareContext: 'explicit', canCreateConversations: true } };
     }
     // chat-shared
     const hubConversationId = this._ownerDmConversationId;
     if (type === 'conversation' && externalReferenceId === hubConversationId) {
-      return { profile: { sendMessage: 'explicit-guarded', shareContext: 'explicit' }, ownConversationId };
+      // The chat hub owns conversation creation for the agent.
+      return {
+        profile: { sendMessage: 'explicit-guarded', shareContext: 'explicit', canCreateConversations: true },
+        ownConversationId,
+      };
     }
+    // chat-shared spoke (work session / cron): can only reach the hub, so no conversation creation.
     const sendMessage = type === 'conversation' ? 'current' : 'none';
-    return { profile: { sendMessage, shareContext: 'to-hub' }, ownConversationId, hubConversationId };
+    return {
+      profile: { sendMessage, shareContext: 'to-hub', canCreateConversations: false },
+      ownConversationId,
+      hubConversationId,
+    };
   }
 
   /**

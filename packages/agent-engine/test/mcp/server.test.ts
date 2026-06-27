@@ -6,10 +6,26 @@ import { WRITE_SETTLE_DELAY_MS } from '../../src/mcp/tools/conversations.js';
 import type { NewioApp, ContactSummary, ConversationSummary, FriendRequestSummary } from '../../src/app/index.js';
 
 /** Representative per-session profiles (see resolveMessagingProfile in agent-instance-impl). */
-const ISOLATED_PROFILE: MessagingProfile = { sendMessage: 'current', shareContext: 'explicit' };
-const SHARED_PROFILE: MessagingProfile = { sendMessage: 'explicit', shareContext: 'none' };
-const CHAT_HUB_PROFILE: MessagingProfile = { sendMessage: 'explicit-guarded', shareContext: 'explicit' };
-const CHAT_SPOKE_PROFILE: MessagingProfile = { sendMessage: 'current', shareContext: 'to-hub' };
+const ISOLATED_PROFILE: MessagingProfile = {
+  sendMessage: 'current',
+  shareContext: 'explicit',
+  canCreateConversations: true,
+};
+const SHARED_PROFILE: MessagingProfile = {
+  sendMessage: 'explicit',
+  shareContext: 'none',
+  canCreateConversations: true,
+};
+const CHAT_HUB_PROFILE: MessagingProfile = {
+  sendMessage: 'explicit-guarded',
+  shareContext: 'explicit',
+  canCreateConversations: true,
+};
+const CHAT_SPOKE_PROFILE: MessagingProfile = {
+  sendMessage: 'current',
+  shareContext: 'to-hub',
+  canCreateConversations: false,
+};
 
 /** Extract text from MCP callTool result (handles unknown content type). */
 function getResultText(result: Awaited<ReturnType<Client['callTool']>>): string {
@@ -202,6 +218,19 @@ describe('MCP Server', () => {
     expect(names).toContain('create_work_session');
     expect(names).not.toContain('send_dm');
     expect(names).not.toContain('initiate_conversation');
+  });
+
+  it('chat-shared spoke profile omits the conversation-creation tools', async () => {
+    const client = await createConnectedClient(mockApp(), CHAT_SPOKE_PROFILE);
+    const names = (await client.listTools()).tools.map((t) => t.name);
+    // A spoke can only reach the hub, so it cannot address anything it would create.
+    expect(names).not.toContain('create_dm');
+    expect(names).not.toContain('create_group');
+    expect(names).not.toContain('create_work_session');
+    // It keeps its messaging + read tools.
+    expect(names).toContain('share_context');
+    expect(names).toContain('send_message');
+    expect(names).toContain('list_conversations');
   });
 
   it('share_context delegates to the agent instance via the shareContext callback', async () => {

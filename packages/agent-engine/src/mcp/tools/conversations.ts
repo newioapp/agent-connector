@@ -21,7 +21,13 @@ const structured = (obj: object) => ({
 export const WRITE_SETTLE_DELAY_MS = 3000;
 const settleAfterWrite = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, WRITE_SETTLE_DELAY_MS));
 
-export function registerConversationsTools(server: McpServer, app: NewioAppForMcp, onToolCall?: ToolCallHook): void {
+export function registerConversationsTools(
+  server: McpServer,
+  app: NewioAppForMcp,
+  /** Whether to expose the conversation-creation tools (create_dm/create_group/create_work_session). */
+  canCreateConversations: boolean,
+  onToolCall?: ToolCallHook,
+): void {
   // ── list_conversations ──
   server.registerTool(
     'list_conversations',
@@ -48,68 +54,72 @@ export function registerConversationsTools(server: McpServer, app: NewioAppForMc
     },
   );
 
-  // ── create_dm ──
-  server.registerTool(
-    'create_dm',
-    {
-      description:
-        'Get or create a DM conversation with a user by their exact username (not display name). Returns the conversationId — use it with send_message (if you are responsible for it) or share_context (otherwise). You can only DM users in your contacts — use list_contacts to find the correct username. If you cannot find the person, ask the user for the exact username.',
-      inputSchema: { username: z.string().describe('Exact username from your contacts, NOT the display name') },
-      outputSchema: z.object({
-        conversationId: z.string().describe('The DM conversation ID (existing or newly created)'),
-      }),
-    },
-    async ({ username }) => {
-      onToolCall?.('create_dm', { username });
-      const conversationId = await app.getOrCreateDm(username);
-      await settleAfterWrite();
-      return structured({ conversationId });
-    },
-  );
-
-  // ── create_work_session ──
-  server.registerTool(
-    'create_work_session',
-    {
-      description:
-        'Create a work session — a collaborative conversation for you, your owner, and peer agents to coordinate on tasks.',
-      inputSchema: {
-        name: z.string().describe('Work session name'),
-        usernames: z.array(z.string()).describe('Array of exact usernames, NOT display names'),
+  // Conversation-creation tools — gated: chat-shared spokes can't address what they'd create, so the
+  // hub owns conversation creation (see MessagingProfile.canCreateConversations).
+  if (canCreateConversations) {
+    // ── create_dm ──
+    server.registerTool(
+      'create_dm',
+      {
+        description:
+          'Get or create a DM conversation with a user by their exact username (not display name). Returns the conversationId — use it with send_message (if you are responsible for it) or share_context (otherwise). You can only DM users in your contacts — use list_contacts to find the correct username. If you cannot find the person, ask the user for the exact username.',
+        inputSchema: { username: z.string().describe('Exact username from your contacts, NOT the display name') },
+        outputSchema: z.object({
+          conversationId: z.string().describe('The DM conversation ID (existing or newly created)'),
+        }),
       },
-      outputSchema: z.object({
-        conversationId: z.string().describe('The newly created work session conversation ID'),
-      }),
-    },
-    async ({ name, usernames }) => {
-      onToolCall?.('create_work_session', { name, usernames });
-      const conversationId = await app.createWorkSession(name, usernames);
-      await settleAfterWrite();
-      return structured({ conversationId });
-    },
-  );
-
-  // ── create_group ──
-  server.registerTool(
-    'create_group',
-    {
-      description:
-        "Create a named group conversation with admin controls. You can add human users, but only an agent's owner can add other agents to a named group.",
-      inputSchema: {
-        name: z.string().describe('Group name'),
-        usernames: z.array(z.string()).describe('Array of exact usernames to include, NOT display names'),
+      async ({ username }) => {
+        onToolCall?.('create_dm', { username });
+        const conversationId = await app.getOrCreateDm(username);
+        await settleAfterWrite();
+        return structured({ conversationId });
       },
-      outputSchema: z.object({
-        conversationId: z.string().describe('The newly created group conversation ID'),
-      }),
-    },
-    async ({ name, usernames }) => {
-      onToolCall?.('create_group', { name, usernames });
-      const conversationId = await app.createGroup(name, usernames);
-      await settleAfterWrite();
-      return structured({ conversationId });
-    },
-  );
+    );
+
+    // ── create_work_session ──
+    server.registerTool(
+      'create_work_session',
+      {
+        description:
+          'Create a work session — a collaborative conversation for you, your owner, and peer agents to coordinate on tasks.',
+        inputSchema: {
+          name: z.string().describe('Work session name'),
+          usernames: z.array(z.string()).describe('Array of exact usernames, NOT display names'),
+        },
+        outputSchema: z.object({
+          conversationId: z.string().describe('The newly created work session conversation ID'),
+        }),
+      },
+      async ({ name, usernames }) => {
+        onToolCall?.('create_work_session', { name, usernames });
+        const conversationId = await app.createWorkSession(name, usernames);
+        await settleAfterWrite();
+        return structured({ conversationId });
+      },
+    );
+
+    // ── create_group ──
+    server.registerTool(
+      'create_group',
+      {
+        description:
+          "Create a named group conversation with admin controls. You can add human users, but only an agent's owner can add other agents to a named group.",
+        inputSchema: {
+          name: z.string().describe('Group name'),
+          usernames: z.array(z.string()).describe('Array of exact usernames to include, NOT display names'),
+        },
+        outputSchema: z.object({
+          conversationId: z.string().describe('The newly created group conversation ID'),
+        }),
+      },
+      async ({ name, usernames }) => {
+        onToolCall?.('create_group', { name, usernames });
+        const conversationId = await app.createGroup(name, usernames);
+        await settleAfterWrite();
+        return structured({ conversationId });
+      },
+    );
+  }
 
   // ── get_conversation ──
   server.registerTool(
