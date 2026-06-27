@@ -68,6 +68,11 @@ export interface ApprovalHandle {
 const DEFAULT_POLL_INTERVAL_MS = 3000;
 const DEFAULT_POLL_TIMEOUT_MS = 600_000;
 const REFRESH_BUFFER_MS = 5 * 60_000; // 5 minutes before expiry
+// Retry a failed scheduled refresh on this interval until it succeeds or the
+// refresh token is rejected — so a single transient failure (or a refresh that
+// fired late after sleep while the network was still down) doesn't permanently
+// stop auto-refresh.
+const REFRESH_RETRY_MS = 60_000;
 
 /**
  * Manages agent authentication — registration, login, token refresh.
@@ -145,13 +150,42 @@ export class AuthManager {
     return this.store.getRefreshToken();
   }
 
-  /** Token provider function suitable for passing to HttpClient. */
-  tokenProvider = (): string => {
+  /**
+   * Token provider for {@link HttpClient} and {@link NewioWebSocket}. Refreshes
+   * on demand: if the access token is missing, expired, or within the refresh
+   * buffer of expiry, it awaits a refresh (single-flight via {@link doRefresh})
+   * before returning. This is the primary recovery path after a long outage —
+   * the scheduled refresh timer is a `setTimeout` that does not reliably fire
+   * across laptop sleep, so a WebSocket reconnect attempt must be able to mint a
+   * fresh token itself rather than reuse an expired one.
+   */
+  tokenProvider = async (): Promise<string> => {
     const token = this.store.getAccessToken();
-    if (!token) {
-      throw new TokenRefreshError('Not authenticated — no access token available.');
+    if (token && !this.isExpiringSoon(token)) {
+      return token;
     }
-    return token;
+    if (this.store.getRefreshToken()) {
+      log.debug(`Access token ${token ? 'expiring/expired' : 'missing'} — refreshing on demand.`);
+      try {
+        await this.doRefresh();
+      } catch (err) {
+        // Refresh failed (e.g. network still down). If the current token isn't
+        // hard-expired we were only refreshing proactively — hand it back.
+        if (token && !this.isExpired(token)) {
+          return token;
+        }
+        throw err;
+      }
+      const refreshed = this.store.getAccessToken();
+      if (refreshed) {
+        return refreshed;
+      }
+    }
+    // No refresh token, but a still-valid (if soon-expiring) access token: use it.
+    if (token && !this.isExpired(token)) {
+      return token;
+    }
+    throw new TokenRefreshError('Not authenticated — no access token available.');
   };
 
   /** Force an immediate token refresh. */
@@ -252,6 +286,7 @@ export class AuthManager {
   private async doRefresh(): Promise<void> {
     // Dedup concurrent refresh calls
     if (this.refreshPromise) {
+      log.debug('Token refresh already in flight — awaiting the existing request.');
       return this.refreshPromise;
     }
 
@@ -273,12 +308,15 @@ export class AuthManager {
         log.debug('Token refreshed successfully.');
       } catch (err) {
         log.error('Token refresh failed.', err);
-        if (err instanceof UnauthenticatedApiError) {
+        // Auth-related failures mean the refresh token itself was rejected
+        // (expired/revoked/forbidden) — terminal, retrying won't help.
+        const terminal = err instanceof UnauthenticatedApiError || err instanceof ForbiddenApiError;
+        if (terminal) {
           log.warn('Refresh token rejected by server — clearing tokens.');
           this.store.clear();
           this.clearRefreshTimer();
         }
-        throw new TokenRefreshError(err instanceof Error ? err.message : 'Token refresh failed.');
+        throw new TokenRefreshError(err instanceof Error ? err.message : 'Token refresh failed.', { terminal });
       }
     })();
 
@@ -300,8 +338,44 @@ export class AuthManager {
       `Token expires in ${Math.round(expiresInMs / 1000)}s. Scheduling refresh in ${Math.round(refreshInMs / 1000)}s.`,
     );
     this.refreshTimer = setTimeout(() => {
-      void this.doRefresh();
+      void this.runScheduledRefresh();
     }, refreshInMs);
+  }
+
+  /**
+   * Run a scheduled refresh, re-arming a short retry on failure so a single
+   * transient error doesn't permanently stop auto-refresh. On success {@link
+   * doRefresh} re-arms the normal pre-expiry timer; on a 401 the refresh token is
+   * cleared, so there is nothing left to retry and the retry loop stops.
+   */
+  private async runScheduledRefresh(): Promise<void> {
+    log.debug('Running scheduled token refresh.');
+    try {
+      await this.doRefresh();
+    } catch (err) {
+      // Only retry transient failures. A terminal failure (refresh token rejected)
+      // won't be helped by retrying, and doRefresh has already cleared the tokens.
+      const terminal = err instanceof TokenRefreshError && err.terminal;
+      if (!terminal && this.store.getRefreshToken()) {
+        log.debug(`Scheduled refresh failed (transient) — retrying in ${REFRESH_RETRY_MS / 1000}s.`);
+        this.clearRefreshTimer();
+        this.refreshTimer = setTimeout(() => {
+          void this.runScheduledRefresh();
+        }, REFRESH_RETRY_MS);
+      } else {
+        log.debug(`Scheduled refresh not retrying (${terminal ? 'refresh token rejected' : 'no refresh token'}).`);
+      }
+    }
+  }
+
+  /** True when the token is malformed, missing its exp, or within the refresh buffer of expiry. */
+  private isExpiringSoon(token: string): boolean {
+    return this.getTokenExpiresInMs(token) <= REFRESH_BUFFER_MS;
+  }
+
+  /** True when the token is malformed or already past its exp. */
+  private isExpired(token: string): boolean {
+    return this.getTokenExpiresInMs(token) <= 0;
   }
 
   private getTokenExpiresInMs(token: string): number {

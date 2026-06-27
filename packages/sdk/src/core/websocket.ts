@@ -99,6 +99,23 @@ const MAX_BACKOFF_MS = 30_000;
 const log = getLogger('websocket');
 
 /**
+ * Build a connection error that preserves the underlying detail from the `ws`
+ * error event (e.g. `Unexpected server response: 401` when an expired token is
+ * rejected at the API Gateway handshake). Keeps the `connection error` prefix so
+ * existing log/handling still matches, while no longer masking the real cause.
+ */
+function toConnectionError(ev: unknown): Error {
+  const detail =
+    ev instanceof Error
+      ? ev.message
+      : typeof ev === 'object' && ev !== null
+        ? ((ev as { error?: { message?: string }; message?: string }).error?.message ??
+          (ev as { message?: string }).message)
+        : undefined;
+  return new Error(detail ? `connection error: ${detail}` : 'connection error');
+}
+
+/**
  * WebSocket client for Newio real-time events.
  *
  * Features:
@@ -384,9 +401,9 @@ export class NewioWebSocket {
         clearTimeout(timeout);
         reject(new Error(opened ? 'closed before ready' : 'closed before open'));
       };
-      ws.onerror = () => {
+      ws.onerror = (ev) => {
         clearTimeout(timeout);
-        reject(new Error('connection error'));
+        reject(toConnectionError(ev));
       };
     });
   }

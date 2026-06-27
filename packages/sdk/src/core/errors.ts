@@ -146,8 +146,16 @@ export class ApprovalTimeoutError extends NewioError {
 
 /** Thrown when a token refresh fails. */
 export class TokenRefreshError extends NewioError {
-  constructor(message: string) {
+  /**
+   * True when the failure is terminal — the refresh token itself was rejected
+   * (e.g. expired/revoked) so retrying won't help. False for transient failures
+   * (network error, 5xx) that are worth retrying.
+   */
+  readonly terminal: boolean;
+
+  constructor(message: string, options?: { terminal?: boolean }) {
     super(message);
     this.name = 'TokenRefreshError';
+    this.terminal = options?.terminal ?? false;
   }
 }

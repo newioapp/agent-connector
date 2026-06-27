@@ -224,7 +224,7 @@ describe('AuthManager', () => {
   });
 
   describe('setTokens', () => {
-    it('should store tokens and make them available via tokenProvider', () => {
+    it('should store tokens and make them available via tokenProvider', async () => {
       const exp = Math.floor(Date.now() / 1000) + 3600;
       const accessToken = fakeJwt(exp);
 
@@ -233,16 +233,65 @@ describe('AuthManager', () => {
 
       expect(auth.getAccessToken()).toBe(accessToken);
       expect(auth.getRefreshToken()).toBe('refresh-1');
-      expect(auth.tokenProvider()).toBe(accessToken);
+      // A still-valid token is returned without hitting the network.
+      expect(await auth.tokenProvider()).toBe(accessToken);
 
       auth.dispose();
     });
   });
 
   describe('tokenProvider', () => {
-    it('should throw when not authenticated', () => {
+    it('should reject when not authenticated', async () => {
       const auth = new AuthManager('https://api.newio.dev');
-      expect(() => auth.tokenProvider()).toThrow(TokenRefreshError);
+      await expect(auth.tokenProvider()).rejects.toThrow(TokenRefreshError);
+      auth.dispose();
+    });
+
+    it('should refresh on demand when the access token is expired', async () => {
+      // Access token already expired; refresh token still valid.
+      const expiredToken = fakeJwt(Math.floor(Date.now() / 1000) - 60);
+      const freshToken = fakeJwt(Math.floor(Date.now() / 1000) + 3600);
+      mockFetch([{ status: 200, body: { accessToken: freshToken, refreshToken: 'refresh-2' } }]);
+
+      const store = new InMemoryTokenStore();
+      store.setTokens(expiredToken, 'refresh-1');
+      const auth = new AuthManager('https://api.newio.dev', { store });
+
+      const token = await auth.tokenProvider();
+
+      expect(token).toBe(freshToken);
+      expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+      auth.dispose();
+    });
+
+    it('should dedup concurrent on-demand refreshes into one request', async () => {
+      const expiredToken = fakeJwt(Math.floor(Date.now() / 1000) - 60);
+      const freshToken = fakeJwt(Math.floor(Date.now() / 1000) + 3600);
+      mockFetch([{ status: 200, body: { accessToken: freshToken, refreshToken: 'refresh-2' } }]);
+
+      const store = new InMemoryTokenStore();
+      store.setTokens(expiredToken, 'refresh-1');
+      const auth = new AuthManager('https://api.newio.dev', { store });
+
+      const [a, b] = await Promise.all([auth.tokenProvider(), auth.tokenProvider()]);
+
+      expect(a).toBe(freshToken);
+      expect(b).toBe(freshToken);
+      expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+      auth.dispose();
+    });
+
+    it('should fall back to a still-valid token when a proactive refresh fails', async () => {
+      // Token within the 5-min buffer (refresh attempted) but not yet expired.
+      const soonToken = fakeJwt(Math.floor(Date.now() / 1000) + 120);
+      mockFetch([{ status: 500, body: null }]);
+
+      const store = new InMemoryTokenStore();
+      store.setTokens(soonToken, 'refresh-1');
+      const auth = new AuthManager('https://api.newio.dev', { store });
+
+      // Refresh fails, but the current token is still valid so connect can proceed.
+      expect(await auth.tokenProvider()).toBe(soonToken);
       auth.dispose();
     });
   });
@@ -381,6 +430,68 @@ describe('AuthManager', () => {
       await vi.advanceTimersByTimeAsync(301_000);
 
       expect(store.getAccessToken()).toBe(newToken);
+
+      auth.dispose();
+    });
+
+    it('should retry a failed scheduled refresh instead of giving up', async () => {
+      const exp = Math.floor(Date.now() / 1000) + 600;
+      const oldToken = fakeJwt(exp);
+      const newToken = fakeJwt(Math.floor(Date.now() / 1000) + 3600);
+
+      // First scheduled refresh fails (transient); the retry succeeds.
+      mockFetch([
+        { status: 500, body: null },
+        { status: 200, body: { accessToken: newToken, refreshToken: 'refresh-2' } },
+      ]);
+
+      const store = new InMemoryTokenStore();
+      const auth = new AuthManager('https://api.newio.dev', { store });
+      auth.setTokens(oldToken, 'refresh-1');
+
+      // Fire the scheduled refresh (300s) — fails, leaving the old token in place.
+      await vi.advanceTimersByTimeAsync(301_000);
+      expect(store.getAccessToken()).toBe(oldToken);
+
+      // The retry timer (60s) fires and recovers.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(store.getAccessToken()).toBe(newToken);
+
+      auth.dispose();
+    });
+
+    it('should stop retrying once the refresh token is rejected (401)', async () => {
+      const exp = Math.floor(Date.now() / 1000) + 600;
+      const oldToken = fakeJwt(exp);
+      mockFetch([{ status: 401, body: { error: 'bad refresh', errorCode: 'UNAUTHENTICATED' } }]);
+
+      const store = new InMemoryTokenStore();
+      const auth = new AuthManager('https://api.newio.dev', { store });
+      auth.setTokens(oldToken, 'refresh-1');
+
+      await vi.advanceTimersByTimeAsync(301_000);
+      // 401 clears tokens — no refresh token left, so no retry is armed.
+      expect(store.getRefreshToken()).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+
+      auth.dispose();
+    });
+
+    it('should not retry a terminal auth failure (403 forbidden refresh token)', async () => {
+      const exp = Math.floor(Date.now() / 1000) + 600;
+      const oldToken = fakeJwt(exp);
+      mockFetch([{ status: 403, body: { error: 'forbidden', errorCode: 'FORBIDDEN' } }]);
+
+      const store = new InMemoryTokenStore();
+      const auth = new AuthManager('https://api.newio.dev', { store });
+      auth.setTokens(oldToken, 'refresh-1');
+
+      await vi.advanceTimersByTimeAsync(301_000);
+      // Terminal (auth) failure clears tokens and arms no retry.
+      expect(store.getRefreshToken()).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
 
       auth.dispose();
     });
