@@ -165,6 +165,7 @@ export class AuthManager {
       return token;
     }
     if (this.store.getRefreshToken()) {
+      log.debug(`Access token ${token ? 'expiring/expired' : 'missing'} — refreshing on demand.`);
       try {
         await this.doRefresh();
       } catch (err) {
@@ -285,6 +286,7 @@ export class AuthManager {
   private async doRefresh(): Promise<void> {
     // Dedup concurrent refresh calls
     if (this.refreshPromise) {
+      log.debug('Token refresh already in flight — awaiting the existing request.');
       return this.refreshPromise;
     }
 
@@ -347,6 +349,7 @@ export class AuthManager {
    * cleared, so there is nothing left to retry and the retry loop stops.
    */
   private async runScheduledRefresh(): Promise<void> {
+    log.debug('Running scheduled token refresh.');
     try {
       await this.doRefresh();
     } catch (err) {
@@ -354,10 +357,13 @@ export class AuthManager {
       // won't be helped by retrying, and doRefresh has already cleared the tokens.
       const terminal = err instanceof TokenRefreshError && err.terminal;
       if (!terminal && this.store.getRefreshToken()) {
+        log.debug(`Scheduled refresh failed (transient) — retrying in ${REFRESH_RETRY_MS / 1000}s.`);
         this.clearRefreshTimer();
         this.refreshTimer = setTimeout(() => {
           void this.runScheduledRefresh();
         }, REFRESH_RETRY_MS);
+      } else {
+        log.debug(`Scheduled refresh not retrying (${terminal ? 'refresh token rejected' : 'no refresh token'}).`);
       }
     }
   }
