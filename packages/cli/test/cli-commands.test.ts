@@ -156,11 +156,11 @@ describe('buildAgentTable', () => {
     expect(dataRow).toContain('/home/me/project');
   });
 
-  it('composes --desc and --cwd, with DESCRIPTION before CWD', () => {
+  it('composes --desc and --cwd, with CWD before DESCRIPTION', () => {
     const [header] = buildAgentTable([row({ id: 'aaaa1111' })], { desc: true, cwd: true });
     expect(header).toContain('DESCRIPTION');
     expect(header).toContain('CWD');
-    expect(header.indexOf('DESCRIPTION')).toBeLessThan(header.indexOf('CWD'));
+    expect(header.indexOf('CWD')).toBeLessThan(header.indexOf('DESCRIPTION'));
   });
 
   it('keeps errors visible without --desc via the STATUS cell and the remediation-hint block', () => {

@@ -172,12 +172,13 @@ export function buildAgentTable(agents: readonly AgentStatusInfo[], options: Age
     { header: 'STATUS', value: formatStatus },
     { header: 'SESSION-MODE', value: (a) => a.config.sessionMode ?? 'chat-shared' },
   ];
+  // CWD before DESCRIPTION: the error text is variable-length and best kept last.
+  if (options.cwd) {
+    columns.push({ header: 'CWD', value: (a) => a.config.acp?.cwd ?? '' });
+  }
   if (options.desc) {
     // The full (possibly multi-line) error, trimmed to its first line so the table stays aligned.
     columns.push({ header: 'DESCRIPTION', value: (a) => (a.error ? firstLine(a.error) : '') });
-  }
-  if (options.cwd) {
-    columns.push({ header: 'CWD', value: (a) => a.config.acp?.cwd ?? '' });
   }
   const sized = columns.map((col) => ({
     ...col,
