@@ -257,6 +257,59 @@ describe('wireEvents', () => {
   });
 
   // -----------------------------------------------------------------------
+  // forward-compat: unknown enum values
+  //
+  // A newer backend may ship a value for a string-literal field that this
+  // connector predates (conversationType, notifyLevel, role). The connector
+  // must store it without throwing and never crash the agent.
+  // -----------------------------------------------------------------------
+
+  it('stores an unknown conversation type from conversation.new without throwing', () => {
+    expect(() =>
+      ws.fire('conversation.new', {
+        type: 'conversation.new',
+        timestamp: ts,
+        payload: { conversationId: 'c-future', type: 'channel', name: 'Future', createdBy: 'u1' },
+      }),
+    ).not.toThrow();
+    expect(store.getConversation('c-future')?.type).toBe('channel');
+  });
+
+  it('stores an unknown conversation type from conversation.updated without throwing', () => {
+    store.setConversation({ conversationId: 'c1', type: 'group', createdBy: 'u1', createdAt: ts, updatedAt: ts });
+    expect(() =>
+      ws.fire('conversation.updated', {
+        type: 'conversation.updated',
+        timestamp: ts,
+        payload: { conversationId: 'c1', updatedBy: 'u1', changes: { type: 'channel' } as never },
+      }),
+    ).not.toThrow();
+    expect(store.getConversation('c1')?.type).toBe('channel');
+  });
+
+  it('stores an unknown notifyLevel from member_updated without throwing', () => {
+    expect(() =>
+      ws.fire('conversation.member_updated', {
+        type: 'conversation.member_updated',
+        timestamp: ts,
+        payload: { conversationId: 'c1', userId: 'me', changes: { notifyLevel: 'digest_daily' } as never },
+      }),
+    ).not.toThrow();
+    expect(store.getConversationControls('c1')?.notifyLevel).toBe('digest_daily');
+  });
+
+  it('stores an unknown member role from member_updated without throwing', () => {
+    expect(() =>
+      ws.fire('conversation.member_updated', {
+        type: 'conversation.member_updated',
+        timestamp: ts,
+        payload: { conversationId: 'c1', userId: 'me', changes: { role: 'moderator' } as never },
+      }),
+    ).not.toThrow();
+    expect(store.getConversationControls('c1')?.role).toBe('moderator');
+  });
+
+  // -----------------------------------------------------------------------
   // contact events
   // -----------------------------------------------------------------------
 
@@ -717,5 +770,35 @@ describe('wireEvents', () => {
     });
 
     expect(sendSignal).not.toHaveBeenCalled();
+  });
+
+  // Forward-compat: a newer backend may send a request signal type this connector
+  // predates. It must not crash — it replies with a structured unknown_signal_type error.
+  it('replies with an error for an unknown signal request type', async () => {
+    const sendSignal = vi.fn().mockResolvedValue({ requestId: 'req-future' });
+    (client as unknown as Record<string, unknown>).sendSignal = sendSignal;
+
+    ws.fire('signal', {
+      type: 'signal',
+      timestamp: ts,
+      payload: {
+        senderId: 'owner-1',
+        requestId: 'req-future',
+        intent: 'request',
+        type: 'future_signal' as never,
+        payload: {} as never,
+      },
+    });
+
+    await vi.waitFor(() => expect(sendSignal).toHaveBeenCalled());
+    expect(sendSignal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetUserId: 'owner-1',
+        requestId: 'req-future',
+        intent: 'response',
+        type: 'future_signal_response',
+        payload: expect.objectContaining({ success: false, error: 'unknown_signal_type' }),
+      }),
+    );
   });
 });
