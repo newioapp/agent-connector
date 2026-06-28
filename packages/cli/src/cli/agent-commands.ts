@@ -4,8 +4,8 @@
  * Thin wrappers over DaemonConnector RPC. Agent ids may be given as a full id,
  * a unique id prefix, or an exact display name.
  */
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
-import { dirname } from 'path';
+import { existsSync, mkdirSync, statSync, writeFileSync } from 'fs';
+import { dirname, resolve } from 'path';
 import { spawn } from 'child_process';
 import type { DaemonConnector } from '../connector.js';
 import type {
@@ -71,6 +71,42 @@ export function parseEnvPairs(pairs: readonly string[]): Record<string, string> 
   return result;
 }
 
+/** Existence/type of a candidate working directory — abstracts `fs` for testing. */
+export interface CwdStat {
+  readonly exists: boolean;
+  readonly isDirectory: boolean;
+}
+
+function statCwdSync(path: string): CwdStat {
+  try {
+    return { exists: true, isDirectory: statSync(path).isDirectory() };
+  } catch {
+    return { exists: false, isDirectory: false };
+  }
+}
+
+/**
+ * Resolve a user-supplied `--cwd` to an absolute path, validating up front that
+ * it exists and is a directory. A missing/invalid cwd otherwise surfaces much
+ * later at spawn time as a misleading "node not in PATH" error (#277), so reject
+ * it here with a message that names the offending path. When `cwd` is omitted the
+ * current directory is used as-is (it always exists). `stat` is injectable for tests.
+ */
+export function resolveAgentCwd(cwd: string | undefined, stat: (path: string) => CwdStat = statCwdSync): string {
+  if (cwd === undefined) {
+    return process.cwd();
+  }
+  const resolved = resolve(cwd);
+  const { exists, isDirectory } = stat(resolved);
+  if (!exists) {
+    throw new Error(`cwd does not exist: ${resolved}`);
+  }
+  if (!isDirectory) {
+    throw new Error(`cwd is not a directory: ${resolved}`);
+  }
+  return resolved;
+}
+
 // Env capture (`basic`/`all` filter) is shared with the desktop app — see
 // @newio/agent-engine. The CLI always runs inside the user's interactive shell,
 // so `process.env` is already fully sourced; it filters that directly, with no
@@ -88,6 +124,9 @@ export function firstLine(message: string): string {
 export function remediationHint(errorCode: AgentErrorCode | undefined, agentId: string): string | undefined {
   if (errorCode === 'invalid_environment') {
     return `Fix this agent's environment, then restart: newio agent env edit ${agentId.slice(0, 8)}`;
+  }
+  if (errorCode === 'invalid_working_directory') {
+    return `Set a valid working directory, then restart: newio agent update ${agentId.slice(0, 8)} --cwd <path>`;
   }
   return undefined;
 }
@@ -303,13 +342,14 @@ export async function agentAdd(stage: Stage, opts: AddOptions): Promise<void> {
     throw new Error('A custom agent requires --command <path> [--arg <value>…].');
   }
   const launch: Pick<AcpConfig, 'command' | 'args'> = hasCommand ? { command: opts.command, args: opts.arg ?? [] } : {};
+  const cwd = resolveAgentCwd(opts.cwd);
   const mode = opts.envSync ? asEnvSyncMode(opts.envSync) : DEFAULT_ENV_SYNC_MODE;
   const envVars = captureEnv(mode);
   const config = await withDaemon(stage, async (c) => {
     const input: AddAgentInput = {
       type,
       newioUsername: opts.username,
-      acp: { cwd: opts.cwd ?? process.cwd(), ...launch },
+      acp: { cwd, ...launch },
       envVars,
       ...(opts.sessionMode ? { sessionMode: asSessionMode(opts.sessionMode) } : {}),
     };
@@ -408,9 +448,10 @@ export async function agentUpdate(stage: Stage, query: string, opts: UpdateOptio
     // existing config to avoid wiping the fields the user didn't pass.
     let acp: AcpConfig | undefined;
     if (opts.cwd !== undefined || hasLaunchOverride(opts)) {
+      const cwd = opts.cwd !== undefined ? resolveAgentCwd(opts.cwd) : undefined;
       const agents = await c.listAgents();
       const existing = agents.find((a) => a.id === agentId)?.config.acp;
-      acp = mergeAcpUpdate(opts, existing);
+      acp = mergeAcpUpdate({ ...opts, cwd }, existing);
     }
     const updates: UpdateAgentInput = {
       ...(opts.name !== undefined ? { displayName: opts.name } : {}),
