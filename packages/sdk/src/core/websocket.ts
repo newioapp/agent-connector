@@ -485,6 +485,10 @@ export class NewioWebSocket {
         for (const handler of handlers) {
           handler(event as never);
         }
+      } else {
+        // Forward-compat: a newer backend may emit event types this client doesn't
+        // handle. We ignore them deliberately; the debug line is the breadcrumb.
+        log.debug(`Ignoring unhandled WS event type: ${type}`);
       }
     } catch {
       log.warn('Failed to parse WebSocket message.');

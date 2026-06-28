@@ -107,6 +107,14 @@ describe('PromptFormatterImpl', () => {
       expect(result).not.toContain('group_name=');
     });
 
+    // Forward-compat: a newer backend may introduce an accountType this connector
+    // predates. It must render the value verbatim, not crash or drop the message.
+    it('renders an unknown accountType verbatim', () => {
+      const pf = mockApp();
+      const result = pf.formatMessagePrompt([makeMsg({ senderAccountType: 'service' as 'human' })]);
+      expect(result).toContain('account_type="service"');
+    });
+
     it('formats messages with attachments', () => {
       const pf = mockApp();
       const result = pf.formatMessagePrompt([

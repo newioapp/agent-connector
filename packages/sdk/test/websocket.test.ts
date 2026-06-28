@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NewioWebSocket, type WebSocketLike } from '../src/core/websocket.js';
 import { ConnectionRejectedError } from '../src/core/errors.js';
+import { setLogHandler } from '../src/core/logger.js';
 
 /**
  * Creates a mock WebSocket (modeled on Node `ws`) that exposes trigger methods.
@@ -285,6 +286,28 @@ describe('NewioWebSocket', () => {
       ws.triggerMessage(JSON.stringify({ type: 'unknown.event', payload: {} }));
 
       client.disconnect();
+    });
+
+    // Forward-compat: a newer backend may emit event types this client predates.
+    // They are ignored deliberately, but should leave a debug breadcrumb.
+    it('should log a debug breadcrumb for an unhandled event type', async () => {
+      const logs: Array<{ level: string; message: string }> = [];
+      setLogHandler((level, _name, message) => logs.push({ level, message }));
+      try {
+        const ws = createMockWs();
+        const client = createClient(ws);
+        await client.connect();
+
+        ws.triggerMessage(JSON.stringify({ type: 'future.event', payload: {} }));
+
+        const breadcrumb = logs.find((l) => l.level === 'debug' && l.message.includes('unhandled WS event type'));
+        expect(breadcrumb).toBeDefined();
+        expect(breadcrumb?.message).toContain('future.event');
+
+        client.disconnect();
+      } finally {
+        setLogHandler(undefined);
+      }
     });
   });
 
