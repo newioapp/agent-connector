@@ -33,7 +33,7 @@ import type {
 import { resolveSessionMode } from './types';
 import { ChatSharedSessionManager } from './chat-shared-session-manager.js';
 import type { AgentInfo, AgentErrorCode, PermissionRequestOption } from './types';
-import { InvalidEnvironmentError } from './errors.js';
+import { InvalidEnvironmentError, InvalidWorkingDirectoryError } from './errors.js';
 import type { AgentInstance, AgentInstanceListener } from './agent-instance';
 import type { CronStore } from './cron-store';
 import type { SessionStore } from './session-store';
@@ -445,8 +445,8 @@ export abstract class BaseAgentInstance implements AgentInstance {
       } else if (err instanceof ConnectionRejectedError) {
         log.warn(`${this.logTag} WebSocket connection rejected — likely a duplicate session`);
         this.setStatus('error', 'Connection rejected. This agent may already be running in another instance.');
-      } else if (err instanceof InvalidEnvironmentError) {
-        log.warn(`${this.logTag} Invalid environment`, err.message);
+      } else if (err instanceof InvalidEnvironmentError || err instanceof InvalidWorkingDirectoryError) {
+        log.warn(`${this.logTag} ${err.name}`, err.message);
         this.setStatus('error', err.message, err.errorCode);
       } else if (isErrnoException(err) && err.code === 'ENOENT') {
         const executable = this.config.acp ? resolveCommand(this.config.type, this.config.acp).command : 'unknown';

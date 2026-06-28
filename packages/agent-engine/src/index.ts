@@ -34,7 +34,7 @@ export { captureEnv, asEnvSyncMode, ENV_SYNC_MODES, DEFAULT_ENV_SYNC_MODE } from
 export type { EnvSyncMode } from './env-capture.js';
 export { getIdentityEnv } from './identity.js';
 export type { UserIdentity } from './identity.js';
-export { InvalidEnvironmentError } from './errors.js';
+export { InvalidEnvironmentError, InvalidWorkingDirectoryError } from './errors.js';
 export type {
   AgentInstance,
   AgentInstanceListener,

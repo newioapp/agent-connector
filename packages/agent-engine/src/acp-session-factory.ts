@@ -20,7 +20,7 @@ import type { AgentInfo } from './types';
 import { getLogger } from '@newio/agent-sdk';
 import { resolveCommand } from './utils';
 import { inheritedBaseEnv } from './env-capture.js';
-import { InvalidEnvironmentError } from './errors.js';
+import { InvalidEnvironmentError, InvalidWorkingDirectoryError } from './errors.js';
 
 const log = getLogger('acp-session-factory');
 
@@ -158,6 +158,14 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
 
     const { cwd } = config;
     const { command, args } = resolveCommand(this.config.type, config);
+
+    // Validate the working directory before spawn: a missing/invalid cwd makes
+    // `spawn` fail with an ENOENT that's indistinguishable from a missing
+    // executable, which otherwise gets misreported as "node not in PATH" (#277).
+    // An empty cwd means "inherit" (matches the spawn options below), so skip it.
+    if (cwd) {
+      await assertWorkingDirectory(cwd);
+    }
 
     log.info(`${this.logTag} Spawning: ${command} ${args.join(' ')}`);
 
@@ -538,6 +546,19 @@ function buildMcpServers(
       env: [],
     },
   ];
+}
+
+/** Verify the agent's configured working directory exists and is a directory. */
+export async function assertWorkingDirectory(cwd: string): Promise<void> {
+  let stat;
+  try {
+    stat = await fs.stat(cwd);
+  } catch {
+    throw new InvalidWorkingDirectoryError(`The agent's working directory does not exist: ${cwd}`);
+  }
+  if (!stat.isDirectory()) {
+    throw new InvalidWorkingDirectoryError(`The agent's working directory is not a directory: ${cwd}`);
+  }
 }
 
 /** Verify that `node` is available on the system PATH (required for the Newio MCP bridge). */

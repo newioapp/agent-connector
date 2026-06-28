@@ -227,7 +227,7 @@ export interface UpdateAgentInput {
  * (the engine stays UI-neutral). Present only when `runtimeStatus === 'error'`
  * and the failure has a known, actionable category.
  */
-export type AgentErrorCode = 'invalid_environment';
+export type AgentErrorCode = 'invalid_environment' | 'invalid_working_directory';
 
 export interface AgentStatusInfo {
   readonly id: string;
