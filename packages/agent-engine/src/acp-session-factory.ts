@@ -407,8 +407,11 @@ export class AcpSessionFactory implements acp.Client, SessionFactory {
     const buffered = this.pendingUpdates.get(correlationId);
     if (buffered) {
       this.pendingUpdates.delete(correlationId);
-      // Only replay config/command updates — skip historical content (tool calls, messages, etc.)
-      const replayable = new Set(['available_commands_update', 'current_mode_update', 'config_option_update']);
+      // Only replay available-commands updates — skip historical content (tool calls, messages, etc.).
+      // Mode/config-option state is established via the setSessionConfigOption flow (seeded from the
+      // session response, reconciled by reportConfig), so replaying buffered copies only risks
+      // surfacing stale/duplicate state.
+      const replayable = new Set(['available_commands_update']);
       for (const update of buffered) {
         if (replayable.has(update.update.sessionUpdate)) {
           session.handleSessionUpdate(update);

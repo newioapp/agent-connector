@@ -221,6 +221,61 @@ describe('AcpSessionFactory create vs resume', () => {
   });
 });
 
+interface ReplayInternals {
+  acpSessions: Map<string, unknown>;
+  pendingUpdates: Map<string, unknown[]>;
+}
+
+function replayInternals(factory: AcpSessionFactory): ReplayInternals {
+  return factory as unknown as ReplayInternals;
+}
+
+function notification(sessionId: string, sessionUpdate: string): unknown {
+  return { sessionId, update: { sessionUpdate } };
+}
+
+describe('AcpSessionFactory.registerSession buffered-update replay', () => {
+  function registerSession(factory: AcpSessionFactory, correlationId: string, session: unknown): void {
+    (factory as unknown as { registerSession: (id: string, s: unknown) => void }).registerSession(
+      correlationId,
+      session,
+    );
+  }
+
+  function makeReplaySession(): { handleSessionUpdate: ReturnType<typeof vi.fn> } {
+    return { handleSessionUpdate: vi.fn() };
+  }
+
+  it('replays available_commands_update but not mode/config-option updates', () => {
+    const factory = createFactory();
+    const session = makeReplaySession();
+    replayInternals(factory).pendingUpdates.set('sess-1', [
+      notification('sess-1', 'available_commands_update'),
+      notification('sess-1', 'current_mode_update'),
+      notification('sess-1', 'config_option_update'),
+      notification('sess-1', 'agent_message_chunk'),
+      notification('sess-1', 'tool_call'),
+    ]);
+
+    registerSession(factory, 'sess-1', session);
+
+    expect(session.handleSessionUpdate).toHaveBeenCalledTimes(1);
+    expect(session.handleSessionUpdate).toHaveBeenCalledWith(notification('sess-1', 'available_commands_update'));
+  });
+
+  it('drops the consumed buffer and registers the session even when nothing is replayed', () => {
+    const factory = createFactory();
+    const session = makeReplaySession();
+    replayInternals(factory).pendingUpdates.set('sess-1', [notification('sess-1', 'current_mode_update')]);
+
+    registerSession(factory, 'sess-1', session);
+
+    expect(session.handleSessionUpdate).not.toHaveBeenCalled();
+    expect(replayInternals(factory).pendingUpdates.has('sess-1')).toBe(false);
+    expect(replayInternals(factory).acpSessions.get('sess-1')).toBe(session);
+  });
+});
+
 interface FakeChild extends EventEmitter {
   exitCode: number | null;
   signalCode: string | null;
