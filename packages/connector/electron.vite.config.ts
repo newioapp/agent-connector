@@ -13,7 +13,7 @@ if (!process.stdout.clearLine) {
 
 // Build-time environment config — injected as compile-time constants.
 // CI sets these via env vars; local dev falls back to prod defaults.
-const apiBaseUrl = process.env.API_BASE_URL ?? 'https://api.newio.app';
+const apiBaseUrl = process.env.API_BASE_URL ?? 'https://api-v2.newio.app';
 const wsBaseUrl = process.env.WS_BASE_URL ?? 'wss://ws.newio.app';
 const appDisplayName = process.env.APP_DISPLAY_NAME ?? 'Agent Connector';
 

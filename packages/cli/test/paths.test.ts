@@ -127,7 +127,7 @@ describe('resolveConfig', () => {
   it('falls back to prod stage and prod endpoints with no env', () => {
     expect(resolveConfig()).toEqual({
       stage: 'prod',
-      apiBaseUrl: 'https://api.newio.app',
+      apiBaseUrl: 'https://api-v2.newio.app',
       wsUrl: 'wss://ws.newio.app',
       cdnBaseUrl: 'https://cdn.newio.app',
     });
@@ -152,7 +152,7 @@ describe('resolveConfig', () => {
     // undefined so the updater refuses rather than targeting the prod channel.
     expect(resolveConfig()).toEqual({
       stage: 'integ',
-      apiBaseUrl: 'https://api.newio.app',
+      apiBaseUrl: 'https://api-v2.newio.app',
       wsUrl: 'wss://ws.newio.app',
       cdnBaseUrl: undefined,
     });

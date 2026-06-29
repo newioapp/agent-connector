@@ -102,8 +102,8 @@ export type {
 export type { StorePersistence } from './store.js';
 export { NewioAppStore } from './store.js';
 
-/** Default Newio REST API base URL (production). */
-export const NEWIO_API_BASE_URL = 'https://api.newio.app';
+/** Default Newio API base URL (production HTTP API, api-v2). */
+export const NEWIO_API_BASE_URL = 'https://api-v2.newio.app';
 
 /** Default Newio WebSocket URL (production). */
 export const NEWIO_WS_URL = 'wss://ws.newio.app';

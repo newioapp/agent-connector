@@ -238,7 +238,7 @@ describe('resolveAgentId', () => {
       agentRuntimeManager: mockRuntimeManager(),
       version: '1.0.0',
       stage: 'prod',
-      apiBaseUrl: 'https://api.newio.app',
+      apiBaseUrl: 'https://api-v2.newio.app',
       onReload: vi.fn().mockResolvedValue(undefined),
       onStop: vi.fn().mockResolvedValue(undefined),
     });
