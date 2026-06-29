@@ -134,7 +134,7 @@ export function getDaemonPaths(stage: Stage): DaemonPaths {
 // Production endpoints — the only URLs hardcoded in this (private) repo. Non-prod
 // stage URLs are never checked in; internal testers supply them via the
 // NEWIO_API_URL / NEWIO_WS_URL / NEWIO_CDN_URL env vars.
-const PROD_API_URL = 'https://api.newio.app';
+const PROD_API_URL = 'https://api-v2.newio.app';
 const PROD_WS_URL = 'wss://ws.newio.app';
 // Download CDN — where install.sh + the self-updater fetch binaries and the
 // version manifest. Each stage has its OWN downloads bucket + CloudFront

@@ -74,7 +74,7 @@ async function setup() {
     agentRuntimeManager: runtimeManager,
     version: '1.2.3',
     stage: 'prod',
-    apiBaseUrl: 'https://api.newio.app',
+    apiBaseUrl: 'https://api-v2.newio.app',
     onReload,
     onStop,
   });
@@ -118,7 +118,7 @@ describe('DaemonServer / DaemonConnector', () => {
         protocolVersion: RPC_PROTOCOL_VERSION,
         version: '1.2.3',
         stage: 'prod',
-        apiBaseUrl: 'https://api.newio.app',
+        apiBaseUrl: 'https://api-v2.newio.app',
       });
     });
 
