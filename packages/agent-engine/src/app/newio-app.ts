@@ -896,6 +896,18 @@ export class NewioApp implements NewioAppForAgent, NewioAppForMcp {
     await this.client.updateNotifyLevel({ conversationId, notifyLevel: level });
   }
 
+  /**
+   * Set the notify level but refuse work sessions (temp_group): those run as their own session and
+   * manage their own notify level. Used by the chat hub, mirroring sendMessageToManagedConversation.
+   */
+  async updateNotifyLevelForManagedConversation(conversationId: string, level: NotifyLevel): Promise<void> {
+    const info = await this.getConversationInfo(conversationId);
+    if (info.type === 'temp_group') {
+      throw new Error('That is a work session, handled by its own session — it manages its own notification level.');
+    }
+    await this.updateNotifyLevel(conversationId, level);
+  }
+
   /** List messages in a conversation (paginated, newest first). */
   async listMessages(conversationId: string, limit?: number, beforeMessageId?: string): Promise<ListMessagesResponse> {
     return this.client.listMessages({ conversationId, limit: limit ?? 20, beforeMessageId });

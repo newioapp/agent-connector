@@ -364,8 +364,9 @@ export class MockNewioApp implements NewioAppForAgent, NewioAppForMcp {
     }
   }
 
-  // notifyLevel isn't modeled by MockBackend (messages always reach all members), so this is a no-op.
+  // notifyLevel isn't modeled by MockBackend (messages always reach all members), so these are no-ops.
   async updateNotifyLevel(_conversationId: string, _level: McpNotifyLevel): Promise<void> {}
+  async updateNotifyLevelForManagedConversation(_conversationId: string, _level: McpNotifyLevel): Promise<void> {}
 
   // ── Messaging ──────────────────────────────────────────────────────────────
 

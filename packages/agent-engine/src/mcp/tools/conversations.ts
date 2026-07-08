@@ -224,24 +224,4 @@ export function registerConversationsTools(
       return text(`Removed @${username} from conversation`);
     },
   );
-
-  // ── update_notification_level ──
-  server.registerTool(
-    'update_notification_level',
-    {
-      description:
-        'Set your own notification level for a conversation you are a member of. "all" notifies on every ' +
-        'message, "mentions" only when you are @mentioned, "nothing" mutes it. Only affects a conversation ' +
-        'you belong to; DMs are always "all" and cannot be changed.',
-      inputSchema: {
-        conversationId: z.string().describe('Conversation ID'),
-        level: z.enum(['all', 'mentions', 'nothing']).describe('Notification level: "all", "mentions", or "nothing"'),
-      },
-    },
-    async ({ conversationId, level }) => {
-      onToolCall?.('update_notification_level', { conversationId, level });
-      await app.updateNotifyLevel(conversationId, level);
-      return text(`Notification level for conversation set to "${level}"`);
-    },
-  );
 }

@@ -127,6 +127,60 @@ export function registerMessagingTools(
     );
   }
 
+  // update_notification_level — same session scoping as send_message: a session may only change the
+  // notify level of a conversation it is responsible for. 'nothing' is not offered (a fully muted
+  // agent would never be prompted to unmute).
+  if (profile.sendMessage === 'current') {
+    server.registerTool(
+      'update_notification_level',
+      {
+        description:
+          'Set your notification level for THIS conversation — the one this session handles. "all" notifies you on every message; "mentions" only when you are @mentioned. DMs are always "all".',
+        inputSchema: {
+          level: z.enum(['all', 'mentions']).describe('Notification level: "all" or "mentions"'),
+        },
+      },
+      async ({ level }) => {
+        onToolCall?.('update_notification_level', { level });
+        if (!ownConversationId) {
+          return error('No conversation for this session — cannot change the notification level right now.');
+        }
+        try {
+          await app.updateNotifyLevel(ownConversationId, level);
+        } catch (err: unknown) {
+          return error(err instanceof Error ? err.message : 'Could not update the notification level.');
+        }
+        return text(`Notification level set to "${level}"`);
+      },
+    );
+  } else if (profile.sendMessage === 'explicit' || profile.sendMessage === 'explicit-guarded') {
+    const guarded = profile.sendMessage === 'explicit-guarded';
+    server.registerTool(
+      'update_notification_level',
+      {
+        description:
+          'Set your notification level for a group chat or DM you are responsible for. "all" notifies you on every message; "mentions" only when you are @mentioned. DMs are always "all".',
+        inputSchema: {
+          conversationId: z.string().describe('Conversation ID'),
+          level: z.enum(['all', 'mentions']).describe('Notification level: "all" or "mentions"'),
+        },
+      },
+      async ({ conversationId, level }) => {
+        onToolCall?.('update_notification_level', { conversationId, level });
+        try {
+          if (guarded) {
+            await app.updateNotifyLevelForManagedConversation(conversationId, level);
+          } else {
+            await app.updateNotifyLevel(conversationId, level);
+          }
+        } catch (err: unknown) {
+          return error(err instanceof Error ? err.message : 'Could not update the notification level.');
+        }
+        return text(`Notification level set to "${level}"`);
+      },
+    );
+  }
+
   if (profile.shareContext === 'explicit') {
     server.registerTool(
       'share_context',
