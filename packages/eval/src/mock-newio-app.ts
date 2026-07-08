@@ -45,7 +45,7 @@ import type {
   SessionType,
   CronJobRow,
 } from '@newio/agent-engine';
-import type { NewioAppForMcp, McpContactSummary, McpMemoryData } from '@newio/agent-engine';
+import type { NewioAppForMcp, McpContactSummary, McpMemoryData, McpNotifyLevel } from '@newio/agent-engine';
 import type { MockBackend, BackendEvent, BackendMemoryScope, BackendSignal } from './mock-backend.js';
 
 // ---------------------------------------------------------------------------
@@ -363,6 +363,10 @@ export class MockNewioApp implements NewioAppForAgent, NewioAppForMcp {
       this.backend.removeMember(conversationId, user.userId, this.identity.userId);
     }
   }
+
+  // notifyLevel isn't modeled by MockBackend (messages always reach all members), so these are no-ops.
+  async updateNotifyLevel(_conversationId: string, _level: McpNotifyLevel): Promise<void> {}
+  async updateNotifyLevelForManagedConversation(_conversationId: string, _level: McpNotifyLevel): Promise<void> {}
 
   // ── Messaging ──────────────────────────────────────────────────────────────
 

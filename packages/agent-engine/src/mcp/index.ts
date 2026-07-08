@@ -9,5 +9,6 @@ export type {
   NewioAppForMcp,
   McpContactSummary,
   McpMemoryData,
+  McpNotifyLevel,
   NewioMcpServerInterface,
 } from './types.js';

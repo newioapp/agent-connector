@@ -40,6 +40,7 @@ import type {
   MemoryScopeData,
   MessageContent,
   ConversationType,
+  NotifyLevel,
   ReportAgentInfoRequest,
   SearchUsersResponse,
   SessionType,
@@ -884,6 +885,30 @@ export class NewioApp implements NewioAppForAgent, NewioAppForMcp {
   async removeMemberByUsername(conversationId: string, username: string): Promise<void> {
     const userId = await this.resolveUsername(username);
     await this.client.removeMember({ conversationId, userId });
+  }
+
+  /**
+   * Set this agent's own notify level for a conversation. The backend endpoint updates only the
+   * caller's own membership and rejects non-participants, so this cannot touch a conversation the
+   * agent isn't in. The conversation.member_updated event refreshes the cached controls.
+   */
+  async updateNotifyLevel(conversationId: string, level: NotifyLevel): Promise<void> {
+    await this.client.updateNotifyLevel({ conversationId, notifyLevel: level });
+    // Reflect immediately in the local cache — the conversation.member_updated event also updates it,
+    // but writing through here guarantees the new level is live without waiting for the round-trip.
+    this.store.updateConversationControls(conversationId, { notifyLevel: level });
+  }
+
+  /**
+   * Set the notify level but refuse work sessions (temp_group): those run as their own session and
+   * manage their own notify level. Used by the chat hub, mirroring sendMessageToManagedConversation.
+   */
+  async updateNotifyLevelForManagedConversation(conversationId: string, level: NotifyLevel): Promise<void> {
+    const info = await this.getConversationInfo(conversationId);
+    if (info.type === 'temp_group') {
+      throw new Error('That is a work session, handled by its own session — it manages its own notification level.');
+    }
+    await this.updateNotifyLevel(conversationId, level);
   }
 
   /** List messages in a conversation (paginated, newest first). */

@@ -3,6 +3,12 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 
 export type IdGetter = () => string | undefined;
 
+/**
+ * Notification level an agent can set for itself. 'nothing' is intentionally omitted — an agent that
+ * fully muted a conversation would never be prompted to turn it back on.
+ */
+export type McpNotifyLevel = 'all' | 'mentions';
+
 /** Hook called before each MCP tool invocation. */
 export type ToolCallHook = (toolName: string, args: Readonly<Record<string, unknown>>) => void;
 
@@ -138,6 +144,10 @@ export interface NewioAppForMcp {
   createGroup(name: string, usernames: readonly string[]): Promise<string>;
   addMembersByUsername(conversationId: string, usernames: readonly string[]): Promise<void>;
   removeMemberByUsername(conversationId: string, username: string): Promise<void>;
+  /** Set this agent's own notification level for a conversation (backend scopes it to the caller's member row). */
+  updateNotifyLevel(conversationId: string, level: McpNotifyLevel): Promise<void>;
+  /** Like updateNotifyLevel but refuses work sessions (temp_group), which belong to their own session. */
+  updateNotifyLevelForManagedConversation(conversationId: string, level: McpNotifyLevel): Promise<void>;
 
   // ── Messaging ──
   sendMessage(

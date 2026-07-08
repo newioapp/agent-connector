@@ -82,6 +82,7 @@ export type {
   NewioAppForMcp,
   McpContactSummary,
   McpMemoryData,
+  McpNotifyLevel,
   NewioMcpServerInterface,
   MessagingProfile,
   SendMessageMode,

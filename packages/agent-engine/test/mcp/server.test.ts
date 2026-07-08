@@ -69,6 +69,8 @@ function mockApp(
     listConversationMembers: vi.fn().mockResolvedValue({ members: [], hasMore: false }),
     addMembersByUsername: vi.fn().mockResolvedValue(undefined),
     removeMemberByUsername: vi.fn().mockResolvedValue(undefined),
+    updateNotifyLevel: vi.fn().mockResolvedValue(undefined),
+    updateNotifyLevelForManagedConversation: vi.fn().mockResolvedValue(undefined),
     listMessages: vi.fn().mockResolvedValue({
       messages: [{ messageId: 'msg-1', senderId: 'u1', content: { text: 'hello' }, createdAt: '2026-01-01T00:00:00Z' }],
     }),
@@ -149,6 +151,7 @@ describe('MCP Server', () => {
       'share_context',
       'update_memory',
       'update_memory_summary',
+      'update_notification_level',
       'upload_attachment_to_current_conversation',
     ]);
     // Deprecated tools are gone.
@@ -202,6 +205,7 @@ describe('MCP Server', () => {
       'send_message',
       'update_memory',
       'update_memory_summary',
+      'update_notification_level',
       'upload_attachment_to_current_conversation',
     ]);
     // Shared owns every conversation, so no cross-session hand-off; send_dm is gone.
@@ -534,6 +538,62 @@ describe('MCP Server', () => {
       arguments: { conversationId: 'conv-1', username: 'alice' },
     });
     expect(app.removeMemberByUsername).toHaveBeenCalledWith('conv-1', 'alice');
+  });
+
+  it('update_notification_level (current profile) targets this session own conversation, no conversationId arg', async () => {
+    const app = mockApp();
+    // ISOLATED_PROFILE.sendMessage === 'current'; pass the session's own conversation.
+    const client = await createConnectedClient(app, ISOLATED_PROFILE, true, undefined, 'own-conv');
+    const result = await client.callTool({
+      name: 'update_notification_level',
+      arguments: { level: 'mentions' },
+    });
+    expect(app.updateNotifyLevel).toHaveBeenCalledWith('own-conv', 'mentions');
+    expect(getResultText(result)).toContain('mentions');
+  });
+
+  it('update_notification_level (explicit profile) sets the level for the given conversation', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app, SHARED_PROFILE);
+    await client.callTool({
+      name: 'update_notification_level',
+      arguments: { conversationId: 'conv-2', level: 'all' },
+    });
+    expect(app.updateNotifyLevel).toHaveBeenCalledWith('conv-2', 'all');
+  });
+
+  it('update_notification_level (chat hub) routes through the work-session guard', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app, CHAT_HUB_PROFILE);
+    await client.callTool({
+      name: 'update_notification_level',
+      arguments: { conversationId: 'conv-2', level: 'mentions' },
+    });
+    expect(app.updateNotifyLevelForManagedConversation).toHaveBeenCalledWith('conv-2', 'mentions');
+    expect(app.updateNotifyLevel).not.toHaveBeenCalled();
+  });
+
+  it('update_notification_level rejects "nothing" and other invalid levels', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app, SHARED_PROFILE);
+    for (const bad of ['nothing', 'loud']) {
+      const result = await client.callTool({
+        name: 'update_notification_level',
+        arguments: { conversationId: 'conv-2', level: bad },
+      });
+      expect(result.isError).toBe(true);
+    }
+    expect(app.updateNotifyLevel).not.toHaveBeenCalled();
+  });
+
+  it('update_notification_level is not registered for a cron/contact (none) profile', async () => {
+    const client = await createConnectedClient(mockApp(), {
+      sendMessage: 'none',
+      shareContext: 'none',
+      canCreateConversations: false,
+    });
+    const names = (await client.listTools()).tools.map((t) => t.name);
+    expect(names).not.toContain('update_notification_level');
   });
 
   it('create_dm resolves a username to a conversationId', async () => {
