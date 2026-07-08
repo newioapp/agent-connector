@@ -894,6 +894,9 @@ export class NewioApp implements NewioAppForAgent, NewioAppForMcp {
    */
   async updateNotifyLevel(conversationId: string, level: NotifyLevel): Promise<void> {
     await this.client.updateNotifyLevel({ conversationId, notifyLevel: level });
+    // Reflect immediately in the local cache — the conversation.member_updated event also updates it,
+    // but writing through here guarantees the new level is live without waiting for the round-trip.
+    this.store.updateConversationControls(conversationId, { notifyLevel: level });
   }
 
   /**

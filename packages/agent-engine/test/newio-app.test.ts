@@ -93,6 +93,7 @@ function mockClient(contacts: ContactRecord[] = [], conversations: ConversationL
     batchUpdateMemory: vi.fn().mockResolvedValue({ applied: 1 }),
     touchMemoryScope: vi.fn().mockResolvedValue({}),
     getMySettings: vi.fn().mockResolvedValue({ agentId: 'me', settings: {} }),
+    updateNotifyLevel: vi.fn().mockResolvedValue({ conversationId: 'conv-1', notifyLevel: 'mentions' }),
   } as unknown as NewioClient;
 }
 
@@ -427,6 +428,30 @@ describe('NewioApp', () => {
 
       await app.sendMessageToManagedConversation('grp-1', 'hi');
       expect(client.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'grp-1' }));
+    });
+  });
+
+  describe('updateNotifyLevel', () => {
+    it('calls the API and writes through to the local controls cache', async () => {
+      const conv = makeConversation({ conversationId: 'grp-1', type: 'group' });
+      const client = mockClient([], [conv]);
+      const app = NewioApp.createFromComponents(identity, mockAuth(), client, mockWs());
+      await app.init();
+
+      await app.updateNotifyLevel('grp-1', 'mentions');
+
+      expect(client.updateNotifyLevel).toHaveBeenCalledWith({ conversationId: 'grp-1', notifyLevel: 'mentions' });
+      expect((await app.getConversationControls('grp-1'))?.notifyLevel).toBe('mentions');
+    });
+
+    it('updateNotifyLevelForManagedConversation refuses a work session and does not call the API', async () => {
+      const conv = makeConversation({ conversationId: 'work-1', type: 'temp_group' });
+      const client = mockClient([], [conv]);
+      const app = NewioApp.createFromComponents(identity, mockAuth(), client, mockWs());
+      await app.init();
+
+      await expect(app.updateNotifyLevelForManagedConversation('work-1', 'mentions')).rejects.toThrow(/work session/i);
+      expect(client.updateNotifyLevel).not.toHaveBeenCalled();
     });
   });
 
