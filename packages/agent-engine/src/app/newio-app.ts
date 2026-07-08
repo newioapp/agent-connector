@@ -40,6 +40,7 @@ import type {
   MemoryScopeData,
   MessageContent,
   ConversationType,
+  NotifyLevel,
   ReportAgentInfoRequest,
   SearchUsersResponse,
   SessionType,
@@ -884,6 +885,15 @@ export class NewioApp implements NewioAppForAgent, NewioAppForMcp {
   async removeMemberByUsername(conversationId: string, username: string): Promise<void> {
     const userId = await this.resolveUsername(username);
     await this.client.removeMember({ conversationId, userId });
+  }
+
+  /**
+   * Set this agent's own notify level for a conversation. The backend endpoint updates only the
+   * caller's own membership and rejects non-participants, so this cannot touch a conversation the
+   * agent isn't in. The conversation.member_updated event refreshes the cached controls.
+   */
+  async updateNotifyLevel(conversationId: string, level: NotifyLevel): Promise<void> {
+    await this.client.updateNotifyLevel({ conversationId, notifyLevel: level });
   }
 
   /** List messages in a conversation (paginated, newest first). */

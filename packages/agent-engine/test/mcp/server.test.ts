@@ -69,6 +69,7 @@ function mockApp(
     listConversationMembers: vi.fn().mockResolvedValue({ members: [], hasMore: false }),
     addMembersByUsername: vi.fn().mockResolvedValue(undefined),
     removeMemberByUsername: vi.fn().mockResolvedValue(undefined),
+    updateNotifyLevel: vi.fn().mockResolvedValue(undefined),
     listMessages: vi.fn().mockResolvedValue({
       messages: [{ messageId: 'msg-1', senderId: 'u1', content: { text: 'hello' }, createdAt: '2026-01-01T00:00:00Z' }],
     }),
@@ -149,6 +150,7 @@ describe('MCP Server', () => {
       'share_context',
       'update_memory',
       'update_memory_summary',
+      'update_notification_level',
       'upload_attachment_to_current_conversation',
     ]);
     // Deprecated tools are gone.
@@ -202,6 +204,7 @@ describe('MCP Server', () => {
       'send_message',
       'update_memory',
       'update_memory_summary',
+      'update_notification_level',
       'upload_attachment_to_current_conversation',
     ]);
     // Shared owns every conversation, so no cross-session hand-off; send_dm is gone.
@@ -534,6 +537,28 @@ describe('MCP Server', () => {
       arguments: { conversationId: 'conv-1', username: 'alice' },
     });
     expect(app.removeMemberByUsername).toHaveBeenCalledWith('conv-1', 'alice');
+  });
+
+  it('update_notification_level forwards conversationId and level to the app', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    const result = await client.callTool({
+      name: 'update_notification_level',
+      arguments: { conversationId: 'conv-1', level: 'mentions' },
+    });
+    expect(app.updateNotifyLevel).toHaveBeenCalledWith('conv-1', 'mentions');
+    expect(getResultText(result)).toContain('mentions');
+  });
+
+  it('update_notification_level rejects an invalid level', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app);
+    const result = await client.callTool({
+      name: 'update_notification_level',
+      arguments: { conversationId: 'conv-1', level: 'loud' },
+    });
+    expect(result.isError).toBe(true);
+    expect(app.updateNotifyLevel).not.toHaveBeenCalled();
   });
 
   it('create_dm resolves a username to a conversationId', async () => {
