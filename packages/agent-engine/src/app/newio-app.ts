@@ -916,7 +916,7 @@ export class NewioApp implements NewioAppForAgent, NewioAppForMcp {
    * write permission (groups: admin only; work sessions and DMs: any member). Nothing is cached here —
    * the connector doesn't render notes; readers fetch on demand via getConversationNote.
    */
-  async setConversationNote(conversationId: string, content: string): Promise<void> {
+  async setConversationNote(conversationId: string, content: string | null): Promise<void> {
     await this.client.setConversationNote({ conversationId, content });
   }
 
@@ -924,7 +924,7 @@ export class NewioApp implements NewioAppForAgent, NewioAppForMcp {
    * Set the note but refuse work sessions (temp_group): those run as their own session, which sets its
    * own note. Used by the chat hub, mirroring sendMessageToManagedConversation.
    */
-  async setConversationNoteForManagedConversation(conversationId: string, content: string): Promise<void> {
+  async setConversationNoteForManagedConversation(conversationId: string, content: string | null): Promise<void> {
     const info = await this.getConversationInfo(conversationId);
     if (info.type === 'temp_group') {
       throw new Error('That is a work session, handled by its own session — set its note from there instead.');

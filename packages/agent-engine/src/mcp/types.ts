@@ -166,10 +166,10 @@ export interface NewioAppForMcp {
     text?: string,
     opts?: { filePaths?: readonly string[] },
   ): Promise<void>;
-  /** Set this session's own conversation note (backend enforces write permission by conversation type). */
-  setConversationNote(conversationId: string, content: string): Promise<void>;
+  /** Set this session's own conversation note (backend enforces write permission by conversation type). Empty/null clears. */
+  setConversationNote(conversationId: string, content: string | null): Promise<void>;
   /** Like setConversationNote but refuses work sessions (temp_group), which set their own note. Used by the chat hub. */
-  setConversationNoteForManagedConversation(conversationId: string, content: string): Promise<void>;
+  setConversationNoteForManagedConversation(conversationId: string, content: string | null): Promise<void>;
   listMessages(conversationId: string, limit?: number, beforeMessageId?: string): Promise<McpListMessagesResult>;
   downloadAttachment(conversationId: string, s3Key: string, fileName: string): Promise<string>;
 

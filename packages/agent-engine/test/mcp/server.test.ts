@@ -618,7 +618,16 @@ describe('MCP Server', () => {
     const app = mockApp();
     const client = await createConnectedClient(app, ISOLATED_PROFILE, true, undefined, 'own-conv');
     const result = await client.callTool({ name: 'set_conversation_note', arguments: {} });
-    expect(app.setConversationNote).toHaveBeenCalledWith('own-conv', '');
+    expect(app.setConversationNote).toHaveBeenCalledWith('own-conv', null);
+    expect(getResultText(result)).toContain('cleared');
+  });
+
+  it('set_conversation_note accepts a literal null content and clears the note', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app, ISOLATED_PROFILE, true, undefined, 'own-conv');
+    const result = await client.callTool({ name: 'set_conversation_note', arguments: { content: null } });
+    expect(result.isError).toBeFalsy();
+    expect(app.setConversationNote).toHaveBeenCalledWith('own-conv', null);
     expect(getResultText(result)).toContain('cleared');
   });
 

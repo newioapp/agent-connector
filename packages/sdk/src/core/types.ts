@@ -711,8 +711,8 @@ export interface UpdateNotifyLevelResponse {
 
 export interface SetConversationNoteRequest {
   readonly conversationId: string;
-  /** New note content (markdown). An empty/blank string clears the note. */
-  readonly content: string;
+  /** New note content (markdown). An empty/blank string or null clears the note. */
+  readonly content: string | null;
 }
 
 export interface SetConversationNoteResponse {

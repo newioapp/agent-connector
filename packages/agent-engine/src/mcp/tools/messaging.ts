@@ -183,18 +183,25 @@ export function registerMessagingTools(
 
   // set_conversation_note — same session scoping as send_message: a session may only write the note of
   // the conversation it is responsible for. The shared note is free-form markdown (e.g. PR links,
-  // worktree paths, status) visible to everyone in the conversation. Omit/blank content to clear it.
+  // worktree paths, status) visible to everyone in the conversation. Omit/blank/null content clears it.
   // Reading a note (any conversation the agent is in) is get_conversation_note, registered separately.
   const NOTE_DESCRIPTION =
-    'Set a shared pinned note for a conversation — free-form markdown pinned under the header for everyone to see (e.g. GitHub PR links, worktree paths, and status for a work session). Send empty content to clear it. Overwrites the existing note. Groups require admin; work sessions allow any member.';
+    'Set a shared pinned note for a conversation — free-form markdown pinned under the header for everyone to see (e.g. GitHub PR links, worktree paths, and status for a work session). Send empty or null content to clear it. Overwrites the existing note. Groups require admin; work sessions allow any member.';
+  // Content is optional AND nullable: omit, empty, or null all clear the note (null is normalized to the
+  // clear path rather than rejected at the schema).
+  const noteContentSchema = z
+    .string()
+    .nullable()
+    .optional()
+    .describe('Note content as markdown. Omit, empty, or null to clear the note.');
+  const noteResultText = (content: string | null | undefined) =>
+    text(content && content.trim().length > 0 ? 'Note updated' : 'Note cleared');
   if (profile.sendMessage === 'current') {
     server.registerTool(
       'set_conversation_note',
       {
         description: `${NOTE_DESCRIPTION} This sets the note for THIS conversation — the one this session handles.`,
-        inputSchema: {
-          content: z.string().optional().describe('Note content as markdown. Omit or leave empty to clear the note.'),
-        },
+        inputSchema: { content: noteContentSchema },
       },
       async ({ content }) => {
         onToolCall?.('set_conversation_note', { content });
@@ -202,11 +209,11 @@ export function registerMessagingTools(
           return error('No conversation for this session — cannot set a note right now.');
         }
         try {
-          await app.setConversationNote(ownConversationId, content ?? '');
+          await app.setConversationNote(ownConversationId, content ?? null);
         } catch (err: unknown) {
           return error(err instanceof Error ? err.message : 'Could not set the note.');
         }
-        return text(content && content.trim().length > 0 ? 'Note updated' : 'Note cleared');
+        return noteResultText(content);
       },
     );
   } else if (profile.sendMessage === 'explicit' || profile.sendMessage === 'explicit-guarded') {
@@ -217,21 +224,21 @@ export function registerMessagingTools(
         description: NOTE_DESCRIPTION,
         inputSchema: {
           conversationId: z.string().describe('Conversation ID'),
-          content: z.string().optional().describe('Note content as markdown. Omit or leave empty to clear the note.'),
+          content: noteContentSchema,
         },
       },
       async ({ conversationId, content }) => {
         onToolCall?.('set_conversation_note', { conversationId, content });
         try {
           if (guarded) {
-            await app.setConversationNoteForManagedConversation(conversationId, content ?? '');
+            await app.setConversationNoteForManagedConversation(conversationId, content ?? null);
           } else {
-            await app.setConversationNote(conversationId, content ?? '');
+            await app.setConversationNote(conversationId, content ?? null);
           }
         } catch (err: unknown) {
           return error(err instanceof Error ? err.message : 'Could not set the note.');
         }
-        return text(content && content.trim().length > 0 ? 'Note updated' : 'Note cleared');
+        return noteResultText(content);
       },
     );
   }
