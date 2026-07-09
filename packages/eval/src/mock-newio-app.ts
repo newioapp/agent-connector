@@ -368,6 +368,13 @@ export class MockNewioApp implements NewioAppForAgent, NewioAppForMcp {
   async updateNotifyLevel(_conversationId: string, _level: McpNotifyLevel): Promise<void> {}
   async updateNotifyLevelForManagedConversation(_conversationId: string, _level: McpNotifyLevel): Promise<void> {}
 
+  // Conversation notes aren't modeled by MockBackend, so writes are no-ops and reads return null.
+  async setConversationNote(_conversationId: string, _content: string | null): Promise<void> {}
+  async setConversationNoteForManagedConversation(_conversationId: string, _content: string | null): Promise<void> {}
+  async getConversationNote(_conversationId: string): Promise<string | null> {
+    return null;
+  }
+
   // ── Messaging ──────────────────────────────────────────────────────────────
 
   async sendMessage(

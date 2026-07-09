@@ -181,6 +181,68 @@ export function registerMessagingTools(
     );
   }
 
+  // set_conversation_note — same session scoping as send_message: a session may only write the note of
+  // the conversation it is responsible for. The shared note is free-form markdown (e.g. PR links,
+  // worktree paths, status) visible to everyone in the conversation. Omit/blank/null content clears it.
+  // Reading a note (any conversation the agent is in) is get_conversation_note, registered separately.
+  const NOTE_DESCRIPTION =
+    'Set a shared pinned note for a conversation — free-form markdown pinned under the header for everyone to see (e.g. GitHub PR links, worktree paths, and status for a work session). Send empty or null content to clear it. Overwrites the existing note. Groups require admin; work sessions allow any member.';
+  // Content is optional AND nullable: omit, empty, or null all clear the note (null is normalized to the
+  // clear path rather than rejected at the schema).
+  const noteContentSchema = z
+    .string()
+    .nullable()
+    .optional()
+    .describe('Note content as markdown. Omit, empty, or null to clear the note.');
+  const noteResultText = (content: string | null | undefined) =>
+    text(content && content.trim().length > 0 ? 'Note updated' : 'Note cleared');
+  if (profile.sendMessage === 'current') {
+    server.registerTool(
+      'set_conversation_note',
+      {
+        description: `${NOTE_DESCRIPTION} This sets the note for THIS conversation — the one this session handles.`,
+        inputSchema: { content: noteContentSchema },
+      },
+      async ({ content }) => {
+        onToolCall?.('set_conversation_note', { content });
+        if (!ownConversationId) {
+          return error('No conversation for this session — cannot set a note right now.');
+        }
+        try {
+          await app.setConversationNote(ownConversationId, content ?? null);
+        } catch (err: unknown) {
+          return error(err instanceof Error ? err.message : 'Could not set the note.');
+        }
+        return noteResultText(content);
+      },
+    );
+  } else if (profile.sendMessage === 'explicit' || profile.sendMessage === 'explicit-guarded') {
+    const guarded = profile.sendMessage === 'explicit-guarded';
+    server.registerTool(
+      'set_conversation_note',
+      {
+        description: NOTE_DESCRIPTION,
+        inputSchema: {
+          conversationId: z.string().describe('Conversation ID'),
+          content: noteContentSchema,
+        },
+      },
+      async ({ conversationId, content }) => {
+        onToolCall?.('set_conversation_note', { conversationId, content });
+        try {
+          if (guarded) {
+            await app.setConversationNoteForManagedConversation(conversationId, content ?? null);
+          } else {
+            await app.setConversationNote(conversationId, content ?? null);
+          }
+        } catch (err: unknown) {
+          return error(err instanceof Error ? err.message : 'Could not set the note.');
+        }
+        return noteResultText(content);
+      },
+    );
+  }
+
   if (profile.shareContext === 'explicit') {
     server.registerTool(
       'share_context',

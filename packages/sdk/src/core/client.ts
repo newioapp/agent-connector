@@ -68,6 +68,10 @@ import type {
   MarkReadResponse,
   UpdateNotifyLevelRequest,
   UpdateNotifyLevelResponse,
+  SetConversationNoteRequest,
+  SetConversationNoteResponse,
+  GetConversationNoteRequest,
+  GetConversationNoteResponse,
 
   // Messages
   SendMessageRequest,
@@ -371,6 +375,19 @@ export class NewioClient {
       method: 'PUT',
       body: JSON.stringify({ notifyLevel: input.notifyLevel }),
     });
+  }
+
+  /** Set (or clear, with a blank string) the conversation's shared pinned note. */
+  async setConversationNote(input: SetConversationNoteRequest): Promise<SetConversationNoteResponse> {
+    return this.http.request(`/conversations/${encodeURIComponent(input.conversationId)}/note`, {
+      method: 'PUT',
+      body: JSON.stringify({ note: input.content }),
+    });
+  }
+
+  /** Read the conversation's shared pinned note (any participant). */
+  async getConversationNote(input: GetConversationNoteRequest): Promise<GetConversationNoteResponse> {
+    return this.http.request(`/conversations/${encodeURIComponent(input.conversationId)}/note`);
   }
 
   // ---------------------------------------------------------------------------

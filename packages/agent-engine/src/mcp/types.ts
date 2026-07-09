@@ -148,6 +148,8 @@ export interface NewioAppForMcp {
   updateNotifyLevel(conversationId: string, level: McpNotifyLevel): Promise<void>;
   /** Like updateNotifyLevel but refuses work sessions (temp_group), which belong to their own session. */
   updateNotifyLevelForManagedConversation(conversationId: string, level: McpNotifyLevel): Promise<void>;
+  /** Read a conversation's shared pinned note (membership-scoped: any conversation the agent is in). Null when unset. */
+  getConversationNote(conversationId: string): Promise<string | null>;
 
   // ── Messaging ──
   sendMessage(
@@ -164,6 +166,10 @@ export interface NewioAppForMcp {
     text?: string,
     opts?: { filePaths?: readonly string[] },
   ): Promise<void>;
+  /** Set this session's own conversation note (backend enforces write permission by conversation type). Empty/null clears. */
+  setConversationNote(conversationId: string, content: string | null): Promise<void>;
+  /** Like setConversationNote but refuses work sessions (temp_group), which set their own note. Used by the chat hub. */
+  setConversationNoteForManagedConversation(conversationId: string, content: string | null): Promise<void>;
   listMessages(conversationId: string, limit?: number, beforeMessageId?: string): Promise<McpListMessagesResult>;
   downloadAttachment(conversationId: string, s3Key: string, fileName: string): Promise<string>;
 

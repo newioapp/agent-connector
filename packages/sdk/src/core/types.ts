@@ -709,6 +709,28 @@ export interface UpdateNotifyLevelResponse {
   readonly notifyLevel: NotifyLevel;
 }
 
+export interface SetConversationNoteRequest {
+  readonly conversationId: string;
+  /** New note content (markdown). An empty/blank string or null clears the note. */
+  readonly content: string | null;
+}
+
+export interface SetConversationNoteResponse {
+  readonly conversationId: string;
+  /** The stored note, or null when cleared. */
+  readonly note: string | null;
+}
+
+export interface GetConversationNoteRequest {
+  readonly conversationId: string;
+}
+
+export interface GetConversationNoteResponse {
+  readonly conversationId: string;
+  /** The stored note, or null when none is set. */
+  readonly note: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Messages — Request / Response
 // ---------------------------------------------------------------------------

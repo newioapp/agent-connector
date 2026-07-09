@@ -171,6 +171,10 @@ export type {
   MarkReadResponse,
   UpdateNotifyLevelRequest,
   UpdateNotifyLevelResponse,
+  SetConversationNoteRequest,
+  SetConversationNoteResponse,
+  GetConversationNoteRequest,
+  GetConversationNoteResponse,
 } from './core/types.js';
 
 // Types — Messages Request / Response

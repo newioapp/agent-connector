@@ -71,6 +71,9 @@ function mockApp(
     removeMemberByUsername: vi.fn().mockResolvedValue(undefined),
     updateNotifyLevel: vi.fn().mockResolvedValue(undefined),
     updateNotifyLevelForManagedConversation: vi.fn().mockResolvedValue(undefined),
+    setConversationNote: vi.fn().mockResolvedValue(undefined),
+    setConversationNoteForManagedConversation: vi.fn().mockResolvedValue(undefined),
+    getConversationNote: vi.fn().mockResolvedValue('PR #1'),
     listMessages: vi.fn().mockResolvedValue({
       messages: [{ messageId: 'msg-1', senderId: 'u1', content: { text: 'hello' }, createdAt: '2026-01-01T00:00:00Z' }],
     }),
@@ -132,6 +135,7 @@ describe('MCP Server', () => {
       'delete_memory',
       'download_attachment',
       'get_conversation',
+      'get_conversation_note',
       'get_memory',
       'get_my_profile',
       'get_user_profile',
@@ -148,6 +152,7 @@ describe('MCP Server', () => {
       'search_users',
       'send_friend_request',
       'send_message',
+      'set_conversation_note',
       'share_context',
       'update_memory',
       'update_memory_summary',
@@ -187,6 +192,7 @@ describe('MCP Server', () => {
       'delete_memory',
       'download_attachment',
       'get_conversation',
+      'get_conversation_note',
       'get_memory',
       'get_my_profile',
       'get_user_profile',
@@ -203,6 +209,7 @@ describe('MCP Server', () => {
       'search_users',
       'send_friend_request',
       'send_message',
+      'set_conversation_note',
       'update_memory',
       'update_memory_summary',
       'update_notification_level',
@@ -594,6 +601,103 @@ describe('MCP Server', () => {
     });
     const names = (await client.listTools()).tools.map((t) => t.name);
     expect(names).not.toContain('update_notification_level');
+  });
+
+  it('set_conversation_note (current profile) targets this session own conversation, no conversationId arg', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app, ISOLATED_PROFILE, true, undefined, 'own-conv');
+    const result = await client.callTool({
+      name: 'set_conversation_note',
+      arguments: { content: '# PRs\n- https://github.com/x/y/pull/1' },
+    });
+    expect(app.setConversationNote).toHaveBeenCalledWith('own-conv', '# PRs\n- https://github.com/x/y/pull/1');
+    expect(getResultText(result)).toContain('updated');
+  });
+
+  it('set_conversation_note (current profile) clears the note when content is omitted', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app, ISOLATED_PROFILE, true, undefined, 'own-conv');
+    const result = await client.callTool({ name: 'set_conversation_note', arguments: {} });
+    expect(app.setConversationNote).toHaveBeenCalledWith('own-conv', null);
+    expect(getResultText(result)).toContain('cleared');
+  });
+
+  it('set_conversation_note accepts a literal null content and clears the note', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app, ISOLATED_PROFILE, true, undefined, 'own-conv');
+    const result = await client.callTool({ name: 'set_conversation_note', arguments: { content: null } });
+    expect(result.isError).toBeFalsy();
+    expect(app.setConversationNote).toHaveBeenCalledWith('own-conv', null);
+    expect(getResultText(result)).toContain('cleared');
+  });
+
+  it('set_conversation_note (explicit profile) sets the note for the given conversation', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app, SHARED_PROFILE);
+    await client.callTool({
+      name: 'set_conversation_note',
+      arguments: { conversationId: 'conv-2', content: 'hi' },
+    });
+    expect(app.setConversationNote).toHaveBeenCalledWith('conv-2', 'hi');
+  });
+
+  it('set_conversation_note (chat hub) routes through the work-session guard', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app, CHAT_HUB_PROFILE);
+    await client.callTool({
+      name: 'set_conversation_note',
+      arguments: { conversationId: 'conv-2', content: 'hi' },
+    });
+    expect(app.setConversationNoteForManagedConversation).toHaveBeenCalledWith('conv-2', 'hi');
+    expect(app.setConversationNote).not.toHaveBeenCalled();
+  });
+
+  it('set_conversation_note surfaces a backend/guard error', async () => {
+    const app = mockApp();
+    (app.setConversationNoteForManagedConversation as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('That is a work session, handled by its own session — set its note from there instead.'),
+    );
+    const client = await createConnectedClient(app, CHAT_HUB_PROFILE);
+    const result = await client.callTool({
+      name: 'set_conversation_note',
+      arguments: { conversationId: 'work-1', content: 'hi' },
+    });
+    expect(result.isError).toBe(true);
+    expect(getResultText(result)).toContain('work session');
+  });
+
+  it('set_conversation_note is not registered for a cron/contact (none) profile', async () => {
+    const client = await createConnectedClient(mockApp(), {
+      sendMessage: 'none',
+      shareContext: 'none',
+      canCreateConversations: false,
+    });
+    const names = (await client.listTools()).tools.map((t) => t.name);
+    expect(names).not.toContain('set_conversation_note');
+  });
+
+  it('get_conversation_note is membership-scoped: available even in a cron/contact (none) profile', async () => {
+    const app = mockApp();
+    const client = await createConnectedClient(app, {
+      sendMessage: 'none',
+      shareContext: 'none',
+      canCreateConversations: false,
+    });
+    const names = (await client.listTools()).tools.map((t) => t.name);
+    expect(names).toContain('get_conversation_note');
+    const result = await client.callTool({ name: 'get_conversation_note', arguments: { conversationId: 'conv-9' } });
+    const parsed = JSON.parse(getResultText(result)) as Record<string, unknown>;
+    expect(parsed).toEqual({ conversationId: 'conv-9', note: 'PR #1' });
+    expect(app.getConversationNote).toHaveBeenCalledWith('conv-9');
+  });
+
+  it('get_conversation_note returns null when no note is set', async () => {
+    const app = mockApp();
+    (app.getConversationNote as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    const client = await createConnectedClient(app);
+    const result = await client.callTool({ name: 'get_conversation_note', arguments: { conversationId: 'conv-1' } });
+    const parsed = JSON.parse(getResultText(result)) as Record<string, unknown>;
+    expect(parsed).toEqual({ conversationId: 'conv-1', note: null });
   });
 
   it('create_dm resolves a username to a conversationId', async () => {
