@@ -141,6 +141,28 @@ export function registerConversationsTools(
     },
   );
 
+  // ── get_conversation_note ──
+  // Membership-scoped (NOT session-scoped): the agent may read the shared pinned note of ANY
+  // conversation it is a member of. This is what a coordinator needs to poll notes across many
+  // sessions. Writing is the session-scoped set_conversation_note (in messaging tools).
+  server.registerTool(
+    'get_conversation_note',
+    {
+      description:
+        "Read a conversation's shared pinned note (free-form markdown, e.g. PR links / worktree paths / status). Works for any conversation you are a member of. Returns null when no note is set.",
+      inputSchema: { conversationId: z.string().describe('Conversation ID') },
+      outputSchema: z.object({
+        conversationId: z.string().describe('Conversation ID'),
+        note: z.string().nullable().describe('The note markdown, or null when no note is set'),
+      }),
+    },
+    async ({ conversationId }) => {
+      onToolCall?.('get_conversation_note', { conversationId });
+      const note = await app.getConversationNote(conversationId);
+      return structured({ conversationId, note });
+    },
+  );
+
   // ── check_is_member ──
   server.registerTool(
     'check_is_member',

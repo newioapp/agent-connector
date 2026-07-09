@@ -94,6 +94,8 @@ function mockClient(contacts: ContactRecord[] = [], conversations: ConversationL
     touchMemoryScope: vi.fn().mockResolvedValue({}),
     getMySettings: vi.fn().mockResolvedValue({ agentId: 'me', settings: {} }),
     updateNotifyLevel: vi.fn().mockResolvedValue({ conversationId: 'conv-1', notifyLevel: 'mentions' }),
+    setConversationNote: vi.fn().mockResolvedValue({ conversationId: 'conv-1', note: 'the note' }),
+    getConversationNote: vi.fn().mockResolvedValue({ conversationId: 'conv-1', note: 'the note' }),
   } as unknown as NewioClient;
 }
 
@@ -452,6 +454,31 @@ describe('NewioApp', () => {
 
       await expect(app.updateNotifyLevelForManagedConversation('work-1', 'mentions')).rejects.toThrow(/work session/i);
       expect(client.updateNotifyLevel).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('conversation note', () => {
+    it('setConversationNote calls the client with the content', async () => {
+      const { app, client } = await createApp();
+      await app.setConversationNote('grp-1', '# PRs');
+      expect(client.setConversationNote).toHaveBeenCalledWith({ conversationId: 'grp-1', content: '# PRs' });
+    });
+
+    it('setConversationNoteForManagedConversation refuses a work session and does not call the API', async () => {
+      const conv = makeConversation({ conversationId: 'work-1', type: 'temp_group' });
+      const client = mockClient([], [conv]);
+      const app = NewioApp.createFromComponents(identity, mockAuth(), client, mockWs());
+      await app.init();
+
+      await expect(app.setConversationNoteForManagedConversation('work-1', 'hi')).rejects.toThrow(/work session/i);
+      expect(client.setConversationNote).not.toHaveBeenCalled();
+    });
+
+    it('getConversationNote returns the note string from the client', async () => {
+      const { app, client } = await createApp();
+      const note = await app.getConversationNote('conv-1');
+      expect(note).toBe('the note');
+      expect(client.getConversationNote).toHaveBeenCalledWith({ conversationId: 'conv-1' });
     });
   });
 

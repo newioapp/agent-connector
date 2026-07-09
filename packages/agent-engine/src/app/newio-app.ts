@@ -911,6 +911,33 @@ export class NewioApp implements NewioAppForAgent, NewioAppForMcp {
     await this.updateNotifyLevel(conversationId, level);
   }
 
+  /**
+   * Set (or clear, with a blank string) the conversation's shared pinned note. The backend enforces
+   * write permission (groups: admin only; work sessions and DMs: any member). Nothing is cached here —
+   * the connector doesn't render notes; readers fetch on demand via getConversationNote.
+   */
+  async setConversationNote(conversationId: string, content: string): Promise<void> {
+    await this.client.setConversationNote({ conversationId, content });
+  }
+
+  /**
+   * Set the note but refuse work sessions (temp_group): those run as their own session, which sets its
+   * own note. Used by the chat hub, mirroring sendMessageToManagedConversation.
+   */
+  async setConversationNoteForManagedConversation(conversationId: string, content: string): Promise<void> {
+    const info = await this.getConversationInfo(conversationId);
+    if (info.type === 'temp_group') {
+      throw new Error('That is a work session, handled by its own session — set its note from there instead.');
+    }
+    await this.setConversationNote(conversationId, content);
+  }
+
+  /** Read a conversation's shared pinned note. Any conversation the agent is a member of can be read. */
+  async getConversationNote(conversationId: string): Promise<string | null> {
+    const result = await this.client.getConversationNote({ conversationId });
+    return result.note;
+  }
+
   /** List messages in a conversation (paginated, newest first). */
   async listMessages(conversationId: string, limit?: number, beforeMessageId?: string): Promise<ListMessagesResponse> {
     return this.client.listMessages({ conversationId, limit: limit ?? 20, beforeMessageId });
