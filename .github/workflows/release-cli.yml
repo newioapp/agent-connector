@@ -13,12 +13,15 @@ permissions:
   id-token: write
 
 jobs:
-  # Gate the release on the shared platform e2e suite (real daemon/CLI ↔ dev
-  # backend ↔ deterministic puppet agent) before publishing. Reusable workflow
-  # so the binaries release uses the exact same gate; `secrets: inherit` passes
-  # the DEV_* backend secrets through. See .github/workflows/e2e.yml.
+  # Gate the release on the shared platform e2e suite (real daemon/CLI ↔ backend
+  # ↔ deterministic puppet agent) before publishing. Reusable workflow so the
+  # binaries release uses the exact same gate; `secrets: inherit` passes the
+  # DEV_*/INTEG_* backend secrets through. Prod releases (cli-v*) gate on integ;
+  # manual dispatches stay on dev. See .github/workflows/e2e.yml.
   e2e:
     uses: ./.github/workflows/e2e.yml
+    with:
+      backend: ${{ startsWith(github.ref_name, 'cli-v') && 'integ' || 'dev' }}
     secrets: inherit
 
   release:

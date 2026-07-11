@@ -59,6 +59,10 @@ jobs:
   # regardless of which stage is being shipped. See .github/workflows/e2e.yml.
   e2e:
     uses: ./.github/workflows/e2e.yml
+    # Prod releases (cli-v*) gate on integ (stable, pipeline-managed); dev/integ
+    # tags stay on the dev backend.
+    with:
+      backend: ${{ startsWith(github.ref_name, 'cli-v') && 'integ' || 'dev' }}
     secrets: inherit
 
   build-mac:
