@@ -6,31 +6,46 @@ name: E2E (reusable)
 # deterministic @newio/acp-puppet agent — exercising the real daemon/CLI/RPC
 # stack end-to-end before anything is published.
 #
-# The harness is pinned to the shared DEV backend regardless of the release
-# stage (config.ts returns stage 'dev'; DaemonSandbox spawns the daemon with
-# NEWIO_STAGE=dev), so this always uses the DEV_API_BASE_URL / DEV_WS_BASE_URL
-# secrets — the same ones connector-release.yml bakes into the dev build —
-# mapped onto the canonical NEWIO_API_URL / NEWIO_WS_URL env vars the suite
-# reads. The agent is deterministic (no LLM) and auth is the dev backend's open
-# /auth/test-login, so no token/LLM/AWS secret is needed here.
+# The target backend is selected by the `backend` input: `dev` (default) uses
+# DEV_API_BASE_URL / DEV_WS_BASE_URL, `integ` uses INTEG_API_BASE_URL /
+# INTEG_WS_BASE_URL — mapped onto the canonical NEWIO_API_URL / NEWIO_WS_URL env
+# vars. Both the test-owner backend calls and the spawned daemon honor these
+# (daemon-sandbox passes NEWIO_API_URL/WS_URL through), so the whole flow hits
+# the chosen stage. Prod CLI releases gate on `integ` (stable, pipeline-managed);
+# dev tags and manual smokes stay on `dev`. The agent is deterministic (no LLM)
+# and auth is the backend's open /auth/test-login, so no token/LLM/AWS secret is
+# needed here.
 #
-# Callers invoke this with `secrets: inherit` so the DEV_* repo secrets reach it.
+# Callers invoke this with `secrets: inherit` so the DEV_*/INTEG_* repo secrets reach it.
 
 on:
   # Called as a gate by the CLI release workflows (secrets: inherit passes the
-  # DEV_* backend secrets through).
+  # backend secrets through).
   workflow_call:
+    inputs:
+      backend:
+        description: 'Backend stage to run the e2e against (dev or integ).'
+        type: string
+        default: dev
   # Also runnable on demand from the Actions tab / `gh workflow run e2e.yml`, to
-  # smoke the live platform e2e against the dev backend without cutting a release.
-  # On a manual run the DEV_* repo secrets are available directly (no inherit).
+  # smoke the live platform e2e without cutting a release. On a manual run the
+  # repo secrets are available directly (no inherit).
   workflow_dispatch:
+    inputs:
+      backend:
+        description: 'Backend stage to run the e2e against.'
+        type: choice
+        options:
+          - dev
+          - integ
+        default: dev
 
 permissions:
   contents: read
 
 jobs:
   e2e:
-    name: E2E (live dev backend)
+    name: E2E (live ${{ inputs.backend }} backend)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -47,9 +62,9 @@ jobs:
 
       # `test:e2e` builds @newio/e2e and its workspace deps (agent-sdk →
       # agent-engine → cli → puppet) first, then runs the *.e2e.test.ts specs
-      # serially (each spawns the real `newio` daemon against the dev backend).
+      # serially (each spawns the real `newio` daemon against the chosen backend).
       - name: Run platform e2e
         run: pnpm --filter @newio/e2e run test:e2e
         env:
-          NEWIO_API_URL: ${{ secrets.DEV_API_BASE_URL }}
-          NEWIO_WS_URL: ${{ secrets.DEV_WS_BASE_URL }}
+          NEWIO_API_URL: ${{ inputs.backend == 'integ' && secrets.INTEG_API_BASE_URL || secrets.DEV_API_BASE_URL }}
+          NEWIO_WS_URL: ${{ inputs.backend == 'integ' && secrets.INTEG_WS_BASE_URL || secrets.DEV_WS_BASE_URL }}
