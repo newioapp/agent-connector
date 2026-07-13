@@ -14,6 +14,7 @@ import {
   agentAdd,
   formatStatus,
   buildAgentTable,
+  agentToJson,
 } from '../src/cli/agent-commands';
 import { daemonLogsHint } from '../src/cli/daemon-commands';
 import type { DaemonConnector } from '../src/connector';
@@ -277,5 +278,72 @@ describe('resolveAgentId', () => {
 
   it('throws when nothing matches', async () => {
     await expect(resolveAgentId(connector, 'nope')).rejects.toThrow('No agent matching');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// agentToJson — the machine-readable view shared by --json start/list/status
+// ---------------------------------------------------------------------------
+
+describe('agentToJson', () => {
+  const base: AgentStatusInfo = {
+    id: 'aaaa1111-0000-0000-0000-000000000000',
+    config: {
+      id: 'aaaa1111-0000-0000-0000-000000000000',
+      type: 'claude-code',
+      newio: { username: 'bot', displayName: 'Bot' },
+      sessionMode: 'isolated',
+      envVars: {},
+      acp: { cwd: '/work' },
+    },
+    runtimeStatus: 'running',
+  };
+
+  it('maps core fields and omits optional fields when absent', () => {
+    expect(agentToJson(base)).toEqual({
+      id: 'aaaa1111-0000-0000-0000-000000000000',
+      username: 'bot',
+      displayName: 'Bot',
+      type: 'claude-code',
+      status: 'running',
+      sessionMode: 'isolated',
+      cwd: '/work',
+    });
+  });
+
+  it('defaults sessionMode to chat-shared and nulls missing username/displayName/cwd', () => {
+    expect(
+      agentToJson({ id: 'x', config: { id: 'x', type: 'codex', envVars: {} }, runtimeStatus: 'stopped' }),
+    ).toMatchObject({ username: null, displayName: null, cwd: null, sessionMode: 'chat-shared', status: 'stopped' });
+  });
+
+  it('includes approvalUrl while awaiting approval', () => {
+    const view = agentToJson({
+      ...base,
+      runtimeStatus: 'awaiting_approval',
+      approvalUrl: 'https://newio.app/agents/approve?code=abc',
+    });
+    expect(view.status).toBe('awaiting_approval');
+    expect(view.approvalUrl).toBe('https://newio.app/agents/approve?code=abc');
+  });
+
+  it('surfaces error, errorCode, and the remediation hint on failure', () => {
+    const view = agentToJson({
+      ...base,
+      runtimeStatus: 'error',
+      error: 'cwd does not exist',
+      errorCode: 'invalid_working_directory',
+    });
+    expect(view).toMatchObject({
+      status: 'error',
+      error: 'cwd does not exist',
+      errorCode: 'invalid_working_directory',
+    });
+    expect(view.hint).toContain('newio agent update');
+  });
+
+  it('includes wsStatus only when the realtime link is degraded', () => {
+    expect(agentToJson(base).wsStatus).toBeUndefined();
+    expect(agentToJson({ ...base, wsStatus: 'reconnecting' }).wsStatus).toBe('reconnecting');
   });
 });

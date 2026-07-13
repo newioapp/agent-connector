@@ -1,8 +1,8 @@
 /**
  * `newio agent …` / `newio agent env …` / `newio status` handlers.
  *
- * Thin wrappers over DaemonConnector RPC. Agent ids may be given as a full id,
- * a unique id prefix, or an exact display name.
+ * Thin wrappers over DaemonConnector RPC. An agent may be referenced by its
+ * Newio username, its full config id, or a unique config-id prefix.
  */
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'fs';
 import { dirname, resolve } from 'path';
@@ -177,12 +177,52 @@ export function formatStatus(a: AgentStatusInfo): string {
     : a.runtimeStatus;
 }
 
+/**
+ * Machine-readable view of an agent's status for `--json` output. A stable field
+ * set automated callers parse instead of scraping the human table — optional
+ * fields (approvalUrl/error/errorCode/hint/wsStatus) are present only when set.
+ */
+export interface AgentJson {
+  readonly id: string;
+  readonly username: string | null;
+  readonly displayName: string | null;
+  readonly type: string;
+  readonly status: AgentStatusInfo['runtimeStatus'];
+  readonly sessionMode: string;
+  readonly cwd: string | null;
+  readonly approvalUrl?: string;
+  readonly error?: string;
+  readonly errorCode?: string;
+  readonly hint?: string;
+  readonly wsStatus?: string;
+}
+
+export function agentToJson(a: AgentStatusInfo): AgentJson {
+  const hint = remediationHint(a.errorCode, a.id);
+  return {
+    id: a.id,
+    username: a.config.newio?.username ?? null,
+    displayName: a.config.newio?.displayName ?? null,
+    type: a.config.type,
+    status: a.runtimeStatus,
+    sessionMode: a.config.sessionMode ?? 'chat-shared',
+    cwd: a.config.acp?.cwd ?? null,
+    ...(a.approvalUrl ? { approvalUrl: a.approvalUrl } : {}),
+    ...(a.error ? { error: a.error } : {}),
+    ...(a.errorCode ? { errorCode: a.errorCode } : {}),
+    ...(hint ? { hint } : {}),
+    ...(a.wsStatus ? { wsStatus: a.wsStatus } : {}),
+  };
+}
+
 /** Toggles for the optional `agent list` columns (both hidden by default). */
 export interface AgentTableOptions {
   /** Append the DESCRIPTION column (the agent's error/detail, empty when healthy). */
   readonly desc?: boolean;
   /** Append the CWD column (the agent's working directory). */
   readonly cwd?: boolean;
+  /** Emit machine-readable JSON (one object per agent) instead of the table. */
+  readonly json?: boolean;
 }
 
 interface TableColumn {
@@ -252,22 +292,44 @@ function printAgentTable(agents: readonly AgentStatusInfo[], options: AgentTable
   }
 }
 
-/** Start an agent and stream status until it reaches a terminal state. */
-async function startAndStream(stage: Stage, query: string): Promise<void> {
+/**
+ * Start an agent and stream its progress.
+ *
+ * Blocking (default): waits until the agent reaches a terminal state
+ * (running/error/stopped), printing the approval URL and status as they arrive.
+ * `nonBlocking`: returns as soon as the approval URL is emitted OR a terminal
+ * state is reached — whichever comes first — so an automated caller isn't held
+ * by the (human-gated) approval long-poll. `json`: suppresses the human URL /
+ * status stream and emits a single {@link AgentJson} object at return.
+ */
+async function startAndStream(stage: Stage, query: string, opts: StartOptions = {}): Promise<void> {
+  const { nonBlocking = false, json = false } = opts;
+  const human = !json;
   let resolveDone: () => void = () => {};
   const done = new Promise<void>((resolve) => {
     resolveDone = resolve;
   });
   let agentId = '';
+  // Fallback if the record hasn't persisted approvalUrl by the time we re-read it.
+  let seenApprovalUrl: string | undefined;
 
   const connector = await openConnection(stage, {
     onApprovalUrl(id, url) {
-      if (id === agentId) {
+      if (id !== agentId) {
+        return;
+      }
+      seenApprovalUrl = url;
+      if (human) {
         printApprovalUrl('Approve this agent in your browser:', url);
+      }
+      // The approval URL is the actionable result; don't wait out the poll.
+      if (nonBlocking) {
+        resolveDone();
       }
     },
     onPollAttempt(id) {
-      if (id === agentId) {
+      // Progress dots are interactive-only; skip when non-blocking or emitting JSON.
+      if (id === agentId && human && !nonBlocking) {
         process.stdout.write('.');
       }
     },
@@ -275,10 +337,12 @@ async function startAndStream(stage: Stage, query: string): Promise<void> {
       if (id !== agentId) {
         return;
       }
-      console.log(`\n${status}${error ? `: ${error}` : ''}`);
-      const hint = remediationHint(errorCode, agentId);
-      if (hint) {
-        console.log(`  → ${hint}`);
+      if (human) {
+        console.log(`\n${status}${error ? `: ${error}` : ''}`);
+        const hint = remediationHint(errorCode, agentId);
+        if (hint) {
+          console.log(`  → ${hint}`);
+        }
       }
       if (TERMINAL_STATUSES.has(status)) {
         resolveDone();
@@ -290,6 +354,15 @@ async function startAndStream(stage: Stage, query: string): Promise<void> {
     agentId = await resolveAgentId(connector, query);
     await connector.startAgent(agentId);
     await done;
+    if (json) {
+      const info = (await connector.listAgents()).find((a) => a.id === agentId);
+      if (info) {
+        const view = agentToJson(info);
+        console.log(
+          JSON.stringify(seenApprovalUrl && !view.approvalUrl ? { ...view, approvalUrl: seenApprovalUrl } : view),
+        );
+      }
+    }
   } finally {
     connector.disconnect();
   }
@@ -314,6 +387,10 @@ export interface AddOptions {
 
 export interface CreateAccountOptions {
   readonly name: string;
+  /** Return after printing the approval URL instead of waiting for approval. */
+  readonly nonBlocking?: boolean;
+  /** Emit a single machine-readable JSON object instead of human output. */
+  readonly json?: boolean;
 }
 
 export interface UpdateOptions {
@@ -328,8 +405,25 @@ export interface UpdateOptions {
   readonly sessionMode?: string;
 }
 
+export interface StartOptions {
+  /**
+   * Return as soon as the approval URL is available (or a terminal status is
+   * reached) instead of blocking on the approval long-poll. Default: blocking.
+   */
+  readonly nonBlocking?: boolean;
+  /** Emit a single machine-readable JSON object instead of human output. */
+  readonly json?: boolean;
+}
+
 export async function agentList(stage: Stage, options: AgentTableOptions = {}): Promise<void> {
-  await withDaemon(stage, async (c) => printAgentTable(await c.listAgents(), options));
+  await withDaemon(stage, async (c) => {
+    const agents = await c.listAgents();
+    if (options.json) {
+      console.log(JSON.stringify(agents.map(agentToJson)));
+    } else {
+      printAgentTable(agents, options);
+    }
+  });
 }
 
 /** `agent add` — attach a runner config to an existing account, identified by username. */
@@ -367,15 +461,29 @@ export async function agentAdd(stage: Stage, opts: AddOptions): Promise<void> {
  * with `agent add --username <username>`.
  */
 export async function agentCreateAccount(opts: CreateAccountOptions): Promise<void> {
+  const { nonBlocking = false, json = false } = opts;
+  const human = !json;
   const { apiBaseUrl } = resolveConfig();
   const auth = new AuthManager(apiBaseUrl);
   try {
     const handle = await auth.register({ name: opts.name });
-    printApprovalUrl('Approve this new account in your browser:', handle.approvalUrl);
-    await handle.waitForApproval({ onPollAttempt: () => process.stdout.write('.') });
+    if (human) {
+      printApprovalUrl('Approve this new account in your browser:', handle.approvalUrl);
+    }
+    if (nonBlocking) {
+      if (json) {
+        console.log(JSON.stringify({ status: 'awaiting_approval', approvalUrl: handle.approvalUrl }));
+      }
+      return;
+    }
+    await handle.waitForApproval({ onPollAttempt: human ? () => process.stdout.write('.') : () => {} });
     const client = new NewioClient({ baseUrl: apiBaseUrl, tokenProvider: auth.tokenProvider });
     const me = await client.getMe({});
-    console.log(`\nAccount created: @${me.username ?? '(username not set)'} (${me.userId}).`);
+    if (json) {
+      console.log(JSON.stringify({ status: 'created', username: me.username ?? null, userId: me.userId }));
+    } else {
+      console.log(`\nAccount created: @${me.username ?? '(username not set)'} (${me.userId}).`);
+    }
   } finally {
     // Approval scheduled a token-refresh timer that keeps the event loop alive.
     // This command is one-shot (no daemon, no saved tokens), so tear it down to let the process exit.
@@ -388,8 +496,8 @@ export async function agentRemove(stage: Stage, query: string): Promise<void> {
   console.log('Removed.');
 }
 
-export async function agentStart(stage: Stage, query: string): Promise<void> {
-  await startAndStream(stage, query);
+export async function agentStart(stage: Stage, query: string, opts: StartOptions = {}): Promise<void> {
+  await startAndStream(stage, query, opts);
 }
 
 export async function agentStop(stage: Stage, query: string): Promise<void> {
@@ -397,9 +505,9 @@ export async function agentStop(stage: Stage, query: string): Promise<void> {
   console.log('Stopped.');
 }
 
-export async function agentRestart(stage: Stage, query: string): Promise<void> {
+export async function agentRestart(stage: Stage, query: string, opts: StartOptions = {}): Promise<void> {
   await withDaemon(stage, async (c) => c.stopAgent(await resolveAgentId(c, query)));
-  await startAndStream(stage, query);
+  await startAndStream(stage, query, opts);
 }
 
 export async function agentInfo(stage: Stage, query: string): Promise<void> {
@@ -589,9 +697,17 @@ function openInEditor(filePath: string): Promise<void> {
 // status
 // ---------------------------------------------------------------------------
 
-export async function status(stage: Stage): Promise<void> {
+export async function status(stage: Stage, opts: { readonly json?: boolean } = {}): Promise<void> {
   await withDaemon(stage, async (c) => {
     const version = await c.version();
+    const agents = await c.listAgents();
+    if (opts.json) {
+      const { apiBaseUrl } = resolveConfig();
+      console.log(
+        JSON.stringify({ daemon: { online: true, version, stage, apiBaseUrl }, agents: agents.map(agentToJson) }),
+      );
+      return;
+    }
     console.log(`newio daemon${stageSuffix(stage)}: online, version ${version}`);
     // Make the active backend obvious whenever it isn't the default (prod).
     if (stage !== 'prod') {
@@ -599,6 +715,6 @@ export async function status(stage: Stage): Promise<void> {
       console.log(`  stage: ${stage} → ${apiBaseUrl}`);
     }
     console.log('');
-    printAgentTable(await c.listAgents());
+    printAgentTable(agents);
   });
 }
