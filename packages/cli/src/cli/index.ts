@@ -140,10 +140,18 @@ daemonCmd
 
 const agentCmd = program.command('agent').description('Manage agents');
 
+// Most subcommands resolve <agent> the same way (resolveAgentId): call it out once.
+agentCmd.addHelpText(
+  'after',
+  '\nMost commands take <agent> as either the Newio username or a config id (full or unique prefix).',
+);
+
 agentCmd
   .command('create-account')
   .description('Register a new Newio agent account (username chosen at approval)')
   .requiredOption('--name <name>', 'display name for the new account')
+  .option('--non-blocking', 'return after printing the approval URL instead of waiting for approval')
+  .option('--json', 'emit machine-readable JSON instead of human output')
   .action((_options: unknown, cmd: Command) => agent.agentCreateAccount(cmd.opts<CreateAccountOptions>()));
 
 agentCmd
@@ -151,7 +159,8 @@ agentCmd
   .description('List agents with runtime status')
   .option('--desc', 'show the DESCRIPTION column (the agent error/detail)')
   .option('--cwd', 'show the CWD column (the agent working directory)')
-  .action((options: { desc?: boolean; cwd?: boolean }) => agent.agentList(stage, options));
+  .option('--json', 'emit machine-readable JSON instead of the table')
+  .action((options: { desc?: boolean; cwd?: boolean; json?: boolean }) => agent.agentList(stage, options));
 
 agentCmd
   .command('add')
@@ -189,8 +198,12 @@ agentCmd
 
 agentCmd
   .command('start <agent>')
-  .description('Start an agent (streams approval + status)')
-  .action((query: string) => agent.agentStart(stage, query));
+  .description('Start an agent by username or config id (streams approval + status)')
+  .option('--non-blocking', 'return after printing the approval URL instead of waiting for approval')
+  .option('--json', 'emit machine-readable JSON instead of human output')
+  .action((query: string, options: { nonBlocking?: boolean; json?: boolean }) =>
+    agent.agentStart(stage, query, options),
+  );
 
 agentCmd
   .command('stop <agent>')
@@ -199,8 +212,12 @@ agentCmd
 
 agentCmd
   .command('restart <agent>')
-  .description('Restart an agent')
-  .action((query: string) => agent.agentRestart(stage, query));
+  .description('Restart an agent by username or config id')
+  .option('--non-blocking', 'return after printing the approval URL instead of waiting for approval')
+  .option('--json', 'emit machine-readable JSON instead of human output')
+  .action((query: string, options: { nonBlocking?: boolean; json?: boolean }) =>
+    agent.agentRestart(stage, query, options),
+  );
 
 agentCmd
   .command('info <agent>')
@@ -274,7 +291,8 @@ topEnvCmd
 program
   .command('status')
   .description('Daemon health + agent overview')
-  .action(() => agent.status(stage));
+  .option('--json', 'emit machine-readable JSON instead of human output')
+  .action((options: { json?: boolean }) => agent.status(stage, options));
 
 program
   .command('update')
