@@ -44,11 +44,10 @@ interface SessionSlot {
 const log = getLogger('isolated-session-manager');
 
 /**
- * EXPERIMENTAL — not yet exposed via the CLI and not wired into any released
- * configuration. The isolated session model runs a dedicated agent session per
- * scope (one per conversation, plus dedicated contact and cron sessions), as an
- * alternative to the shipped chat-shared model ({@link ChatSharedSessionManager}).
- * Kept for ongoing experimentation; the API and behavior may change or be removed.
+ * The isolated session model runs a dedicated agent session per scope (one per
+ * conversation, plus dedicated contact and cron sessions), as an alternative to
+ * the default chat-shared model ({@link ChatSharedSessionManager}). Selected with
+ * `newio agent add --session-mode isolated`.
  */
 export class IsolatedSessionManager implements SessionManager {
   /** conversationId → session slot for conversation sessions. */
