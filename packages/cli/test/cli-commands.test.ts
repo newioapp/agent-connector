@@ -15,6 +15,7 @@ import {
   formatStatus,
   buildAgentTable,
   agentToJson,
+  startJson,
 } from '../src/cli/agent-commands';
 import { daemonLogsHint } from '../src/cli/daemon-commands';
 import type { DaemonConnector } from '../src/connector';
@@ -345,5 +346,49 @@ describe('agentToJson', () => {
   it('includes wsStatus only when the realtime link is degraded', () => {
     expect(agentToJson(base).wsStatus).toBeUndefined();
     expect(agentToJson({ ...base, wsStatus: 'reconnecting' }).wsStatus).toBe('reconnecting');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// startJson — deterministic output for `agent start --json`
+// ---------------------------------------------------------------------------
+
+describe('startJson', () => {
+  function info(runtimeStatus: AgentStatusInfo['runtimeStatus'], approvalUrl?: string): AgentStatusInfo {
+    return {
+      id: 'id-1',
+      config: { id: 'id-1', type: 'claude-code', newio: { username: 'bot' }, envVars: {}, acp: { cwd: '/work' } },
+      runtimeStatus,
+      ...(approvalUrl ? { approvalUrl } : {}),
+    };
+  }
+
+  it('pins status to awaiting_approval on an approval-triggered early return, even if the record still reads a transient', () => {
+    // The daemon emits the URL just before flipping to awaiting_approval, so a
+    // non-blocking re-read can catch the record mid-transition at `starting`.
+    const view = startJson(info('starting'), { onApproval: true, approvalUrl: 'https://newio.app/approve?c=1' });
+    expect(view.status).toBe('awaiting_approval');
+    expect(view.approvalUrl).toBe('https://newio.app/approve?c=1');
+  });
+
+  it('overrides a missing/stale record approvalUrl with the one seen on the event', () => {
+    const view = startJson(info('awaiting_approval'), {
+      onApproval: true,
+      approvalUrl: 'https://newio.app/approve?c=2',
+    });
+    expect(view.approvalUrl).toBe('https://newio.app/approve?c=2');
+  });
+
+  it('trusts the record on a terminal (non-approval) return', () => {
+    const view = startJson(info('running'), { onApproval: false });
+    expect(view.status).toBe('running');
+    expect(view.approvalUrl).toBeUndefined();
+  });
+
+  it('does not inject a stale approvalUrl when the agent reached a terminal state', () => {
+    // A URL was seen earlier but the blocking wait ran to `running`: no approvalUrl.
+    const view = startJson(info('running'), { onApproval: false, approvalUrl: 'https://newio.app/approve?c=3' });
+    expect(view.status).toBe('running');
+    expect(view.approvalUrl).toBeUndefined();
   });
 });

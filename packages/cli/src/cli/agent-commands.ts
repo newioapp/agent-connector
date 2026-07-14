@@ -215,6 +215,22 @@ export function agentToJson(a: AgentStatusInfo): AgentJson {
   };
 }
 
+/**
+ * JSON for `agent start --json`. On an early (non-blocking) return triggered by
+ * the approval URL, the daemon emits that URL *just before* it flips the record
+ * to `awaiting_approval`, so a re-read can still show a pre-approval transient
+ * (`starting`/`initializing`). Pin `status`/`approvalUrl` to what the early
+ * return actually represents so the machine contract is deterministic. On a
+ * terminal return the record is authoritative.
+ */
+export function startJson(info: AgentStatusInfo, resolved: { onApproval: boolean; approvalUrl?: string }): AgentJson {
+  const view = agentToJson(info);
+  if (resolved.onApproval && resolved.approvalUrl) {
+    return { ...view, status: 'awaiting_approval', approvalUrl: resolved.approvalUrl };
+  }
+  return view;
+}
+
 /** Toggles for the optional `agent list` columns (both hidden by default). */
 export interface AgentTableOptions {
   /** Append the DESCRIPTION column (the agent's error/detail, empty when healthy). */
@@ -310,8 +326,10 @@ async function startAndStream(stage: Stage, query: string, opts: StartOptions = 
     resolveDone = resolve;
   });
   let agentId = '';
-  // Fallback if the record hasn't persisted approvalUrl by the time we re-read it.
+  // Captured from the approval event so JSON output is consistent even if the
+  // daemon record hasn't flipped to awaiting_approval by the time we re-read it.
   let seenApprovalUrl: string | undefined;
+  let resolvedOnApproval = false;
 
   const connector = await openConnection(stage, {
     onApprovalUrl(id, url) {
@@ -324,6 +342,7 @@ async function startAndStream(stage: Stage, query: string, opts: StartOptions = 
       }
       // The approval URL is the actionable result; don't wait out the poll.
       if (nonBlocking) {
+        resolvedOnApproval = true;
         resolveDone();
       }
     },
@@ -357,10 +376,7 @@ async function startAndStream(stage: Stage, query: string, opts: StartOptions = 
     if (json) {
       const info = (await connector.listAgents()).find((a) => a.id === agentId);
       if (info) {
-        const view = agentToJson(info);
-        console.log(
-          JSON.stringify(seenApprovalUrl && !view.approvalUrl ? { ...view, approvalUrl: seenApprovalUrl } : view),
-        );
+        console.log(JSON.stringify(startJson(info, { onApproval: resolvedOnApproval, approvalUrl: seenApprovalUrl })));
       }
     }
   } finally {
