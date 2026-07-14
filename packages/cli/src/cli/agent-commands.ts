@@ -35,12 +35,12 @@ export const SESSION_MODE_CHOICES: readonly string[] = SESSION_MODES;
 // Help text for the `--session-mode` option. Newlines put each mode on its own
 // line in `--help`; commander wraps+indents the continuation lines to the
 // description column (a `\n` followed by text, not spaces, isn't treated as
-// pre-formatted). `chat-shared` is the shipped default; the others experimental.
+// pre-formatted). `chat-shared` is the default.
 export const SESSION_MODE_DESCRIPTION =
   'session mode (default: chat-shared)\n' +
   'chat-shared: DMs, group chats, and contact events share one session, while each work session and cron job gets its own\n' +
-  'isolated [experimental]: one session per conversation\n' +
-  'shared [experimental]: a single session across all events';
+  'isolated: one session per conversation\n' +
+  'shared: a single session across all events';
 
 function asAgentType(value: string): AgentType {
   const match = AGENT_TYPES.find((t) => t === value);
@@ -396,7 +396,7 @@ export interface AddOptions {
   readonly command?: string;
   /** Args for `command` (commander collects repeated --arg into an array). */
   readonly arg?: readonly string[];
-  /** Session mode: chat-shared (default), or experimental isolated/shared. */
+  /** Session mode: chat-shared (default), isolated, or shared. */
   readonly sessionMode?: string;
   readonly envSync?: string;
 }
@@ -417,7 +417,7 @@ export interface UpdateOptions {
   /** Args for `command` (commander collects repeated --arg into an array). */
   readonly arg?: readonly string[];
   readonly username?: string;
-  /** Session mode: chat-shared (default), or experimental isolated/shared. */
+  /** Session mode: chat-shared (default), isolated, or shared. */
   readonly sessionMode?: string;
 }
 
